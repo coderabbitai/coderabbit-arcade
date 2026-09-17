@@ -10,12 +10,25 @@ config_version=5
 
 [application]
 
-config/name="HoppysAdventureArcade"
+config/name="Hoppy’s Adventure Arcade"
+run/main_scene="res://scenes/main_menu/main_menu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
 
+[autoload]
+
+SaveService="*res://app/save_service.gd"
+AudioService="*res://app/audio_service.gd"
+AppRouter="*res://app/app_router.gd"
+
 [display]
 
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/size/window_width_override=1280
+window/size/window_height_override=720
+window/size/min_width=960
+window/size/min_height=540
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 

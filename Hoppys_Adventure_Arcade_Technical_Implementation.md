@@ -343,3 +343,7 @@ These decisions do not block creating the hub and portal foundation. They do blo
 v0.1 establishes source requirements, proposed ownership/interfaces, per-mode mechanics, open decisions, sequencing, and verification. No game code, repository changes, playable builds, or approved technical decisions are implied by this document’s creation.
 
 For each later revision record: changed requirement, source/decision, affected systems, migration impact, and verification evidence. Keep the compact agent context synchronized with accepted changes.
+
+## Repository implementation update — 2026-09-17
+
+Main menu work reconciled this baseline against the initially empty Godot project and the current GDD. Godot 4.7.1 is installed and used for validation. The hub now uses scene-local two-preview alpha crossfades, Parallax2D, separate idle/focus state, input-source arbitration, settings with local persistence, shared audio buses, and validated navigation. Mode routes lead to explicitly labeled placeholders. User approved temporary rabbit art. Supplied music remains MP3 with looping enabled; title typography uses a system fallback. Corridor, Security, and Git HQ preview art is procedural pending final assets. See `docs/main-menu.md` for detailed implementation and verification; all non-menu gameplay sections remain proposals.
