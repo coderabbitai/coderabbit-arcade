@@ -50,3 +50,7 @@ Start with repository reconciliation, pinned-engine boot, then hub and safe mode
 Test state boundaries: hit deduplication, pursuit/recovery, combo expiry, durability, effect cleanup, bounded/feasible generation, save failures/top-10 ordering, retry/navigation cleanup, and boss transitions. Run rendered keyboard/gamepad and desktop-export smoke checks as well as headless import/logic checks. Do not claim tests or builds were run without evidence.
 
 For exact mechanics/content catalogs, open the relevant full-baseline section: §6 hub, §8 platformer, §9 runner, §10 brawler, §11 persistence, §13 milestones, §14 validation, §15 decisions. Update both documents when decisions are accepted.
+
+## Repository implementation update — 2026-09-17
+
+The central main menu is now implemented in `hoppys-adventure-arcade/scenes/main_menu/`, with AppRouter, SaveService, and AudioService Autoloads. The three mode routes are explicitly labeled non-playable placeholders. The user approved a temporary rabbit; final Hoppy sprites and branding remain replaceable. See `docs/main-menu.md` for asset mapping, implementation choices, and validation scope. Gameplay systems described above remain proposals.
