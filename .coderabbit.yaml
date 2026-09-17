@@ -16,7 +16,7 @@ reviews:
   path_instructions:
     - path: "**/*.gd"
       instructions: |
-        Review this as Godot 4.x GDScript. Prioritize correctness over style.
+        Review this as Godot 4.7.1 GDScript. Prioritize correctness over style.
         - Do not suggest Python-only syntax or APIs.
         - Respect Godot virtual callback names and engine conventions.
         - Check node lifecycle assumptions, signal connections, and freed-instance access.
