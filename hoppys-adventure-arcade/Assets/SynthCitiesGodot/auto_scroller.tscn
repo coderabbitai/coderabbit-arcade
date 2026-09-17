@@ -1,0 +1,43 @@
+[gd_scene load_steps=8 format=3 uid="uid://c3idsj77kmk8h"]
+
+[ext_resource type="Texture2D" uid="uid://mnxlwlmag0u1" path="res://CityLayers/back.png" id="1_kfogy"]
+[ext_resource type="Shader" path="res://auto_scroller.gdshader" id="2_s8vwb"]
+[ext_resource type="Texture2D" uid="uid://breq2e4hdjvx6" path="res://CityLayers/middle.png" id="3_duehl"]
+[ext_resource type="Texture2D" uid="uid://c0hp7gt6l6kaf" path="res://CityLayers/foreground.png" id="4_0l70d"]
+[ext_resource type="AudioStream" uid="uid://dlj20q6oi3gh1" path="res://Music/cyberpunk-street.ogg" id="8_qb2oq"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_jv7m2"]
+shader = ExtResource("2_s8vwb")
+shader_parameter/direction = Vector2(1, 0)
+shader_parameter/speed_scale = 0.02
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_qattk"]
+shader = ExtResource("2_s8vwb")
+shader_parameter/direction = Vector2(3, 0)
+shader_parameter/speed_scale = 0.02
+
+[node name="AutoScroller" type="Node2D"]
+
+[node name="BackFixedTexture" type="TextureRect" parent="."]
+offset_right = 320.0
+offset_bottom = 272.0
+texture = ExtResource("1_kfogy")
+stretch_mode = 1
+
+[node name="TextureRectMiddle" type="TextureRect" parent="."]
+material = SubResource("ShaderMaterial_jv7m2")
+offset_right = 320.0
+offset_bottom = 240.0
+texture = ExtResource("3_duehl")
+stretch_mode = 1
+
+[node name="TextureRectForeground" type="TextureRect" parent="."]
+material = SubResource("ShaderMaterial_qattk")
+offset_right = 320.0
+offset_bottom = 240.0
+texture = ExtResource("4_0l70d")
+stretch_mode = 1
+
+[node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("8_qb2oq")
+autoplay = true
