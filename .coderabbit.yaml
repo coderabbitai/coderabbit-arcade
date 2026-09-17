@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: "en-US"
+
+reviews:
+  profile: "chill"
+
+  auto_review:
+    enabled: true
+    drafts: false
+
+  path_filters:
+    - "!**/.godot/**"
+    - "!**/*.import"
+
+  path_instructions:
+    - path: "**/*.gd"
+      instructions: |
+        Review this as Godot 4.x GDScript. Prioritize correctness over style.
+        - Do not suggest Python-only syntax or APIs.
+        - Respect Godot virtual callback names and engine conventions.
+        - Check node lifecycle assumptions, signal connections, and freed-instance access.
+        - Check await/coroutine and state-transition behavior.
+        - Flag fragile NodePaths, scene-tree assumptions, and nullability risks.
+        - Look for unnecessary allocations or tree lookups in _process and _physics_process.
+        - Verify delta usage, physics/render-loop separation, and input handling.
+        - Prefer useful static typing, but do not demand redundant type annotations.
+
+    - path: "**/*.{tscn,tres}"
+      instructions: |
+        Check resource paths, NodePaths, signal connections, ownership, and renamed
+        or deleted scripts/nodes. Focus on changes likely to break at runtime.
+
+    - path: "project.godot"
+      instructions: |
+        Carefully review autoloads, input mappings, rendering settings, and changed
+        project-wide behavior.
