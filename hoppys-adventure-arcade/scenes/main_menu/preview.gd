@@ -26,6 +26,8 @@ func _ready() -> void:
 				paths.append("res://Assets/cyberpunk-street-files/Assets/Version 2/Layers/" + layer + ".png")
 	for i in paths.size():
 		var tex := load(paths[i]) as Texture2D
+		if tex == null:
+			continue
 		var factor := 720.0 / tex.get_height()
 		var width := tex.get_width() * factor
 		var layer := Parallax2D.new()
