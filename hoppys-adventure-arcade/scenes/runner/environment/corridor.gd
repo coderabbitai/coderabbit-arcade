@@ -14,6 +14,7 @@ var _scaling_registered := false
 var _environment: Environment
 var _sun: DirectionalLight3D
 var _scroll_materials: Array[ShaderMaterial] = []
+var _pillar_z := PackedFloat32Array()
 var _pillars: MultiMesh
 var _rain: GPUParticles3D
 var _speed_lines: GPUParticles3D
@@ -117,9 +118,14 @@ func _build_pillars() -> void:
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(instance)
 
+func pillar_z_positions() -> PackedFloat32Array:
+	return _pillar_z.duplicate()
+
 func _update_pillars() -> void:
+	_pillar_z.resize(24)
 	for i in 24:
 		var z := 8.0 - fposmod(float(i % 12) * 8.0 - _offset, 96.0)
+		_pillar_z[i] = z
 		var x := -3.92 if i < 12 else 3.92
 		_pillars.set_instance_transform(i, Transform3D(Basis.IDENTITY, Vector3(x, 3, z)))
 

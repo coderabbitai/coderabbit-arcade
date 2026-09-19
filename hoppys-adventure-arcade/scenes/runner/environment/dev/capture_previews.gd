@@ -1,5 +1,6 @@
 extends SceneTree
-## Run non-headless from the repository root. Captures F0/F1/F2/F3 hazard fixtures.
+## Run non-headless from the repository root. Captures F0/F1/F2/F3 visual fixtures.
+const Gallery = preload("res://scenes/runner/hazards/visuals/dev/hazard_gallery.gd")
 var failures := 0
 
 func _initialize() -> void:
@@ -28,7 +29,7 @@ func run() -> void:
 		var draw_calls := root.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
 		print("CAPTURE: ", suffix, " error=", error, " draw_calls=", draw_calls)
 		if fixture == "hazard_gallery":
-			var gallery_budget := 12 * 14 + 15
+			var gallery_budget := (Gallery.CASES.size() + Gallery.POWERUPS.size() + 1) * 14 + 15
 			print("GALLERY DRAW BUDGET: ", draw_calls, " / ", gallery_budget)
 			if draw_calls > gallery_budget:
 				failures += 1

@@ -149,6 +149,7 @@ func run() -> void:
 		preview.free()
 		await frames()
 	await check_hazards()
+	await check_powerups_and_pursuer()
 	root.get_node("AudioService").shutdown()
 	await create_timer(0.3).timeout
 	failures += _logger.errors()
@@ -184,12 +185,12 @@ func visible_hazard_bounds(body: Node3D) -> AABB:
 		first = false
 	return result
 
-func hazard_draw_count(visual: Node3D) -> int:
+func hazard_draw_count(visual: Node3D, include_hidden := false) -> int:
 	# Node-based estimate: outlined Label3D = 2, MultiMesh = 1.
 	# Actual renderer totals (including overlays/culling) are checked by capture_previews.
 	var count := 0
 	for node in visual.find_children("*", "VisualInstance3D", true, false):
-		if not node.is_visible_in_tree(): continue
+		if not include_hidden and not node.is_visible_in_tree(): continue
 		if node is Label3D:
 			count += 2 if node.outline_size > 0 else 1
 		elif node is MeshInstance3D or node is MultiMeshInstance3D or node is GPUParticles3D:
@@ -310,15 +311,21 @@ func check_hazards() -> void:
 	var gallery := gallery_scene.instantiate()
 	root.add_child(gallery)
 	await frames()
+	check(gallery.pickups.size() == 6 and gallery.fixtures.size() == 19, "gallery pickups and pursuer")
 	check(gallery.visuals.size() == 12, "gallery all eight kinds and every variant")
 	var camera: Camera3D = gallery.get_node("Camera")
 	check(camera.position == Vector3(0, 4, 8) and camera.fov == 60.0, "gallery contract camera")
-	for key in [KEY_H, KEY_R, KEY_C, KEY_R, KEY_T, KEY_1, KEY_2, KEY_3, KEY_R, KEY_RIGHT, KEY_LEFT]:
+	for key in [KEY_H, KEY_R, KEY_C, KEY_R, KEY_T, KEY_1, KEY_2, KEY_3, KEY_R, KEY_RIGHT, KEY_LEFT, KEY_P, KEY_K, KEY_B, KEY_BRACKETLEFT, KEY_BRACKETRIGHT, KEY_R]:
 		var event := InputEventKey.new()
 		event.physical_keycode = key
 		event.pressed = true
 		gallery._unhandled_key_input(event)
 		await frames()
+	for index in gallery.fixtures.size():
+		gallery._selected = index
+		gallery._focus()
+		await frames()
+	check(gallery._selected == 18, "gallery navigates through pursuer")
 	gallery.free()
 	await frames()
 
@@ -327,3 +334,136 @@ func hazard_labels(visual: Node3D) -> Array:
 	for label: Label3D in visual.find_children("*", "Label3D", true, false):
 		result.append([label.text, label.modulate, label.visible])
 	return result
+
+func pursuer_bounds(visual: Node3D) -> AABB:
+	var result := AABB()
+	var first := true
+	for node: GeometryInstance3D in visual.find_children("*", "GeometryInstance3D", true, false):
+		if not node.is_visible_in_tree(): continue
+		var relative := visual.global_transform.affine_inverse() * node.global_transform
+		if node is MultiMeshInstance3D:
+			var poses: Array[Transform3D] = visual.card_transforms()
+			check(poses.size() == node.multimesh.instance_count and poses.size() == 20, "pursuer CPU card census")
+			for pose in poses:
+				var box: AABB = relative * pose * node.multimesh.mesh.get_aabb()
+				result = box if first else result.merge(box)
+				first = false
+		else:
+			var local: AABB = node.visibility_aabb if node is GPUParticles3D else node.get_aabb()
+			var box: AABB = relative * local
+			result = box if first else result.merge(box)
+			first = false
+	return result
+
+func check_powerups_and_pursuer() -> void:
+	for kind in [&"approve_shield", &"auto_fix", &"lgtm", &"nitro", &"super_jump", &"code_review"]:
+		var packed := load("res://scenes/runner/powerups/visuals/%s_visual.tscn" % kind) as PackedScene
+		check(packed != null, "%s loads" % kind)
+		if packed == null: continue
+		var visual := packed.instantiate() as Node3D
+		root.add_child(visual)
+		check(visual.get_child_count() == 0, "%s waits for kind" % kind)
+		visual.set("kind", kind)
+		visual.on_spawned()
+		check(hazard_draw_count(visual, true) <= 14, "%s draw budget <= 14" % kind)
+		var art: Node3D = visual.get_node("Artwork")
+		art.set_process(false)
+		var count := art.get_child_count()
+		visual.on_spawned()
+		visual.on_spawned()
+		check(art.get_child_count() == count and visual.visible, "%s idempotent spawn" % kind)
+		check(visual.find_children("*", "CollisionObject3D", true, false).is_empty(), "%s cosmetic only" % kind)
+		check(visual.find_children("*", "Light3D", true, false).is_empty(), "%s no extra lights" % kind)
+		art._process(0.5)
+		check(is_equal_approx(art.get_node("Pivot").rotation.y, 0.8), "%s spin 1.6 rad/s" % kind)
+		check(absf(art.get_node("Pivot").position.y) <= 0.08, "%s bob bound" % kind)
+		visual.on_collected()
+		art._process(0.0875)
+		check(is_equal_approx(art.get_node("Pivot").scale.x, 1.45), "%s collection peak" % kind)
+		visual.on_collected()
+		check(is_equal_approx(art._collect_time, 0.0875), "%s repeated collection does not restart" % kind)
+		art._process(0.163)
+		check(not visual.visible, "%s collection hides after 0.25s" % kind)
+		check(not art.is_processing(), "%s collection stops processing" % kind)
+		check(art.get_node("Pivot/Ring").scale.is_equal_approx(Vector3.ONE), "%s hidden ring resets scale" % kind)
+		visual.on_spawned()
+		visual.on_spawned()
+		check(art.is_processing(), "%s reuse enables processing" % kind)
+		check(visual.visible and art.get_node("Pivot").transform.is_equal_approx(Transform3D.IDENTITY), "%s reuse resets pose and visibility" % kind)
+		check(is_equal_approx(art.get_node("Tag").modulate.a, 1.0), "%s tag restored" % kind)
+		visual.on_collected()
+		art._process(0.05)
+		visual.on_spawned()
+		art._process(0.3)
+		check(visual.visible and art._collect_time < 0.0, "%s spawn interrupts collection" % kind)
+		visual.on_spawned()
+		art.set_process(true)
+		paused = true
+		await frames()
+		check(art._t == 0.0, "%s pause freezes clock" % kind)
+		paused = false
+		visual.free()
+	print("POWER-UP VISUALS: 6 checked; reuse, collection and pause PASS")
+	var packed := load("res://scenes/runner/pursuer/pursuer_visual.tscn") as PackedScene
+	check(packed != null, "pursuer loads")
+	if packed == null: return
+	var pursuer := packed.instantiate() as Node3D
+	root.add_child(pursuer)
+	pursuer.set_process(false)
+	await frames()
+	check(hazard_draw_count(pursuer, true) <= 14, "pursuer draw budget <= 14")
+	check(pursuer.find_children("*", "Light3D", true, false).size() == 1, "pursuer exactly one light")
+	check(pursuer.find_children("*", "Label3D", true, false).size() == 6, "pursuer six headlines")
+	check(pursuer.find_children("*", "CollisionObject3D", true, false).is_empty(), "pursuer cosmetic only")
+	for threat in [0.0, 0.5, 1.0]:
+		pursuer.set_threat(threat)
+		check(is_equal_approx(pursuer.get_node("Wall").scale.y, lerpf(0.35, 1.0, threat)), "pursuer threat height")
+		check(is_equal_approx(pursuer.get_node("RedLight").light_energy, threat * 2.5), "pursuer threat light")
+		check(is_equal_approx(pursuer.get_node("Wall/Glitch").amount_ratio, threat), "pursuer threat particles")
+	var merged := AABB()
+	for sample in 121:
+		pursuer._process(1.0 / 60.0)
+		var box := pursuer_bounds(pursuer)
+		merged = box if sample == 0 else merged.merge(box)
+		check(box.size.x <= 6.0 and box.size.y <= 2.6 and box.position.y >= -0.001, "pursuer threat 1 visible AABB %s" % box)
+	check(merged.size.x <= 6.0 and merged.size.y <= 2.6, "pursuer merged motion envelope")
+	print("PURSUER THREAT 1 MERGED VISIBLE AABB: ", merged)
+	var clock: float = pursuer._t
+	pursuer.set_process(true)
+	paused = true
+	await frames()
+	check(pursuer._t == clock, "pursuer pause freezes motion")
+	paused = false
+	pursuer.set_process(false)
+	var initial_scale: Vector3 = pursuer.get_node("Wall").scale
+	pursuer.play_catch()
+	pursuer._process(0.7)
+	pursuer.play_catch()
+	check(is_equal_approx(pursuer._reaction_time, 0.7), "catch idempotent")
+	pursuer._process(0.7)
+	check(pursuer.get_node("Wall").scale.is_equal_approx(initial_scale * 2.6), "catch 1.4s scale")
+	check(is_equal_approx(pursuer.get_node("RedLight").light_energy, 6.0), "catch light")
+	for label: Label3D in pursuer.find_children("*", "Label3D", true, false):
+		check(label.text == "CAUGHT", "caught headline")
+	# Reproduce the backend zero-threat update immediately before retreat.
+	pursuer.set_threat(1.0)
+	var retreat_pose: Transform3D = pursuer.get_node("Wall").transform
+	pursuer.set_threat(0.0)
+	pursuer.play_retreat()
+	check(pursuer.get_node("Wall").transform.is_equal_approx(retreat_pose), "retreat restores last non-zero threat pose")
+	pursuer._process(0.0)
+	check(pursuer.get_node("Wall").transform.is_equal_approx(retreat_pose), "retreat starts without height pop")
+	pursuer._process(0.35)
+	pursuer.play_retreat()
+	check(is_equal_approx(pursuer._reaction_time, 0.35), "retreat idempotent")
+	check(pursuer.visible, "retreat still visible halfway")
+	pursuer._process(0.35)
+	check(not pursuer.visible, "retreat hides at 0.7s")
+	check(pursuer.get_node("RedLight").light_energy == 0.0, "retreat light off")
+	pursuer.set_threat(0.0)
+	check(not pursuer.visible, "retreated zero remains hidden")
+	pursuer.set_threat(1.0)
+	check(pursuer.visible and pursuer.get_node("Wall").scale.is_equal_approx(Vector3.ONE), "pursuer resumes cleanly")
+	pursuer.free()
+	await frames()
+	print("PURSUER VISUAL: threat, catch, retreat, reuse and pause checked")

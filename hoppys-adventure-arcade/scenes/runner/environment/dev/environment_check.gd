@@ -45,9 +45,11 @@ func run() -> void:
 		corridor.set_scroll_speed(26.0)
 		corridor._process(1.0)
 		check(is_equal_approx(corridor._offset, 25.0), "Scroll wraps without loss")
-		for i in 24:
-			var p: Vector3 = corridor._pillars.get_instance_transform(i).origin
-			check(p.z > -88.0 and p.z <= 8.0, "Pillar wrap bounds")
+		var positions: PackedFloat32Array = corridor.pillar_z_positions()
+		check(positions.size() == 24, "CPU pillar count")
+		for i in positions.size():
+			check(positions[i] > -88.0 and positions[i] <= 8.0, "Pillar wrap bounds")
+			check(is_equal_approx(positions[i], 8.0 - fposmod(float(i % 12) * 8.0 - 25.0, 96.0)), "CPU pillar wrapped position")
 		corridor.set_process(true)
 		paused = true
 		var offset: float = corridor._offset

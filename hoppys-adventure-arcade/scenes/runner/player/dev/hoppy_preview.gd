@@ -1,10 +1,12 @@
 extends Node3D
+const HoppyScript = preload("res://scenes/runner/player/hoppy_runner_visual.gd")
+const CorridorScript = preload("res://scenes/runner/environment/corridor.gd")
 const Hoppy = preload("res://scenes/runner/player/hoppy_runner_visual.tscn")
 const Corridor = preload("res://scenes/runner/environment/corridor.tscn")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
 const STATES: Array[StringName] = [&"idle", &"run", &"jump", &"fall", &"roll", &"hurt", &"dead"]
-var _hoppy: Node3D
-var _corridor: Node3D
+var _hoppy: HoppyScript
+var _corridor: CorridorScript
 var _index := 0
 var _speed := 0.0
 var _status: Label
@@ -12,9 +14,9 @@ var _shield := false
 var _effects := [false, false, false]
 
 func _ready() -> void:
-	_corridor = Corridor.instantiate()
+	_corridor = Corridor.instantiate() as CorridorScript
 	add_child(_corridor)
-	_hoppy = Hoppy.instantiate()
+	_hoppy = Hoppy.instantiate() as HoppyScript
 	add_child(_hoppy)
 	var camera := Camera3D.new()
 	camera.name = "Camera"
@@ -41,9 +43,12 @@ func _process(_delta: float) -> void:
 	_update_status()
 
 func _unhandled_key_input(event: InputEvent) -> void:
-	if not event.is_pressed() or event.is_echo():
+	var key_event := event as InputEventKey
+	if key_event == null:
 		return
-	var key: int = event.physical_keycode
+	if not key_event.is_pressed() or key_event.is_echo():
+		return
+	var key: int = key_event.physical_keycode
 	if key >= KEY_1 and key <= KEY_7:
 		_index = key - KEY_1
 		_hoppy.set_anim_state(STATES[_index])

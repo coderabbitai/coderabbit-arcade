@@ -1,6 +1,6 @@
 extends "res://scenes/runner/hazards/hazard_visual_base.gd"
 const Rig = preload("res://scenes/runner/hazards/visuals/hazard_art.gd")
-var _art: Node3D
+var _art: Rig
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
