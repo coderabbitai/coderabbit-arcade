@@ -58,8 +58,11 @@ Only Workstream 1 edits `runner_game.tscn` / `runner_game.gd` after PR 1.
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/menu_smoke.gd
 ```
 
-Plus `--check-only` on every new or modified `.gd` (errors naming the autoload singletons `AppRouter`,
-`AudioService`, `SaveService` are a known limitation of `--check-only`, not defects). `runner_game.tscn`
+Plus `--check-only` on every new or modified `.gd`. Known limitation, not a defect: `--check-only` runs without
+autoloads, so `runner_game.gd` reports `Identifier not found: AppRouter`, and every script that preloads
+`runner_game.gd` (all systems, hazard, power-up, pursuer, player, chunk) reports the cascaded
+`Failed to compile depended scripts`. Parse and analysis errors in those files are still reported ahead of
+that compile-stage noise, so the gate remains useful; any other error is real. `runner_game.tscn`
 and `runner_menu.tscn` load headless with no `push_error`.
 
 **PR 2 (playable graybox):** everything above, plus

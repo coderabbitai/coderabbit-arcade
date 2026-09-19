@@ -61,7 +61,7 @@ func run() -> void:
 		router.go(route)
 		router.go("runner")
 		await wait(0.65)
-		check(current_scene.name == "ModePortal", "Mode route loads")
+		check(current_scene.scene_file_path == router.ROUTES[route], "Mode route loads: " + route)
 		check(not router.busy, "Navigation unlocks")
 		router.go("hub")
 		await wait(0.65)
