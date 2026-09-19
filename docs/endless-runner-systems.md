@@ -132,7 +132,7 @@ whose material tint changes per anim state (so graybox testers see state changes
 1. `DEAD` → `&"ignored"`.
 2. Already in `consumed_ids` → `&"ignored"`; else record the instance id.
 3. `iframe_remaining > 0` or any invulnerability source → `damage_blocked(kind, reason)`; return `&"blocked_invuln"`. The hazard is still consumed (LGTM smashes through).
-4. `shield` → `shield = false`, `shield_changed(false)`, `damage_blocked(kind, &"shield")`. **If PURSUED: state = SAFE, hp = max_hp, recovery_remaining = 0, `health_changed`, `pursuit_recovered(&"shield")`.** Return `&"blocked_shield"`.
+4. `shield` → `shield = false`, `shield_changed(false)`, `damage_blocked(kind, &"shield")`. **If PURSUED: state = SAFE, hp = max_hp, recovery_remaining = 0, `recoveries += 1`, `health_changed`, `pursuit_recovered(&"shield")`.** Return `&"blocked_shield"`. (`recoveries` therefore counts every exit from PURSUED back to SAFE, by timer or by shield.)
 5. Damage: `hp -= 1`, `iframe_remaining = hit_iframes`, `damage_taken(kind, hp)`, `health_changed`, notify `effect_manager.on_damage_applied()` (drops Code Review Bonus). `hp == 1` → PURSUED, `recovery_remaining = recovery_seconds`, `pursuit_started(recovery_seconds)`. `hp == 0` → DEAD, `caught()`.
 
 `_physics_process` (only while the game is `running`): decrement `iframe_remaining`; if PURSUED,
@@ -285,7 +285,10 @@ V8 slot placement; V9 bot path simulation from 3 entry lanes × {PREFER_LANE, PR
 × {v_min, v_max} with a virtual preceding heavy action, zero hits; V10 mirrored copy passes V1–V9.
 Also: at every difficulty 0..1 step 0.1 at least two eligible chunks exist.
 
-**`tests/runner_smoke.gd`**: `Engine.time_scale = 6.0`, `Engine.max_physics_steps_per_frame = 32`;
+**`tests/runner_smoke.gd`**: accelerated 6× with `Engine.time_scale = 6.0` **and** `Engine.physics_ticks_per_second = 360`
+(both restored at the end) — on Godot 4.7 `time_scale` alone multiplies the physics delta instead of adding
+ticks, which would break the 0.10 s jump buffer and let hazards tunnel; raising the tick rate keeps each tick at
+1/60 s of game time. `Engine.max_physics_steps_per_frame = 32`;
 instantiate `runner_game.tscn` with `autostart = false`, `config` duplicate with `time_to_max_speed = 20`;
 `start_run(12345)`; `set_autopilot(true)`; after 45 s game-time assert hp 2, `hits_taken == 0`, speed ≈
 max, active chunks ≤ 9, score > 0, ≥ 1 power-up collected (print seed + chunk log on failure). Then
@@ -310,7 +313,8 @@ active → roll, off → nothing. Jump trigger `front_z ≥ −(v × 0.22 + 0.4)
 
 - Never mutate the shared `run_config.tres`; tests `duplicate()` it.
 - `set_deferred` for `monitoring`/`monitorable`/`disabled` when inside physics callbacks.
-- `Engine.time_scale` scales physics ticks too; tests raise `max_physics_steps_per_frame`.
+- `Engine.time_scale` multiplies the physics delta (it does not add ticks); to accelerate a simulation without
+  coarsening physics, raise `Engine.physics_ticks_per_second` by the same factor and `max_physics_steps_per_frame`.
 - Injected key events must set `physical_keycode`; bindings are physical.
 - `Array.sort_custom` is unstable; carry an explicit `order`.
 - Camera follow in `_physics_process` (player moves there) to avoid jitter.
