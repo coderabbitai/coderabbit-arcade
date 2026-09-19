@@ -316,9 +316,12 @@ Screenshots to `docs/previews/endless-runner-{spike,corridor,gallery,hud,gameove
 | F5 | `sfx_synth.gd`, `runner_audio.tscn/gd` | every trigger audible in the mock; ≤ 10 voices; pitch ramp audible |
 | F6 | `runner_menu.tscn/gd`, `tests/runner_visual_smoke.gd`, `docs/endless-runner.md`, previews | full loop with the backend: hub → menu → play → hit → pursuit → 18 s clean recovery → hit (new pursuit) → second hit during pursuit → caught → game over → save → retry → menu → hub |
 
-Check commands (repo root):
+Check commands (repo root). Confirm the engine first: `/Applications/Godot.app/Contents/MacOS/Godot --version` must
+report `4.7.1.stable` for final acceptance; results from any other 4.7.x build (the build machine currently has
+4.7.0) are diagnostic and must be labelled as such in `docs/endless-runner.md`.
 
 ```sh
+/Applications/Godot.app/Contents/MacOS/Godot --version
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --import
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://scenes/runner/<file>.gd --check-only
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd
