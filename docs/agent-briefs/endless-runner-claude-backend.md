@@ -76,36 +76,68 @@ if [[ "$version" != 4.7.1.stable* ]]; then
 fi
 "$GODOT_BIN" --headless --path hoppys-adventure-arcade --import
 
-# Godot exits 0 when a --script cannot be loaded, so a deleted or renamed test would pass silently.
+# Godot exits 0 when a --script cannot be loaded, and a test that crashes part-way exits 0 without
+# ever printing its verdict, so neither the exit status nor the file's existence proves anything on
+# its own: the run has to say, in its own words, that it passed. `marker` is that sentence. The
+# captured output stays in $RUN_TEST_LOG for the two callers that need to look closer.
+RUN_TEST_DIR="$(mktemp -d)"
+trap 'rm -rf "$RUN_TEST_DIR"' EXIT
+RUN_TEST_LOG=""
+# Engine-level errors that invalidate a result however green the test's own verdict line looks.
+# Single source of truth: run_test enforces it, and the menu_smoke tolerance below reuses it so a
+# tolerated run can never hide one.
+RUN_TEST_NOISE='SCRIPT ERROR|Parse Error|Failed to load script|Failed to compile depended scripts|Identifier not found'
 run_test() {
-  local f="hoppys-adventure-arcade/tests/$1"
+  local f="hoppys-adventure-arcade/tests/$1" marker="$2" code noise
   [[ -f "$f" ]] || { echo "missing test script: $f" >&2; exit 1; }
-  "$GODOT_BIN" --headless --path hoppys-adventure-arcade --script "res://tests/$1"
+  RUN_TEST_LOG="$RUN_TEST_DIR/$1.log"
+  # tee keeps the output streaming while it is captured; PIPESTATUS[0] is the test's own status.
+  set +e
+  "$GODOT_BIN" --headless --path hoppys-adventure-arcade --script "res://tests/$1" 2>&1 | tee "$RUN_TEST_LOG"
+  code=${PIPESTATUS[0]}
+  set -e
+  if [[ $code -ne 0 ]]; then
+    printf 'run_test: %s exited %d\n' "$1" "$code" >&2
+    return 1
+  fi
+  if ! grep -qF "$marker" "$RUN_TEST_LOG"; then
+    printf 'run_test: %s exited 0 but never printed %s\n' "$1" "$marker" >&2
+    return 1
+  fi
+  # A test can print its PASS line and still have been degraded by engine errors along the way.
+  # grep exits 1 when it matches nothing, which is the good case here, so its status is deliberately
+  # dropped: under `set -euo pipefail` an unguarded assignment from it would abort the whole gate.
+  set +e
+  noise="$(grep -nE "$RUN_TEST_NOISE" "$RUN_TEST_LOG" | head -3)"
+  set -e
+  if [[ -n "$noise" ]]; then
+    printf 'run_test: %s printed %s but the engine reported errors:\n%s\n' "$1" "$marker" "$noise" >&2
+    return 1
+  fi
 }
 
-run_test runner_scaffold_check.gd
+run_test runner_scaffold_check.gd 'RUNNER SCAFFOLD: PASS'
 
 # menu_smoke has exactly two documented mouse-hover failures on 4.7.0 (contract §9). A DIAGNOSTIC run
 # tolerates only that precise signature and must say so in the report; a different failure count, a
 # new message, a parse error or a missing scene exits 1 even under DIAGNOSTIC, and a real 4.7.1
 # acceptance run fails on any menu_smoke failure at all. Every runner test stays strict either way.
-# tee keeps the output streaming while it is captured; PIPESTATUS[0] is the test's own status, since
-# run_test runs in a subshell inside the pipeline. The explicit `exit 1` is required: under `set -e`
-# bash does not abort on `cmd || [[ cond ]]`.
-menu_log="$(mktemp)"
-trap 'rm -f "$menu_log"' EXIT
-set +e
-run_test menu_smoke.gd 2>&1 | tee "$menu_log"
-menu_status=${PIPESTATUS[0]}
-set -e
-if [[ $menu_status -ne 0 ]]; then
+# The two hover failures are a 4.7.0 artefact, so the tolerance needs the baseline engine as well as
+# DIAGNOSTIC=1: on any other 4.7.x build menu_smoke stays strict. Godot 4.7.0 reports itself as
+# `4.7.stable.official.<hash>` — there is no `.0` in the string — so `4.7.stable*` is the pattern that
+# actually matches it and `4.7.0.stable*` would never fire.
+# `if ! run_test ...` is what keeps `set -e` from aborting here, and the tolerance reads the log
+# run_test already captured.
+if ! run_test menu_smoke.gd 'MENU SMOKE: PASS'; then
   if [[ "${DIAGNOSTIC:-0}" == "1" ]] \
-      && grep -qF 'MENU SMOKE: FAIL (2 failures)' "$menu_log" \
-      && grep -qF 'Mouse hover overrides old gamepad focus' "$menu_log" \
-      && grep -qF 'Pointer exit releases mode preview' "$menu_log"; then
-    echo "DIAGNOSTIC: tolerating the two documented 4.7.0 menu_smoke hover failures; report them as such"
+      && [[ "$version" == 4.7.stable* ]] \
+      && ! grep -qE "$RUN_TEST_NOISE" "$RUN_TEST_LOG" \
+      && grep -qF 'MENU SMOKE: FAIL (2 failures)' "$RUN_TEST_LOG" \
+      && grep -qF 'Mouse hover overrides old gamepad focus' "$RUN_TEST_LOG" \
+      && grep -qF 'Pointer exit releases mode preview' "$RUN_TEST_LOG"; then
+    echo "DIAGNOSTIC: tolerating the two documented 4.7.0 menu_smoke hover failures; label them as diagnostic in the report (frontend: also in docs/endless-runner.md)"
   else
-    echo "menu_smoke failed with something other than the documented 4.7.0 hover baseline" >&2
+    echo "menu_smoke failed with something other than the documented 4.7.0 hover baseline on this engine" >&2
     exit 1
   fi
 fi
@@ -128,19 +160,64 @@ gate stays useful. Run it as a filter rather than reading the output by eye:
 set -uo pipefail
 GODOT_BIN="${GODOT_BIN:-/Applications/Godot.app/Contents/MacOS/Godot}"
 
+# The AppRouter suppression is scoped by the `at:` line that follows the diagnostic, which names the
+# script the identifier is in: only runner_game.gd and runner_menu.gd are excused. The same error in
+# any other script is printed and fails the gate. The cascade lines name the dependent script
+# themselves, so they need no scoping.
+grep -q '^AppRouter=' hoppys-adventure-arcade/project.godot \
+  || { echo "AppRouter autoload missing from project.godot" >&2; exit 1; }
 check_only() {
-  local f="$1" out
-  out="$("$GODOT_BIN" --headless --path hoppys-adventure-arcade --check-only --script "res://$f" 2>&1 || true)"
-  out="$(printf '%s\n' "$out" | awk '
+  local f="$1" raw out code documented=0
+  set +e
+  raw="$("$GODOT_BIN" --headless --path hoppys-adventure-arcade --check-only --script "res://$f" 2>&1)"
+  code=$?
+  set -e
+  # Stateful, exact suppression. An `Identifier not found: AppRouter` is excused only when the line
+  # immediately after it locates the error in runner_game.gd or runner_menu.gd by full res:// path,
+  # and the compile cascade is excused only once such a diagnostic has been accepted in THIS script's
+  # output — Godot always emits the root cause first, so a cascade without it is a different failure.
+  # The trailing __DOCUMENTED_CASCADE__ tells the shell an excused diagnostic was actually seen.
+  out="$(printf '%s\n' "$raw" | awk '
     /^Godot Engine/ { next }
-    /Compile Error: Identifier not found: AppRouter/ { skip = 1; next }
-    /Compile Error: Failed to compile depended scripts\./ { skip = 1; next }
-    /Failed to load script .* with error "Compilation failed"\./ { skip = 1; next }
-    /^[[:space:]]*at: / { if (skip) { skip = 0; next } }
-    NF { skip = 0; print }
+    /Compile Error: Identifier not found: AppRouter/ { pending = $0; next }
+    pending != "" && /^[[:space:]]*at: / {
+      if ($0 ~ /res:\/\/scenes\/runner\/runner_(game|menu)\.gd:[0-9]+\)/) {
+        accepted = 1; pending = ""; next
+      }
+      print pending; print; pending = ""; next
+    }
+    pending != "" && NF { print pending; pending = "" }
+    /Compile Error: Failed to compile depended scripts\./ { cascade = $0; next }
+    /Failed to load script .* with error "Compilation failed"\./ { cascade = $0; next }
+    cascade != "" && /^[[:space:]]*at: / {
+      if (accepted) { cascade = ""; next }
+      print cascade; print; cascade = ""; next
+    }
+    cascade != "" && NF { print cascade; cascade = "" }
+    NF { print }
+    END {
+      if (pending != "") print pending
+      if (cascade != "") print cascade
+      if (accepted) print "__DOCUMENTED_CASCADE__"
+    }
   ')"
+  case "$out" in
+    *__DOCUMENTED_CASCADE__)
+      documented=1
+      out="${out%__DOCUMENTED_CASCADE__}"
+      out="${out%$'\n'}"
+      ;;
+  esac
   if [[ -n "$out" ]]; then
     printf 'check-only: unexpected diagnostics in %s\n%s\n' "$f" "$out" >&2
+    return 1
+  fi
+  # Godot's own exit status, no longer masked by `|| true`. Measured on 4.7.0 it is 0 even for the
+  # documented AppRouter compile failure, so this branch fires on the harder failures the filter
+  # cannot see — a missing binary, a project that will not open — while still tolerating a future
+  # engine that reports the documented cascade the awk just accepted through a non-zero exit.
+  if [[ $code -ne 0 && $documented -eq 0 ]]; then
+    printf 'check-only: %s exited %d with no documented diagnostic\n' "$f" "$code" >&2
     return 1
   fi
 }
@@ -148,8 +225,12 @@ check_only() {
 status=0
 while IFS= read -r f; do
   check_only "${f#hoppys-adventure-arcade/}" || status=1
+# Both runner pathspecs on purpose (same as the frontend brief): git's `*` already crosses `/`, but the
+# `**/` form says so explicitly; `sort -u` drops the duplicates the overlap produces.
 done < <(git ls-files --cached --others --exclude-standard \
-  -- 'hoppys-adventure-arcade/scenes/runner/*.gd' 'hoppys-adventure-arcade/tests/*.gd' | sort -u)
+  -- 'hoppys-adventure-arcade/scenes/runner/*.gd' \
+     'hoppys-adventure-arcade/scenes/runner/**/*.gd' \
+     'hoppys-adventure-arcade/tests/*.gd' | sort -u)
 [[ $status -eq 0 ]] && echo "check-only: no unexpected diagnostics"
 exit $status
 ```
@@ -178,17 +259,52 @@ if [[ "$version" != 4.7.1.stable* ]]; then
 fi
 "$GODOT_BIN" --headless --path hoppys-adventure-arcade --import
 
-# Godot exits 0 when a --script cannot be loaded, so a deleted or renamed test would pass silently.
+# Godot exits 0 when a --script cannot be loaded, and a test that crashes part-way exits 0 without
+# ever printing its verdict, so neither the exit status nor the file's existence proves anything on
+# its own: the run has to say, in its own words, that it passed. `marker` is that sentence. The
+# captured output stays in $RUN_TEST_LOG for the two callers that need to look closer.
+RUN_TEST_DIR="$(mktemp -d)"
+trap 'rm -rf "$RUN_TEST_DIR"' EXIT
+RUN_TEST_LOG=""
+# Engine-level errors that invalidate a result however green the test's own verdict line looks.
+# Single source of truth: run_test enforces it, and the menu_smoke tolerance below reuses it so a
+# tolerated run can never hide one.
+RUN_TEST_NOISE='SCRIPT ERROR|Parse Error|Failed to load script|Failed to compile depended scripts|Identifier not found'
 run_test() {
-  local f="hoppys-adventure-arcade/tests/$1"
+  local f="hoppys-adventure-arcade/tests/$1" marker="$2" code noise
   [[ -f "$f" ]] || { echo "missing test script: $f" >&2; exit 1; }
-  "$GODOT_BIN" --headless --path hoppys-adventure-arcade --script "res://tests/$1"
+  RUN_TEST_LOG="$RUN_TEST_DIR/$1.log"
+  # tee keeps the output streaming while it is captured; PIPESTATUS[0] is the test's own status.
+  set +e
+  "$GODOT_BIN" --headless --path hoppys-adventure-arcade --script "res://tests/$1" 2>&1 | tee "$RUN_TEST_LOG"
+  code=${PIPESTATUS[0]}
+  set -e
+  if [[ $code -ne 0 ]]; then
+    printf 'run_test: %s exited %d\n' "$1" "$code" >&2
+    return 1
+  fi
+  if ! grep -qF "$marker" "$RUN_TEST_LOG"; then
+    printf 'run_test: %s exited 0 but never printed %s\n' "$1" "$marker" >&2
+    return 1
+  fi
+  # A test can print its PASS line and still have been degraded by engine errors along the way.
+  # grep exits 1 when it matches nothing, which is the good case here, so its status is deliberately
+  # dropped: under `set -euo pipefail` an unguarded assignment from it would abort the whole gate.
+  set +e
+  noise="$(grep -nE "$RUN_TEST_NOISE" "$RUN_TEST_LOG" | head -3)"
+  set -e
+  if [[ -n "$noise" ]]; then
+    printf 'run_test: %s printed %s but the engine reported errors:\n%s\n' "$1" "$marker" "$noise" >&2
+    return 1
+  fi
 }
 
-# Every runner test is strict: no tolerance, DIAGNOSTIC or not.
-run_test runner_logic.gd
-run_test runner_chunk_validator.gd
-run_test runner_smoke.gd
+# Every runner test is strict: no tolerance, DIAGNOSTIC or not. PR 2 is "everything above, plus",
+# so the PR 1 scaffold check runs here too and this block stands on its own.
+run_test runner_scaffold_check.gd 'RUNNER SCAFFOLD: PASS'
+run_test runner_logic.gd 'RUNNER LOGIC: PASS'
+run_test runner_chunk_validator.gd 'RUNNER CHUNKS: PASS'
+run_test runner_smoke.gd 'RUNNER SMOKE: PASS'
 ```
 
 `tests/runner_visual_smoke.gd` is frontend-owned and gates the frontend branch, not a backend-only PR: run

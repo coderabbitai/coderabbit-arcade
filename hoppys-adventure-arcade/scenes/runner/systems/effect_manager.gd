@@ -42,18 +42,22 @@ func reset(new_config: RunConfig = null) -> void:
 	nitro_ease_remaining = 0.0
 
 ## Apply a collected power-up. Timed kinds refresh rather than stack.
+## Nothing is counted, paid or announced until the kind has been recognised and actually applied: an
+## unknown kind and a timed kind with a non-positive duration both leave the run exactly as it was.
 func apply(kind: StringName) -> void:
-	power_ups_collected += 1
 	match kind:
 		SHIELD:
 			_hit_manager_call("set_shield", [true])
 		AUTO_FIX:
 			_apply_auto_fix()
 		LGTM:
-			_start_timed(LGTM, duration_for(LGTM))
+			# Guarded before anything is switched on, so a refused effect has nothing to unwind.
+			if not _start_timed_checked(LGTM):
+				return
 			_hit_manager_call("add_invuln_source", [LGTM])
 		NITRO:
-			_start_timed(NITRO, duration_for(NITRO))
+			if not _start_timed_checked(NITRO):
+				return
 			nitro_ease_remaining = 0.0
 			_set_speed_multiplier(float(config.nitro_speed_multiplier) if config != null else 1.0)
 			_score_call("set_nitro", [true])
@@ -61,14 +65,33 @@ func apply(kind: StringName) -> void:
 		SUPER_JUMP:
 			super_jump_ready = true
 		CODE_REVIEW:
+			# Not a timed kind: it is held until an unblocked hit, so duration_for() is 0.0 and there
+			# is no timer to guard.
 			code_review_held = true
 			_score_call("set_code_review", [true])
 		_:
+			# An unrecognised kind is not a pickup: no counter, no bonus, no signal.
 			push_warning("Runner effect manager: unknown power-up kind %s" % kind)
+			return
+	power_ups_collected += 1
 	# Every pickup pays the same flat bonus (contract §7).
 	_score_call("add_bonus", [pickup_bonus(), kind])
 	if game != null:
+		# Instant kinds (shield, auto_fix, super_jump, code_review) carry duration 0.0 here, which is
+		# what contract §4.1 specifies; only LGTM and Nitro report a real countdown.
 		game.power_up_collected.emit(kind, duration_for(kind))
+
+## Start a timed kind, refusing a non-positive duration. RunConfig ships 5 s / 8 s, so this is a
+## guard against a mis-edited config rather than a behaviour change: a zero or negative duration
+## would otherwise register a timer that expires on its first tick while the invulnerability source
+## and the multipliers stayed switched on.
+func _start_timed_checked(kind: StringName) -> bool:
+	var duration := duration_for(kind)
+	if duration <= 0.0:
+		push_warning("Runner effect manager: %s duration is %.2f s, not positive; the effect is not applied" % [kind, duration])
+		return false
+	_start_timed(kind, duration)
+	return true
 
 ## True once per Super Jump pickup; the player calls this when a jump starts, and owns the
 ## invulnerability source (&"super_jump") until landing + 0.5 s (contract §7).

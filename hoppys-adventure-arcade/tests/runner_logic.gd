@@ -177,6 +177,24 @@ func _test_shared_tick() -> void:
 	check(hits.state == hits.HitState.DEAD and hits.hp == 0, "3: the expiring timer cannot revive")
 	check(int(game.caught_calls) == 1, "3: the catch still ran once")
 
+	# The guarantee above rests on Godot's physics frame order — queries are flushed, and so
+	# area_entered is emitted, before any _physics_process in that frame (measured on 4.7.0: an
+	# overlap created in physics frame N arrives at the top of frame N+1). This half pins that the
+	# order is load-bearing: run the timer first and the very same hit only opens a fresh pursuit,
+	# so a change that resolves hits after the timer has to fail the checks above.
+	var reversed := _make_game()
+	var reversed_hits: Node = _systems(reversed)["hits"]
+	reversed_hits.report_hit(_hazard(&"bug_swarm"))
+	reversed_hits.iframe_remaining = 0.0
+	reversed_hits.recovery_remaining = 0.005
+	_tick([reversed_hits], 1)
+	check(reversed_hits.state == reversed_hits.HitState.SAFE and reversed_hits.hp == 2,
+		"3: with no hit delivered first, the timer alone recovers")
+	var late: StringName = reversed_hits.report_hit(_hazard(&"merge_conflict"))
+	check(late == reversed_hits.DAMAGED and reversed_hits.state == reversed_hits.HitState.PURSUED,
+		"3: a hit resolved after the deadline only restarts pursuit, got %s" % late)
+	check(int(reversed.caught_calls) == 0, "3: the reversed order never reaches the catch")
+
 # --- 4. Approve Shield ---
 
 func _test_shield() -> void:
@@ -381,9 +399,49 @@ func _test_effects() -> void:
 	check(events["hazards_blasted"].size() == 1 and int(events["hazards_blasted"][0]) == 3,
 		"7: hazards_blasted reports the count once")
 	check(effects.power_ups_collected == 7, "7: every pickup is counted")
+
+	# An unknown kind is not a pickup: it must not pay, count or announce anything. Falling through
+	# the match into the shared tail would have credited a bonus for a power-up that does not exist.
+	var unknown_score: int = score.score
+	var unknown_collected: int = effects.power_ups_collected
+	var unknown_signals: int = events["power_up_collected"].size()
+	effects.apply(&"not_a_power_up")
+	check(score.score == unknown_score, "7: an unknown kind pays no bonus, score moved to %d" % score.score)
+	check(effects.power_ups_collected == unknown_collected,
+		"7: an unknown kind is not counted, got %d" % effects.power_ups_collected)
+	check(events["power_up_collected"].size() == unknown_signals,
+		"7: an unknown kind emits no power_up_collected")
+
 	effects.reset()
 	check(effects.get_active_effects().is_empty() and not effects.has_super_jump(),
 		"7: reset clears every effect")
+
+	# A timed kind whose configured duration is not positive is refused outright: no timer, no
+	# invulnerability source, and nothing counted or announced, so a mis-edited RunConfig cannot
+	# leave LGTM permanently invulnerable behind a timer that expires on its first tick.
+	var zero_game := _make_game()
+	var zero_events := _watch(zero_game)
+	var zero_systems := _systems(zero_game)
+	var zero_effects: Node = zero_systems["effects"]
+	var zero_hits: Node = zero_systems["hits"]
+	var zero_score: Node = zero_systems["score"]
+	var zero_config: RunConfig = zero_game.config.duplicate()
+	zero_config.lgtm_duration = 0.0
+	zero_effects.reset(zero_config)
+	check(is_equal_approx(zero_effects.duration_for(&"lgtm"), 0.0),
+		"7: the duplicated config reports a zero LGTM duration")
+	zero_effects.apply(&"lgtm")
+	check(not zero_effects.is_active(&"lgtm"), "7: a zero-duration LGTM never activates")
+	check(not zero_hits.is_invulnerable(),
+		"7: a refused LGTM adds no invulnerability source")
+	check(zero_effects.power_ups_collected == 0, "7: a refused LGTM is not counted")
+	check(zero_score.score == 0, "7: a refused LGTM pays no bonus")
+	check(zero_events["power_up_collected"].is_empty(),
+		"7: a refused LGTM emits no power_up_collected")
+	# The same manager still applies a kind whose duration is fine, so the guard is not a blanket off.
+	zero_effects.apply(&"nitro")
+	check(zero_effects.is_active(&"nitro") and zero_effects.power_ups_collected == 1,
+		"7: the guard only refuses the mis-configured kind")
 
 # --- 8. Leaderboard ---
 
@@ -443,6 +501,32 @@ func _test_leaderboard() -> void:
 		"8: the successful write wins; a stale .bak is never restored over it")
 	check(not FileAccess.file_exists(stale + ".bak"),
 		"8: a successful write clears the stale .bak as well")
+
+	# Forward compatibility: a board a newer build wrote is unreadable here, and overwriting it would
+	# throw away someone's real board to store one run. It reads empty and every writer refuses.
+	var future := "user://test_leaderboard_v99_%d.cfg" % (randi() % 1000000)
+	temp_paths.append(future)
+	var future_text := "[meta]\nversion=99\n\n[leaderboard]\nentries=[]\n"
+	var future_file := FileAccess.open(future, FileAccess.WRITE)
+	check(future_file != null, "8: the future-schema fixture was written")
+	if future_file != null:
+		future_file.store_string(future_text)
+		future_file.close()
+	var future_board := RunnerLeaderboard.read_board(future)
+	check(int(future_board["version"]) == 99,
+		"8: read_board reports the on-disk schema version, got %s" % future_board["version"])
+	check(RunnerLeaderboard.load_entries(future).is_empty(),
+		"8: a newer-schema board reads as empty")
+	var refused := RunnerLeaderboard.submit(_entry("run-future", 1000), future)
+	check(int(refused["error"]) != OK,
+		"8: submit refuses a newer-schema board, got error %s" % refused["error"])
+	check(int(refused["rank"]) == 0, "8: a refused submit never reports a rank")
+	check(RunnerLeaderboard.rename("run-future", "X", future) != OK,
+		"8: rename refuses a newer-schema board too")
+	check(FileAccess.get_file_as_string(future) == future_text,
+		"8: the newer-schema board is byte-identical after the refusals")
+	check(not FileAccess.file_exists(future + ".tmp") and not FileAccess.file_exists(future + ".bak"),
+		"8: a refused write leaves no .tmp or .bak")
 
 	var stored := ConfigFile.new()
 	check(stored.load(path) == OK, "8: the board file parses")

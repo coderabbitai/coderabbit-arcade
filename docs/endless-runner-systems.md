@@ -11,8 +11,14 @@ result against it line by line. Paths are relative to `hoppys-adventure-arcade/`
 - World forward is −Z. The player stands at z = 0 and only moves in X (lanes) and Y (jump). Chunks
   (and every hazard/power-up inside them) move toward +Z at the authoritative `speed` owned by
   `SpeedController`. Distance travelled = ∫ speed dt.
-- Lane k ∈ {−1, 0, +1} is centred at x = 2k. The player's capsule radius is 0.4, so a hazard whose
-  x-extent is ±0.8 around a lane centre (per-lane width 1.6) cannot touch a player in an adjacent lane.
+- Lanes are **indices 0, 1, 2** everywhere in code and in the contract: `lane`, `target_lane`, and bit
+  *i* of every lane mask all mean lane index *i*. World X is `lane_width × (index − 1)` — −2 / 0 / +2 at
+  the default `lane_width` 2.0. Both `runner_player.gd::lane_x()` and `hazard.gd::lane_x()` are
+  `(float(index) - 1.0) * lane_width`, and `hazard.gd::lanes_mask()` sets `1 << index` for every index
+  `occupies_lane()` accepts, so bit 0 = x −2, bit 1 = x 0, bit 2 = x +2. Prose elsewhere that speaks of
+  lane k ∈ {−1, 0, +1} names the same three lanes by their world offset; index = k + 1. The player's
+  capsule radius is 0.4, so a hazard whose x-extent is ±0.8 around a lane centre (per-lane width 1.6)
+  cannot touch a player in an adjacent lane.
 - Physics 60 Hz. Jump apex 1.715 m, airtime 0.70 s. Per-tick travel at the Nitro cap (32 m/s) is
   0.53 m; the minimum hazard depth of 1.2 m plus the 0.8 m capsule footprint gives ≥ 3 overlapping
   ticks at any legal speed, so `Area3D` overlap detection cannot tunnel. `runner_logic.gd` asserts
@@ -35,8 +41,18 @@ reaction time, not timing precision, is the limiter at high speed. A jump covers
 
 Reaction budget: 0.35 s choice reaction + 0.05 s input/render latency + 0.30 s worst-case manoeuvre
 (two lane changes) = 0.70 s minimum. Heavy actions (jump, roll) occupy 0.70 s. Hence
-`t_spacing(d) = lerp(1.2, 0.85, d)` seconds front-to-front between forced actions, and the seam rule
-`prev.exit_clear + gap + next.entry_clear ≥ v × 1.02 × t_spacing(d)` (+0.15 s while PURSUED).
+`t_spacing(d) = lerp(1.2, 0.85, d)` seconds front-to-front between forced actions. The pursuit relief is
+part of that **time** term, not a distance added afterwards, so the seam rule is exactly as
+`chunk_spawner.gd::_gap_for()` implements it:
+
+```
+gap = max(0, v_eff × gap_safety × (t_spacing(d) + (t_spacing_pursued_bonus if PURSUED else 0))
+           − prev.exit_clear − next.entry_clear)
+```
+
+with `v_eff = max(game.speed, base_speed)` (never plan tighter than the base speed, so the catch
+deceleration cannot pack chunks together), `gap_safety` 1.02 and `t_spacing_pursued_bonus` 0.15 s by
+default. Equivalently: `prev.exit_clear + gap + next.entry_clear ≥ v_eff × gap_safety × t_total`.
 
 ### 1.2 Speed and difficulty curve
 
@@ -90,7 +106,7 @@ a chunk's back edge passes z = +12. Lateral follow `camera.x = lerp(camera.x, pl
 | `scenes/runner/pursuer/pursuer.gd`, `pursuer_visual_base.gd` | Node3D | Threat → z position, visual hooks |
 | `scenes/runner/chunks/chunk.gd` + 19 `chunk_*.tscn` | Node3D | Authored hazard layouts (§5) |
 | `scenes/runner/data/chunk_library.gd` + `chunk_library.tres` | Resource | `scenes: Array[PackedScene]` |
-| `tests/runner_logic.gd`, `tests/runner_chunk_validator.gd`, `tests/runner_smoke.gd` | SceneTree scripts | §8 |
+| `tests/runner_scaffold_check.gd`, `tests/runner_logic.gd`, `tests/runner_chunk_validator.gd`, `tests/runner_smoke.gd` | SceneTree scripts | §8 |
 | `app/app_router.gd`, `app/audio_service.gd` | autoloads | Contract §2 / §5.6 additions |
 | Graybox placeholders (frozen after PR 1): `scenes/runner/ui/runner_hud.tscn/.gd`, `scenes/runner/ui/pause_menu.tscn/.gd`, `scenes/runner/ui/game_over.tscn/.gd` | | Minimal `Style`-themed UI so the loop is playable |
 | `scenes/runner/runner_menu.tscn/.gd` | Node3D | Backend fallback graybox only; the frontend's F6 menu replaces it. Brought up to the contract §2 four-button set in PR 2 — `01 Play`, `02 Leaderboard` (top-10 panel from the static `runner_leaderboard.load_entries()`), `03 Return to Main Menu`, `04 Quit Game` — so `runner_scaffold_check.gd` can assert `RunnerMenu` + `buttons.size() == 4` against either scene. That is the backend's **last** edit here: once the frontend menu lands the path is exclusively frontend-owned (contract §1 rule 1) |
@@ -154,6 +170,34 @@ whose material tint changes per anim state (so graybox testers see state changes
 decrement `recovery_remaining`, emit `pursuit_progress(remaining, total)`; at ≤ 0 → SAFE, hp = max,
 `recoveries += 1`, `health_changed`, `pursuit_recovered(&"timer")`.
 
+**Same-tick ordering.** When a hazard is touched on the very tick the recovery timer expires, the damage
+must win — the runner dies rather than recovering. That holds without any queue, because of Godot's
+physics frame order: the engine flushes physics queries (which is what emits `area_entered`) **before**
+it runs any `_physics_process` in that frame. Measured on 4.7.0 with two overlapping `Area3D`s: an
+overlap created during physics frame 1 is delivered at `physics_frame == 2`, ahead of frame 2's
+`_physics_process`. So `hazard.gd::_on_area_entered` → `hit_player()` → `HitManager.report_hit()` always
+resolves before `HitManager._physics_process` decrements `recovery_remaining` in the same frame, and
+`report_hit` can stay fully synchronous. The order is deterministic (it is the engine's iteration order,
+not node order or signal-connection order), but it *is* load-bearing, so it is pinned twice:
+
+- `runner_logic.gd` §3, out of tree: a hit delivered first kills and the expiring timer cannot revive
+  it, while the reverse order only starts a fresh pursuit.
+- `runner_smoke.gd` `_same_tick_phase()`, **in tree and through the real `Area3D` flow** — nothing
+  calls `hit_player()` by hand. A dedicated `RunnerGame` (autostart off, `leaderboard_path` overridden
+  before `add_child`, spawner frozen so no other hazard can interfere) is put in PURSUED, a real
+  `hazard.tscn` is placed on the hurtbox, and the recovery timer is armed to expire on exactly the
+  frame whose query flush reports that overlap. It asserts DEAD, `caught` exactly once and no
+  `pursuit_recovered`; the converse trial, with no hazard, recovers to SAFE on that same tick.
+
+The full order inside one engine iteration is: flush physics queries (this is where `area_entered` is
+emitted) → emit `SceneTree.physics_frame` → node `_physics_process` → physics step. An
+`await physics_frame` therefore resumes *after* that frame's overlap reports and *before* that frame's
+HitManager tick, which is what lets the smoke test straddle the seam precisely. Measured on 4.7.0, a
+hazard positioned on the hurtbox is reported in the flush two frames later: the first frame carries the
+new transform to the physics server and its step finds the pair, and the signal is flushed at the top of
+the frame after that. Moving hit resolution into a `_physics_process` that runs after the timer breaks
+the guarantee and fails both checks.
+
 Ordering guarantee: Area3D overlap signals are delivered at the start of a physics tick, before any
 `_physics_process`, and `report_hit` never grants *timer* recovery (the shield exception in step 4 — a blocked hit
 while PURSUED restores SAFE/full hp, clears the timer, counts a recovery and emits `pursuit_recovered(&"shield")` —
@@ -205,13 +249,27 @@ Hazard fronts sit 2.4 m into a band (depth 1.2 → occupies +2.4..+3.6); pits at
 | 18 | `chunk_t4_laser_rhythm` | 66 | 0.70–1.00 | 2 | `. . .` / `T T T` / `. . .` / `. . .` / `. . .` / `l l l` / `. o .` / `. . .` / `. . .` / `L L L` (+`O`) / `. . .` |
 | 19 | `chunk_t4_pit_run` | 48 | 0.70–1.00 | 3 | `. . .` / `b . b` / `. . .` / `. . .` / `. . .` / `. . .` / `_ _ _` (+`O` centre) / `. . .` |
 
+The layout column reads **far end first**: the top row is the 6 m band the player reaches last and the
+bottom row the one it reaches first. That is why #19 lists `b . b` above `_ _ _` even though the pit is
+the first thing the player meets. Distances in the notes below are "m into the chunk" measured to a
+hazard's **front** edge (the larger-z edge, reached first), the same edge the spacing rules use.
+
 Note on #17: three forced actions 24 m apart — shockwave (jump) at 8.4 m, comment flood in lanes −2/0
-(lane dodge to +2) at 32.4 m, full-width high wall (roll) at 56.4 m. Note on #19: two bug swarms flank the
-centre lane 27.9 m after the pit — hold the centre or jump. Every hazard used in the catalog is one of the
-kinds/variants in contract §8; no one-lane merge or one-lane wall variant exists.
+(lane dodge to +2) at 32.4 m, full-width high wall (roll) at 56.4 m. Note on #19: the full-width pit
+comes first with its front edge 7.5 m in; the two bug swarms flank the centre lane with their front edge
+at 38.4 m, so the front-to-front distance the validator measures is **30.9 m**, just clear of the 30 m
+pit rule. (The open floor between the pit's back edge and the swarms is 27.9 m — a different measurement,
+not the one the rule uses.) Each swarm is 1.6 m wide and sits in lane −2 / lane +2, so the slice leaves
+the centre lane free: it is a lane dodge or a jump, not a full-width forced action, and the pit rule
+still applies to it because the validator measures pit → *any* next slice. Every hazard used in the
+catalog is one of the kinds/variants in contract §8; no one-lane merge or one-lane wall variant exists.
 
 Authoring rules (checked by the validator): length % 6 == 0; ≥ 6 m clear at entry and exit;
-heavy→heavy slices ≥ 24 m apart, pit→anything ≥ 30 m; passable from any entry lane; approach cost
+heavy→heavy slices ≥ 24 m apart, pit→anything ≥ 30 m — measured front-to-front like every other spacing
+rule here, i.e. from the pit's own front edge (its larger-z edge, the one the player reaches first) to the
+front of the next forced action, which is exactly what `runner_chunk_validator.gd` checks
+(`front_z = position.z + size.z / 2`, slices sorted front-first, `gap = previous.front_z - slice.front_z`
+against `PIT_SPACING`); passable from any entry lane; approach cost
 (lane changes + 1 if jump/roll) ≤ 1 for T1, ≤ 2 for T2, ≤ 3 for T3/T4; no `comment_flood` below d 0.2,
 no timed laser below 0.45; slots ≥ 6 m from hazards in their lane (`run`) or within 0.6 m of a
 JUMP-type hazard's front (`jump`).
@@ -270,17 +328,38 @@ Graybox: coloured `SphereMesh` per kind.
   `nitro` → timed 8 s, `speed_controller.multiplier = 1.25`, `score.set_nitro(true)`, invulnerability
   source `nitro` (kept 1 s into the ease-down); `super_jump` → token, consumed by the player when a
   jump starts (`power_up_expired(&"super_jump")` then); `code_review` → `score.set_code_review(true)`
-  until `on_damage_applied()`. Every pickup: `+pickup_bonus`, `power_up_collected(kind, duration)`.
+  until `on_damage_applied()`. Every pickup: `+pickup_bonus`, `power_up_collected(kind, duration)` —
+  `duration` is `duration_for(kind)`, which is 0.0 for the instant kinds (shield, auto_fix, super_jump,
+  code_review) and only a real countdown for LGTM and Nitro (contract §4.1).
   Timed effects refresh (`remaining = total`), never stack; `power_up_expired` fires once per activation.
   `get_active_effects()` snapshot.
+- **Nothing is counted, paid or announced until the kind has been recognised and applied.** Two refusals,
+  both of which leave the run exactly as it was — no `power_ups_collected` increment, no `pickup_bonus`,
+  no `power_up_collected`:
+  1. **Unknown kind** → `push_warning` naming the kind, and return. It must not fall through into the
+     shared tail; a pickup that does not exist may not pay a bonus.
+  2. **Timed kind with a non-positive `duration_for(kind)`** (LGTM, Nitro) → `push_warning` naming the
+     kind and the duration, and return *before* `_start_timed` and before the invulnerability source,
+     speed multiplier or score multiplier are switched on, so there is nothing to unwind. RunConfig
+     ships 5 s / 8 s, so this only fires on a mis-edited config; without it a zero duration would
+     register a timer that expires on its first tick while the invulnerability stayed on. `code_review`
+     is *not* timed — it is held until an unblocked hit — so its 0.0 duration is not subject to this rule.
 
 ## 7. Leaderboard (`runner_leaderboard.gd`, static)
 
 `DEFAULT_PATH "user://leaderboard.cfg"`, `SCHEMA_VERSION 1`, `MAX_ENTRIES 10`, `MAX_NAME 16`.
 `load_entries(path)`, `save_entries(entries, path)`, `submit(entry, path) -> {rank, entries, error}`,
 `rename(run_id, name, path) -> Error`, `sanitize_name(raw)`, `sort_entries(entries)`.
-Storage: section `meta/version`; section `leaderboard/entries` (Array of Dictionary). Unknown or newer
-version → treat as empty. Validate each entry on load (types, finite, non-negative). Sort: score desc,
+Storage: section `meta/version`; section `leaderboard/entries` (Array of Dictionary). Any version that is
+not `SCHEMA_VERSION` reads as an empty board. `read_board(path) -> {entries, version, error}` is the
+internal reader that also reports which case it hit (`OK`, `ERR_FILE_NOT_FOUND`, `ERR_FILE_CORRUPT`, or
+`ERR_FILE_UNRECOGNIZED` for a version mismatch); `load_entries` is `read_board(...)["entries"]`.
+**Forward compatibility:** when the file declares a version *newer* than `SCHEMA_VERSION`, `submit` and
+`rename` refuse to write — `push_warning` naming the file and both versions, `submit` returns
+`error = ERR_FILE_UNRECOGNIZED` with `rank` 0, `rename` returns the same Error — because its rows cannot
+be parsed and overwriting would replace a real board with a single run. A missing file, a corrupt file or
+an *older*/unrecognised-but-not-newer version keeps the old behaviour: read empty, then write normally.
+Validate each entry on load (types, finite, non-negative). Sort: score desc,
 duration desc, insertion `order` asc (Godot's `sort_custom` is not stable). Dedupe by `run_id`
 (replace). Sanitize: trim → drop controls (< 32, 127, and C1 controls 0x80–0x9F) → truncate to 16 → trim again → blank → `"Hoppy"`.
 Atomic write with backup. Every step checks its own error and returns it; the destination is only ever
@@ -341,9 +420,12 @@ V8 slot placement; V9 bot path simulation from 3 entry lanes × {PREFER_LANE, PR
 Also: at every difficulty 0..1 step 0.1 at least two eligible chunks exist.
 
 **`tests/runner_smoke.gd`**: accelerated 6× with `Engine.time_scale = 6.0` **and** `Engine.physics_ticks_per_second = 360`
-(both restored at the end) — on Godot 4.7 `time_scale` alone multiplies the physics delta instead of adding
+— on Godot 4.7 `time_scale` alone multiplies the physics delta instead of adding
 ticks, which would break the 0.10 s jump buffer and let hazards tunnel; raising the tick rate keeps each tick at
-1/60 s of game time. `Engine.max_physics_steps_per_frame = 32`;
+1/60 s of game time. `Engine.max_physics_steps_per_frame = 32`. All three globals are captured before they
+are changed and restored in `_report()`, which every exit path goes through — the early returns for a missing
+or unloadable scene as well as a completed run — so a failing smoke test never leaks an accelerated engine
+into whatever runs next;
 instantiate `runner_game.tscn` with `autostart = false`, `config` duplicate with `time_to_max_speed = 20`;
 `start_run(12345)`; `set_autopilot(true)`; after 45 s game-time assert hp 2, `hits_taken == 0`, speed ≈
 max, active chunks ≤ 9, score > 0, ≥ 1 power-up collected (print seed + chunk log on failure). Then

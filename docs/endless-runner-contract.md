@@ -286,7 +286,7 @@ Actions: `move_left` (A, ←, D-pad ←, left stick −X), `move_right` (D, →,
 | Health | `max_hp 2`, `recovery_seconds 18`, `hit_iframes 0.8`, `caught_sequence_seconds 1.6` |
 | Score | `base_score_rate 10` pts/s × (Nitro ×2) × (Code Review ×1.5); `pickup_bonus 25`; `blast_bonus_per_hazard 10`; fractional accumulator, integer display |
 | Effects | `lgtm_duration 5`, `nitro_duration 8` (+1 s ease-down with i-frames), Super Jump invulnerable in flight + 0.5 s, Code Review Bonus lost on unblocked hit only, refresh-not-stack |
-| Spawner | `spawn_horizon_z −90`, `despawn_z 12`, `max_active_chunks 9`, `t_spacing(d) = lerp(1.2, 0.85, d)` (+0.15 s while pursued), `gap = max(0, v × 1.02 × t_spacing − prev.exit_clear − next.entry_clear)`, `min_hazard_depth 1.2` (pits 3.0), `blast_range_z 60`, 50 % chunk X-mirroring, no immediate repeats |
+| Spawner | `spawn_horizon_z −90`, `despawn_z 12`, `max_active_chunks 9`, `t_spacing(d) = lerp(1.2, 0.85, d)`, `gap = max(0, v × 1.02 × (t_spacing(d) + 0.15 if pursued else 0) − prev.exit_clear − next.entry_clear)` — the pursuit relief is inside the time term, not distance added after it; `v` is `max(speed, base_speed)`, `min_hazard_depth 1.2` (pits 3.0), `blast_range_z 60`, 50 % chunk X-mirroring, no immediate repeats |
 | Power-ups | chance per chunk `lerp(0.55, 0.35, d)`; cooldown 10 s + one chunk; weights shield 25, code_review 25, super_jump 15, nitro 15, auto_fix 10, lgtm 10; no same-kind repeat; sphere r 0.35 at y 1.0 (run) or 2.2 (jump) |
 | Camera | position (0, 4, 8), look at (0, 1, −8), `fov 60`, lateral follow 0.4, follows in `_physics_process` |
 | Pursuer | `retreat_z 12`, `approach_z 4.5`; threat = 0.7 · min(t_since_hit / 1.5, 1) + 0.3 · (1 − remaining / total) |
@@ -333,6 +333,6 @@ mouse-hover failures on a clean `main`; the docs validated it on 4.7.1. New runn
 ## 10. Change log
 
 - 1.0 (2026-09-19): initial contract reconciled from the backend, procgen/tuning and frontend design passes.
-- 1.3 (2026-09-19): §4.3 — `result.leaderboard_error:int` added; a failed leaderboard write keeps `rank` 0 / `qualifies` false and emits no `leaderboard_saved`.
+- 1.3 (2026-09-19): §4.3 — `result.leaderboard_error:int` added; a failed leaderboard write keeps `rank` 0 / `qualifies` false and emits no `leaderboard_saved`. A board whose `meta/version` is newer than the supported schema is one such failure: it reads as empty and `submit`/`rename` refuse to overwrite it, returning `ERR_FILE_UNRECOGNIZED`.
 - 1.2 (2026-09-19): §5.2 — ground-projection quads exempt from the 110 % rule on y; per-hazard draw-call budget stated.
 - 1.1 (2026-09-19): engine version policy (4.7.1 pin, 4.7.0 validation); AppRouter rule scoped to in-game overlays; routes wording clarified; leaderboard writes are atomic through a `.tmp` and a temporary `.bak` that is removed once the new board is in place, so a successful write leaves neither behind (a `.bak` survives only a crash mid-write, and `load_entries` falls back to it); Nitro cap arithmetic and viewport-scale restore semantics clarified; return-type rule generalised; mount resources validated as `PackedScene`; timed laser cycle spelled out.

@@ -66,7 +66,12 @@ func run() -> void:
 		router.go("hub")
 		await wait(0.65)
 		check(current_scene.name == "MainMenu", "Mode route returns")
-	check(root.get_node("AudioService").get_child_count() == 2, "Music and SFX players do not accumulate")
+	# Nullable, like runner_smoke.gd: a missing autoload is a failed check with a clear message, not
+	# a crash. Still exactly one check, so the documented 4.7.0 baseline count is unchanged.
+	var audio := root.get_node_or_null("AudioService")
+	check(audio != null and audio.get_child_count() == 2,
+		"AudioService has %d children, expected Music and SFX only (-1 = autoload missing)"
+			% (audio.get_child_count() if audio != null else -1))
 	# Exercise actual Godot input dispatch, not just controller methods.
 	var down := InputEventKey.new()
 	down.keycode = KEY_DOWN
@@ -116,6 +121,10 @@ func run() -> void:
 		root.get_texture().get_image().save_png("/tmp/hoppy-main-menu-tall.png")
 	await process_frame
 	print("MENU SMOKE: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
-	root.get_node("AudioService").shutdown()
+	# The verdict is already printed; a missing or renamed autoload must not stop quit(failures)
+	# from running, or the process hangs instead of reporting.
+	var shutdown_audio := root.get_node_or_null("AudioService")
+	if shutdown_audio != null and shutdown_audio.has_method("shutdown"):
+		shutdown_audio.shutdown()
 	await wait(0.3)
 	quit(failures)
