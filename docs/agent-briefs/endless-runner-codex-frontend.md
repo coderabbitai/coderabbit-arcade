@@ -94,7 +94,7 @@ contract hitbox on every axis. Code motifs via `Label3D` (monospace `SystemFont`
 `font()`), cached in `static var` dictionaries.
 
 Retro look: `corridor.gd` sets `get_viewport().scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR` and
-`scaling_3d_scale = 0.5` (export) in `_ready`, restores 1.0 in `_exit_tree`. Verify in F0 that
+`scaling_3d_scale = 0.5` (export) in `_ready`, and in `_exit_tree` restores the value it replaced (track ownership; two corridors can coexist briefly). Verify in F0 that
 Compatibility honours it.
 
 Zero-download toolkit: `BoxMesh`, `CapsuleMesh`, `CylinderMesh`, `SphereMesh`, `TorusMesh`, `PlaneMesh`,
@@ -211,7 +211,7 @@ normalized > 0.6), `Dust` (60). `visibility_aabb` covers z −96..+12 on all par
 calls for the environment, 3 lights, no shadows. Dev scene `environment/dev/corridor_preview.tscn` with a
 camera at the contract offset and keys 1–5 for speed.
 
-### 4.6 `scenes/runner/ui/runner_hud.tscn` + `.gd` (root `RunnerHud`, CanvasLayer 5) — `bind(game)`
+### 4.6 `scenes/runner/ui/runner_hud.tscn` + `.gd` (root `RunnerHud`, CanvasLayer 10 — matches the contract's HUD mount) — `bind(game)`
 
 Full-rect `Screen` Control (`mouse_filter IGNORE`, `Style.theme()`), anchored layout (viewport is
 1280×720 with `expand` aspect; use anchors and 28 px margins, not fixed offsets):

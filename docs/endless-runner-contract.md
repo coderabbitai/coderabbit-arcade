@@ -39,7 +39,8 @@ Rules:
 3. All backend → frontend calls are guarded with `has_method`. The frontend never needs to implement
    a hook it does not use.
 4. Code style for both sides (matches the repo): `snake_case` files, **no `class_name`**,
-   `const X = preload("res://...")`, typed GDScript with `:=`, tabs, explicit `-> void`, UI built
+   `const X = preload("res://...")`, typed GDScript with `:=`, tabs, an explicit return type on every
+   function (`-> void` for procedures), UI built
    imperatively in `_ready()` using `scenes/main_menu/menu_style.gd` (`Style.theme()`, `Style.label()`,
    `Style.button()`). Commit generated `.gd.uid` files. Never mutate shared `.tres` resources at runtime.
 
@@ -218,7 +219,8 @@ at y = 0 between the camera and the player: z = lerp(12, 4.5, threat). Keep the 
 `set_scroll_speed(speed: float)` every physics tick (m/s); optional `set_pursuit(t: float)` (0–1).
 Visual floor top at y = 0, lanes at x = −2, 0, +2, corridor ≈ 8 m wide, visible depth to z ≈ −90.
 The physical floor is backend-owned and invisible once a corridor mounts. The corridor may set
-`get_viewport().scaling_3d_scale` for a retro look and must restore it to 1.0 in `_exit_tree`.
+`get_viewport().scaling_3d_scale` for a retro look; in `_exit_tree` it must restore the value it replaced
+(two corridors can coexist briefly, e.g. menu backdrop and game, so track ownership rather than resetting to 1.0).
 
 ### 5.6 UI and audio — `bind(game: Node)`
 
@@ -258,7 +260,7 @@ Actions: `move_left` (A, ←, D-pad ←, left stick −X), `move_right` (D, →,
 |---|---|
 | Lanes / body | `lane_width 2.0`, `lane_change_time 0.13`, capsule r 0.4, standing 1.8 m, rolling 0.9 m |
 | Jump / roll | `gravity 28`, `jump_velocity 9.8` (apex 1.715 m, airtime 0.70 s), `super_jump_velocity 13.2` (apex 3.11 m), `jump_buffer 0.10`, `coyote_time 0.06`, `roll_duration 0.70`, `roll_cooldown 0.25`, fast-fall gravity ×2.5 |
-| Speed | `base_speed 12`, `max_speed 24` at `time_to_max_speed 165` (smoothstep), then +1 m/s per 60 s to `hard_cap 26`; `nitro_speed_multiplier 1.25` (≤ 32) |
+| Speed | `base_speed 12`, `max_speed 24` at `time_to_max_speed 165` (smoothstep), then +1 m/s per 60 s to `hard_cap 26`; `nitro_speed_multiplier 1.25` applied after the curve and then clamped: `speed = min(curve_speed × 1.25, nitro_speed_cap 32)` |
 | Health | `max_hp 2`, `recovery_seconds 18`, `hit_iframes 0.8`, `caught_sequence_seconds 1.6` |
 | Score | `base_score_rate 10` pts/s × (Nitro ×2) × (Code Review ×1.5); `pickup_bonus 25`; `blast_bonus_per_hazard 10`; fractional accumulator, integer display |
 | Effects | `lgtm_duration 5`, `nitro_duration 8` (+1 s ease-down with i-frames), Super Jump invulnerable in flight + 0.5 s, Code Review Bonus lost on unblocked hit only, refresh-not-stack |
@@ -309,4 +311,4 @@ mouse-hover failures on a clean `main`; the docs validated it on 4.7.1. New runn
 ## 10. Change log
 
 - 1.0 (2026-09-19): initial contract reconciled from the backend, procgen/tuning and frontend design passes.
-- 1.1 (2026-09-19): engine version policy (4.7.1 pin, 4.7.0 validation); AppRouter rule scoped to in-game overlays; routes wording clarified; leaderboard writes keep a `.bak`.
+- 1.1 (2026-09-19): engine version policy (4.7.1 pin, 4.7.0 validation); AppRouter rule scoped to in-game overlays; routes wording clarified; leaderboard writes keep a `.bak`; Nitro cap arithmetic and viewport-scale restore semantics clarified; return-type rule generalised.

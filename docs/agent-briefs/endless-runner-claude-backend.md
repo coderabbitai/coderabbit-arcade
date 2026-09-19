@@ -14,7 +14,7 @@ contract. Read these first, in order:
 
 - Godot project root is `hoppys-adventure-arcade/`. Editor binary: `/Applications/Godot.app/Contents/MacOS/Godot`.
 - Style: `snake_case` files, **no `class_name`**, `const X = preload(...)`, typed GDScript with `:=`,
-  tabs, `-> void` on every func, UI built in `_ready()` with `Style.theme()/label()/button()`. Commit `.gd.uid` files.
+  tabs, an explicit return type on every func (`-> void` for procedures), UI built in `_ready()` with `Style.theme()/label()/button()`. Commit `.gd.uid` files.
 - You own only the backend paths listed in the contract §1. Never create or edit frontend-owned files
   except the four graybox placeholders in the contract PR (`runner_menu`, `ui/runner_hud`, `ui/pause_menu`,
   `ui/game_over`), and never touch them again afterwards.
