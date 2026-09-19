@@ -41,25 +41,47 @@ static func sort_entries(entries: Array) -> Array[Dictionary]:
 		return int(a["order"]) < int(b["order"]))
 	return ordered
 
-static func load_entries(path := DEFAULT_PATH) -> Array[Dictionary]:
+## The board on disk plus the schema it declares: `{entries: Array[Dictionary], version: int,
+## error: Error}`. `entries` is empty unless `error` is OK, so a caller that only wants rows can
+## ignore the rest; the writers use `version`/`error` to tell "nothing readable here, go ahead and
+## write" apart from "a newer build owns this file, do not touch it".
+static func read_board(path := DEFAULT_PATH) -> Dictionary:
+	var empty: Array[Dictionary] = []
 	var source := path
 	# A crash between save_entries' two renames leaves only the backup; it is the last good board.
 	if not FileAccess.file_exists(source) and FileAccess.file_exists(path + ".bak"):
 		source = path + ".bak"
+	if not FileAccess.file_exists(source):
+		return {"entries": empty, "version": 0, "error": ERR_FILE_NOT_FOUND}
 	var config := ConfigFile.new()
 	if config.load(source) != OK:
-		return []
-	if int(config.get_value("meta", "version", 0)) != SCHEMA_VERSION:
-		return []
+		return {"entries": empty, "version": 0, "error": ERR_FILE_CORRUPT}
+	var version := int(config.get_value("meta", "version", 0))
+	if version != SCHEMA_VERSION:
+		return {"entries": empty, "version": version, "error": ERR_FILE_UNRECOGNIZED}
 	var raw: Variant = config.get_value("leaderboard", "entries", [])
 	if not (raw is Array):
-		return []
+		return {"entries": empty, "version": version, "error": ERR_FILE_CORRUPT}
 	var valid: Array[Dictionary] = []
 	for item in (raw as Array):
 		var entry := _validate(item)
 		if not entry.is_empty():
 			valid.append(entry)
-	return sort_entries(valid)
+	return {"entries": sort_entries(valid), "version": version, "error": OK}
+
+static func load_entries(path := DEFAULT_PATH) -> Array[Dictionary]:
+	var entries: Array[Dictionary] = read_board(path)["entries"]
+	return entries
+
+## True when the file was written by a build with a newer schema. Its rows cannot be parsed, so the
+## writers must leave it alone: overwriting would silently replace a real board with one run. An
+## older or unrecognised-but-not-newer version keeps the old behaviour (read empty, overwrite).
+static func _is_newer_schema(board: Dictionary, path: String) -> bool:
+	var version := int(board["version"])
+	if int(board["error"]) != ERR_FILE_UNRECOGNIZED or version <= SCHEMA_VERSION:
+		return false
+	push_warning("Runner leaderboard: %s declares schema version %d, newer than the supported %d; leaving it untouched" % [path, version, SCHEMA_VERSION])
+	return true
 
 ## Write through a .tmp and a .bak (systems spec §7): save the new board beside the destination,
 ## move the destination aside, move the new board into place, then drop the backup. Any failure
@@ -108,10 +130,14 @@ static func save_entries(entries: Array, path := DEFAULT_PATH) -> Error:
 ## Insert or replace by run_id and keep the top 10. Returns {rank, entries, error};
 ## rank is 1-10, or 0 when the run did not place.
 static func submit(entry: Dictionary, path := DEFAULT_PATH) -> Dictionary:
+	var board := read_board(path)
+	var entries: Array[Dictionary] = board["entries"]
 	var candidate := _validate(entry)
 	if candidate.is_empty():
-		return {"rank": 0, "entries": load_entries(path), "error": ERR_INVALID_DATA}
-	var entries := load_entries(path)
+		return {"rank": 0, "entries": entries, "error": ERR_INVALID_DATA}
+	if _is_newer_schema(board, path):
+		# Contract §4.3: a non-OK error keeps rank 0 / qualifies false and emits no leaderboard_saved.
+		return {"rank": 0, "entries": entries, "error": ERR_FILE_UNRECOGNIZED}
 	var order := 0
 	var kept: Array[Dictionary] = []
 	for existing in entries:
@@ -133,7 +159,12 @@ static func submit(entry: Dictionary, path := DEFAULT_PATH) -> Dictionary:
 
 ## Rename an existing run without adding a second entry.
 static func rename(run_id: String, name: String, path := DEFAULT_PATH) -> Error:
-	var entries := load_entries(path)
+	var board := read_board(path)
+	# Same rule as submit(): a newer board is reported, never rewritten. Without this the rename
+	# would find no run in the empty read, and the ERR_DOES_NOT_EXIST would hide the real reason.
+	if _is_newer_schema(board, path):
+		return ERR_FILE_UNRECOGNIZED
+	var entries: Array[Dictionary] = board["entries"]
 	var clean := sanitize_name(name)
 	var found := false
 	for entry in entries:

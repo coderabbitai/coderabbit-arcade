@@ -36,6 +36,7 @@ var game: Node3D
 var events := {}
 var restore_steps := 8
 var restore_ticks := 60
+var restore_scale := 1.0
 ## Throwaway board for this run, deleted in _report(): a smoke run must never write entries to the
 ## player's real user://leaderboard.cfg.
 var leaderboard_path := "user://smoke_leaderboard_%d.cfg" % (randi() % 1000000)
@@ -51,8 +52,11 @@ func check(condition: bool, message: String) -> void:
 		_dump_run()
 
 func run() -> void:
+	# All three are captured before they are touched and put back in _report(), which every exit
+	# path — including the early returns below and any failing check — goes through.
 	restore_steps = Engine.max_physics_steps_per_frame
 	restore_ticks = Engine.physics_ticks_per_second
+	restore_scale = Engine.time_scale
 	Engine.time_scale = TIME_SCALE
 	Engine.max_physics_steps_per_frame = 32
 	Engine.physics_ticks_per_second = PHYSICS_TICKS
@@ -91,6 +95,10 @@ func run() -> void:
 	game.free()
 	game = null
 	await process_frame
+	# After the main game is freed and before routing builds another one: the probe below needs to be
+	# the only RunnerGame in the tree, because Area3D overlaps are resolved in one shared physics
+	# world and a second game's chunks sit on the same coordinates.
+	await _same_tick_phase()
 	await _routing_phase()
 	await _report()
 
@@ -269,6 +277,92 @@ func _leaderboard_phase() -> void:
 	check(String(again.get("name", "")) == "Test", "the entry is named %s" % again.get("name", ""))
 
 ## Route in and out of the runner twice and land on the hub with nothing left behind.
+## Systems spec §4 "Same-tick ordering", proven through the real Area3D path: nothing here calls
+## hit_player() by hand, the hazard's own `area_entered` does it. Godot flushes physics queries — and
+## so emits `area_entered` — before any `_physics_process` in the same frame, so a hazard that starts
+## overlapping the hurtbox on the frame the recovery timer would expire must kill the runner rather
+## than let it recover.
+func _same_tick_phase() -> void:
+	var packed := load(GAME_PATH) as PackedScene
+	check(packed != null, "same-tick: runner_game.tscn failed to load")
+	if packed == null:
+		return
+	await _same_tick_case(packed, true)
+	await _same_tick_case(packed, false)
+
+## One trial. `lethal` drops a real hazard on the hurtbox; the converse leaves the corridor empty so
+## the identical timer tick recovers instead, which is what makes the lethal result mean something.
+##
+## Frame budget, measured on 4.7.0: a hazard positioned on the hurtbox is reported exactly two
+## physics frames later — the first frame carries the new transform to the physics server and its
+## step finds the pair, and the signal is flushed at the top of the frame after that. So the timer is
+## armed after the first of those two frames, which puts its deadline in the very frame that reports
+## the overlap; the engine's flush-before-process order is then the only thing deciding the outcome.
+func _same_tick_case(packed: PackedScene, lethal: bool) -> void:
+	var tag := "same-tick lethal" if lethal else "same-tick converse"
+	var probe := packed.instantiate() as Node3D
+	probe.autostart = false
+	# Before add_child, like every other RunnerGame in the suite: _ready() honours autostart, and a
+	# probe must never reach the player's real board.
+	probe.leaderboard_path = leaderboard_path
+	root.add_child(probe)
+	await process_frame
+	# No corridor traffic: the only hazard allowed to touch the player is the one placed below.
+	probe.spawner.set_physics_process(false)
+	probe.state = &"running"
+	var hits: Node = probe.hit_manager
+	hits.state = hits.HitState.PURSUED
+	hits.hp = 1
+	hits.iframe_remaining = 0.0
+	hits.recovery_remaining = 999.0
+	var seen := {"caught": 0, "recovered": 0}
+	probe.caught.connect(func() -> void: seen["caught"] += 1)
+	probe.pursuit_recovered.connect(func(_reason: StringName) -> void: seen["recovered"] += 1)
+
+	var hazard: Area3D = null
+	if lethal:
+		hazard = (load("res://scenes/runner/hazards/hazard.tscn") as PackedScene).instantiate()
+		hazard.kind = &"pr_backlog_low"
+		probe.get_node("World/Chunks").add_child(hazard)
+		hazard.setup(probe)
+		hazard.global_position = probe.player.global_position
+		check(hazard.get_world_aabb().intersects(probe.player.get_hurtbox_aabb()),
+			"%s: the hazard was not placed on the hurtbox" % tag)
+
+	# One engine iteration runs: flush physics queries (this is where `area_entered` is emitted) ->
+	# emit `physics_frame` (where an `await` resumes) -> node `_physics_process` -> physics step. So
+	# an `await physics_frame` resumes after that frame's overlap reports and before that frame's
+	# HitManager tick, which is exactly the seam this check is about.
+	var tick := (1.0 / float(Engine.physics_ticks_per_second)) * float(Engine.time_scale)
+	await physics_frame
+	# Two ticks left, armed one frame early: frame A's tick takes it to one tick, and frame B — the
+	# frame whose flush delivers the overlap, measured below — is where it would reach zero.
+	hits.recovery_remaining = 2.0 * tick
+	await physics_frame
+	# Resumed at the top of frame B: the hit has already been reported, frame B's HitManager tick has
+	# not run yet. One more frame so that tick — the deadline tick — is behind us before asserting.
+	if lethal:
+		check(hazard.consumed,
+			"%s: the overlap was not reported on the frame the deadline falls on" % tag)
+	await physics_frame
+
+	if lethal:
+		check(hits.state == hits.HitState.DEAD,
+			"%s: the hit must win the shared frame, got state %d" % [tag, hits.state])
+		check(int(seen["caught"]) == 1,
+			"%s: caught fired %d times, expected exactly 1" % [tag, seen["caught"]])
+		check(int(seen["recovered"]) == 0,
+			"%s: pursuit_recovered must not fire, got %d" % [tag, seen["recovered"]])
+	else:
+		check(hits.state == hits.HitState.SAFE,
+			"%s: the same timer tick must recover with no hazard, got state %d" % [tag, hits.state])
+		check(int(seen["recovered"]) == 1,
+			"%s: pursuit_recovered fired %d times, expected exactly 1" % [tag, seen["recovered"]])
+		check(int(seen["caught"]) == 0,
+			"%s: nothing may be caught here, got %d" % [tag, seen["caught"]])
+	probe.free()
+	await process_frame
+
 func _routing_phase() -> void:
 	var router := root.get_node_or_null("AppRouter")
 	check(router != null, "AppRouter is missing")
@@ -426,7 +520,7 @@ func _clean_leaderboard() -> void:
 			DirAccess.remove_absolute(leaderboard_path + suffix)
 
 func _report() -> void:
-	Engine.time_scale = 1.0
+	Engine.time_scale = restore_scale
 	Engine.max_physics_steps_per_frame = restore_steps
 	Engine.physics_ticks_per_second = restore_ticks
 	if game != null and is_instance_valid(game):

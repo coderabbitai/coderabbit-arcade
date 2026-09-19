@@ -337,6 +337,11 @@ func _report() -> void:
 		if FileAccess.file_exists(leaderboard_path + suffix):
 			DirAccess.remove_absolute(leaderboard_path + suffix)
 	print("RUNNER SCAFFOLD: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures / ", checks, " checks)")
-	root.get_node("AudioService").shutdown()
+	# Nullable, like runner_smoke.gd: a missing or renamed autoload is a project problem this test
+	# should report through `failures`, not crash on during teardown — the verdict is already
+	# printed, and quit(failures) still has to run.
+	var audio := root.get_node_or_null("AudioService")
+	if audio != null and audio.has_method("shutdown"):
+		audio.shutdown()
 	await wait(0.3)
 	quit(failures)
