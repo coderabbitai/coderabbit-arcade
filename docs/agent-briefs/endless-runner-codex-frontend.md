@@ -146,8 +146,8 @@ Primitive rabbit (≈ 22 meshes, 5 shared materials) under a `Root` pivot at the
 `ORANGE` glow pushed up on the forehead, `EarL/R` pivots with CapsuleMesh r 0.07 h 0.58 + pink inner),
 `ArmL/R` and `LegL/R` pivots with capsules and feet boxes, `Tail` sphere. Extra: `Aura` sphere r 0.95
 (hologram shader, hidden), `ShieldRing` torus at the feet (hidden), `HitSparks` one-shot particles,
-`AuraSparkles`, `AnimationPlayer`. Build all animations in code (`Animation.TYPE_VALUE` tracks, linear,
-step 1/30, `playback_default_blend_time 0.08`): `idle` 1.6 s loop (breathe, ear twitch), `run` 0.5 s loop
+`AuraSparkles`, `AnimationPlayer`. Build all animations in code (`Animation.TYPE_VALUE` tracks for properties, linear, step 1/30,
+`playback_default_blend_time 0.08`; the `hurt` clip's `flash()` calls use an `Animation.TYPE_METHOD` track): `idle` 1.6 s loop (breathe, ear twitch), `run` 0.5 s loop
 (two bobs, leg/arm swing, ears flap back, head lean), `jump` 0.35 s hold (stretch then settle, limbs tuck),
 `fall` 0.6 s loop (flail, ears up), `roll` 0.5 s (forward somersault about X on `Root`, `Root.scale.y`
 0.55 so it fits 0.9 m; key rotation back to 0 at the end), `hurt` 0.45 s (knock-back lean, ear splay,
@@ -202,9 +202,11 @@ label flicker rise with t, `Glitch.amount_ratio = t`, hidden when t ≈ 0 after 
 
 ### 4.5 `scenes/runner/environment/corridor.tscn` + `.gd` (root `Corridor`, Node3D)
 
-`set_scroll_speed(speed)` accumulates `_offset` in `_process` and writes it to the floor / ceiling / wall
-shader `scroll` uniforms; recycled `Pillars` (MultiMesh, 12 per side every 8 m, wrap at z > +8) advance
-by the same speed; rain gets a +Z drift proportional to speed. Optional `set_pursuit(t)`: fog and sun tint
+`set_scroll_speed(speed)` stores metres per second; `_process(delta)` integrates `_offset += speed * delta`
+and writes it to the floor / ceiling / wall shader `scroll` uniforms, and moves the recycled `Pillars`
+(MultiMesh, 12 per side every 8 m, wrap at z > +8) by the same `speed * delta`, so motion is frame-rate
+independent. Rain is different: it is a `GPUParticles3D` with `fixed_fps 30`, so give it a +Z particle
+velocity proportional to speed (m/s) via its process material and never multiply it by `delta` yourself. Optional `set_pursuit(t)`: fog and sun tint
 toward red. Nodes: `Env` WorldEnvironment (BG colour `NAVY_BG`, ambient `142735` ×1.2, filmic tonemap,
 glow enabled intensity 0.9 bloom 0.12 hdr_threshold 0.75, depth fog `NAVY_BG` begin 22 end 88, saturation
 1.15), `Sun` DirectionalLight3D (`MATRIX`, 0.35, no shadows), `KeyLight` OmniLight3D near the player
@@ -224,11 +226,11 @@ top-left `HpRow` two `HpPip` controls (hex outline + check, `MINT` filled / `SLA
 + `APPROVALS` caption, `PowerUps` chip column (name + 90×6 progress bar counting `duration → 0` from a
 local timer; shield chip has no bar); top-centre `Time` `mm:ss.d` from `game.elapsed` and
 `PursuitWarning` (arc ring counting `remaining/total`, text `UNREVIEWED BACKLOG · 18.0`, pulsing `ROSE`,
-rate rising as remaining → 0); top-right `Score` `%08d` with count-up tween and `Multiplier` `×2.0`
+rate rising as remaining → 0; shown on `pursuit_started`, hidden on `pursuit_recovered` and on `caught`); top-right `Score` `%08d` with count-up tween and `Multiplier` `×2.0`
 (`MINT`, `ORANGE` during nitro); bottom-right `Speed` bar + `SPEED 14.2 m/s`; centre `Toast` queue
 (`RECOVERED +2 APPROVALS`, `BLOCKED`, `AUTO-FIX ×3`, `SHIELD READY`), `NitroBanner` `NITRO COMMIT!`,
 `GetReady` with controls legend until `running`; overlays `Vignette` ColorRect (`vignette.gdshader`,
-strength 0 → 0.85 while pursued, 1.0 on `caught`, scanlines 0.06 always) and `HitFlash` (white 0.55 → 0 in
+strength 0 → 0.85 while pursued, back to 0 on `pursuit_recovered`, 1.0 on `caught`, scanlines 0.06 always) and `HitFlash` (white 0.55 → 0 in
 0.18 s on `damage_taken`, `MINT` 0.3 on `damage_blocked`). On `damage_taken` also
 `game.camera_rig.shake(0.7)`. Hide gameplay widgets on `caught`; dim on pause.
 
@@ -262,11 +264,16 @@ built from sine/square/saw/noise with attack-decay envelopes, following `audio_s
 Triggers: `player_action` → jump/land/roll/lane; `power_up_collected` → powerup (+ kind sting);
 `damage_blocked` → shield_block; `damage_taken` → hit + `AudioService.duck_music(-6, 0.4)` +
 `hit_stop` is backend-owned (do not call unless you want it); `pursuit_started` → alarm + drone fade in;
-`pursuit_progress` → heartbeat when `remaining/total < 0.35`; `pursuit_recovered` → retreat + chime, drone
+`pursuit_progress` → start the `Heartbeat` loop **once** when `remaining/total` first drops below 0.35 (keep
+an explicit `_heartbeat_on` flag; reset it on `pursuit_started`; stop the loop on `pursuit_recovered`, `caught`
+and `run_finished`); `pursuit_recovered` → retreat + chime, drone
 out; `caught` → boom, drone out; `run_finished` → game_over sting. BGM: load
 `res://Assets/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg` (CC0 per the package licence PDF;
 record the composer caveat in `LICENSES.md`), `loop = true`, `AudioService.play_music(stream, -12.0)` from
-both `runner_menu.gd` and `bind()`; pitch `1.0 + 0.10 × normalized (+0.05 nitro)` via
+both `runner_menu.gd` and `bind()`. `play_music`, `play_default_music`, `set_music_pitch` and `duck_music`
+are added to `app/audio_service.gd` by the backend's contract PR (PR 1); merge `endless-runner` after that PR
+lands before starting F5, and guard every call with `AudioService.has_method(...)` so the frontend never
+breaks if it runs against an older `app/`; pitch `1.0 + 0.10 × normalized (+0.05 nitro)` via
 `AudioService.set_music_pitch`, smoothed. Menus reuse `AudioService.play_ui(0/1)`.
 
 ### 4.10 `scenes/runner/runner_menu.tscn` + `.gd` (root **`RunnerMenu`**, Node3D)
@@ -307,7 +314,7 @@ Screenshots to `docs/previews/endless-runner-{spike,corridor,gallery,hud,gameove
 | F3 | 8 hazard + 6 power-up visuals, `pursuer_visual`, `dev/hazard_gallery.tscn` | every visual ≤ 110 % of its hitbox; hooks idempotent after two `on_spawned()`; telegraphs readable |
 | F4 | HUD, pause, game over, `mock_runner_game.gd`, `hud_preview.tscn` | whole demo works from the mock with keyboard and simulated gamepad; anchors hold at 1440×900 and 1000×720 |
 | F5 | `sfx_synth.gd`, `runner_audio.tscn/gd` | every trigger audible in the mock; ≤ 10 voices; pitch ramp audible |
-| F6 | `runner_menu.tscn/gd`, `tests/runner_visual_smoke.gd`, `docs/endless-runner.md`, previews | full loop with the backend: hub → menu → play → hit → pursuit → recovery → caught → game over → save → retry → menu → hub |
+| F6 | `runner_menu.tscn/gd`, `tests/runner_visual_smoke.gd`, `docs/endless-runner.md`, previews | full loop with the backend: hub → menu → play → hit → pursuit → 18 s clean recovery → hit (new pursuit) → second hit during pursuit → caught → game over → save → retry → menu → hub |
 
 Check commands (repo root):
 
