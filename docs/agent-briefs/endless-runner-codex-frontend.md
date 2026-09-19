@@ -61,7 +61,7 @@ Corridor" preview — reuse that look), `app/audio_service.gd`, `app/app_router.
   spatial and canvas `.gdshader`, `Viewport.scaling_3d_scale`. Not supported: SDFGI, volumetric fog,
   SSR, SSAO, decals, DOF. Max 8 lights per mesh; use at most 3 lights in the whole scene; no shadows.
 - Code style: `snake_case` files, **no `class_name`**, `const Style = preload("res://scenes/main_menu/menu_style.gd")`,
-  typed GDScript with `:=`, tabs, `-> void`, UI built imperatively in `_ready()` with `Style.theme()`,
+  typed GDScript with `:=`, tabs, an explicit return type on every function (`-> void` for procedures), UI built imperatively in `_ready()` with `Style.theme()`,
   `Style.label()`, `Style.button()`. Scenes stay tiny (root + script + a few instanced children). Commit
   `.gd.uid` files (run `--import` once after adding scripts).
 - Ownership (yours): `scenes/runner/runner_menu.{tscn,gd}`, `scenes/runner/environment/**`,
