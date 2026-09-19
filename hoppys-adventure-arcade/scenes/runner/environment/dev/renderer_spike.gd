@@ -96,9 +96,11 @@ func _process(delta: float) -> void:
 	_wall.set_shader_parameter("clock", _clock)
 
 func _unhandled_key_input(event: InputEvent) -> void:
-	if not event.is_pressed() or event.is_echo():
+	var key := event as InputEventKey
+	if key == null: return
+	if not key.pressed or key.echo:
 		return
-	match event.physical_keycode:
+	match key.physical_keycode:
 		KEY_G: _environment.glow_enabled = not _environment.glow_enabled
 		KEY_F: _environment.fog_enabled = not _environment.fog_enabled
 		KEY_R: _viewport.scaling_3d_scale = 1.0 if _viewport.scaling_3d_scale < 1.0 else 0.5

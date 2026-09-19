@@ -1,5 +1,5 @@
 extends SceneTree
-## Run non-headless from the repository root. Captures F0/F1/F2 fixtures.
+## Run non-headless from the repository root. Captures F0/F1/F2/F3 hazard fixtures.
 var failures := 0
 
 func _initialize() -> void:
@@ -11,19 +11,27 @@ func run() -> void:
 		quit(1)
 		return
 	root.size = Vector2i(1280, 720)
-	for fixture in ["renderer_spike", "corridor_preview", "hoppy_preview"]:
+	for fixture in ["renderer_spike", "corridor_preview", "hoppy_preview", "hazard_gallery"]:
 		var directory := "player" if fixture == "hoppy_preview" else "environment"
+		if fixture == "hazard_gallery":
+			directory = "hazards/visuals"
 		var scene := load("res://scenes/runner/%s/dev/%s.tscn" % [directory, fixture]) as PackedScene
 		var instance := scene.instantiate()
 		root.add_child(instance)
 		await create_timer(1.5 if fixture == "hoppy_preview" else 1.0).timeout
 		await RenderingServer.frame_post_draw
-		var suffix: String = {"renderer_spike": "spike", "corridor_preview": "corridor", "hoppy_preview": "hoppy"}[fixture]
+		var suffix: String = {"renderer_spike": "spike", "corridor_preview": "corridor", "hoppy_preview": "hoppy", "hazard_gallery": "gallery"}[fixture]
 		var output := ProjectSettings.globalize_path("res://../docs/previews/endless-runner-%s.png" % suffix)
 		var error := root.get_texture().get_image().save_png(output)
 		if error != OK:
 			failures += 1
-		print("CAPTURE: ", suffix, " error=", error, " draw_calls=", root.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME))
+		var draw_calls := root.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
+		print("CAPTURE: ", suffix, " error=", error, " draw_calls=", draw_calls)
+		if fixture == "hazard_gallery":
+			var gallery_budget := 12 * 14 + 15
+			print("GALLERY DRAW BUDGET: ", draw_calls, " / ", gallery_budget)
+			if draw_calls > gallery_budget:
+				failures += 1
 		if fixture == "corridor_preview":
 			instance._corridor.set_scroll_speed(26.0)
 			await create_timer(1.0).timeout

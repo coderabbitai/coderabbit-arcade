@@ -1,8 +1,8 @@
-# Endless Runner frontend: F0, F1, and F2
+# Endless Runner frontend: F0-F2 and F3 hazards
 
 Engine policy: the project pins Godot 4.7.1. The F0/F1 verification recorded here ran on the installed Godot 4.7.0 stable (`4.7.stable.official.5b4e0cb0f`). Final acceptance must re-run the contract §9 commands on 4.7.1; no 4.7.1 results are recorded here. Both versions are supported for development, and any behavioral differences must be recorded in contract §10.
 
-The requested F0 and F1 source files and development scenes are present and verified as described in the renderer findings and verification sections below, with final acceptance on Godot 4.7.1 still pending. F2 now adds Hoppy, its preview, and the first visual smoke test. The backend mounts Hoppy and the corridor automatically. F3-F6 remain deferred.
+The requested F0 and F1 source files and development scenes are present and verified as described in the renderer findings and verification sections below, with final acceptance on Godot 4.7.1 still pending. F2 now adds Hoppy, its preview, and the first visual smoke test. The backend mounts Hoppy and the corridor automatically. F3 hazard visuals are now implemented. Power-ups, pursuer, and F4-F6 remain deferred.
 
 ## Run
 
@@ -12,6 +12,7 @@ Run from the repository root:
 /Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --scene res://scenes/runner/environment/dev/renderer_spike.tscn
 /Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --scene res://scenes/runner/environment/dev/corridor_preview.tscn
 /Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --scene res://scenes/runner/player/dev/hoppy_preview.tscn
+/Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --scene res://scenes/runner/hazards/visuals/dev/hazard_gallery.tscn
 /Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --script res://scenes/runner/environment/dev/capture_previews.gd
 ```
 
@@ -19,6 +20,9 @@ The camera is at (0,4,8), looking at (0,1,-8), FOV 60.
 
 | Scene | Keys | Action |
 | --- | --- | --- |
+| Hazard gallery | Left / Right | Move the contract camera along the row of 12 fixtures |
+| Hazard gallery | H / C / R | Hit / clear / reset all hazards |
+| Hazard gallery | T / 1 / 2 / 3 | Toggle telegraph sweep / ground / high / off |
 | Hoppy preview | 1-7 / Space | Select idle, run, jump, fall, roll, hurt, dead / cycle |
 | Hoppy preview | [ / ] / A / D | Decrease or increase normalized speed / hold lane lean |
 | Hoppy preview | L / N / C / S / H | Toggle LGTM / Nitro / Code Review / shield / hit flash |
@@ -37,6 +41,14 @@ F1: tiny Corridor scene with an imperative Node3D implementation, 8x100 floor, c
 
 F2: original primitive cream rabbit with an orange hoodie, rear code logo, forehead goggles, pink ear inserts, and seven code-built animations. The development scene is `res://scenes/runner/player/dev/hoppy_preview.tscn`. The coordinator captured the [1280x720 Hoppy preview](previews/endless-runner-hoppy.png) on the host with a small SceneTree capture script, showing Hoppy back-facing in the corridor.
 
+F3 hazard half: eight scene/script pairs extend the backend visual base directly and use `hazard_art.gd` for common primitives, bounded delta-driven animation, floor projections, and reactions. The gallery includes 12 fixtures covering every kind and variant, a wireframe hitbox per fixture, and camera navigation along the corridor. The coordinator performed the host graphical capture: [hazard gallery](previews/endless-runner-gallery.png), `CAPTURE: gallery error=0 draw_calls=106`, the coordinator's latest verified host capture after batching (below the 183-call gallery budget).
+
+Hero text uses the shared cream monospace label helper with navy outlines; tiny decorative labels omit outlines and per-card text is removed. Repeated boxes use material-grouped MultiMeshes with animated instance transforms. Glyph clouds use one pausable GPUParticles3D per applicable hazard, the shared 8x8 billboard atlas, a hitbox-sized visibility AABB, bounded lifetime trajectories, and no trails, collision, or sub-emitters. Headless checks verify configuration and bounds; GPU appearance requires host capture. Hit flashes and Auto-Fix mint reactions restore on spawn, including labels, geometry, clocks, beam state, scanner visibility, and per-instance materials.
+
+The backend calls `_ready()` before assigning base vars. Each root attempts construction in `_ready()` and waits if the hitbox is zero; `on_spawned()` builds from the supplied vars. Repeated spawn calls hide and rename the old artwork, queue its deletion, and build the replacement as Artwork, including after hits and clears. No shared materials are mutated.
+
+Bounds clarification for backend: floor-marker projections at y=0 cannot be enclosed in elevated collision volumes (high backlog and lasers). The smoke therefore checks the merged visible body AABB, including labels and glyph particles, against the contract hitbox_offset and 110% hitbox envelope, then verifies the exact floor-marker footprint and prescribed color/alpha separately. The high-backlog safe-gap quad uses full width and 60% depth. Cleared markers turn MINT at alpha 0.35; spawn restores DANGER. The hanging rail is at y=2.963 for the authoritative hitbox, just below the brief's rounded 3.0 m so it fits the 110% envelope. Timed laser geometry snaps between the contract ground and high volumes; its scanner sweeps only within the current volume. Full-height posts would contradict the laser bounds, so posts are confined to the beam height. The backend's timed state machine is still a PR 2 stub; the gallery drives the public hooks directly.
+
 ## Behavior and ownership
 
 Hoppy extends the backend visual base and implements all six contract methods. It faces -Z with standing mesh bounds y 0..1.8. `AnimationPlayer` drives the feet pivot `Root` and `Root/Model`; scene-root yaw and bank implement lane lean independently. Every clip supplies rest tracks to clear previous held poses. Run cadence is `lerp(0.85, 1.9, normalized)`, including values above 1; other clips retain real-time duration. Hurt flashes at 0.001/0.12/0.24 s, then returns to the preceding idle/run state unless another state interrupts it. Hit flashes clear after 0.06 s without mutating shared materials. Effects and animation inherit PAUSABLE behavior.
@@ -51,11 +63,19 @@ Frontend implementation files were added only under frontend-owned paths. The br
 
 ## Art direction and replacement points
 
-The navy environment and dim MATRIX grid/rain reuse the hub preview palette and perspective motif. Lanes are centered at x -2/0/+2, bounded by lines at x +/-1 and +/-3. Hazards and power-ups are not part of this milestone. Material cache results must be duplicated before mutation.
+The navy environment and dim MATRIX grid/rain reuse the hub preview palette and perspective motif. Lanes are centered at x -2/0/+2, bounded by lines at x +/-1 and +/-3. F3 hazards use hot DANGER/ORANGE accents; power-ups remain deferred. Material cache results must be duplicated before mutation.
 
 | Visual | Source | Licence |
 | --- | --- | --- |
 | Hoppy primitives, animations, and effects | scenes/runner/player/hoppy_runner_visual.gd; original project source. To swap the model, replace `_build_model()` under `Root/Model`, retain the feet origin, -Z facing and 1.8 m height, remap `_pose_clip()` tracks to the new rig, and preserve the scene root, six hooks, effects, and animation names. Re-run the smoke bounds checks and host preview, including the 0.9 m roll. | Original project source |
+| pr_backlog_low | `scenes/runner/hazards/visuals/pr_backlog_low_visual.gd` + shared `hazard_art.gd`: Three rows of navy PR cards, orange/red strips, wobble, hit scatter/fade and mint shrink; AUTO-FIXED. | Original project source |
+| pr_backlog_high | `scenes/runner/hazards/visuals/pr_backlog_high_visual.gd` + shared `hazard_art.gd`: Rail and hanging stale/CI cards, sway, hit drop/bounce, mint shrink; exact red footprint plus inset green safe-gap quad. | Original project source |
+| bug_swarm | `scenes/runner/hazards/visuals/bug_swarm_visual.gd` + shared `hazard_art.gd`: Red core, six legs, 36 atlas glyph particles, leg jitter and core pop; throw new Error(). | Original project source |
+| merge_conflict | `scenes/runner/hazards/visuals/merge_conflict_visual.gd` + shared `hazard_art.gd`: HEAD and feature slabs, matrix/lilac strips, pulsing zigzag seam, shake and merged mint box; MERGED. | Original project source |
+| deprecated_pit | `scenes/runner/hazards/visuals/deprecated_pit_visual.gd` + shared `hazard_art.gd`: Full and two_lane widths, dark floor, striped rim, falling glyphs, flat deprecated/since labels, rim flash and REMOVED. | Original project source |
+| laser_grid | `scenes/runner/hazards/visuals/laser_grid_visual.gd` + shared `hazard_art.gd`: Ground, mid, high and timed; short posts/caps, three additive beams, bounded mint scanner, hit sparks and beam retraction; SCAN PASSED. | Original project source |
+| comment_flood | `scenes/runner/hazards/visuals/comment_flood_visual.gd` + shared `hazard_art.gd`: Scrolling speech cards, red translucent volume, burst/fade and fold; one BLOCKING // TODO hero label, RESOLVED. | Original project source |
+| build_shockwave | `scenes/runner/hazards/visuals/build_shockwave_visual.gd` + shared `hazard_art.gd`: Elliptical flat torus, red core and shards, ring pulse, white impact and mint fixed reaction; BUILD FIXED. | Original project source |
 | Corridor primitives and particles | scenes/runner/environment/corridor.gd | Original project source |
 | Glyph atlas | scenes/runner/shaders/glyph_atlas.gd | Original project source |
 | Grid, wall, hologram, radial glow, vignette | scenes/runner/shaders/*.gdshader | Original project source |
@@ -132,7 +152,7 @@ All commands ran from the repository root with `/Applications/Godot.app/Contents
 
 The smoke checks every method and state, speed 0/0.5/1.2, lean -1/0/1, all aura on/off pairs and overlapping expiry, shield on/off and pre-ready requests, hit-flash cleanup, all three standalone hurt pulses, hurt recovery and interruption, standing dimensions, 61 roll poses including Aura and a merged all-mesh mid-roll AABB check (min.y >= -0.02, max.y <= 0.95), cleanup, preview load and keyboard dispatch, and the camera offset. Headless checks do not establish rendered appearance.
 
-Validator follow-up: re-ran headless import, check-only for `hoppy_runner_visual.gd` and `capture_previews.gd`, the extended visual smoke, and the environment check on installed Godot 4.7.0. All exited 0; both runtime checks reported PASS with 0 failures. Import and runtime startup retain the sandbox diagnostics described above. The coordinator PNG was preserved; the new capture fixture was syntax-checked without a graphical run.
+Validator follow-up: re-ran headless import, check-only for `hoppy_runner_visual.gd` and `capture_previews.gd`, the extended visual smoke, and the environment check on installed Godot 4.7.0. All exited 0; both runtime checks reported PASS with 0 failures. Import and runtime startup retain the sandbox diagnostics described above. The coordinator subsequently ran the capture_previews.gd Hoppy fixture graphically on the host (CAPTURE: hoppy error=0 draw_calls=33) and refreshed all three preview PNGs. Codex did not perform a graphical run.
 
 Outputs below preserve command output text with terminal color escape sequences removed.
 
@@ -173,6 +193,13 @@ Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
 ```
 
 `--headless --path hoppys-adventure-arcade --script res://scenes/runner/player/dev/hoppy_preview.gd --check-only --log-file /tmp/hoppy-check-1.log` (exit 0):
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+```
+
+`--headless --path hoppys-adventure-arcade --script res://scenes/runner/environment/dev/capture_previews.gd --check-only --log-file /tmp/hoppy-capture-check.log` (exit 0):
 
 ```text
 Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
@@ -222,13 +249,295 @@ SPIKE: renderer=gl_compatibility scale=0.5 glow_threshold=0.75 fog=22..88 partic
 ENV CHECK: PASS (0 failures)
 ```
 
+### F3 contract 1.2 feedback verification
+
+All commands below ran headlessly from the repository root and exited 0. Output is verbatim with terminal ANSI styling and trailing spaces removed. Startup certificate and editor-settings diagnostics are preserved. All 11 check-only invocations passed. The smoke explicitly awaited all 12 hazard cases before audio shutdown and exit.
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --import --quit --log-file /tmp/f3-import.log`
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+[   0% ] first_scan_filesystem | Started Project initialization (5 steps)
+[   0% ] first_scan_filesystem | Scanning file structure...
+WARNING: Detected another project.godot at res://Assets/SynthCitiesGodot. The folder will be ignored.
+     at: _should_skip_directory (editor/file_system/editor_file_system.cpp:3485)
+[  16% ] first_scan_filesystem | Loading global class names...
+[  33% ] first_scan_filesystem | Verifying GDExtensions...
+[  50% ] first_scan_filesystem | Creating autoload scripts...
+[  66% ] first_scan_filesystem | Initializing plugins...
+[  83% ] first_scan_filesystem | Starting file scan...
+[ DONE ] first_scan_filesystem
+
+[   0% ] update_scripts_classes | Started Registering global classes... (2 steps)
+[   0% ] update_scripts_classes |
+[  33% ] update_scripts_classes |
+[ DONE ] update_scripts_classes
+
+[   0% ] loading_editor_layout | Started Loading editor (5 steps)
+[   0% ] loading_editor_layout | Loading editor layout...
+[  16% ] loading_editor_layout | Loading docks...
+[ DONE ] loading_editor_layout
+
+ERROR: Cannot save file '/Users/jp/Library/Application Support/Godot/editor_settings-4.7.tres'.
+   at: save (scene/resources/resource_format_text.cpp:1768)
+ERROR: Error saving editor settings to /Users/jp/Library/Application Support/Godot/editor_settings-4.7.tres
+   at: save (editor/settings/editor_settings.cpp:1525)
+```
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/hazards/visuals/hazard_art.gd --log-file /tmp/f3-check-engine.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+exit=0
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/hazards/visuals/bug_swarm_visual.gd --log-file /tmp/f3-check-engine.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+exit=0
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/hazards/visuals/build_shockwave_visual.gd --log-file /tmp/f3-check-engine.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+exit=0
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/hazards/visuals/comment_flood_visual.gd --log-file /tmp/f3-check-engine.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+exit=0
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/hazards/visuals/deprecated_pit_visual.gd --log-file /tmp/f3-check-engine.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+exit=0
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/hazards/visuals/laser_grid_visual.gd --log-file /tmp/f3-check-engine.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+exit=0
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/hazards/visuals/merge_conflict_visual.gd --log-file /tmp/f3-check-engine.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+exit=0
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/hazards/visuals/pr_backlog_high_visual.gd --log-file /tmp/f3-check-engine.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+exit=0
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/hazards/visuals/pr_backlog_low_visual.gd --log-file /tmp/f3-check-engine.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+exit=0
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/hazards/visuals/dev/hazard_gallery.gd --log-file /tmp/f3-check-engine.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+exit=0
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://tests/runner_visual_smoke.gd --log-file /tmp/f3-check-engine.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+exit=0
+```
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd --log-file /tmp/f3-smoke.log`
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+HAZARD DRAW CENSUS: pr_backlog_low/ peak=6
+HAZARD DRAW CENSUS: pr_backlog_high/ peak=8
+HAZARD DRAW CENSUS: bug_swarm/ peak=6
+HAZARD DRAW CENSUS: merge_conflict/ peak=9
+HAZARD DRAW CENSUS: deprecated_pit/full peak=8
+HAZARD DRAW CENSUS: deprecated_pit/two_lane peak=8
+HAZARD DRAW CENSUS: laser_grid/ground peak=8
+HAZARD DRAW CENSUS: laser_grid/mid peak=8
+HAZARD DRAW CENSUS: laser_grid/high peak=8
+HAZARD DRAW CENSUS: laser_grid/timed peak=8
+HAZARD DRAW CENSUS: comment_flood/ peak=7
+HAZARD DRAW CENSUS: build_shockwave/ peak=6
+HAZARD CASES CHECKED: 12; summed peak draw census=90
+RUNNER VISUAL SMOKE: PASS (0 failures)
+```
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://scenes/runner/environment/dev/environment_check.gd --log-file /tmp/f3-environment.log`
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+SPIKE: renderer=gl_compatibility scale=0.5 glow_threshold=0.75 fog=22..88 particles=320
+ENV CHECK: PASS (0 failures)
+```
+
+### F3 hazard verification (2026-09-19)
+
+F3 added eight hazard visual scenes and their scripts plus shared artwork and a gallery. Headless validation passed from the repository root on installed Godot 4.7.0. The coordinator performed the host graphical gallery capture. The frontend agent performed no graphical runs, downloads, commits, or pushes. The import uses `--quit` to finish the headless editor and `/tmp` log paths to avoid the known sandbox log-directory crash. Import and runtime startup retain the existing certificate/editor-settings diagnostics. The runtime smoke logger reported zero subsequent engine errors. Scaffold reports exactly the known GrayboxEnvironment failure.
+
+The smoke covers all 12 contract cases, both backend vars-after-ready and fixture vars-before-ready ordering, all five hooks, 61 idle/hit/cleared animation samples each, visible meshes plus labels and glyph particles, floor footprint/color, approved safe-gap color, repeated spawn after reactions, text/color/material reset, node-count stability, pause, timed beam elevation/visibility, telegraph samples, gallery load, keys, and camera. Elevated floor projections are checked separately as explained above. The coordinator's latest verified host capture after batching reports `CAPTURE: gallery error=0 draw_calls=106`. Expected new hazard-only census: 85 idle across all 12 fixtures, at most 90 summed tested peaks (6 to 9 per case). The node census is an estimate (outlined Label3D counts as 2, MultiMesh as 1), not an exact renderer total. The capture script independently fails PREVIEW CAPTURE above 12 x 14 + 15 = 183 gallery draw calls.
+
+Commands and outputs below preserve the terminal text with color escape sequences and trailing spaces removed.
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --import --quit --log-file /tmp/hazard-import-final.log` (exit 0):
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+[   0% ] first_scan_filesystem | Started Project initialization (5 steps)
+[   0% ] first_scan_filesystem | Scanning file structure...
+WARNING: Detected another project.godot at res://Assets/SynthCitiesGodot. The folder will be ignored.
+     at: _should_skip_directory (editor/file_system/editor_file_system.cpp:3485)
+[  16% ] first_scan_filesystem | Loading global class names...
+[  33% ] first_scan_filesystem | Verifying GDExtensions...
+[  50% ] first_scan_filesystem | Creating autoload scripts...
+[  66% ] first_scan_filesystem | Initializing plugins...
+[  83% ] first_scan_filesystem | Starting file scan...
+[ DONE ] first_scan_filesystem
+
+[   0% ] update_scripts_classes | Started Registering global classes... (3 steps)
+[   0% ] update_scripts_classes |
+[  25% ] update_scripts_classes |
+[  50% ] update_scripts_classes |
+[ DONE ] update_scripts_classes
+
+[   0% ] loading_editor_layout | Started Loading editor (5 steps)
+[   0% ] loading_editor_layout | Loading editor layout...
+[  16% ] loading_editor_layout | Loading docks...
+[ DONE ] loading_editor_layout
+
+ERROR: Cannot save file '/Users/jp/Library/Application Support/Godot/editor_settings-4.7.tres'.
+   at: save (scene/resources/resource_format_text.cpp:1768)
+ERROR: Error saving editor settings to /Users/jp/Library/Application Support/Godot/editor_settings-4.7.tres
+   at: save (editor/settings/editor_settings.cpp:1525)
+```
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://scenes/runner/hazards/visuals/bug_swarm_visual.gd --check-only --log-file /tmp/hazard-syntax-final-0.log` (exit 0):
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+```
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://scenes/runner/hazards/visuals/build_shockwave_visual.gd --check-only --log-file /tmp/hazard-syntax-final-1.log` (exit 0):
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+```
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://scenes/runner/hazards/visuals/comment_flood_visual.gd --check-only --log-file /tmp/hazard-syntax-final-2.log` (exit 0):
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+```
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://scenes/runner/hazards/visuals/deprecated_pit_visual.gd --check-only --log-file /tmp/hazard-syntax-final-3.log` (exit 0):
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+```
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://scenes/runner/hazards/visuals/dev/hazard_gallery.gd --check-only --log-file /tmp/hazard-syntax-final-4.log` (exit 0):
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+```
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://scenes/runner/hazards/visuals/hazard_art.gd --check-only --log-file /tmp/hazard-syntax-final-5.log` (exit 0):
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+```
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://scenes/runner/hazards/visuals/laser_grid_visual.gd --check-only --log-file /tmp/hazard-syntax-final-6.log` (exit 0):
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+```
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://scenes/runner/hazards/visuals/merge_conflict_visual.gd --check-only --log-file /tmp/hazard-syntax-final-7.log` (exit 0):
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+```
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://scenes/runner/hazards/visuals/pr_backlog_high_visual.gd --check-only --log-file /tmp/hazard-syntax-final-8.log` (exit 0):
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+```
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://scenes/runner/hazards/visuals/pr_backlog_low_visual.gd --check-only --log-file /tmp/hazard-syntax-final-9.log` (exit 0):
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+```
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd --check-only --log-file /tmp/hazard-syntax-final-10.log` (exit 0):
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+```
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://scenes/runner/environment/dev/capture_previews.gd --check-only --log-file /tmp/hazard-syntax-final-11.log` (exit 0):
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+```
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd --log-file /tmp/hazard-smoke-verified.log` (exit 0):
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+RUNNER VISUAL SMOKE: PASS (0 failures)
+```
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_scaffold_check.gd --log-file /tmp/hazard-scaffold-verified.log` (exit 1):
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+ERROR: RUNNER SCAFFOLD: missing node: World/GrayboxEnvironment
+   at: push_error (core/variant/variant_utility.cpp:1023)
+   GDScript backtrace (most recent call first):
+       [0] check (res://tests/runner_scaffold_check.gd:92)
+       [1] run (res://tests/runner_scaffold_check.gd:120)
+RUNNER SCAFFOLD: FAIL (1 failures / 276 checks)
+```
+
+`/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://scenes/runner/environment/dev/environment_check.gd --log-file /tmp/hazard-environment-verified.log` (exit 0):
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+SPIKE: renderer=gl_compatibility scale=0.5 glow_threshold=0.75 fog=22..88 particles=320
+ENV CHECK: PASS (0 failures)
+```
+
 ## Requests to backend
 
-No new backend requests. Apply the already planned PR 2 scaffold assertion change: `World/GrayboxEnvironment` is intentionally absent when the frontend corridor mounts. The F2 scaffold check reports exactly that one known failure.
+Please clarify the elevated floor-projection exception in contract section 5.2 and wire the existing PR 2 timed-laser state hooks. No backend files were edited. The backend's PR 2 relaxes `runner_scaffold_check.gd` to accept a mounted corridor in place of `World/GrayboxEnvironment`. On this branch the check will pass once PR 2 is merged; until then, the single failure is the documented lifecycle state, not a defect.
 
 ## Known gaps
 
-No remaining F0/F1 renderer or preview gaps are reported by the coordinator on 4.7.0; final acceptance on the pinned 4.7.1 remains pending. F2 headless checks are complete. The coordinator ran graphical Godot on the host and captured Hoppy back-facing in the corridor; Codex itself did not run graphical Godot. F3-F6, runner audio, hazard visuals, and menus remain outside this run's scope.
+No remaining F0/F1 renderer or preview gaps are reported by the coordinator on 4.7.0; final acceptance on the pinned 4.7.1 remains pending. F2 headless checks are complete. The coordinator ran graphical Godot on the host and captured Hoppy back-facing in the corridor; Codex itself did not run graphical Godot. The coordinator's latest verified host gallery capture after batching reports `CAPTURE: gallery error=0 draw_calls=106`, within the 183-call budget. Power-ups, pursuer, runner audio, and menus remain outside this run's scope.
 
 ## Touched files
 
@@ -280,3 +589,38 @@ F2 additions:
 - `hoppys-adventure-arcade/tests/runner_visual_smoke.gd.uid`
 - Updated `hoppys-adventure-arcade/scenes/runner/environment/dev/capture_previews.gd` with the Hoppy fixture.
 - Updated this document.
+
+F3 hazard additions and updates:
+
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/bug_swarm_visual.gd`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/bug_swarm_visual.gd.uid`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/bug_swarm_visual.tscn`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/build_shockwave_visual.gd`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/build_shockwave_visual.gd.uid`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/build_shockwave_visual.tscn`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/comment_flood_visual.gd`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/comment_flood_visual.gd.uid`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/comment_flood_visual.tscn`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/deprecated_pit_visual.gd`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/deprecated_pit_visual.gd.uid`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/deprecated_pit_visual.tscn`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/dev/hazard_gallery.gd`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/dev/hazard_gallery.gd.uid`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/dev/hazard_gallery.tscn`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/hazard_art.gd`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/hazard_art.gd.uid`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/laser_grid_visual.gd`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/laser_grid_visual.gd.uid`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/laser_grid_visual.tscn`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/merge_conflict_visual.gd`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/merge_conflict_visual.gd.uid`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/merge_conflict_visual.tscn`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/pr_backlog_high_visual.gd`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/pr_backlog_high_visual.gd.uid`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/pr_backlog_high_visual.tscn`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/pr_backlog_low_visual.gd`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/pr_backlog_low_visual.gd.uid`
+- `hoppys-adventure-arcade/scenes/runner/hazards/visuals/pr_backlog_low_visual.tscn`
+- Updated `hoppys-adventure-arcade/tests/runner_visual_smoke.gd`.
+- Updated `hoppys-adventure-arcade/scenes/runner/environment/dev/capture_previews.gd`.
+- Updated `docs/endless-runner.md`, including both F2 validator corrections.

@@ -84,7 +84,6 @@ static func glyph_particles(count: int, bounds: Vector3) -> GPUParticles3D:
 	result.lifetime = 4.0
 	result.preprocess = 4.0
 	result.fixed_fps = 30
-	result.visibility_aabb = AABB(Vector3(-5, -8, -52), Vector3(10, 16, 108))
 	var process := ParticleProcessMaterial.new()
 	process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
 	process.emission_box_extents = bounds
@@ -108,4 +107,12 @@ static func glyph_particles(count: int, bounds: Vector3) -> GPUParticles3D:
 	quad.size = Vector2(0.12, 0.18)
 	quad.material = material
 	result.draw_pass_1 = quad
+	# Bound travel in any emission direction, plus per-axis gravity displacement.
+	# Include the billboard half-diagonal and a small culling margin.
+	var travel := Vector3.ONE * process.initial_velocity_max * result.lifetime
+	travel += process.gravity.abs() * (0.5 * result.lifetime * result.lifetime)
+	var margin := quad.size.length() * 0.5 + 0.1
+	var extents := process.emission_box_extents + travel + Vector3.ONE * margin
+	result.visibility_aabb = AABB(-extents, extents * 2.0)
+	# Callers may override this default after configuring their own trajectories.
 	return result
