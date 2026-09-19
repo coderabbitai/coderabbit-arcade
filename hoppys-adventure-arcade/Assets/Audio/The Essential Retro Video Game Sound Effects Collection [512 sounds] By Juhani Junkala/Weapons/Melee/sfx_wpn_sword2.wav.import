@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://i4jas8j8udej"
+path="res://.godot/imported/sfx_wpn_sword2.wav-ca5b81ff43484f7e4cfc96e639df56bf.sample"
+
+[deps]
+
+source_file="res://Assets/Audio/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/Weapons/Melee/sfx_wpn_sword2.wav"
+dest_files=["res://.godot/imported/sfx_wpn_sword2.wav-ca5b81ff43484f7e4cfc96e639df56bf.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=2

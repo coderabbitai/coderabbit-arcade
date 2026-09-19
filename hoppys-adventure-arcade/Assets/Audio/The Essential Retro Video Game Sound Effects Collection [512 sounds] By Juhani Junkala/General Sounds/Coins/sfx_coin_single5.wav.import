@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://b05lu4nqyovox"
+path="res://.godot/imported/sfx_coin_single5.wav-aec85c379e2b3e715346d0d5e306d532.sample"
+
+[deps]
+
+source_file="res://Assets/Audio/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Coins/sfx_coin_single5.wav"
+dest_files=["res://.godot/imported/sfx_coin_single5.wav-aec85c379e2b3e715346d0d5e306d532.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=2

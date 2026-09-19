@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://vs7kyk028sfg"
+path="res://.godot/imported/sfx_wpn_laser9.wav-41b7af1b3a19132435714e5ee8dc6268.sample"
+
+[deps]
+
+source_file="res://Assets/Audio/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/Weapons/Lasers/sfx_wpn_laser9.wav"
+dest_files=["res://.godot/imported/sfx_wpn_laser9.wav-41b7af1b3a19132435714e5ee8dc6268.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=2

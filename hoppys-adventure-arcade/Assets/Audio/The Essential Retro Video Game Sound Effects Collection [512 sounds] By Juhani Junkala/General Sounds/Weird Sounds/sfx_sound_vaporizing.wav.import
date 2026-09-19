@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://dtx0p5gqiay1r"
+path="res://.godot/imported/sfx_sound_vaporizing.wav-7b154c34486e7fc0b60c9384d013ab68.sample"
+
+[deps]
+
+source_file="res://Assets/Audio/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Weird Sounds/sfx_sound_vaporizing.wav"
+dest_files=["res://.godot/imported/sfx_sound_vaporizing.wav-7b154c34486e7fc0b60c9384d013ab68.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=2

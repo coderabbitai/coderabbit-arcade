@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://c76v1r4e62fpd"
+path="res://.godot/imported/sfx_movement_stairs5loop.wav-fa268c4930bf1b1e952ef3217cba6933.sample"
+
+[deps]
+
+source_file="res://Assets/Audio/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/Movement/Climbing Stairs/sfx_movement_stairs5loop.wav"
+dest_files=["res://.godot/imported/sfx_movement_stairs5loop.wav-fa268c4930bf1b1e952ef3217cba6933.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=2

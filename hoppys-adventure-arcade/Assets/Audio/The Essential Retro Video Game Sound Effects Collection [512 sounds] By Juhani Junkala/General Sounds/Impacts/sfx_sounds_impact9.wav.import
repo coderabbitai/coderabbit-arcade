@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://brn3nheyv8lke"
+path="res://.godot/imported/sfx_sounds_impact9.wav-4a3f5cf17a2b451db95d663297c76ca2.sample"
+
+[deps]
+
+source_file="res://Assets/Audio/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Impacts/sfx_sounds_impact9.wav"
+dest_files=["res://.godot/imported/sfx_sounds_impact9.wav-4a3f5cf17a2b451db95d663297c76ca2.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=2
