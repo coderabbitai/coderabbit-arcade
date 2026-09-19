@@ -15,6 +15,8 @@ const RunnerLeaderboard = preload("res://scenes/runner/systems/runner_leaderboar
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
 const CONFIG_PATH := "res://scenes/runner/data/run_config.tres"
 const TICK := 1.0 / 60.0
+## The timed laser slot with the hitbox off (hazard.gd OFF_STATE).
+const OFF_STATE: StringName = &"off"
 
 ## RunnerGame with a countable catch hook: HitManager calls _on_caught(), the facade emits `caught`.
 const FAKE_GAME_SOURCE := "extends \"res://scenes/runner/runner_game.gd\"\nvar caught_calls := 0\nfunc _on_caught() -> void:\n\tcaught_calls += 1\n\tcaught.emit()\n"
@@ -28,6 +30,8 @@ var checks := 0
 var base_config: RunConfig
 var game_script: GDScript
 var hazard_script: GDScript
+## The real hazard.gd (Area3D), used by section 11; loaded at runtime for the same reason.
+var real_hazard_script: GDScript
 var spawner_script: GDScript
 var hit_manager_script: GDScript
 var score_manager_script: GDScript
@@ -54,10 +58,11 @@ func run() -> void:
 	effect_manager_script = load("res://scenes/runner/systems/effect_manager.gd") as GDScript
 	speed_controller_script = load("res://scenes/runner/systems/speed_controller.gd") as GDScript
 	autopilot_script = load("res://scenes/runner/systems/autopilot.gd") as GDScript
+	real_hazard_script = load("res://scenes/runner/hazards/hazard.gd") as GDScript
 	game_script = _compile(FAKE_GAME_SOURCE)
 	hazard_script = _compile(FAKE_HAZARD_SOURCE)
 	spawner_script = _compile(FAKE_SPAWNER_SOURCE)
-	if game_script == null or hazard_script == null or spawner_script == null:
+	if game_script == null or hazard_script == null or spawner_script == null or real_hazard_script == null:
 		check(false, "the test harness scripts failed to compile")
 		_report()
 		return
@@ -71,6 +76,7 @@ func run() -> void:
 	_test_leaderboard()
 	_test_config_sanity()
 	_test_autopilot()
+	_test_timed_laser_shutdown()
 	_report()
 
 # --- 1. HitManager: SAFE -> PURSUED -> DEAD ---
@@ -509,6 +515,56 @@ func _test_autopilot() -> void:
 	bot.reset()
 	check(not bot.enabled and bot.reckless_slices == 0, "10: reset disables the bot")
 
+# --- 11. The real hazard: a finished timed laser shuts down (systems spec §5.3, contract §8) ---
+
+## The only hazard with a per-tick state machine is the timed laser, and it is the only one that can
+## outlive its own removal: once Auto-Fix clears it, or once it has taken its one hit, it must stop
+## advancing. A laser that keeps cycling re-arms `monitoring` on its next `on` slot, keeps driving
+## set_laser_state()/set_telegraph() on a visual that was told it is gone, and re-shows the graybox
+## that clear() just hid.
+func _test_timed_laser_shutdown() -> void:
+	var armed := _timed_laser()
+	var laser: Area3D = armed["hazard"]
+	check(laser.is_timed(), "11: laser_grid/timed owns a state machine")
+	_run_laser(armed, 0.1)
+	check(laser.laser_state == &"ground", "11: the cycle opens on the ground phase, got %s" % laser.laser_state)
+	check(laser.monitoring, "11: an on-phase laser arms its hitbox")
+	_run_laser(armed, 1.2)
+	check(laser.laser_state == OFF_STATE, "11: the cycle blinks off after 1.2 s, got %s" % laser.laser_state)
+	check(not laser.monitoring, "11: the hitbox is disarmed between states")
+	check(laser.is_blocking(), "11: an off laser is still blocking, it comes back")
+	_run_laser(armed, 0.6)
+	check(laser.laser_state == &"high" and laser.monitoring, "11: the hitbox re-arms on the high phase")
+
+	# Auto-Fix cleared it.
+	var cleared_pair := _timed_laser()
+	var cleared: Area3D = cleared_pair["hazard"]
+	_run_laser(cleared_pair, 0.1)
+	check(cleared.monitoring, "11: the laser was armed before clear()")
+	cleared.clear()
+	var state_at_clear: StringName = cleared.laser_state
+	check(not cleared.is_blocking(), "11: clear() stops the hazard blocking")
+	check(not cleared.is_physics_processing(), "11: clear() stops the timed cycle")
+	check(not cleared.is_in_group(&"runner_hazards"), "11: a cleared hazard leaves the group")
+	check(not cleared.visual.visible, "11: clear() hides the graybox")
+	# A full 3 s period: without the shutdown this walks ground -> off -> high -> off -> ground.
+	_check_laser_inert(cleared_pair, 3.0, state_at_clear, "a cleared laser")
+	check(not cleared.visual.visible, "11: a cleared laser never re-shows its graybox")
+
+	# It took its one hit.
+	var hit_pair := _timed_laser()
+	var hit: Area3D = hit_pair["hazard"]
+	var hits: Node = hit_pair["hits"]
+	_run_laser(hit_pair, 0.1)
+	check(hit.monitoring, "11: the laser was armed before hit_player()")
+	hit.hit_player(null)
+	var state_at_hit: StringName = hit.laser_state
+	check(hit.consumed and not hit.is_blocking(), "11: the hit consumes the hazard")
+	check(hits.hits_taken == 1, "11: the hit reached the hit manager")
+	check(not hit.is_physics_processing(), "11: hit_player() stops the timed cycle")
+	_check_laser_inert(hit_pair, 3.0, state_at_hit, "a consumed laser")
+	check(hits.hits_taken == 1, "11: the consumed laser never reported a second hit")
+
 # --- harness ---
 
 func _compile(source: String) -> GDScript:
@@ -558,6 +614,46 @@ func _hazard(kind: StringName) -> Node3D:
 	root.add_child(hazard)
 	junk.append(hazard)
 	return hazard
+
+## A real hazard.gd timed laser, in the tree (its hitbox and group need it) and on its own facade
+## with a real HitManager behind it. kind/variant are set before the hazard enters the tree so
+## _ready() builds the timed def.
+func _timed_laser() -> Dictionary:
+	var game := _make_game()
+	var systems := _systems(game)
+	var laser := Area3D.new()
+	laser.set_script(real_hazard_script)
+	laser.kind = &"laser_grid"
+	laser.variant = &"timed"
+	root.add_child(laser)
+	laser.setup(game)
+	junk.append(laser)
+	return {"game": game, "hazard": laser, "hits": systems["hits"]}
+
+## Drive a real timed laser by hand, advancing the run clock its cycle is phased off. The call is
+## unconditional on purpose: a hazard that stopped its own physics processing must still be inert
+## when _physics_process() is reached anyway.
+func _run_laser(pair: Dictionary, seconds: float) -> void:
+	var game: Node3D = pair["game"]
+	var laser: Area3D = pair["hazard"]
+	for i in _ticks(seconds):
+		game.elapsed += TICK
+		laser._physics_process(TICK)
+
+## Advance a finished laser `seconds` in 0.5 s slices, asserting after each that it is still inert.
+## One 3 s jump would land back on the same phase of the 3 s cycle and hide a machine that never
+## stopped, so the invariants have to be checked mid-cycle as well.
+func _check_laser_inert(pair: Dictionary, seconds: float, state: StringName, tag: String) -> void:
+	var laser: Area3D = pair["hazard"]
+	var elapsed := 0.0
+	while elapsed < seconds - 0.0001:
+		var slice := minf(0.5, seconds - elapsed)
+		_run_laser(pair, slice)
+		elapsed += slice
+		check(not laser.monitoring, "11: %s never re-arms monitoring (at %.1f s)" % [tag, elapsed])
+		check(not laser.is_blocking(), "11: %s stays finished (at %.1f s)" % [tag, elapsed])
+		check(laser.laser_state == state, "11: %s stops advancing its state (at %.1f s), got %s"
+			% [tag, elapsed, laser.laser_state])
 
 func _entry(run_id: String, score: int) -> Dictionary:
 	return {
