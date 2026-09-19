@@ -257,9 +257,11 @@ Storage: section `meta/version`; section `leaderboard/entries` (Array of Diction
 version → treat as empty. Validate each entry on load (types, finite, non-negative). Sort: score desc,
 duration desc, insertion `order` asc (Godot's `sort_custom` is not stable). Dedupe by `run_id`
 (replace). Sanitize: `strip_edges`, drop code points < 32 and 127, `substr(0, 16)`, blank → `"Hoppy"`.
-Atomic write: `config.save(path + ".tmp")` then `DirAccess.rename_absolute(tmp, path)`; on failure
-remove the destination and retry once, else remove tmp and return the error. `make_dir_recursive_absolute`
-on the base dir first (test paths).
+Atomic write with backup: `DirAccess.make_dir_recursive_absolute(base_dir)`; `config.save(path + ".tmp")`
+(on error return it — the destination is untouched); if the destination exists, `rename_absolute(path,
+path + ".bak")`; `rename_absolute(tmp, path)`; on success remove `.bak`; on failure restore `.bak` → `path`,
+leave the `.tmp` in place, `push_warning` with its location, and return the error. `load_entries` falls
+back to `.bak` when `path` is missing but `.bak` exists (crash between the two renames).
 
 ## 8. Tests (all `extends SceneTree`, run headless, `quit(failures)`, print `NAME: PASS/FAIL (n failures)`)
 

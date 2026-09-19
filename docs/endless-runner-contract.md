@@ -54,7 +54,8 @@ hub ──AppRouter.go("runner")──▶ runner_menu.tscn (RunnerMenu)
                                      └───────────────────────────────┘ Menu  → game.go_to_menu() (AppRouter.go("runner"))
 ```
 
-- `AppRouter.ROUTES` gains `"runner_game": "res://scenes/runner/runner_game.tscn"`.
+- `AppRouter.ROUTES` already maps `"runner"` to `res://scenes/runner/runner_menu.tscn`; it gains
+  `"runner_game": "res://scenes/runner/runner_game.tscn"`.
 - Inside `runner_game.tscn` (pause menu, game over), frontend buttons call `game.retry()` /
   `game.go_to_menu()` rather than `AppRouter` directly, so the tree is never left paused. The runner
   menu scene, which has no game instance, calls `AppRouter.go(...)` / `AppRouter.quit_game()` itself.
@@ -308,4 +309,4 @@ mouse-hover failures on a clean `main`; the docs validated it on 4.7.1. New runn
 ## 10. Change log
 
 - 1.0 (2026-09-19): initial contract reconciled from the backend, procgen/tuning and frontend design passes.
-- 1.1 (2026-09-19): engine version policy (4.7.1 pin, 4.7.0 validation); AppRouter rule scoped to in-game overlays.
+- 1.1 (2026-09-19): engine version policy (4.7.1 pin, 4.7.0 validation); AppRouter rule scoped to in-game overlays; routes wording clarified; leaderboard writes keep a `.bak`.
