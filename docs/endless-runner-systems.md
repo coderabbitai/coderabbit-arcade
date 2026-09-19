@@ -145,8 +145,8 @@ Public: `setup(game)`, `set_controls_enabled(bool)`, `request_jump()`, `request_
 `lane`, `target_lane`, `is_rolling`, `is_airborne`.
 
 `reset()` restores lane 1, the roll/jump timers, the standing hurtbox and the `idle` pose, **and** clears the
-mounted visual's power-up state: `apply_aura(kind, false)` for every `AURA_KINDS` entry and
-`apply_shield(false)`. The visual is mounted once in `setup()` and outlives the run, so without that a new
+mounted visual's power-up state through the contract §5.1 hooks: `show_aura(kind, false)` for every
+`AURA_KINDS` entry and `show_shield(false)` (the player's `apply_aura` / `apply_shield` wrappers). The visual is mounted once in `setup()` and outlives the run, so without that a new
 run would open still wearing the previous run's aura or shield glow. Both calls are guarded by
 `is_instance_valid(visual)` + `has_method(...)`, so a graybox or a missing visual is a no-op.
 
