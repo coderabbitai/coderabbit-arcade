@@ -225,7 +225,8 @@ Full-rect `Screen` Control (`mouse_filter IGNORE`, `Style.theme()`), anchored la
 top-left `HpRow` two `HpPip` controls (hex outline + check, `MINT` filled / `SLATE` hollow, pop on change)
 + `APPROVALS` caption, `PowerUps` chip column (name + 90×6 progress bar counting `duration → 0` from a
 local timer; shield chip has no bar); top-centre `Time` `mm:ss.d` from `game.elapsed` and
-`PursuitWarning` (arc ring counting `remaining/total`, text `UNREVIEWED BACKLOG · 18.0`, pulsing `ROSE`,
+`PursuitWarning` (arc ring counting `remaining/total`, text `UNREVIEWED BACKLOG · %.1f` formatted from the
+`remaining` value — store `recovery_seconds` from `pursuit_started`, never hard-code 18.0 — pulsing `ROSE`,
 rate rising as remaining → 0; shown on `pursuit_started`, hidden on `pursuit_recovered` and on `caught`); top-right `Score` `%08d` with count-up tween and `Multiplier` `×2.0`
 (`MINT`, `ORANGE` during nitro); bottom-right `Speed` bar + `SPEED 14.2 m/s`; centre `Toast` queue
 (`RECOVERED +2 APPROVALS`, `BLOCKED`, `AUTO-FIX ×3`, `SHIELD READY`), `NitroBanner` `NITRO COMMIT!`,
@@ -268,8 +269,10 @@ Triggers: `player_action` → jump/land/roll/lane; `power_up_collected` → powe
 an explicit `_heartbeat_on` flag; reset it on `pursuit_started`; stop the loop on `pursuit_recovered`, `caught`
 and `run_finished`); `pursuit_recovered` → retreat + chime, drone
 out; `caught` → boom, drone out; `run_finished` → game_over sting. BGM: load
-`res://Assets/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg` (CC0 per the package licence PDF;
-record the composer caveat in `LICENSES.md`), `loop = true`, `AudioService.play_music(stream, -12.0)` from
+`res://Assets/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg` (CC0 per the package licence PDF).
+Before acceptance add a row to `Assets/runner/LICENSES.md` with that exact `res://` path, creator Luis Zuno /
+ansimuz, source `Assets/cyberpunk-street-files/public-license.pdf`, licence CC0, modifications none, and the
+caveat that the PDF does not name the music's composer. Then `loop = true`, `AudioService.play_music(stream, -12.0)` from
 both `runner_menu.gd` and `bind()`. `play_music`, `play_default_music`, `set_music_pitch` and `duck_music`
 are added to `app/audio_service.gd` by the backend's contract PR (PR 1); merge `endless-runner` after that PR
 lands before starting F5, and guard every call with `AudioService.has_method(...)` so the frontend never
