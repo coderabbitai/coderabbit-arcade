@@ -1,5 +1,5 @@
 extends SceneTree
-## Run non-headless from the repository root. Captures both F0/F1 fixtures.
+## Run non-headless from the repository root. Captures F0/F1/F2 fixtures.
 var failures := 0
 
 func _initialize() -> void:
@@ -11,13 +11,14 @@ func run() -> void:
 		quit(1)
 		return
 	root.size = Vector2i(1280, 720)
-	for fixture in ["renderer_spike", "corridor_preview"]:
-		var scene := load("res://scenes/runner/environment/dev/%s.tscn" % fixture) as PackedScene
+	for fixture in ["renderer_spike", "corridor_preview", "hoppy_preview"]:
+		var directory := "player" if fixture == "hoppy_preview" else "environment"
+		var scene := load("res://scenes/runner/%s/dev/%s.tscn" % [directory, fixture]) as PackedScene
 		var instance := scene.instantiate()
 		root.add_child(instance)
-		await create_timer(1.0).timeout
+		await create_timer(1.5 if fixture == "hoppy_preview" else 1.0).timeout
 		await RenderingServer.frame_post_draw
-		var suffix := "spike" if fixture == "renderer_spike" else "corridor"
+		var suffix: String = {"renderer_spike": "spike", "corridor_preview": "corridor", "hoppy_preview": "hoppy"}[fixture]
 		var output := ProjectSettings.globalize_path("res://../docs/previews/endless-runner-%s.png" % suffix)
 		var error := root.get_texture().get_image().save_png(output)
 		if error != OK:
