@@ -90,7 +90,10 @@ environment stays desaturated navy with dim `MATRIX` so gameplay objects pop. Ev
 floor-marker quad (`DANGER` α 0.35) exactly the size of its hitbox footprint. Visual bounds ≤ 110 % of the
 contract hitbox on every axis. Code motifs via `Label3D` (monospace `SystemFont` recipe from
 `menu_style.gd` lines 6–8: Menlo / Consolas / DejaVu Sans Mono, weight 700): `PR #4821`, `MERGE CONFLICT`,
-`<<<<<<< HEAD`, `@deprecated`, `// TODO`, `LGTM`, `nit: rename this`. Outline 8 px `NAVY_BG` on every label.
+`<<<<<<< HEAD`, `@deprecated`, `// TODO`, `LGTM`, `nit: rename this`. Outline 8 px `NAVY_BG` on every *readable* label (font ≥ 24). Decorative glyph clouds and tiny card text may use
+`outline_size = 0`, or better, a single `GPUParticles3D` with the glyph atlas instead of many `Label3D`s. Budget:
+≤ ~14 draw calls per hazard visual (contract §5.2) — use `MultiMeshInstance3D` for repeated cards, rim boxes and
+shards, and share materials.
 `texture_filter = NEAREST` everywhere. Materials built once in `scenes/runner/environment/runner_materials.gd`
 (`static func glow(color, energy := 1.2)`, `additive(color, alpha)`, `lit(color)`, `label(parent, text, size, color)`,
 `font()`), cached in `static var` dictionaries.
