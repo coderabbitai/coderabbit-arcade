@@ -170,6 +170,8 @@ func advance_demo(delta: float) -> void:
 				34.0: hit()
 				38.4: hit()
 				40.0: finish_demo()
+			if state == &"caught":
+				break
 
 func collect(kind: StringName = &"nitro", duration: float = 8) -> void:
 	if state != &"running" or paused:

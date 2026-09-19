@@ -145,6 +145,8 @@ The shaders provide their own grid/wall depth fading and additive halos. Unsuppo
 
 ## Verification
 
+The visual smoke gate exercises all five milestone dev scenes plus any additional `scenes/runner/**/dev/*.tscn` discovered at runtime headless, checks runtime errors and pause/viewport-scale restoration, and prints `RUNNER DEV SCENES: PASS (<n> scenes)` only when this section succeeds.
+
 F0-F6 are implemented. The coordinator re-ran the unmodified tests on the host with this tree on Godot 4.7.0 (`4.7.stable.official.5b4e0cb0f`), 2026-09-19. These results supersede the earlier sandbox transcripts and remain diagnostic pending final acceptance on Godot 4.7.1.
 
 Verbatim host result lines:

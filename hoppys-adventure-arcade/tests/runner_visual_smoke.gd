@@ -40,6 +40,7 @@ func bounds(node: Node3D) -> AABB:
 	return result
 
 func run() -> void:
+	await check_dev_scenes()
 	var hoppy_scene := load("res://scenes/runner/player/hoppy_runner_visual.tscn") as PackedScene
 	var corridor_scene := load("res://scenes/runner/environment/corridor.tscn") as PackedScene
 	check(hoppy_scene != null and corridor_scene != null, "visual scenes load")
@@ -159,6 +160,61 @@ func run() -> void:
 	print("RUNNER VISUAL SMOKE: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
 	OS.remove_logger(_logger)
 	quit(failures)
+
+func discover_dev_scenes(directory: String, paths: Array[String]) -> void:
+	var dir := DirAccess.open(directory)
+	check(dir != null, "dev scene discovery opens " + directory)
+	if dir == null:
+		return
+	if directory.get_file() == "dev":
+		for file: String in dir.get_files():
+			var path := directory.path_join(file)
+			if file.ends_with(".tscn") and not paths.has(path):
+				paths.append(path)
+	for child: String in dir.get_directories():
+		discover_dev_scenes(directory.path_join(child), paths)
+
+func check_dev_scenes() -> void:
+	var before := failures
+	var paths: Array[String] = [
+		"res://scenes/runner/environment/dev/renderer_spike.tscn",
+		"res://scenes/runner/environment/dev/corridor_preview.tscn",
+		"res://scenes/runner/player/dev/hoppy_preview.tscn",
+		"res://scenes/runner/hazards/visuals/dev/hazard_gallery.tscn",
+		"res://scenes/runner/ui/dev/hud_preview.tscn",
+	]
+	discover_dev_scenes("res://scenes/runner", paths)
+	var instantiated := 0
+	for path: String in paths:
+		var errors_before := _logger.errors()
+		var previous_paused := paused
+		var previous_scale := root.scaling_3d_scale
+		var packed := load(path) as PackedScene
+		check(packed != null, "dev scene loads: " + path)
+		if packed == null:
+			continue
+		var instance := packed.instantiate()
+		check(is_instance_valid(instance), "dev scene instantiates: " + path)
+		if not is_instance_valid(instance):
+			continue
+		instantiated += 1
+		root.add_child(instance)
+		await frames()
+		await physics_frame
+		check(_logger.errors() == errors_before, "dev scene runs without engine errors: " + path)
+		check(is_instance_valid(instance) and instance.is_inside_tree(), "dev scene remains in tree: " + path)
+		check(paused == previous_paused, "dev scene preserves pause state: " + path)
+		if is_instance_valid(instance):
+			instance.free()
+		await process_frame
+		check(_logger.errors() == errors_before, "dev scene teardown without engine errors: " + path)
+		check(paused == previous_paused, "dev scene teardown preserves pause state: " + path)
+		check(is_equal_approx(root.scaling_3d_scale, previous_scale), "dev scene teardown restores viewport scale: " + path)
+		# Isolate later sections even when a scene fails its restoration checks.
+		paused = previous_paused
+		root.scaling_3d_scale = previous_scale
+	if failures == before:
+		print("RUNNER DEV SCENES: PASS (%d scenes)" % instantiated)
 
 func visible_hazard_bounds(body: Node3D) -> AABB:
 	var result := AABB()
@@ -619,6 +675,18 @@ func check_runner_ui() -> void:
 	over._unhandled_input(cancel)
 	check(over.visible, "unbound public show_result safely ignores cancel")
 	mock.free()
+	await frames()
+	var coarse_mock := fixture.instantiate()
+	coarse_mock.autoplay = false
+	root.add_child(coarse_mock)
+	var finishes: Array[Dictionary] = []
+	coarse_mock.run_finished.connect(func(result: Dictionary) -> void: finishes.append(result))
+	coarse_mock.advance_demo(41.0)
+	check(coarse_mock.state == &"caught" and finishes.is_empty(), "coarse demo frame stops at catch before finish")
+	check(not coarse_mock._events.has(40.0), "coarse demo frame leaves scheduled finish pending")
+	coarse_mock.advance_demo(float(coarse_mock.config.caught_sequence_seconds))
+	check(coarse_mock.state == &"finished" and finishes.size() == 1, "later demo frame finishes after catch duration")
+	coarse_mock.free()
 	await frames()
 	print("RUNNER UI MOCK: HUD, pursuit, pause, results, focus and save PASS")
 	var scene := load("res://scenes/runner/runner_game.tscn") as PackedScene
