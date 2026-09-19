@@ -18,7 +18,7 @@ Run all commands from the repository root. The project pins Godot 4.7.1; the ins
 /Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --script res://scenes/runner/environment/dev/capture_previews.gd
 ```
 
-Development cameras use (0,4,8), looking at (0,1,-8), FOV 60. The menu camera uses (2.6,1.9,3.4), looking at (0,1,-2), FOV 55 with a slow drift. The capture fixture writes `docs/previews/endless-runner-menu.png`; the coordinator captured it on the host and will recapture the adjusted Hoppy placement.
+Development cameras use (0,4,8), looking at (0,1,-8), FOV 60. The menu camera uses (2.6,1.9,3.4), looking at (0,1,-2), FOV 55 with a slow drift. The `capture_previews.gd` runner_menu fixture writes `docs/previews/endless-runner-menu.png`; the coordinator recaptured it on the host with Hoppy at (0.7, 0, -0.3), and the preview is committed.
 
 | Scene | Keys | Action |
 | --- | --- | --- |
@@ -139,7 +139,7 @@ The following gl_compatibility findings come from the coordinator's graphical ca
 | Corridor draw budget | `capture_previews.gd`, `corridor_preview` at 26 m/s; two lights, shadows off, preview UI hidden | PASS: 10 / 15 draw calls in the `CORRIDOR DRAW BUDGET` frame sample. |
 | Corridor screenshot sample | `capture_previews.gd`, `corridor_preview` at its default 12 m/s with preview UI visible, before the 26 m/s budget check | 9 draw calls in the `CAPTURE: corridor` frame sample; this is the corridor figure in the host `PREVIEW CAPTURE` summary below. Neither frame sample is a measured peak. |
 | Renderer diagnostic fixture | `capture_previews.gd`, separate `renderer_spike` scene | 23 draw calls in the `CAPTURE: spike` frame sample; separate from the corridor budget. |
-| Previews | 1280x720 PNGs | Present: docs/previews/endless-runner-spike.png, docs/previews/endless-runner-corridor.png, docs/previews/endless-runner-hoppy.png, docs/previews/endless-runner-gallery.png, docs/previews/endless-runner-powerups.png, and docs/previews/endless-runner-pursuer.png. |
+| Previews | 1280x720 PNGs | Present: docs/previews/endless-runner-spike.png, docs/previews/endless-runner-corridor.png, docs/previews/endless-runner-hoppy.png, docs/previews/endless-runner-gallery.png, docs/previews/endless-runner-powerups.png, docs/previews/endless-runner-pursuer.png, and docs/previews/endless-runner-menu.png. All previews are captured on the host; the sandbox cannot render. |
 
 The shaders provide their own grid/wall depth fading and additive halos. Unsupported renderer effects are not configured. The implementation avoids the Compatibility-ignored glow-level/normalized/strength/blend settings specified in the brief.
 
@@ -155,19 +155,23 @@ Verbatim host result lines:
 RUNNER FULL LOOP: PASS (menu, play, hit, pursuit, 18s timer recovery, hit, hit, caught, finished, game over, Codex, retry, menu, hub, default music; isolated board removed)
 RUNNER VISUAL SMOKE: PASS (0 failures)
 RUNNER SMOKE: PASS (0 failures / 64 checks)
-RUNNER SCAFFOLD: FAIL (1 failures / 277 checks)
+RUNNER SCAFFOLD: PASS (0 failures / 284 checks)
 MENU SMOKE: FAIL (2 failures)
 PREVIEW CAPTURE: PASS (spike 23 / corridor 9 / hoppy 33 / gallery 162 / menu 33 draw calls; hud, gameover captured)
 ```
 
-The scaffold's only failure is `runner menu should offer Play / Main Menu / Quit`; backend is updating that assertion to four buttons. The menu smoke failures are exactly the two known hover failures: `Mouse hover overrides old gamepad focus` and `Pointer exit releases mode preview`.
+The backend's scaffold update is complete: `runner_scaffold_check.gd` asserts `buttons.size() == 4`, including Leaderboard, and all 284 checks pass on this branch. The headless menu_smoke failures on Godot 4.7.0 are tracked as a non-blocking baseline: `Mouse hover overrides old gamepad focus` and `Pointer exit releases mode preview`.
 
 The full-loop smoke attaches a node_added guard before routing, sets autostart=false and a per-process `user://test_runner_menu_leaderboard_%d.cfg` path before each RunnerGame._ready(), and starts each scene with autopilot. Retry receives the override again. It forces hits through the real hit manager, waits for the unchanged 18 s recovery timer and catch sequence, checks run_finished and visible game over, saves Codex, retries, returns through RunnerMenu to MainMenu, checks default music restoration, and deletes temporary board/backup files. The UI facade smoke uses a separate `user://test_runner_visual_smoke_%d.cfg` path with the same cleanup. Neither test writes the real `user://leaderboard.cfg`.
 
 ## Requests to backend
 
-Update `tests/runner_scaffold_check.gd:179` from the graybox three-button assertion to the F6 four-button menu, including Leaderboard. The scaffold already accepts the mounted corridor.
+None outstanding for these findings. The scaffold now checks the F6 four-button menu, including Leaderboard, and accepts the mounted corridor (284 checks PASS).
 
 ## Known gaps
 
-F0-F6 implementation is complete. Final acceptance on the pinned Godot 4.7.1 is the only remaining acceptance item. The coordinator will recapture the menu with the adjusted Hoppy placement. The scaffold four-button assertion update is tracked above; the existing headless menu hover failures remain exactly the two baseline failures.
+F0-F6 implementation is complete. The Hoppy menu recapture at (0.7, 0, -0.3) is committed, and the backend's scaffold four-button assertion is complete (284 checks PASS).
+
+Required: final acceptance on the pinned Godot 4.7.1, which the briefs' acceptance scripts gate on.
+
+Tracked non-blocking baseline: the two documented headless menu_smoke hover failures on Godot 4.7.0 listed above.

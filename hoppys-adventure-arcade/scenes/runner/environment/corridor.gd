@@ -197,19 +197,19 @@ func _exit_tree() -> void:
 	var viewport_id := _viewport.get_instance_id()
 	var owners: Array = _scaling_owners[viewport_id]
 	for i in owners.size():
-		var owner: Dictionary = owners[i]
-		if owner.id != get_instance_id():
+		var entry: Dictionary = owners[i]
+		if entry.id != get_instance_id():
 			continue
 		if i + 1 < owners.size():
 			# Transfer the original baseline when an older corridor exits first.
 			var next: Dictionary = owners[i + 1]
-			if is_equal_approx(next.previous_scale, owner.applied_scale) and next.previous_mode == Viewport.SCALING_3D_MODE_BILINEAR:
-				next.previous_scale = owner.previous_scale
-				next.previous_mode = owner.previous_mode
-		elif is_equal_approx(_viewport.scaling_3d_scale, owner.applied_scale) and _viewport.scaling_3d_mode == Viewport.SCALING_3D_MODE_BILINEAR:
+			if is_equal_approx(next.previous_scale, entry.applied_scale) and next.previous_mode == Viewport.SCALING_3D_MODE_BILINEAR:
+				next.previous_scale = entry.previous_scale
+				next.previous_mode = entry.previous_mode
+		elif is_equal_approx(_viewport.scaling_3d_scale, entry.applied_scale) and _viewport.scaling_3d_mode == Viewport.SCALING_3D_MODE_BILINEAR:
 			# Do not overwrite settings applied by a different viewport user.
-			_viewport.scaling_3d_scale = owner.previous_scale
-			_viewport.scaling_3d_mode = owner.previous_mode
+			_viewport.scaling_3d_scale = entry.previous_scale
+			_viewport.scaling_3d_mode = entry.previous_mode
 		owners.remove_at(i)
 		break
 	if owners.is_empty():
