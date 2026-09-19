@@ -92,10 +92,12 @@ RunnerGame (Node3D, runner_game.gd, process_mode ALWAYS)            backend
 └─ DebugOverlay (CanvasLayer 90, ALWAYS, debug_overlay.gd)          backend; F3 toggles
 ```
 
-Mounting: for each `MOUNT` path that exists, `load(path).instantiate()` is added under the mount node
-and, if it has `bind`, `bind(self)` is called **before** `run_started` is emitted. Hazard, power-up,
-pursuer and player roots mount their own `Visual` the same way (`<kind>_visual.tscn` if it exists,
-else a code-built primitive).
+Mounting: for each `MOUNT` path, the backend calls `ResourceLoader.exists(path)`, then
+`load(path) as PackedScene`; only a non-null `PackedScene` is instantiated and added under the mount node
+(a missing, failed or wrongly typed resource is logged with `push_warning` and the code-built graybox is
+used instead). If the instance has `bind`, `bind(self)` is called **before** `run_started` is emitted.
+Hazard, power-up, pursuer and player roots mount their own `Visual` with the same validation
+(`<kind>_visual.tscn` if valid, else a code-built primitive).
 
 Physics: 60 Hz, Jolt, `physics/common/physics_interpolation = true`. World forward is −Z. The player
 never moves in Z (`axis_lock_linear_z`); chunks move toward +Z at the authoritative speed.
@@ -287,7 +289,7 @@ visual), except the timed laser, which switches between discrete states with the
 | `laser_grid` | `ground` | 5.6 × 0.4 × 1.2 | 0.1 – 0.5 | all | `JUMP` | CI security scan beam |
 | `laser_grid` | `mid` | 5.6 × 0.3 × 1.2 | 1.0 – 1.3 | all | `ROLL_OR_JUMP` | Roll is safe, jump is expert |
 | `laser_grid` | `high` | 5.6 × 0.4 × 1.2 | 1.1 – 1.5 | all | `ROLL` | Chest-height beam |
-| `laser_grid` | `timed` | ground ⇄ high: 1.2 s on, 0.3 s off (period 3.0 s, phase from the run clock) | | all | `TIMED` | Sweeping scanner |
+| `laser_grid` | `timed` | cycle of 3.0 s from the run clock: `ground` on 1.2 s → `off` 0.3 s → `high` on 1.2 s → `off` 0.3 s (hitbox off in both `off` states) | ground / high rows | all | `TIMED` | Sweeping scanner |
 | `comment_flood` | – | 3.6 × 4.0 × 1.2 | 0 – 4.0 | 2 adjacent | `LANE` | Wall of nitpick comments; too tall to jump |
 | `build_shockwave` | – | 5.6 × 0.5 × 1.2 | 0 – 0.5 | all | `JUMP` | Failed-build blast ring |
 
@@ -311,4 +313,4 @@ mouse-hover failures on a clean `main`; the docs validated it on 4.7.1. New runn
 ## 10. Change log
 
 - 1.0 (2026-09-19): initial contract reconciled from the backend, procgen/tuning and frontend design passes.
-- 1.1 (2026-09-19): engine version policy (4.7.1 pin, 4.7.0 validation); AppRouter rule scoped to in-game overlays; routes wording clarified; leaderboard writes keep a `.bak`; Nitro cap arithmetic and viewport-scale restore semantics clarified; return-type rule generalised.
+- 1.1 (2026-09-19): engine version policy (4.7.1 pin, 4.7.0 validation); AppRouter rule scoped to in-game overlays; routes wording clarified; leaderboard writes keep a `.bak`; Nitro cap arithmetic and viewport-scale restore semantics clarified; return-type rule generalised; mount resources validated as `PackedScene`; timed laser cycle spelled out.
