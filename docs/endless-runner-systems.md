@@ -256,7 +256,7 @@ Graybox: coloured `SphereMesh` per kind.
 Storage: section `meta/version`; section `leaderboard/entries` (Array of Dictionary). Unknown or newer
 version → treat as empty. Validate each entry on load (types, finite, non-negative). Sort: score desc,
 duration desc, insertion `order` asc (Godot's `sort_custom` is not stable). Dedupe by `run_id`
-(replace). Sanitize: `strip_edges`, drop control code points (< 32, 127, and C1 controls 0x80–0x9F), `substr(0, 16)`, blank → `"Hoppy"`.
+(replace). Sanitize: trim → drop controls (< 32, 127, and C1 controls 0x80–0x9F) → truncate to 16 → trim again → blank → `"Hoppy"`.
 Atomic write with backup: `DirAccess.make_dir_recursive_absolute(base_dir)`; `config.save(path + ".tmp")`
 (on error return it — the destination is untouched); if the destination exists, `rename_absolute(path,
 path + ".bak")`; `rename_absolute(tmp, path)`; on success remove `.bak`; on failure restore `.bak` → `path`,
