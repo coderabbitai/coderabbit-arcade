@@ -118,6 +118,9 @@ func hit_player(_player: Node) -> void:
 		return
 	consumed = true
 	set_deferred(&"monitoring", false)
+	# Hit-once (systems spec §5.3): the cycle stops here, so a timed laser can never re-arm its
+	# hitbox on a later state change, and on_hit_player() is the last word on the visual.
+	set_physics_process(false)
 	if game != null and game.hit_manager != null:
 		game.hit_manager.report_hit(self)
 	if is_instance_valid(visual) and visual.has_method("on_hit_player"):
@@ -131,6 +134,9 @@ func clear() -> void:
 	active = false
 	set_deferred(&"monitoring", false)
 	remove_from_group(&"runner_hazards")
+	# A cleared timed laser must stop advancing: otherwise it keeps driving set_laser_state() /
+	# set_telegraph() and re-shows the graybox the lines below just hid.
+	set_physics_process(false)
 	if is_instance_valid(visual) and visual.has_method("on_cleared"):
 		visual.on_cleared()
 	elif is_instance_valid(visual):
@@ -158,6 +164,15 @@ func _build_shape() -> void:
 ## here and never from an area callback.
 func _physics_process(_delta: float) -> void:
 	if not _timed:
+		return
+	# A consumed (hit-once) or Auto-Fix cleared laser is finished: disarm the hitbox once, stop the
+	# cycle and never touch the visual again. Guarded here as well as at the call sites so the
+	# hitbox cannot come back if anything re-enables physics processing.
+	if not is_blocking():
+		if monitoring:
+			# Safe here: _physics_process runs outside the physics query flush.
+			monitoring = false
+		set_physics_process(false)
 		return
 	var period := maxf(float(def.get("period", 3.0)), 0.0001)
 	var run_time := float(game.elapsed) if game != null else 0.0
