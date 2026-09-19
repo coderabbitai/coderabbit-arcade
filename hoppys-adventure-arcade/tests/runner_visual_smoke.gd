@@ -311,6 +311,9 @@ func check_hazards() -> void:
 	print("HAZARD CASES CHECKED: %d; summed peak draw census=%d" % [cases_checked, total_draws])
 	check(cases_checked == 12, "all hazard cases executed")
 	var gallery_scene := load("res://scenes/runner/hazards/visuals/dev/hazard_gallery.tscn") as PackedScene
+	check(gallery_scene != null, "hazard gallery scene loads")
+	if gallery_scene == null:
+		return
 	var gallery := gallery_scene.instantiate()
 	root.add_child(gallery)
 	await frames()
@@ -474,6 +477,9 @@ func check_powerups_and_pursuer() -> void:
 func check_runner_ui() -> void:
 	root.size = Vector2i(1280, 720)
 	var fixture := load("res://scenes/runner/ui/dev/hud_preview.tscn") as PackedScene
+	check(fixture != null, "HUD preview scene loads")
+	if fixture == null:
+		return
 	var mock := fixture.instantiate()
 	mock.autoplay = false
 	root.add_child(mock)
@@ -553,6 +559,18 @@ func check_runner_ui() -> void:
 		hud._process(0.1)
 	check(not hud.widgets.visible and not hud.pursuit_warning.visible, "caught hides gameplay")
 	check(is_equal_approx(hud.vignette_material.get_shader_parameter("strength"), 1), "caught vignette")
+	for restart_state: StringName in [&"running", &"ready"]:
+		mock.state_changed.emit(&"caught")
+		hud.widgets.modulate.a = 0.35
+		mock.damage_blocked.emit(&"bug_swarm", &"shield")
+		hud._process(2.0)
+		mock.bonus_awarded.emit(25, &"pickup")
+		var previous_flash: Tween = hud.flash_tween
+		mock.state_changed.emit(restart_state)
+		check(is_zero_approx(hud.vignette_material.get_shader_parameter("strength")), "%s clears caught vignette" % restart_state)
+		check(hud.widgets.visible and is_equal_approx(hud.widgets.modulate.a, 1.0), "%s restores gameplay widgets" % restart_state)
+		check(not previous_flash.is_valid() and hud.flash_tween == null and is_zero_approx(hud.hit_flash.color.a), "%s clears hit flash and kills tween" % restart_state)
+		check(hud.toast_queue.is_empty() and hud.toast.text.is_empty() and is_zero_approx(hud.toast_remaining), "%s clears active and queued toasts" % restart_state)
 	await frames()
 	check(over.panel.size.x <= 680 and over.panel.size.y <= 620, "result panel fits 1280x720")
 	check(over.panel.get_global_rect().end.y <= 720, "result panel inside viewport")
@@ -604,6 +622,9 @@ func check_runner_ui() -> void:
 	await frames()
 	print("RUNNER UI MOCK: HUD, pursuit, pause, results, focus and save PASS")
 	var scene := load("res://scenes/runner/runner_game.tscn") as PackedScene
+	check(scene != null, "runner game scene loads")
+	if scene == null:
+		return
 	var game := scene.instantiate()
 	game.autostart = false
 	game.leaderboard_path = "user://test_runner_visual_smoke_%d.cfg" % OS.get_process_id()
@@ -900,9 +921,10 @@ func check_runner_full_loop() -> void:
 	_force_loop_hit(game)
 	check(game.hp == 1 and game.hit_manager.is_pursued() and events.pursuit == 1, "first hit starts pursuit")
 	var recovery_start: float = game.elapsed
-	await _wait_for(func() -> bool: return not events.recovery.is_empty() or game.state != &"running", 24, "natural recovery arrives")
-	check(events.recovery == [&"timer"] and game.hp == 2 and game.hit_manager.is_safe(), "18 second timer recovers HP and safe state")
-	check(game.elapsed - recovery_start >= 18.0, "recovery uses full contract timer")
+	var recovery_seconds := float(game.config.recovery_seconds)
+	await _wait_for(func() -> bool: return not events.recovery.is_empty() or game.state != &"running", recovery_seconds + 6.0, "natural recovery arrives")
+	check(events.recovery == [&"timer"] and game.hp == 2 and game.hit_manager.is_safe(), "%s second timer recovers HP and safe state" % recovery_seconds)
+	check(game.elapsed - recovery_start >= recovery_seconds, "recovery uses full %s second contract timer" % recovery_seconds)
 	_force_loop_hit(game)
 	check(game.hp == 1 and game.hit_manager.is_pursued() and events.pursuit == 2, "next hit starts new pursuit")
 	await _wait_for(func() -> bool: return not game.hit_manager.is_invulnerable(), 3, "hit iframes expire naturally")
@@ -934,6 +956,6 @@ func check_runner_full_loop() -> void:
 		if FileAccess.file_exists(path):
 			check(DirAccess.remove_absolute(path) == OK, "temporary leaderboard cleanup")
 	check(not FileAccess.file_exists(loop_board_path), "temporary leaderboard removed")
-	print("RUNNER FULL LOOP: ", "PASS" if before == failures else "FAIL", " (menu, play, hit, pursuit, 18s timer recovery, hit, hit, caught, finished, game over, Codex, retry, menu, hub, default music; isolated board removed)")
+	print("RUNNER FULL LOOP: ", "PASS" if before == failures else "FAIL", " (menu, play, hit, pursuit, %ss timer recovery, hit, hit, caught, finished, game over, Codex, retry, menu, hub, default music; isolated board removed)" % recovery_seconds)
 	current_scene.free()
 	await frames()

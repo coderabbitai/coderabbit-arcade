@@ -231,8 +231,17 @@ func _caught() -> void:
 
 func _state(value: StringName) -> void:
 	get_ready.visible = value == &"ready"
-	if value == &"running":
+	if value == &"ready" or value == &"running":
 		widgets.show()
+		widgets.modulate.a = 1.0
+		vignette_material.set_shader_parameter("strength", 0.0)
+		if flash_tween != null:
+			flash_tween.kill()
+			flash_tween = null
+		hit_flash.color.a = 0.0
+		toast_queue.clear()
+		toast.text = ""
+		toast_remaining = 0.0
 	elif value == &"caught" or value == &"finished":
 		_caught()
 

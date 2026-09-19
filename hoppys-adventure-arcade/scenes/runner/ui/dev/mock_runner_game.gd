@@ -222,7 +222,7 @@ func finish_demo() -> void:
 		"hazards_dodged": 24, "power_ups": 6, "hazards_blasted": 3, "hits_taken": 3,
 		"recoveries": 1, "blocked_hits": 1, "seed": seed, "max_speed_reached": speed,
 		"best_multiplier": 2.0, "chunks_spawned": 12, "score_rule_revision": 1,
-		"submitted_at": 0, "rank": 3, "qualifies": true, "player_name": "Hoppy"}
+		"submitted_at": 0, "rank": 3, "qualifies": true, "leaderboard_error": OK, "player_name": "Hoppy"}
 	_board.clear()
 	for i in 10:
 		_board.append({"run_id": run_id if i == 2 else "fixture-%d" % i,

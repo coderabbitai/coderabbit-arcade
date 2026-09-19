@@ -120,9 +120,12 @@ func _play(kind: StringName, player: AudioStreamPlayer = null) -> void:
 		var voice := _playback.play_stream(stream, 0.0, 0.0, 1.0, AudioServer.PLAYBACK_TYPE_DEFAULT, &"SFX")
 		if voice == AudioStreamPlaybackPolyphonic.INVALID_ID:
 			_queue(kind)
+			var poly := one_shots.stream as AudioStreamPolyphonic
+			if poly == null:
+				return
 			# A stopped slot is released on a later mixer tick. Count those reserved
 			# slots so repeated retries do not keep evicting additional live voices.
-			if HIGH_PRIORITY.has(kind) and _voices.size() + _high_pending_count() > one_shots.stream.polyphony:
+			if HIGH_PRIORITY.has(kind) and _voices.size() + _high_pending_count() > poly.polyphony:
 				for i in _voices.size():
 					var oldest := _voices[i]
 					if not HIGH_PRIORITY.has(_voice_kinds[oldest]):
