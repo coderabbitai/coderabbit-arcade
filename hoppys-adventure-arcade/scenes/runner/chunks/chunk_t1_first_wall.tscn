@@ -1,0 +1,17 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/runner/chunks/chunk.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/runner/hazards/hazard.tscn" id="2"]
+
+[node name="ChunkT1FirstWall" type="Node3D"]
+script = ExtResource("1")
+length = 24.0
+weight = 4.0
+min_difficulty = 0.0
+max_difficulty = 0.3
+mirror_x = false
+tags = PackedStringArray("t1")
+
+[node name="Hazard1" parent="." instance=ExtResource("2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -15)
+kind = &"pr_backlog_low"

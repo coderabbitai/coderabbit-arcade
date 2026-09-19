@@ -1,7 +1,26 @@
-[gd_resource type="Resource" script_class="" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="" load_steps=21 format=3]
 
 [ext_resource type="Script" path="res://scenes/runner/data/chunk_library.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_breather_a.tscn" id="2"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_breather_b.tscn" id="3"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_t1_first_wall.tscn" id="4"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_t1_first_bar.tscn" id="5"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_t1_swarm_side.tscn" id="6"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_t1_pit_intro.tscn" id="7"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_t1_wall_then_bar.tscn" id="8"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_t2_merge_conflict.tscn" id="9"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_t2_flood_hold.tscn" id="10"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_t2_laser_low_high.tscn" id="11"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_t2_swarm_pair.tscn" id="12"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_t2_shockwave_rhythm.tscn" id="13"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_t3_pit_then_bar.tscn" id="14"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_t3_flood_laser.tscn" id="15"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_t3_merge_swarm.tscn" id="16"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_t3_timed_laser_intro.tscn" id="17"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_t4_gauntlet.tscn" id="18"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_t4_laser_rhythm.tscn" id="19"]
+[ext_resource type="PackedScene" path="res://scenes/runner/chunks/chunk_t4_pit_run.tscn" id="20"]
 
 [resource]
 script = ExtResource("1")
-scenes = Array[PackedScene]([])
+scenes = Array[PackedScene]([ExtResource("2"), ExtResource("3"), ExtResource("4"), ExtResource("5"), ExtResource("6"), ExtResource("7"), ExtResource("8"), ExtResource("9"), ExtResource("10"), ExtResource("11"), ExtResource("12"), ExtResource("13"), ExtResource("14"), ExtResource("15"), ExtResource("16"), ExtResource("17"), ExtResource("18"), ExtResource("19"), ExtResource("20")])

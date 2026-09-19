@@ -1,0 +1,432 @@
+extends SceneTree
+## Endless Runner end-to-end smoke test (systems spec §8). One real runner_game.tscn session driven
+## by the autopilot at Engine.time_scale 6, then the routing round trip.
+## Run with --path <project> --script res://tests/runner_smoke.gd.
+
+## Only scripts that never reach runner_game.gd can be preloaded: under --script this test is
+## compiled before the autoloads exist (see tests/runner_logic.gd).
+const RunConfig = preload("res://scenes/runner/data/run_config.gd")
+const GAME_PATH := "res://scenes/runner/runner_game.tscn"
+const CONFIG_PATH := "res://scenes/runner/data/run_config.tres"
+const SEED := 12345
+const TIME_SCALE := 6.0
+## Autopilot policies (systems spec §8).
+const PREFER_LANE := 0
+const GREEDY_PICKUP := 2
+## Run phases, in game seconds.
+const CLEAN_SECONDS := 45.0
+const RAMP_SECONDS := 20.0
+const DAMAGE_WINDOW := 14.0
+## Long enough for an ignored slice to travel from the scan horizon into the player.
+const PASS_SECONDS := 6.0
+const BLAST_QUIET_SECONDS := 2.0
+const PAUSE_SECONDS := 1.0
+## Wall-clock ceiling for any wait, so a stuck run fails instead of hanging.
+const WALL_TIMEOUT := 40.0
+
+## Godot 4.7 runs the same 60 physics ticks per second under a raised time_scale and simply makes
+## each delta 6x longer, which would break the 0.10 s jump buffer and let hazards tunnel. Raising
+## the tick rate alongside it keeps the per-tick delta at the real 1/60 s and still runs the game
+## six times faster than the wall clock.
+const PHYSICS_TICKS := 360
+
+var failures := 0
+var checks := 0
+var game: Node3D
+var events := {}
+var restore_steps := 8
+var restore_ticks := 60
+## Throwaway board for this run, deleted in _report(): a smoke run must never write entries to the
+## player's real user://leaderboard.cfg.
+var leaderboard_path := "user://smoke_leaderboard_%d.cfg" % (randi() % 1000000)
+
+func _initialize() -> void:
+	call_deferred("run")
+
+func check(condition: bool, message: String) -> void:
+	checks += 1
+	if not condition:
+		failures += 1
+		push_error("RUNNER SMOKE: " + message)
+		_dump_run()
+
+func run() -> void:
+	restore_steps = Engine.max_physics_steps_per_frame
+	restore_ticks = Engine.physics_ticks_per_second
+	Engine.time_scale = TIME_SCALE
+	Engine.max_physics_steps_per_frame = 32
+	Engine.physics_ticks_per_second = PHYSICS_TICKS
+	if not ResourceLoader.exists(GAME_PATH):
+		check(false, "runner_game.tscn does not exist")
+		await _report()
+		return
+	var packed := load(GAME_PATH) as PackedScene
+	check(packed != null, "runner_game.tscn failed to load")
+	if packed == null:
+		await _report()
+		return
+	game = packed.instantiate() as Node3D
+	game.autostart = false
+	var config := (load(CONFIG_PATH) as RunConfig).duplicate()
+	# Reach the top speed inside the smoke run instead of the full 165 s ramp.
+	config.time_to_max_speed = RAMP_SECONDS
+	game.config = config
+	game.leaderboard_path = leaderboard_path
+	root.add_child(game)
+	await process_frame
+	_watch()
+	game.start_run(SEED)
+	check(game.state == &"running", "start_run did not go live")
+	check(game.seed == SEED, "the run did not take the seed it was given")
+
+	# The key test runs first, while the run-in ahead of the first chunk is still empty: a real
+	# jump takes 0.70 s with the bot switched off, and that is not a safe thing to do mid-corridor.
+	await _input_phase()
+	await _clean_phase()
+	await _auto_fix_phase()
+	await _pause_phase()
+	await _pursuit_phase()
+	await _catch_phase()
+	_leaderboard_phase()
+	game.free()
+	game = null
+	await process_frame
+	await _routing_phase()
+	await _report()
+
+## 45 s of ramped, autopiloted running with no damage at all.
+func _clean_phase() -> void:
+	game.set_autopilot(true)
+	if game.autopilot != null and game.autopilot.has_method("set_mode"):
+		game.autopilot.set_mode(GREEDY_PICKUP)
+	await _wait_run_seconds(CLEAN_SECONDS)
+	check(game.hp == 2, "the clean run lost health (hp %d)" % game.hp)
+	check(int(game.hit_manager.hits_taken) == 0,
+		"the clean run took %d hits" % int(game.hit_manager.hits_taken))
+	check(events["damage_taken"].is_empty(), "the clean run reported damage")
+	var top := float(game.config.max_speed)
+	check(game.speed >= top - 0.5, "the corridor only reached %.1f m/s, expected %.1f" % [game.speed, top])
+	check(game.normalized_speed >= 0.95, "normalized speed is %.2f at full ramp" % game.normalized_speed)
+	var active: Array = game.spawner.get_active_chunks()
+	check(active.size() <= int(game.config.max_active_chunks),
+		"%d chunks are active, the cap is %d" % [active.size(), int(game.config.max_active_chunks)])
+	check(int(game.spawner.chunks_spawned) > 0, "no chunk was ever spawned")
+	check(game.score > 0, "the score is still 0 after 45 s")
+	check(int(game.effect_manager.power_ups_collected) >= 1,
+		"the greedy bot collected no power-up in 45 s")
+	check(int(game.hazards_dodged) > 0, "no hazard was counted as dodged")
+
+## Auto-Fix clears the corridor ahead and the run stays clean right after it.
+func _auto_fix_phase() -> void:
+	var before: int = events["hazards_blasted"].size()
+	game.effect_manager.apply(&"auto_fix")
+	await _wait_frames(4)
+	check(events["hazards_blasted"].size() == before + 1, "Auto-Fix did not report a blast")
+	var cleared := 0
+	if events["hazards_blasted"].size() > before:
+		cleared = int(events["hazards_blasted"][events["hazards_blasted"].size() - 1])
+	check(cleared > 0, "Auto-Fix cleared %d hazards" % cleared)
+	check(events["hazard_cleared"].size() >= cleared, "hazard_cleared fired %d times for %d hazards"
+		% [events["hazard_cleared"].size(), cleared])
+	var hits_before: int = events["damage_taken"].size()
+	await _wait_run_seconds(BLAST_QUIET_SECONDS)
+	check(events["damage_taken"].size() == hits_before, "a hazard landed right after Auto-Fix")
+
+## Pausing freezes the score and the run clock, and says so.
+func _pause_phase() -> void:
+	var score_before: int = game.score
+	var elapsed_before: float = game.elapsed
+	var paused_before: int = events["paused_changed"].size()
+	game.pause()
+	check(paused, "pause() did not pause the tree")
+	await _wait_wall_seconds(PAUSE_SECONDS)
+	check(game.score == score_before, "the score moved while paused (%d -> %d)" % [score_before, game.score])
+	check(is_equal_approx(game.elapsed, elapsed_before), "the run clock moved while paused")
+	check(events["paused_changed"].size() == paused_before + 1 and bool(events["paused_changed"][-1]),
+		"paused_changed(true) was not emitted")
+	game.resume()
+	await process_frame
+	check(not paused, "resume() did not unpause the tree")
+	check(not bool(events["paused_changed"][-1]), "paused_changed(false) was not emitted")
+
+## Real Godot input dispatch, not a method call: Space is bound by physical_keycode (contract §6).
+func _input_phase() -> void:
+	game.set_autopilot(false)
+	var ready := func() -> bool:
+		return not bool(game.player.is_airborne) and _corridor_clear(1.2)
+	check(await _wait_until(ready, 5.0), "no clear stretch to test a real jump in")
+	var jumps := _action_count(&"jump")
+	var key := InputEventKey.new()
+	key.physical_keycode = KEY_SPACE
+	key.pressed = true
+	Input.parse_input_event(key)
+	await _wait_frames(6)
+	var release := InputEventKey.new()
+	release.physical_keycode = KEY_SPACE
+	release.pressed = false
+	Input.parse_input_event(release)
+	await _wait_frames(2)
+	check(_action_count(&"jump") > jumps, "a real Space key event did not make the player jump")
+	# Let the jump finish before the bot takes over, so it never inherits an airborne runner.
+	await _wait_until(func() -> bool: return not bool(game.player.is_airborne), 3.0)
+	game.set_autopilot(true)
+
+## Reckless autopilot takes a hit, the pursuit starts, and a clean stretch wins it back.
+func _pursuit_phase() -> void:
+	game.set_autopilot(true)
+	# One ignored slice at a time, and never two in flight: arm the bot, wait until it has burned
+	# the slice, then give that slice time to reach the player before arming again. Two overlapping
+	# reckless slices would land two hits and end the run before the pursuit could be watched.
+	var hit := false
+	var attempts := 0
+	while not hit and attempts < 10 and game.state == &"running":
+		attempts += 1
+		if game.autopilot.has_method("set_reckless"):
+			game.autopilot.set_reckless(1)
+		var burned := func() -> bool:
+			return int(game.autopilot.reckless_slices) == 0 or not events["damage_taken"].is_empty()
+		await _wait_until(burned, DAMAGE_WINDOW / TIME_SCALE)
+		hit = await _wait_until(func() -> bool: return not events["damage_taken"].is_empty(),
+			PASS_SECONDS / TIME_SCALE)
+	if game.autopilot.has_method("set_reckless"):
+		game.autopilot.set_reckless(0)
+	check(hit, "the reckless bot never took a hit in %d attempts" % attempts)
+	check(game.state == &"running", "the reckless phase ended the run early (state %s)" % game.state)
+	if not hit:
+		return
+	check(game.hp == 1, "the first hit left hp %d" % game.hp)
+	check(bool(game.hit_manager.is_pursued()), "the first hit did not start the pursuit")
+	check(events["pursuit_started"].size() == 1, "pursuit_started fired %d times"
+		% events["pursuit_started"].size())
+	check(not events["pursuit_progress"].is_empty(), "pursuit_progress is not ticking")
+	# Back to fair driving: the recovery timer needs a clean stretch.
+	game.autopilot.set_mode(PREFER_LANE)
+	game.set_autopilot(true)
+	var window := (float(game.config.recovery_seconds) + 4.0) / TIME_SCALE
+	var recovered := await _wait_until(func() -> bool: return not events["pursuit_recovered"].is_empty(),
+		window)
+	check(recovered, "the pursuit never ended inside recovery_seconds + 1")
+	if not recovered:
+		return
+	check(StringName(events["pursuit_recovered"][0]) == &"timer", "the recovery was not the timer")
+	check(game.hp == 2, "the recovery left hp %d" % game.hp)
+	check(bool(game.hit_manager.is_safe()), "the recovery did not restore the SAFE state")
+
+## Two more hits end the run: caught, then run_finished exactly once about 1.6 s later.
+func _catch_phase() -> void:
+	game.set_autopilot(false)
+	var hits_before: int = events["damage_taken"].size()
+	var caught := await _wait_until(func() -> bool: return events["caught"] > 0, WALL_TIMEOUT / TIME_SCALE)
+	check(caught, "the unguided runner was never caught")
+	if not caught:
+		return
+	check(events["damage_taken"].size() >= hits_before + 2, "the catch took fewer than two hits")
+	check(game.state == &"caught", "the catch did not move the state to caught")
+	check(events["caught"] == 1, "caught fired %d times" % events["caught"])
+	var at_caught := Time.get_ticks_msec()
+	var finished := await _wait_until(func() -> bool: return events["run_finished"] > 0, WALL_TIMEOUT / TIME_SCALE)
+	check(finished, "run_finished never arrived")
+	if not finished:
+		return
+	var span := float(Time.get_ticks_msec() - at_caught) / 1000.0 * TIME_SCALE
+	check(span >= 1.0 and span <= 4.0,
+		"run_finished landed %.2f game seconds after caught, expected about %.1f"
+			% [span, float(game.config.caught_sequence_seconds)])
+	await _wait_run_seconds(0.5)
+	check(events["run_finished"] == 1, "run_finished fired %d times" % events["run_finished"])
+	check(game.state == &"finished", "the run did not end in the finished state")
+
+## The result reached the board, and the name can still be set afterwards.
+func _leaderboard_phase() -> void:
+	var result: Dictionary = game.get_result()
+	check(not result.is_empty(), "the result is empty after run_finished")
+	if result.is_empty():
+		return
+	check(String(result["run_id"]) == game.run_id, "the result carries another run_id")
+	check(String(result["outcome"]) == "caught", "the outcome is %s" % result["outcome"])
+	check(int(result["seed"]) == SEED, "the result lost the seed")
+	check(int(result["hits_taken"]) >= 2, "the result counted %d hits" % int(result["hits_taken"]))
+	check(int(result["score"]) > 0, "the result scored 0")
+	check(events["leaderboard_saved"] > 0, "leaderboard_saved was never emitted")
+	var board: Array = game.get_leaderboard()
+	var entry := _find_entry(board, game.run_id)
+	check(not entry.is_empty(), "this run is not on the leaderboard")
+	if entry.is_empty():
+		return
+	check(game.submit_name("  Test  "), "submit_name did not persist")
+	var renamed: Array = game.get_leaderboard()
+	check(renamed.size() == board.size(), "submit_name changed the entry count")
+	var again := _find_entry(renamed, game.run_id)
+	check(String(again.get("name", "")) == "Test", "the entry is named %s" % again.get("name", ""))
+
+## Route in and out of the runner twice and land on the hub with nothing left behind.
+func _routing_phase() -> void:
+	var router := root.get_node_or_null("AppRouter")
+	check(router != null, "AppRouter is missing")
+	if router == null:
+		return
+	for i in 2:
+		router.go("runner_game")
+		await _wait_until(func() -> bool: return not router.busy, 10.0)
+		check(current_scene != null and current_scene.scene_file_path == router.ROUTES["runner_game"],
+			"pass %d did not land on runner_game.tscn" % (i + 1))
+		check(not paused, "pass %d left the tree paused" % (i + 1))
+	router.go("runner")
+	await _wait_until(func() -> bool: return not router.busy, 10.0)
+	check(current_scene != null and current_scene.scene_file_path == router.ROUTES["runner"],
+		"the runner menu did not load")
+	router.go("hub")
+	await _wait_until(func() -> bool: return not router.busy, 10.0)
+	check(current_scene != null and current_scene.name == "MainMenu", "the hub did not load")
+	check(not router.busy, "AppRouter stayed busy")
+	check(not paused, "the routing round trip left the tree paused")
+	var audio := root.get_node_or_null("AudioService")
+	check(audio != null and audio.get_child_count() == 2,
+		"AudioService has %d children, expected 2" % (audio.get_child_count() if audio != null else -1))
+
+# --- harness ---
+
+func _watch() -> void:
+	events = {
+		"damage_taken": [],
+		"hit_log": [],
+		"damage_blocked": [],
+		"pursuit_started": [],
+		"pursuit_progress": [],
+		"pursuit_recovered": [],
+		"paused_changed": [],
+		"player_action": [],
+		"hazards_blasted": [],
+		"hazard_cleared": [],
+		"power_up_collected": [],
+		"caught": 0,
+		"run_finished": 0,
+		"leaderboard_saved": 0
+	}
+	game.damage_taken.connect(func(kind: StringName, hp: int) -> void:
+		events["damage_taken"].append(kind)
+		events["hit_log"].append(_hit_context(kind, hp)))
+	game.damage_blocked.connect(func(kind: StringName, reason: StringName) -> void:
+		events["damage_blocked"].append([kind, reason]))
+	game.pursuit_started.connect(func(seconds: float) -> void:
+		events["pursuit_started"].append(seconds))
+	game.pursuit_progress.connect(func(remaining: float, _total: float) -> void:
+		events["pursuit_progress"].append(remaining))
+	game.pursuit_recovered.connect(func(reason: StringName) -> void:
+		events["pursuit_recovered"].append(reason))
+	game.paused_changed.connect(func(value: bool) -> void:
+		events["paused_changed"].append(value))
+	game.player_action.connect(func(action: StringName) -> void:
+		events["player_action"].append(action))
+	game.hazards_blasted.connect(func(count: int) -> void:
+		events["hazards_blasted"].append(count))
+	game.hazard_cleared.connect(func(_hazard: Area3D) -> void:
+		events["hazard_cleared"].append(true))
+	game.power_up_collected.connect(func(kind: StringName, _duration: float) -> void:
+		events["power_up_collected"].append(kind))
+	game.caught.connect(func() -> void:
+		events["caught"] += 1)
+	game.run_finished.connect(func(_result: Dictionary) -> void:
+		events["run_finished"] += 1)
+	game.leaderboard_saved.connect(func(_entries: Array, _rank: int) -> void:
+		events["leaderboard_saved"] += 1)
+
+## True when no blocking hazard can reach the player inside `seconds`.
+func _corridor_clear(seconds: float) -> bool:
+	var reach := maxf(game.speed, 1.0) * seconds
+	for node in get_nodes_in_group(&"runner_hazards"):
+		var hazard := node as Node3D
+		if hazard == null or not is_instance_valid(hazard):
+			continue
+		if hazard.has_method("is_blocking") and not hazard.is_blocking():
+			continue
+		var z := hazard.global_position.z
+		if z <= 1.0 and z >= -reach:
+			return false
+	return true
+
+## What the runner and the corridor looked like when a hit landed, for the failure dump.
+func _hit_context(kind: StringName, hp: int) -> String:
+	var player: Node = game.player
+	var line := "t=%.2f v=%.1f %s -> hp %d, lane %d/%d x=%.2f y=%.2f roll=%s air=%s reckless=%d" % [
+		game.elapsed, game.speed, kind, hp, int(player.lane), int(player.target_lane),
+		player.position.x, player.position.y, bool(player.is_rolling), bool(player.is_airborne),
+		int(game.autopilot.reckless_slices)]
+	for node in get_nodes_in_group(&"runner_hazards"):
+		var hazard := node as Node3D
+		if hazard == null or hazard.global_position.z < -14.0 or hazard.global_position.z > 4.0:
+			continue
+		line += " [%s z=%.1f x=%.1f %s blocking=%s]" % [hazard.kind, hazard.global_position.z,
+			hazard.global_position.x, hazard.dodge_hint, bool(hazard.is_blocking())]
+	return line
+
+func _action_count(action: StringName) -> int:
+	var count := 0
+	for item in events["player_action"]:
+		if StringName(item) == action:
+			count += 1
+	return count
+
+func _find_entry(board: Array, run_id: String) -> Dictionary:
+	for item in board:
+		var entry: Dictionary = item
+		if String(entry.get("run_id", "")) == run_id:
+			return entry
+	return {}
+
+## Wait for `seconds` of unpaused run time (game.elapsed), with a wall-clock safety net.
+func _wait_run_seconds(seconds: float) -> void:
+	var target: float = game.elapsed + seconds
+	await _wait_until(func() -> bool: return game.elapsed >= target, seconds / TIME_SCALE + 15.0)
+
+## Wall-clock seconds, used where the tree is paused and the run clock is standing still.
+func _wait_wall_seconds(seconds: float) -> void:
+	var deadline := Time.get_ticks_msec() + int(seconds * 1000.0)
+	while Time.get_ticks_msec() < deadline:
+		await process_frame
+
+func _wait_frames(count: int) -> void:
+	for i in count:
+		await process_frame
+
+## Returns true when the predicate came true before the wall-clock timeout.
+func _wait_until(predicate: Callable, wall_timeout: float) -> bool:
+	var deadline := Time.get_ticks_msec() + int(wall_timeout * 1000.0)
+	while Time.get_ticks_msec() < deadline:
+		if bool(predicate.call()):
+			return true
+		await process_frame
+	return bool(predicate.call())
+
+## Seed and chunk log, printed with the first failure so a flaky run can be reproduced.
+func _dump_run() -> void:
+	if game == null or not is_instance_valid(game):
+		return
+	print("RUNNER SMOKE: seed %d, elapsed %.1f s, distance %.0f m, speed %.1f, state %s, hp %d, score %d"
+		% [game.seed, game.elapsed, game.distance, game.speed, game.state, game.hp, game.score])
+	for line in events.get("hit_log", []):
+		print("  hit: " + String(line))
+	if game.spawner != null and is_instance_valid(game.spawner) and game.spawner.has_method("get_chunk_log"):
+		for line in game.spawner.get_chunk_log():
+			print("  chunk: " + line)
+
+## The throwaway board and both of its write-time companions (systems spec §7 atomic write).
+func _clean_leaderboard() -> void:
+	for suffix in ["", ".tmp", ".bak"]:
+		if FileAccess.file_exists(leaderboard_path + suffix):
+			DirAccess.remove_absolute(leaderboard_path + suffix)
+
+func _report() -> void:
+	Engine.time_scale = 1.0
+	Engine.max_physics_steps_per_frame = restore_steps
+	Engine.physics_ticks_per_second = restore_ticks
+	if game != null and is_instance_valid(game):
+		game.free()
+		game = null
+	_clean_leaderboard()
+	print("RUNNER SMOKE: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures / ", checks, " checks)")
+	var audio := root.get_node_or_null("AudioService")
+	if audio != null and audio.has_method("shutdown"):
+		audio.shutdown()
+	await create_timer(0.3).timeout
+	quit(failures)

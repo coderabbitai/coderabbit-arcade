@@ -1,6 +1,6 @@
 extends Node
-## Fractional score with a composed multiplier (systems spec §6).
-## PR 1 scaffold: state and the public API; accumulation lands in PR 2.
+## Fractional score with a composed multiplier (systems spec §6). The accumulator is a float so
+## 30 fps and 60 fps runs award the same points; only the integer part is ever shown.
 
 const RunnerGame = preload("res://scenes/runner/runner_game.gd")
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
@@ -14,19 +14,25 @@ var multiplier := 1.0
 var best_multiplier := 1.0
 var nitro_active := false
 var code_review_active := false
+## Points awarded by pickups and Auto-Fix blasts, for the result dictionary.
+var bonus_total := 0
 
 func setup(runner: RunnerGame) -> void:
 	game = runner
 	config = runner.config
 	reset()
 
-func reset() -> void:
+## `new_config` lets a test swap in a duplicated RunConfig; the shared .tres is never mutated.
+func reset(new_config: RunConfig = null) -> void:
+	if new_config != null:
+		config = new_config
 	exact = 0.0
 	score = 0
 	nitro_active = false
 	code_review_active = false
 	multiplier = 1.0
 	best_multiplier = 1.0
+	bonus_total = 0
 
 func set_nitro(active: bool) -> void:
 	nitro_active = active
@@ -63,9 +69,26 @@ func add_bonus(points: int, reason: StringName) -> void:
 		return
 	exact += float(points)
 	score = floori(exact)
+	bonus_total += points
 	if game != null:
 		game.bonus_awarded.emit(points, reason)
 		game.score_changed.emit(score, multiplier)
 
-func _physics_process(_delta: float) -> void:
-	pass # PR 2: accumulate base_score_rate * multiplier * delta and emit on integer/multiplier change.
+func base_rate() -> float:
+	return float(config.base_score_rate) if config != null else 0.0
+
+## base_score_rate x multiplier x delta, emitted only when the integer score or the multiplier
+## changes (contract §4.1).
+func _physics_process(delta: float) -> void:
+	if game == null or game.state != &"running":
+		return
+	var value := current_multiplier()
+	var multiplier_changed := not is_equal_approx(value, multiplier)
+	multiplier = value
+	best_multiplier = maxf(best_multiplier, value)
+	exact += base_rate() * multiplier * delta
+	var display := floori(exact)
+	var score_changed := display != score
+	score = display
+	if game != null and (score_changed or multiplier_changed):
+		game.score_changed.emit(score, multiplier)

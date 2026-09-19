@@ -1,9 +1,16 @@
 extends Node3D
 ## One authored corridor slice (systems spec §5.1). The front edge is z = 0 and the back edge is
 ## z = -length; hazards sit at negative z offsets and lane x (-2 / 0 / +2).
-## PR 1 scaffold: exports and the public API; the 19 authored chunks land in PR 2.
+## Layout convention: band i (counted from the entry) spans z in [-6(i+1), -6i]; a depth-1.2
+## hazard occupies 2.4..3.6 m into its band and a pit 1.5..4.5 m, so every hazard node sits at
+## z = -(6i + 3).
 
 const RunnerGame = preload("res://scenes/runner/runner_game.gd")
+const SLOT_GROUP: StringName = &"pickup_slot"
+const HAZARD_GROUP: StringName = &"runner_hazards"
+const HEIGHT_META := "height"
+const HEIGHT_RUN := "run"
+const HEIGHT_JUMP := "jump"
 
 ## Multiple of 6 metres.
 @export var length := 18.0
@@ -16,21 +23,28 @@ const RunnerGame = preload("res://scenes/runner/runner_game.gd")
 var game: RunnerGame
 var mirrored := false
 
+var _setup_done := false
+
 ## Called once when the spawner places the chunk. Mirroring negates every child's x.
 func setup(runner: RunnerGame, mirror: bool) -> void:
+	if _setup_done:
+		return
+	_setup_done = true
 	game = runner
 	mirrored = mirror
 	for child in get_children():
-		if child is Node3D:
-			if mirror:
-				(child as Node3D).position.x = -(child as Node3D).position.x
-			if child.has_method("setup"):
-				child.setup(runner)
+		var node := child as Node3D
+		if node == null:
+			continue
+		if mirror:
+			node.position.x = -node.position.x
+		if node.has_method("setup"):
+			node.setup(runner)
 
 func get_hazards() -> Array[Node]:
 	var found: Array[Node] = []
 	for child in get_children():
-		if child.is_in_group(&"runner_hazards"):
+		if child.is_in_group(HAZARD_GROUP):
 			found.append(child)
 	return found
 
@@ -38,9 +52,17 @@ func get_hazards() -> Array[Node]:
 func get_slots() -> Array[Node]:
 	var found: Array[Node] = []
 	for child in get_children():
-		if child.is_in_group(&"pickup_slot"):
+		if child.is_in_group(SLOT_GROUP):
 			found.append(child)
 	return found
+
+## `run` (y 1.0) or `jump` (y 2.2); anything unset reads as `run`.
+func slot_height(slot: Node) -> String:
+	if slot != null and slot.has_meta(HEIGHT_META):
+		var value := String(slot.get_meta(HEIGHT_META))
+		if value == HEIGHT_JUMP:
+			return HEIGHT_JUMP
+	return HEIGHT_RUN
 
 ## Clear metres between the chunk front (local z = 0, the side the player meets first) and the
 ## nearest hazard edge.
