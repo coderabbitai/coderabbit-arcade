@@ -310,7 +310,11 @@ autopilot-free run to its game over and submits the score to the real `user://le
 (`z ∈ (−lookahead, 0.5]`, z-ranges expanded ±0.8) into slices; plan the nearest unresolved slice at
 `front_z ≥ −(v × 0.6 + 0.4)`: PREFER_LANE → stay if free, else adjacent free lane, else two-step, else
 act by hint; PREFER_JUMP → jump for JUMP/JUMP_OR_LANE/ROLL_OR_JUMP, roll for ROLL, lane for LANE;
-GREEDY_PICKUP → PREFER_LANE plus jump for `jump` slots and lane toward `run` slots when safe. Timed
+GREEDY_PICKUP → PREFER_LANE plus lane toward `run` slots when safe, and for a `jump` slot the lane it
+hangs over first (only while the tween plus a jump lead still fit in front of it), then the jump once
+it is overhead. A slice keeps one key for its whole life, and a lane plan is re-issued across ticks —
+one request per queued change — until the player reaches its lane, so a two-step move is never
+abandoned half-way and an answered slice never earns a second manoeuvre. Timed
 laser: predict state over the pass window `[t_arr, t_arr + (depth + 0.8)/v]`; ground active → jump, high
 active → roll, off → nothing. Jump trigger `front_z ≥ −(v × 0.22 + 0.4)`; roll trigger
 `front_z ≥ −(v × 0.15 + 0.4)`. Reckless mode: ignore the next N slices.

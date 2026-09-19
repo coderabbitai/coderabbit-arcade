@@ -338,8 +338,11 @@ set -euo pipefail
 GODOT_BIN="${GODOT_BIN:-/Applications/Godot.app/Contents/MacOS/Godot}"
 version="$("$GODOT_BIN" --version)"
 if [[ "$version" != 4.7.1.stable* ]]; then
-  if [[ "${DIAGNOSTIC:-0}" == "1" ]]; then echo "DIAGNOSTIC RUN on $version (not acceptance)"; else
-    echo "Acceptance requires Godot 4.7.1.stable, found $version" >&2; exit 1; fi
+  if [[ "${DIAGNOSTIC:-0}" == "1" && "$version" == 4.7.* ]]; then
+    echo "DIAGNOSTIC RUN on $version (another 4.7.x build; not acceptance)"
+  else
+    echo "Acceptance requires Godot 4.7.1.stable (DIAGNOSTIC=1 allows other 4.7.x only), found $version" >&2; exit 1
+  fi
 fi
 "$GODOT_BIN" --headless --path hoppys-adventure-arcade --import
 while IFS= read -r f; do

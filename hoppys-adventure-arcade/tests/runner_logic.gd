@@ -24,6 +24,9 @@ const FAKE_GAME_SOURCE := "extends \"res://scenes/runner/runner_game.gd\"\nvar c
 const FAKE_HAZARD_SOURCE := "extends Node3D\nvar kind: StringName = &\"pr_backlog_low\"\nvar dodge_hint: StringName = &\"JUMP\"\nvar box := Vector3(5.6, 1.0, 1.2)\nvar center_y := 0.5\nvar blocking := true\nfunc is_blocking() -> bool:\n\treturn blocking\nfunc occupies_lane(index: int) -> bool:\n\treturn absf((float(index) - 1.0) * 2.0 - global_position.x) < box.x * 0.5 + 0.39\nfunc get_world_aabb() -> AABB:\n\treturn AABB(global_position + Vector3(0.0, center_y, 0.0) - box * 0.5, box)\n"
 ## Spawner stand-in for Auto-Fix (systems spec §5.2 clear_hazards_in_range).
 const FAKE_SPAWNER_SOURCE := "extends Node\nvar cleared := 0\nvar calls := 0\nfunc clear_hazards_in_range() -> int:\n\tcalls += 1\n\treturn cleared\n"
+## The slice of the player the autopilot drives: the lane tween with runner_player's one-queued-
+## change limit, plus a request counter so a bot that spams request_lane is visible.
+const FAKE_PLAYER_SOURCE := "extends Node\nvar target_lane := 1\nvar lane_t := 1.0\nvar queued_lane_dir := 0\nvar requests := 0\nfunc request_lane(direction: int) -> void:\n\trequests += 1\n\tvar dir := signi(direction)\n\tif lane_t < 1.0:\n\t\tqueued_lane_dir = dir\n\t\treturn\n\ttarget_lane = clampi(target_lane + dir, 0, 2)\n\tlane_t = 0.0\nfunc finish_tween() -> void:\n\tif lane_t >= 1.0:\n\t\treturn\n\tlane_t = 1.0\n\tif queued_lane_dir == 0:\n\t\treturn\n\tvar dir := queued_lane_dir\n\tqueued_lane_dir = 0\n\ttarget_lane = clampi(target_lane + dir, 0, 2)\n\tlane_t = 0.0\n"
 
 var failures := 0
 var checks := 0
@@ -33,6 +36,7 @@ var hazard_script: GDScript
 ## The real hazard.gd (Area3D), used by section 11; loaded at runtime for the same reason.
 var real_hazard_script: GDScript
 var spawner_script: GDScript
+var player_script: GDScript
 var hit_manager_script: GDScript
 var score_manager_script: GDScript
 var effect_manager_script: GDScript
@@ -62,7 +66,9 @@ func run() -> void:
 	game_script = _compile(FAKE_GAME_SOURCE)
 	hazard_script = _compile(FAKE_HAZARD_SOURCE)
 	spawner_script = _compile(FAKE_SPAWNER_SOURCE)
-	if game_script == null or hazard_script == null or spawner_script == null or real_hazard_script == null:
+	player_script = _compile(FAKE_PLAYER_SOURCE)
+	if game_script == null or hazard_script == null or spawner_script == null \
+			or player_script == null or real_hazard_script == null:
 		check(false, "the test harness scripts failed to compile")
 		_report()
 		return
@@ -488,6 +494,60 @@ func _test_autopilot() -> void:
 	check(merged.size() == 1, "10: hazards within 0.8 m are one slice")
 	check(not bool(merged[0]["jumpable"]) and not bool(merged[0]["rollable"]),
 		"10: a merged slice only claims what answers all of it")
+	check(int(merged[0]["key"]) == wall.get_instance_id(),
+		"10: a merged slice is keyed by its nearest hazard")
+
+	# A merged slice keeps one key for its whole life. Keying it by the smallest instance id of the
+	# moment moved the key as hazards entered and left the scan range, so an already-answered slice
+	# came back under a new key and earned a second manoeuvre.
+	var merged_key := StringName(str(merged[0]["key"]))
+	bot._done[merged_key] = true
+	var tail_only: Array = bot.slices_for([bar], 24.0, 0.0)
+	check(tail_only.size() == 1 and StringName(str(tail_only[0]["key"])) == merged_key,
+		"10: a merged slice keeps its key when the hazard that owns it is gone")
+	bot._prune(tail_only, [])
+	check(bot._next_slice(tail_only).is_empty(),
+		"10: an answered merged slice is never planned a second time")
+	bot.reset()
+
+	# A high pickup hangs over one lane: the jump only reaches it from that lane.
+	var high_pickup := _pickup(Vector3(2.0, 1.8, -20.0))
+	var pickups: Array = bot.pickup_targets([high_pickup], 24.0)
+	check(pickups.size() == 1 and int(pickups[0]["lane"]) == 2 and bool(pickups[0]["high"]),
+		"10: a pickup above running height in lane 2 is read as high")
+	var detour: Dictionary = bot.plan_pickup(pickups, [], 1, 24.0)
+	check(StringName(detour["action"]) == bot.ACTION_LANE and int(detour["lane"]) == 2
+		and int(detour["steps"]) == 1, "10: a high pickup in another lane is approached by lane")
+	var hop: Dictionary = bot.plan_pickup(pickups, [], 2, 24.0)
+	check(StringName(hop["action"]) == bot.ACTION_JUMP,
+		"10: a high pickup is jumped once the player is in its lane")
+	var late := _pickup(Vector3(2.0, 1.8, -1.0))
+	var late_targets: Array = bot.pickup_targets([late], 24.0)
+	check(StringName(bot.plan_pickup(late_targets, [], 1, 24.0)["action"]) == bot.ACTION_NONE,
+		"10: a high pickup too close to change lanes for is left alone")
+
+	# A lane plan is answered by arrival, not by one request: marking it done after the first
+	# transition left a two-step move stranded in the lane it was only passing through.
+	var mover: Node = _fake_player()
+	mover.target_lane = 0
+	var two_step := {"action": bot.ACTION_LANE, "lane": 2, "steps": 2}
+	var lane_key := StringName("two-step")
+	bot._execute(two_step, 0.0, 24.0, mover, lane_key)
+	check(int(mover.target_lane) == 1 and not bot._done.has(lane_key),
+		"10: the first transition of a two-step lane plan does not answer it")
+	bot._execute(two_step, 0.0, 24.0, mover, lane_key)
+	check(int(mover.queued_lane_dir) == 1, "10: the second step is queued behind the running tween")
+	var issued := int(mover.requests)
+	bot._execute(two_step, 0.0, 24.0, mover, lane_key)
+	bot._execute(two_step, 0.0, 24.0, mover, lane_key)
+	check(int(mover.requests) == issued,
+		"10: the bot does not spam request_lane while a change is already queued")
+	check(not bot._done.has(lane_key), "10: the plan stays pending in the lane it passes through")
+	mover.finish_tween()
+	check(int(mover.target_lane) == 2, "10: the queued step starts when the tween ends")
+	bot._execute(two_step, 0.0, 24.0, mover, lane_key)
+	check(bot._done.has(lane_key), "10: the lane plan is answered by reaching the target lane")
+	bot.reset()
 
 	check(is_equal_approx(bot.jump_trigger_z(24.0), -(24.0 * 0.22 + 0.4)), "10: the jump lead is 0.22 s")
 	check(is_equal_approx(bot.roll_trigger_z(24.0), -(24.0 * 0.15 + 0.4)), "10: the roll lead is 0.15 s")
@@ -615,6 +675,22 @@ func _hazard(kind: StringName) -> Node3D:
 	junk.append(hazard)
 	return hazard
 
+## A power-up stand-in for the autopilot's greedy planner: pickup_targets only reads
+## global_position, so a bare Node3D in the tree is the whole surface.
+func _pickup(at: Vector3) -> Node3D:
+	var pickup := Node3D.new()
+	root.add_child(pickup)
+	pickup.position = at
+	junk.append(pickup)
+	return pickup
+
+## A player stand-in with only the lane state the autopilot reads and drives.
+func _fake_player() -> Node:
+	var player := Node.new()
+	player.set_script(player_script)
+	junk.append(player)
+	return player
+
 ## A real hazard.gd timed laser, in the tree (its hitbox and group need it) and on its own facade
 ## with a real HitManager behind it. kind/variant are set before the hazard enters the tree so
 ## _ready() builds the timed def.
@@ -733,5 +809,6 @@ func _report() -> void:
 	game_script = null
 	hazard_script = null
 	spawner_script = null
+	player_script = null
 	print("RUNNER LOGIC: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures / ", checks, " checks)")
 	quit(failures)
