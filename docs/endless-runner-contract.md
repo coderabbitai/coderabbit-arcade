@@ -1,6 +1,12 @@
 # Endless Runner — Backend/Frontend Contract
 
-Version 1.0 · 2026-09-19 · Godot 4.7 (project pins 4.7.1) · GDScript
+Version 1.1 · 2026-09-19 · GDScript
+
+**Engine version policy.** The project pins **Godot 4.7.1** (GDD). The editor installed on the build
+machine during this cycle is **4.7.0 stable** (`4.7.stable.official.5b4e0cb0f`), so every verification
+result recorded in the runner docs was produced on 4.7.0 unless it says otherwise. Both are supported
+for development; any behavioural difference found between 4.7.0 and 4.7.1 must be recorded in §10, and
+final acceptance of the runner re-runs the §9 commands on 4.7.1.
 
 This document is the single source of truth shared by the two agents building the Endless Runner
 ("The Codebase Corridor"):
@@ -49,8 +55,9 @@ hub ──AppRouter.go("runner")──▶ runner_menu.tscn (RunnerMenu)
 ```
 
 - `AppRouter.ROUTES` gains `"runner_game": "res://scenes/runner/runner_game.tscn"`.
-- Frontend buttons call `game.retry()` / `game.go_to_menu()`, never `AppRouter` directly, so the
-  tree is never left paused.
+- Inside `runner_game.tscn` (pause menu, game over), frontend buttons call `game.retry()` /
+  `game.go_to_menu()` rather than `AppRouter` directly, so the tree is never left paused. The runner
+  menu scene, which has no game instance, calls `AppRouter.go(...)` / `AppRouter.quit_game()` itself.
 - The runner menu keeps the hub's return contract: a "Return to Main Menu" button → `AppRouter.go("hub")`
   and `ui_cancel` → hub. Quit → `AppRouter.quit_game()`.
 - Music: the runner menu and `runner_audio` call `AudioService.play_music(stream, -12.0)`; the call is a
@@ -301,3 +308,4 @@ mouse-hover failures on a clean `main`; the docs validated it on 4.7.1. New runn
 ## 10. Change log
 
 - 1.0 (2026-09-19): initial contract reconciled from the backend, procgen/tuning and frontend design passes.
+- 1.1 (2026-09-19): engine version policy (4.7.1 pin, 4.7.0 validation); AppRouter rule scoped to in-game overlays.
