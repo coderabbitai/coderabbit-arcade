@@ -63,7 +63,6 @@ func bind(game: Node) -> void:
 	_playback = one_shots.get_stream_playback() as AudioStreamPlaybackPolyphonic
 	var music := load(MUSIC_PATH) as AudioStreamOggVorbis
 	if music != null:
-		music.loop = true
 		if _audio_service != null and _audio_service.has_method("play_music"):
 			_audio_service.play_music(music, -12.0)
 	_on_paused(_paused)

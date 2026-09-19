@@ -152,6 +152,7 @@ func run() -> void:
 	await check_powerups_and_pursuer()
 	await check_runner_ui()
 	await check_runner_audio()
+	await check_runner_full_loop()
 	root.get_node("AudioService").shutdown()
 	await create_timer(0.3).timeout
 	failures += _logger.errors()
@@ -605,7 +606,7 @@ func check_runner_ui() -> void:
 	var scene := load("res://scenes/runner/runner_game.tscn") as PackedScene
 	var game := scene.instantiate()
 	game.autostart = false
-	game.leaderboard_path = "/tmp/f4-visual-smoke-board-%d.cfg" % OS.get_process_id()
+	game.leaderboard_path = "user://test_runner_visual_smoke_%d.cfg" % OS.get_process_id()
 	root.add_child(game)
 	game.start_run(4704)
 	game.set_autopilot(true)
@@ -617,7 +618,11 @@ func check_runner_ui() -> void:
 	game.pause()
 	check(game.get_node("Overlays/PauseMenu").visible, "real pause signal")
 	game.resume()
+	var temporary_path: String = game.leaderboard_path
 	game.free()
+	for suffix in ["", ".tmp", ".bak"]:
+		if FileAccess.file_exists(temporary_path + suffix):
+			DirAccess.remove_absolute(temporary_path + suffix)
 	await frames()
 	print("RUNNER UI REAL FACADE: autostart=false, start_run, autopilot 3s PASS")
 
@@ -625,6 +630,8 @@ func check_runner_audio() -> void:
 	const Synth = preload("res://scenes/runner/audio/sfx_synth.gd")
 	const RunnerAudio = preload("res://scenes/runner/audio/runner_audio.tscn")
 	const Mock = preload("res://scenes/runner/ui/dev/mock_runner_game.gd")
+	var music := load("res://Assets/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg") as AudioStreamOggVorbis
+	check(music != null and music.loop == true, "imported runner OGG loops before audio bind")
 	var mock := Mock.new()
 	mock.autoplay = false
 	root.add_child(mock)
@@ -820,3 +827,113 @@ func check_runner_audio() -> void:
 	mock.free()
 	await frames()
 	check(is_equal_approx(service.music.pitch_scale, 1.0), "audio teardown resets pitch")
+
+var loop_board_path := "user://test_runner_menu_leaderboard_%d.cfg" % OS.get_process_id()
+var loop_instances := 0
+
+## node_added fires before _ready, including for a fresh AppRouter retry scene.
+func _isolate_routed_game(node: Node) -> void:
+	if node.scene_file_path != "res://scenes/runner/runner_game.tscn":
+		return
+	node.autostart = false
+	node.leaderboard_path = loop_board_path
+	loop_instances += 1
+	node.ready.connect(func() -> void:
+		node.start_run(4706 + loop_instances)
+		node.set_autopilot(true)
+	, CONNECT_ONE_SHOT)
+
+func _wait_for(predicate: Callable, seconds: float, message: String) -> bool:
+	var deadline := Time.get_ticks_msec() + int(seconds * 1000)
+	while not predicate.call() and Time.get_ticks_msec() < deadline:
+		await process_frame
+	var success: bool = predicate.call()
+	check(success, message)
+	return success
+
+func _force_loop_hit(game: Node) -> void:
+	var hazard := load("res://scenes/runner/hazards/hazard.tscn").instantiate() as Area3D
+	hazard.kind = &"pr_backlog_low"
+	check(game.hit_manager.report_hit(hazard) == &"damaged", "full loop forced hazard applies damage")
+	hazard.free()
+
+func check_runner_full_loop() -> void:
+	var before := failures
+	var router := root.get_node("AppRouter")
+	var audio := root.get_node("AudioService")
+	node_added.connect(_isolate_routed_game)
+	router.go("runner")
+	await _wait_for(func() -> bool: return not router.busy, 5, "runner route completes")
+	check(current_scene != null and current_scene.name == &"RunnerMenu", "runner route is RunnerMenu")
+	var menu := current_scene
+	check(menu is Node3D and menu.buttons[0].has_focus(), "menu root and initial Play focus")
+	check(menu.get_node("Backdrop/Camera").fov == 55, "menu camera FOV")
+	check(menu.get_node("Backdrop/Hoppy").anim_state == &"run", "menu Hoppy jogs")
+	check(audio.music.stream == menu.Music and audio.music.volume_db == -12.0, "menu music")
+	menu.buttons[1].pressed.emit()
+	await frames()
+	check(menu.modal != null and menu.board.get_child_count() == 10, "leaderboard has ten rows")
+	check(root.gui_get_focus_owner().text == "Close", "leaderboard focuses Close")
+	for i in [0, 2, 3]:
+		check(menu.buttons[i].disabled and menu.buttons[i].focus_mode == Control.FOCUS_NONE, "modal blocks other menu action %d" % i)
+	check(not menu.buttons[1].disabled and menu.buttons[1].focus_mode == Control.FOCUS_ALL, "leaderboard toggle remains enabled and focusable")
+	var cancel := InputEventAction.new()
+	cancel.action = &"ui_cancel"
+	cancel.pressed = true
+	menu._unhandled_input(cancel)
+	check(menu.modal == null and menu.buttons[1].has_focus() and not router.busy, "cancel closes board and restores focus before routing")
+	menu.buttons[1].pressed.emit()
+	menu.buttons[1].pressed.emit()
+	check(menu.modal == null and menu.buttons[1].has_focus(), "leaderboard button toggles closed and restores focus")
+	var track: AudioStream = audio.music.stream
+	menu.buttons[0].pressed.emit()
+	await _wait_for(func() -> bool: return not router.busy, 5, "Play routes to game")
+	var game := current_scene
+	check(game != null and game.name == &"RunnerGame" and game.state == &"running", "runner_game is running")
+	check(game.leaderboard_path == loop_board_path and game.autopilot.enabled, "first routed run isolated with autopilot")
+	check(audio.music.stream == track, "menu to game keeps runner track")
+	var events := {"pursuit": 0, "recovery": [], "caught": 0, "finished": 0}
+	game.pursuit_started.connect(func(_seconds: float) -> void: events.pursuit += 1)
+	game.pursuit_recovered.connect(func(reason: StringName) -> void: events.recovery.append(reason))
+	game.caught.connect(func() -> void: events.caught += 1)
+	game.run_finished.connect(func(_result: Dictionary) -> void: events.finished += 1)
+	_force_loop_hit(game)
+	check(game.hp == 1 and game.hit_manager.is_pursued() and events.pursuit == 1, "first hit starts pursuit")
+	var recovery_start: float = game.elapsed
+	await _wait_for(func() -> bool: return not events.recovery.is_empty() or game.state != &"running", 24, "natural recovery arrives")
+	check(events.recovery == [&"timer"] and game.hp == 2 and game.hit_manager.is_safe(), "18 second timer recovers HP and safe state")
+	check(game.elapsed - recovery_start >= 18.0, "recovery uses full contract timer")
+	_force_loop_hit(game)
+	check(game.hp == 1 and game.hit_manager.is_pursued() and events.pursuit == 2, "next hit starts new pursuit")
+	await _wait_for(func() -> bool: return not game.hit_manager.is_invulnerable(), 3, "hit iframes expire naturally")
+	_force_loop_hit(game)
+	check(game.state == &"caught" and events.caught == 1, "second pursuit hit catches runner once")
+	var over := game.get_node("Overlays/GameOver")
+	check(not over.visible and events.finished == 0, "game over waits for run_finished")
+	await _wait_for(func() -> bool: return events.finished > 0, 5, "catch emits run_finished")
+	check(game.state == &"finished" and events.finished == 1 and over.visible, "finished shows game over exactly once")
+	check(game.submit_name("Codex"), "Codex name persists")
+	var entries: Array = game.get_leaderboard()
+	check(entries.size() == 1 and entries[0].name == "Codex", "temporary board contains saved run")
+	game.retry()
+	await _wait_for(func() -> bool: return not router.busy, 5, "retry route completes")
+	game = current_scene
+	check(game.name == &"RunnerGame" and game.state == &"running" and loop_instances == 2, "retry creates fresh running scene")
+	check(game.leaderboard_path == loop_board_path and game.autopilot.enabled, "retry is isolated before start_run")
+	game.go_to_menu()
+	await _wait_for(func() -> bool: return not router.busy, 5, "go_to_menu completes")
+	check(current_scene.name == &"RunnerMenu" and not paused, "facade returns to RunnerMenu unpaused")
+	# Exercise the menu's actual cancel route, which calls AppRouter.go("hub").
+	current_scene._unhandled_input(cancel)
+	await _wait_for(func() -> bool: return not router.busy, 5, "hub route completes")
+	check(current_scene.name == &"MainMenu", "hub is MainMenu")
+	check(audio.music.stream == audio.default_track and audio.music.playing, "hub restores default music")
+	node_added.disconnect(_isolate_routed_game)
+	for suffix in ["", ".tmp", ".bak"]:
+		var path: String = loop_board_path + suffix
+		if FileAccess.file_exists(path):
+			check(DirAccess.remove_absolute(path) == OK, "temporary leaderboard cleanup")
+	check(not FileAccess.file_exists(loop_board_path), "temporary leaderboard removed")
+	print("RUNNER FULL LOOP: ", "PASS" if before == failures else "FAIL", " (menu, play, hit, pursuit, 18s timer recovery, hit, hit, caught, finished, game over, Codex, retry, menu, hub, default music; isolated board removed)")
+	current_scene.free()
+	await frames()
