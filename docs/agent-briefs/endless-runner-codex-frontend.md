@@ -95,9 +95,12 @@ contract hitbox on every axis. Code motifs via `Label3D` (monospace `SystemFont`
 (`static func glow(color, energy := 1.2)`, `additive(color, alpha)`, `lit(color)`, `label(parent, text, size, color)`,
 `font()`), cached in `static var` dictionaries.
 
-Retro look: `corridor.gd` sets `get_viewport().scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR` and
-`scaling_3d_scale = 0.5` (export) in `_ready`, and in `_exit_tree` restores the value it replaced (track ownership; two corridors can coexist briefly). Verify in F0 that
-Compatibility honours it.
+Retro look: `corridor.gd` applies `get_viewport().scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR` and
+`scaling_3d_scale = 0.5` (export) with **shared per-viewport ownership**: a static registry keyed by viewport
+records the original mode and scale when the first corridor enters, each corridor pushes its own settings as
+the current owner, and the original values are restored only when the last owner exits (any exit order; an
+external change to the viewport settings is left alone). Two corridors can coexist briefly (menu backdrop and
+game). Verify in F0 that Compatibility honours the scale.
 
 Zero-download toolkit: `BoxMesh`, `CapsuleMesh`, `CylinderMesh`, `SphereMesh`, `TorusMesh`, `PlaneMesh`,
 `QuadMesh`, `PrismMesh`, `TextMesh`; `Label3D`; `GradientTexture1D/2D`; a code-drawn 5×7 glyph atlas
