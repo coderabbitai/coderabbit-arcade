@@ -324,7 +324,9 @@ Screenshots to `docs/previews/endless-runner-{spike,corridor,gallery,hud,gameove
 
 Check commands (repo root). Confirm the engine first: `/Applications/Godot.app/Contents/MacOS/Godot --version` must
 report `4.7.1.stable` for final acceptance; results from any other 4.7.x build (the build machine currently has
-4.7.0) are diagnostic and must be labelled as such in `docs/endless-runner.md`.
+4.7.0) are diagnostic and must be labelled as such in `docs/endless-runner.md`. Final acceptance of the frontend stays
+blocked until every check below has been run successfully on 4.7.1.stable; keep the scaffold `World/GrayboxEnvironment`
+note in the doc until the backend's PR 2 (which relaxes that assertion) is merged into this branch.
 
 ```sh
 /Applications/Godot.app/Contents/MacOS/Godot --version
