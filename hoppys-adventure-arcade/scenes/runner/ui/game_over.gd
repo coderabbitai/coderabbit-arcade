@@ -1,96 +1,178 @@
 extends CanvasLayer
-## Graybox game over overlay (contract §5.6). Backend-authored placeholder, frozen after the
-## contract PR. ui_cancel is bound here (and only while visible), per contract §4.4.
-
 const Style = preload("res://scenes/main_menu/menu_style.gd")
-
+const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 var game: Node
-var score_label: Label
-var time_label: Label
-var board_label: Label
+var panel: PanelContainer
+var dim: ColorRect
+var stats: GridContainer
+var name_row: HBoxContainer
 var name_field: LineEdit
 var save_button: Button
 var retry_button: Button
+var menu_button: Button
+var board: VBoxContainer
+var error_label: Label
+var result := {}
+var saved := false
 
 func _ready() -> void:
-	var ui := Control.new()
-	ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	ui.theme = Style.theme()
-	add_child(ui)
-	var dim := ColorRect.new()
-	dim.color = Color(0.01, 0.02, 0.04, 0.92)
+	var screen := Control.new()
+	screen.name = "Screen"
+	add_child(screen)
+	screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	screen.theme = Style.theme()
+	dim = ColorRect.new()
+	dim.color = Color(0.01, 0.02, 0.04, 0.88)
+	screen.add_child(dim)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	ui.add_child(dim)
 	var center := CenterContainer.new()
+	screen.add_child(center)
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	ui.add_child(center)
+	panel = PanelContainer.new()
+	panel.custom_minimum_size = Vector2(680, 560)
+	var box := StyleBoxFlat.new()
+	box.bg_color = Palette.NAVY
+	box.border_color = Palette.ROSE
+	box.set_border_width_all(2)
+	box.content_margin_left = 24
+	box.content_margin_right = 24
+	box.content_margin_top = 18
+	box.content_margin_bottom = 18
+	panel.add_theme_stylebox_override("panel", box)
+	center.add_child(panel)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 14)
-	center.add_child(column)
-	column.add_child(Style.label("CAUGHT", 40, Color("ff7185")))
-	score_label = Style.label("SCORE 0", 26)
-	column.add_child(score_label)
-	time_label = Style.label("0.0s  •  0 m", 16, Color("afbdc9"))
-	column.add_child(time_label)
-	var entry := HBoxContainer.new()
-	entry.add_theme_constant_override("separation", 12)
-	column.add_child(entry)
+	column.add_theme_constant_override("separation", 8)
+	panel.add_child(column)
+	column.add_child(Style.label("CAUGHT BY THE BACKLOG", 30, Palette.ROSE))
+	stats = GridContainer.new()
+	stats.name = "Stats"
+	stats.columns = 2
+	stats.add_theme_constant_override("h_separation", 32)
+	column.add_child(stats)
+	name_row = HBoxContainer.new()
+	name_row.name = "NameRow"
+	column.add_child(name_row)
 	name_field = LineEdit.new()
+	name_field.name = "NameEdit"
 	name_field.max_length = 16
 	name_field.placeholder_text = "Hoppy"
-	name_field.custom_minimum_size = Vector2(280, 46)
-	entry.add_child(name_field)
-	save_button = Style.button("Save", 46)
-	save_button.custom_minimum_size.x = 128
-	entry.add_child(save_button)
-	save_button.pressed.connect(_on_save_pressed)
-	board_label = Style.label("", 15, Style.MINT)
-	column.add_child(board_label)
-	retry_button = Style.button("Retry", 52)
-	column.add_child(retry_button)
-	retry_button.pressed.connect(func() -> void: _call_game(&"retry"))
-	var menu := Style.button("Runner Menu", 52)
-	column.add_child(menu)
-	menu.pressed.connect(func() -> void: _call_game(&"go_to_menu"))
+	name_field.custom_minimum_size = Vector2(330, 36)
+	name_row.add_child(name_field)
+	save_button = Style.button("Save", 36)
+	save_button.custom_minimum_size.x = 160
+	name_row.add_child(save_button)
+	save_button.pressed.connect(_save)
+	name_field.text_submitted.connect(func(_text: String) -> void: _save())
+	name_field.gui_input.connect(_name_input)
+	error_label = Style.label("", 14, Palette.ROSE)
+	error_label.hide()
+	column.add_child(error_label)
+	column.add_child(Style.label("TOP 10", 16, Palette.MINT))
+	board = VBoxContainer.new()
+	board.add_theme_constant_override("separation", 1)
+	column.add_child(board)
+	var actions := HBoxContainer.new()
+	board.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	actions.alignment = BoxContainer.ALIGNMENT_CENTER
+	column.add_child(actions)
+	retry_button = Style.button("Retry")
+	menu_button = Style.button("Runner Menu")
+	for button in [retry_button, menu_button]:
+		button.custom_minimum_size.x = 280
+		actions.add_child(button)
+	retry_button.pressed.connect(func() -> void: game.retry())
+	menu_button.pressed.connect(func() -> void: game.go_to_menu())
+	hide()
 
 func bind(runner: Node) -> void:
 	game = runner
-	runner.run_finished.connect(_on_run_finished)
+	game.run_finished.connect(_finished)
 
-func _on_run_finished(result: Dictionary) -> void:
-	var board: Array = []
-	if game != null and game.has_method("get_leaderboard"):
-		board = game.get_leaderboard()
-	show_result(result, board)
+func _finished(value: Dictionary) -> void:
+	show_result(value, game.get_leaderboard())
 
-## Contract §5.6: the overlay renders the finished run and the current top 10.
-func show_result(result: Dictionary, leaderboard: Array) -> void:
-	score_label.text = "SCORE %d" % int(result.get("score", 0))
-	time_label.text = "%.1fs  •  %d m" % [float(result.get("duration", 0.0)), int(result.get("distance", 0.0))]
+func show_result(value: Dictionary, leaderboard: Array) -> void:
+	result = value.duplicate(true)
+	saved = false
+	save_button.disabled = false
+	save_button.text = "Save"
+	name_field.editable = true
 	name_field.text = String(result.get("player_name", ""))
+	name_row.visible = bool(result.get("qualifies", false))
+	error_label.hide()
+	for child in stats.get_children():
+		child.free()
+	var lines := ["SCORE %08d" % int(result.get("score", 0)), "TIME " + _time(float(result.get("duration", 0))),
+		"DISTANCE %d m" % int(result.get("distance", 0)), "DODGED %d" % int(result.get("hazards_dodged", 0)),
+		"POWER-UPS %d" % int(result.get("power_ups", 0)), "RANK %s" % (str(result.get("rank", 0)) if int(result.get("rank", 0)) > 0 else "UNPLACED")]
+	for i in lines.size():
+		stats.add_child(Style.label(lines[i], 18, Palette.MINT if i == 0 else Palette.CREAM))
 	_render_board(leaderboard)
 	visible = true
+	dim.modulate.a = 0
+	create_tween().tween_property(dim, "modulate:a", 1.0, 0.2)
+	panel.modulate.a = 0
+	create_tween().tween_property(panel, "modulate:a", 1.0, 0.2)
+	_focus_chain()
+	if name_row.visible:
+		name_field.grab_focus()
+		name_field.select_all()
+	else:
+		retry_button.grab_focus()
+
+func _time(seconds: float) -> String:
+	return "%02d:%04.1f" % [int(seconds) / 60, fmod(seconds, 60)]
+
+func _render_board(entries: Array) -> void:
+	for child in board.get_children():
+		child.free()
+	for i in mini(10, entries.size()):
+		var entry: Dictionary = entries[i]
+		var seconds := int(entry.get("duration", 0))
+		var current := String(entry.get("run_id", "")) == String(result.get("run_id", ""))
+		var row := Style.label("%2d  %-16s %8d  %02d:%02d" % [i + 1, String(entry.get("name", "Hoppy")), int(entry.get("score", 0)), seconds / 60, seconds % 60], 16, Palette.MINT if current else Palette.CREAM)
+		row.set_meta("current_run", current)
+		board.add_child(row)
+	if entries.is_empty():
+		board.add_child(Style.label("No runs on the board yet.", 16))
+
+func _focus_chain() -> void:
+	var controls: Array[Control] = [retry_button, menu_button]
+	if name_row.visible and not saved:
+		controls = [name_field, save_button, retry_button, menu_button]
+	for i in controls.size():
+		var previous := controls[i].get_path_to(controls[posmod(i - 1, controls.size())])
+		var next := controls[i].get_path_to(controls[(i + 1) % controls.size()])
+		controls[i].focus_previous = previous
+		controls[i].focus_next = next
+		controls[i].focus_neighbor_top = previous
+		controls[i].focus_neighbor_bottom = next
+		controls[i].focus_neighbor_left = previous
+		controls[i].focus_neighbor_right = next
+
+func _save() -> void:
+	if saved or not visible or not name_row.visible or game == null:
+		return
+	if not game.submit_name(name_field.text):
+		error_label.text = "Could not save to disk."
+		error_label.show()
+		return
+	saved = true
+	save_button.disabled = true
+	save_button.text = "SAVED"
+	name_field.editable = false
+	name_field.text = String(game.get_result().get("player_name", name_field.text))
+	error_label.hide()
+	_render_board(game.get_leaderboard())
+	_focus_chain()
 	retry_button.grab_focus()
 
-func _render_board(leaderboard: Array) -> void:
-	var lines := PackedStringArray()
-	for i in mini(leaderboard.size(), 10):
-		var entry: Dictionary = leaderboard[i]
-		lines.append("%2d. %-16s %6d" % [i + 1, String(entry.get("name", "Hoppy")), int(entry.get("score", 0))])
-	board_label.text = "\n".join(lines) if not lines.is_empty() else "No runs on the board yet."
-
-func _on_save_pressed() -> void:
-	if game == null or not game.has_method("submit_name"):
-		return
-	if game.submit_name(name_field.text) and game.has_method("get_leaderboard"):
-		_render_board(game.get_leaderboard())
-
-func _call_game(method: StringName) -> void:
-	if game != null and game.has_method(method):
-		game.call(method)
+func _name_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_down") and not saved:
+		save_button.grab_focus()
+		name_field.accept_event()
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not visible or not event.is_action_pressed("ui_cancel"):
-		return
-	_call_game(&"go_to_menu")
-	get_viewport().set_input_as_handled()
+	if game != null and visible and event.is_action_pressed("ui_cancel"):
+		game.go_to_menu()
+		get_viewport().set_input_as_handled()

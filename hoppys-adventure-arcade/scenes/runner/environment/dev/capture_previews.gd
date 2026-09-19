@@ -1,5 +1,5 @@
 extends SceneTree
-## Run non-headless from the repository root. Captures F0/F1/F2/F3 visual fixtures.
+## Run non-headless from the repository root. Captures F0/F1/F2/F3/F4 visual fixtures.
 const Gallery = preload("res://scenes/runner/hazards/visuals/dev/hazard_gallery.gd")
 var failures := 0
 
@@ -46,6 +46,24 @@ func run() -> void:
 				failures += 1
 		instance.free()
 		await process_frame
+	var hud_scene := load("res://scenes/runner/ui/dev/hud_preview.tscn") as PackedScene
+	var hud_preview := hud_scene.instantiate()
+	hud_preview.autoplay = false
+	root.add_child(hud_preview)
+	for target in [16.0, 40.5]:
+		while hud_preview.demo_time < target and hud_preview.state != &"finished":
+			hud_preview.advance_demo(0.1)
+			hud_preview.hud._process(0.1)
+		await create_timer(0.3).timeout
+		await RenderingServer.frame_post_draw
+		var suffix := "hud" if target < 40 else "gameover"
+		var output := ProjectSettings.globalize_path("res://../docs/previews/endless-runner-%s.png" % suffix)
+		var error := root.get_texture().get_image().save_png(output)
+		print("CAPTURE: ", suffix, " error=", error)
+		if error != OK:
+			failures += 1
+	hud_preview.free()
+	await process_frame
 	root.get_node("AudioService").shutdown()
 	await create_timer(0.3).timeout
 	print("PREVIEW CAPTURE: ", "PASS" if failures == 0 else "FAIL")

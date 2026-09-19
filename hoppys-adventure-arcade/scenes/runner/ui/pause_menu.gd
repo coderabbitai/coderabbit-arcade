@@ -1,5 +1,5 @@
 extends CanvasLayer
-## Graybox pause menu (contract §5.6). Backend-authored placeholder, frozen after the contract PR.
+## Pause display only. The facade owns pause state and input.
 ## It deliberately does NOT bind ui_cancel: RunnerGame owns the `pause` action.
 
 const Style = preload("res://scenes/main_menu/menu_style.gd")
@@ -19,9 +19,20 @@ func _ready() -> void:
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(center)
+	var panel := PanelContainer.new()
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color("101d2d")
+	box.border_color = Style.MINT
+	box.set_border_width_all(2)
+	box.content_margin_left = 28
+	box.content_margin_right = 28
+	box.content_margin_top = 24
+	box.content_margin_bottom = 24
+	panel.add_theme_stylebox_override("panel", box)
+	center.add_child(panel)
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 18)
-	center.add_child(column)
+	panel.add_child(column)
 	column.add_child(Style.label("PAUSED", 40))
 	var buttons: Array[Button] = []
 	resume_button = Style.button("Resume")
@@ -36,13 +47,17 @@ func _ready() -> void:
 	column.add_child(menu)
 	buttons.append(menu)
 	menu.pressed.connect(func() -> void: _call_game(&"go_to_menu"))
+	column.add_child(Style.label("ESC / START  resume", 16, Style.MINT))
 	for i in buttons.size():
 		buttons[i].focus_neighbor_top = buttons[i].get_path_to(buttons[(i - 1 + buttons.size()) % buttons.size()])
 		buttons[i].focus_neighbor_bottom = buttons[i].get_path_to(buttons[(i + 1) % buttons.size()])
+		buttons[i].focus_next = buttons[i].focus_neighbor_bottom
+		buttons[i].focus_previous = buttons[i].focus_neighbor_top
 
 func bind(runner: Node) -> void:
 	game = runner
 	runner.paused_changed.connect(_on_paused_changed)
+	_on_paused_changed(runner.paused)
 
 func _on_paused_changed(is_paused: bool) -> void:
 	visible = is_paused

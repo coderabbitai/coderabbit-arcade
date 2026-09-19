@@ -1,8 +1,8 @@
-# Endless Runner frontend: F0-F3
+# Endless Runner frontend: F0-F4
 
 Engine policy: the project pins Godot 4.7.1. The F0/F1 verification recorded here ran on the installed Godot 4.7.0 stable (`4.7.stable.official.5b4e0cb0f`). Final acceptance must re-run the contract §9 commands on 4.7.1; no 4.7.1 results are recorded here. Both versions are supported for development, and any behavioral differences must be recorded in contract §10.
 
-The requested F0 and F1 source files and development scenes are present and verified as described in the renderer findings and verification sections below, with final acceptance on Godot 4.7.1 still pending. F2 now adds Hoppy, its preview, and the first visual smoke test. The backend mounts Hoppy and the corridor automatically. F3 is complete: hazards, power-ups and the pursuer are implemented and verified. F4-F6 remain deferred.
+The requested F0 and F1 source files and development scenes are present and verified as described in the renderer findings and verification sections below, with final acceptance on Godot 4.7.1 still pending. F2 now adds Hoppy, its preview, and the first visual smoke test. The backend mounts Hoppy and the corridor automatically. F3 is complete: hazards, power-ups and the pursuer are implemented and verified. F4 is implemented and verified: HUD, pause menu, game over and standalone mock facade demo. Only F5 (audio) and F6 (runner menu, integration and final docs) remain deferred.
 
 ## Run
 
@@ -13,6 +13,7 @@ Run from the repository root:
 /Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --scene res://scenes/runner/environment/dev/corridor_preview.tscn
 /Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --scene res://scenes/runner/player/dev/hoppy_preview.tscn
 /Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --scene res://scenes/runner/hazards/visuals/dev/hazard_gallery.tscn
+/Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --scene res://scenes/runner/ui/dev/hud_preview.tscn
 /Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --script res://scenes/runner/environment/dev/capture_previews.gd
 ```
 
@@ -20,6 +21,7 @@ The camera is at (0,4,8), looking at (0,1,-8), FOV 60.
 
 | Scene | Keys | Action |
 | --- | --- | --- |
+| HUD preview | H / P / Esc | Hit / collect Nitro / toggle pause; the 40 s demo runs automatically |
 | Hazard gallery | Left / Right | Move the contract camera through 19 fixtures (12 hazards, six pickups, pursuer) |
 | Hazard gallery | H / C / R | Hit / clear hazards / reset all visuals |
 | Hazard gallery | P / K / B | Collect pickups / catch / retreat |
@@ -37,6 +39,8 @@ The camera is at (0,4,8), looking at (0,1,-8), FOV 60.
 Key 6 reaches the F1 26 m/s acceptance limit; key 7 exercises the Nitro cap. The capture script saves PNGs after `RenderingServer.frame_post_draw`, measures the corridor at 26 m/s with preview UI hidden, and reports failure above 15 draw calls. The capture script also saves the Hoppy fixture after 1.5 s to `docs/previews/endless-runner-hoppy.png`. The coordinator produced the 1280x720 environment previews: [renderer spike](previews/endless-runner-spike.png) and [corridor](previews/endless-runner-corridor.png).
 
 ## What was built
+
+F4 is implemented and verified: all three facade-bound overlays, hex/ring drawing helper, standalone HUD fixture, fast mock and real-facade smoke coverage, plus coordinator capture entries for `docs/previews/endless-runner-hud.png` at 16 s and `docs/previews/endless-runner-gameover.png` after `run_finished`. The host captured both images successfully: `CAPTURE: hud error=0` and `CAPTURE: gameover error=0`.
 
 F0: exact palette constants; cached immutable lit/emissive/additive material helpers and monospace labels; an original white-on-transparent 64x64 ASCII 32..95 glyph atlas; five shaders, each under 40 lines; a standalone renderer spike exercising every shader, emissive spheres, fog-depth markers, and 320 glyph particles; an asset licence inventory. Shared Environment and particle factories return independent mutable resources.
 
@@ -61,6 +65,13 @@ The gallery includes wire spheres at the exact pickup roots and contract camera 
 The explicit leftover fix adds CPU pillar-z storage and a copy-returning accessor on the frontend corridor. `environment_check.gd` now checks all 24 stored positions against their wrap bounds and the expected post-wrap positions, without reading headless MultiMesh transforms.
 
 ## Behavior and ownership
+
+F4: `RunnerHud` uses CanvasLayer 10, `PauseMenu` 21 and `GameOver` 22. UI is built in `_ready()` with the shared menu Style helpers. The HUD uses 28 px anchored margins for the expanding viewport, hex approval checks, local power-up countdown bars, elapsed time, count-up score, multiplier, speed, queued toasts and Nitro banner. Pursuit ring/text use signal recovery and remaining values. Vignette strength follows pursuit from 0 to 0.85, resets on recovery, and reaches 1 on catch. Hit and block flashes use separate colors; damage requests camera shake 0.7. Gameplay widgets disappear on caught and dim on pause.
+
+Only the facade controls gameplay and pause. The pause menu never handles `ui_cancel` or writes tree pause state. Resume, Restart and Runner Menu call facade methods. Game Over listens to `run_finished` and calls its own `show_result(result, game.get_leaderboard())`; it never opens early on `caught` or `leaderboard_saved`. Its centered 680x560 panel contains stats, rank, qualifying name entry and ten rows highlighted by run ID. Successful Save locks the field, disables Save, refreshes the board and focuses Retry; failures retain editable input and show an error. Enter saves, Down moves from name to Save, and explicit focus loops support keyboard/controller navigation. Only visible Game Over handles `ui_cancel`.
+
+The standalone Node3D mock exposes all facade signals, properties and methods without mounting backend gameplay systems. It runs a deterministic 40 s sequence with speed ramp, effects, hit, pursuit, recovery, a fresh pursuit and catch, then a fake top ten. Escape, P and gamepad Start pause its clock; H hits and N collects Nitro. The timeline also drives shield blocking, Auto-Fix, pickup bonuses, player actions and chunk spawns. Its persistence is in memory; route methods remain within the fixture. The fast smoke drives the same `advance_demo` timeline, then tests the real facade with autostart disabled, `start_run` and three seconds of autopilot. No F5 audio work was added.
+
 
 Hoppy extends the backend visual base and implements all six contract methods. It faces -Z with standing mesh bounds y 0..1.8. `AnimationPlayer` drives the feet pivot `Root` and `Root/Model`; scene-root yaw and bank implement lane lean independently. Every clip supplies rest tracks to clear previous held poses. Run cadence is `lerp(0.85, 1.9, normalized)`, including values above 1; other clips retain real-time duration. Hurt flashes at 0.001/0.12/0.24 s, then returns to the preceding idle/run state unless another state interrupts it. Hit flashes clear after 0.06 s without mutating shared materials. Effects and animation inherit PAUSABLE behavior.
 
@@ -242,6 +253,8 @@ ERROR: Condition "ret != noErr" is true. Returning: ""
 RUNNER VISUAL SMOKE: PASS (0 failures)
 ```
 
+Historical run before backend PR 2 merged; superseded by the current 277-check PASS:
+
 `--headless --path hoppys-adventure-arcade --script res://tests/runner_scaffold_check.gd --log-file /tmp/hoppy-scaffold-engine.log` (exit 1):
 
 ```text
@@ -389,7 +402,7 @@ ENV CHECK: PASS (0 failures)
 
 ### F3 hazard verification (2026-09-19)
 
-F3 added eight hazard visual scenes and their scripts plus shared artwork and a gallery. Headless validation passed from the repository root on installed Godot 4.7.0. The coordinator performed the host graphical gallery capture. The frontend agent performed no graphical runs, downloads, commits, or pushes. The import uses `--quit` to finish the headless editor and `/tmp` log paths to avoid the known sandbox log-directory crash. Import and runtime startup retain the existing certificate/editor-settings diagnostics. The runtime smoke logger reported zero subsequent engine errors. Scaffold reports exactly the known GrayboxEnvironment failure.
+F3 added eight hazard visual scenes and their scripts plus shared artwork and a gallery. Headless validation passed from the repository root on installed Godot 4.7.0. The coordinator performed the host graphical gallery capture. The frontend agent performed no graphical runs, downloads, commits, or pushes. The import uses `--quit` to finish the headless editor and `/tmp` log paths to avoid the known sandbox log-directory crash. Import and runtime startup retain the existing certificate/editor-settings diagnostics. The runtime smoke logger reported zero subsequent engine errors. The historical scaffold run below reported one GrayboxEnvironment failure before backend PR 2 merged into this branch. The current scaffold check reports `RUNNER SCAFFOLD: PASS (0 failures / 277 checks)`.
 
 The smoke covers all 12 contract cases, both backend vars-after-ready and fixture vars-before-ready ordering, all five hooks, 61 idle/hit/cleared animation samples each, visible meshes plus labels and glyph particles, floor footprint/color, approved safe-gap color, repeated spawn after reactions, text/color/material reset, node-count stability, pause, timed beam elevation/visibility, telegraph samples, gallery load, keys, and camera. Elevated floor projections are checked separately as explained above. The historical F3a hazard-only host capture after batching reports `CAPTURE: gallery error=0 draw_calls=106`. Expected new hazard-only census: 85 idle across all 12 fixtures, at most 90 summed tested peaks (6 to 9 per case). The node census is an estimate (outlined Label3D counts as 2, MultiMesh as 1), not an exact renderer total. The capture script independently fails PREVIEW CAPTURE above (Gallery.CASES.size() + Gallery.POWERUPS.size() + 1 pursuer) x 14 + 15 = (12 + 6 + 1) x 14 + 15 = 281 gallery draw calls, deriving fixture counts from `hazard_gallery.gd`.
 
@@ -524,6 +537,8 @@ ERROR: Condition "ret != noErr" is true. Returning: ""
 RUNNER VISUAL SMOKE: PASS (0 failures)
 ```
 
+Historical run before backend PR 2 merged; superseded by the current 277-check PASS:
+
 `/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_scaffold_check.gd --log-file /tmp/hazard-scaffold-verified.log` (exit 1):
 
 ```text
@@ -552,11 +567,11 @@ ENV CHECK: PASS (0 failures)
 
 ## Requests to backend
 
-Please clarify the elevated floor-projection exception in contract section 5.2 and wire the existing PR 2 timed-laser state hooks. No backend files were edited. The backend's PR 2 relaxes `runner_scaffold_check.gd` to accept a mounted corridor in place of `World/GrayboxEnvironment`. On this branch the check will pass once PR 2 is merged; until then, the single failure is the documented lifecycle state, not a defect.
+No new F4 backend API or implementation change is requested. Backend PR 2 is merged into this branch, and `runner_scaffold_check.gd` now accepts the mounted corridor: `RUNNER SCAFFOLD: PASS (0 failures / 277 checks)`. All one-failure GrayboxEnvironment transcripts in this document are historical and predate that merge. Both the host run and the validator's direct headless run of the unmodified `tests/runner_smoke.gd` report `RUNNER SMOKE: PASS (0 failures / 64 checks)`. No backend follow-up is requested.
 
 ## Known gaps
 
-No remaining F0/F1 renderer or preview gaps are reported by the coordinator on 4.7.0; final acceptance on the pinned 4.7.1 remains pending. F2 headless checks are complete. The coordinator ran graphical Godot on the host and captured Hoppy back-facing in the corridor; Codex itself did not run graphical Godot. The coordinator's F3b 19-fixture host gallery capture reports `CAPTURE: gallery error=0 draw_calls=168`; its pre-fix budget line was `GALLERY DRAW BUDGET: 168 / 183`. Hazards, power-ups and the pursuer have host capture and headless verification below. Runner audio and F4 menus remain outside this run's scope.
+No remaining F0/F1 renderer or preview gaps are reported by the coordinator on 4.7.0; final acceptance on the pinned 4.7.1 remains pending. F2 headless checks are complete. The coordinator ran graphical Godot on the host and captured Hoppy back-facing in the corridor; Codex itself did not run graphical Godot. The coordinator's F3b 19-fixture host gallery capture reports `CAPTURE: gallery error=0 draw_calls=168`; its pre-fix budget line was `GALLERY DRAW BUDGET: 168 / 183`. Hazards, power-ups and the pursuer have host capture and headless verification below. F4 overlays are complete and headlessly checked; the host captured both successfully (`CAPTURE: hud error=0`, `CAPTURE: gameover error=0`). Runner audio remains outside this run's scope.
 
 ## Touched files
 
@@ -667,6 +682,8 @@ GALLERY DRAW BUDGET: 162 / 281
 PREVIEW CAPTURE: PASS
 ```
 
+This agent (Codex) performed no graphical runs. The coordinator performed the recorded host captures: HUD, game over, gameplay, gallery, renderer spike, corridor, Hoppy, power-ups and pursuer PNGs under `docs/previews/`.
+
 ## F3 completion touched files
 
 - Six `.tscn` / `.gd` / generated `.gd.uid` pairs under `scenes/runner/powerups/visuals/`, plus `power_up_art.gd` and its UID.
@@ -680,7 +697,7 @@ Paths above are relative to `hoppys-adventure-arcade/`, except this document.
 
 ## Verification: F3 power-ups and pursuer
 
-Run from the repository root on installed Godot 4.7.0. No graphical runs, downloads, commits or pushes were performed. Final 4.7.1 acceptance remains pending. The coordinator supplied the F3b host captures linked above; the coordinator's final post-correction host transcript is recorded above. All eight new scripts and four changed existing scripts pass `--check-only`. The visual smoke passes with zero captured runtime errors; its 121 threat-1 samples merge to 5.649928 m wide and 2.288509 m tall. The environment check passes with CPU pillar positions. The scaffold check retains the existing one-failure GrayboxEnvironment expectation; backend PR 2 still needs to accept the mounted Corridor. No new backend API is required by these visuals.
+Run from the repository root on installed Godot 4.7.0. This agent (Codex) performed no graphical runs, downloads, commits or pushes. Final 4.7.1 acceptance remains pending. The coordinator supplied the F3b host captures linked above; the coordinator's final post-correction host transcript is recorded above. All eight new scripts and four changed existing scripts pass `--check-only`. The visual smoke passes with zero captured runtime errors; its 121 threat-1 samples merge to 5.649928 m wide and 2.288509 m tall. The environment check passes with CPU pillar positions. Backend PR 2 is merged into this branch, and the current scaffold check reports `RUNNER SCAFFOLD: PASS (0 failures / 277 checks)`. The one-failure GrayboxEnvironment transcript below is historical and predates that merge. No new backend API is required by these visuals.
 
 The engine's certificate diagnostic occurs before the smoke installs its runtime error logger. Import returns exit 0 but reports sandbox-blocked editor-settings saves. These host diagnostics are preserved below and are not represented as clean import output.
 
@@ -799,6 +816,8 @@ PURSUER VISUAL: threat, catch, retreat, reuse and pause checked
 RUNNER VISUAL SMOKE: PASS (0 failures)
 ```
 
+Historical run before backend PR 2 merged; superseded by the current 277-check PASS:
+
 `/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_scaffold_check.gd --log-file /tmp/f3-scaffold.log` (exit 1):
 
 ```text
@@ -827,7 +846,7 @@ ENV CHECK: PASS (0 failures)
 
 ## F3b validator corrections verification
 
-The gallery budget now derives from the 12 hazard cases, six power-ups and one pursuer: 281. Tags use 0.007 pixel size and wrap within 1.33 m; pursuer headlines use cream, 0.011 pixel size and no outlines, with horizontal fitting to avoid overlap. Cards are 0.92 x 0.40 m at 1.04 x 0.49 m spacing. Retreat restores the cached non-zero threat pose before toppling. Collection stops processing and resets the hidden ring scale; reuse enables processing. Smoke assertions include hidden draw-producing nodes, count outlined labels as two, and require each pickup and pursuer to remain within 14 draws plus exactly one pursuer light. All six pickup roots use PascalCase. F4-F6 remain deferred. No graphical runs, commits or pushes were performed.
+The gallery budget now derives from the 12 hazard cases, six power-ups and one pursuer: 281. Tags use 0.007 pixel size and wrap within 1.33 m; pursuer headlines use cream, 0.011 pixel size and no outlines, with horizontal fitting to avoid overlap. Cards are 0.92 x 0.40 m at 1.04 x 0.49 m spacing. Retreat restores the cached non-zero threat pose before toppling. Collection stops processing and resets the hidden ring scale; reuse enables processing. Smoke assertions include hidden draw-producing nodes, count outlined labels as two, and require each pickup and pursuer to remain within 14 draws plus exactly one pursuer light. All six pickup roots use PascalCase. F4 (HUD, pause menu, game over and mock demo) is now implemented and verified in the section below. Only F5 (audio) and F6 (runner menu, integration and final docs) remain deferred. This agent (Codex) performed no graphical runs, commits or pushes; the coordinator performed the recorded host captures.
 
 Verbatim plain-text import log, run from repository root (exit 0):
 
@@ -967,5 +986,163 @@ ERROR: Condition "ret != noErr" is true. Returning: ""
 SPIKE: renderer=gl_compatibility scale=0.5 glow_threshold=0.75 fog=22..88 particles=320
 ENV CHECK: PASS (0 failures)
 EXIT: 0
+```
+
+## Verification: F4 HUD, pause and game over (2026-09-19)
+
+All commands below ran from the repository root on installed Godot 4.7.0. This agent (Codex) performed no graphical runs, commits, pushes, backend edits or project setting changes. Final 4.7.1 acceptance is still pending. The coordinator captured the [HUD](previews/endless-runner-hud.png) and [game over](previews/endless-runner-gameover.png) on the host, reporting `CAPTURE: hud error=0` and `CAPTURE: gameover error=0`. The coordinator's regenerated [real gameplay capture](previews/endless-runner-gameplay.png) shows Hoppy in the corridor with the new HUD mounted after 20 seconds of autopilot. These are host captures, not graphical runs by this agent.
+
+Import exits 0 with the existing macOS certificate and sandboxed editor-settings diagnostics. Seven new or changed scripts pass syntax checks. Visual smoke passes with zero captured runtime errors, including approval pips, score tween, supplied pursuit duration, local countdown pause, overlay layers, name focus/save success and failure, nonqualifiers, result values, run-ID highlighting, expanded viewport bounds and the real facade's three-second autopilot bind check. A separate headless layout probe measured the result panel at exactly 680x560.
+
+The unmodified `tests/runner_smoke.gd` passes in both the host run and the validator's direct headless run: `RUNNER SMOKE: PASS (0 failures / 64 checks)`. No temporary test wrapper or backend change is needed.
+
+F4 feedback follow-up: the demo now emits all previously undriven facade signals, accepts the supplied run seed, and uses the mapped pause action. Bars remain 90x6, rebuilt HP pips ignore mouse input, and result buttons remain 62 px high. The expanded visual smoke passes at 1600x900, 1440x900 and 1000x720 using the project's scaled canvas bounds, and checks demo shield, blocked-hit, Auto-Fix and bonus delivery. All seven F4-related scripts pass check-only and scaffold passes 277 checks. The unmodified `tests/runner_smoke.gd` passes all 64 checks on the host and in the validator's direct headless run. The earlier leaderboard readback limitation applies only to the Codex restricted sandbox. Only F5 (audio) and F6 (runner menu, integration and final docs) remain deferred.
+
+Verbatim plain-text import log (Godot log file, without terminal ANSI escapes; progress-row trailing spaces trimmed):
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --import --quit --log-file /tmp/f4-import.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+[   0% ] first_scan_filesystem | Started Project initialization (5 steps)
+[   0% ] first_scan_filesystem | Scanning file structure...
+WARNING: Detected another project.godot at res://Assets/SynthCitiesGodot. The folder will be ignored.
+   at: _should_skip_directory (editor/file_system/editor_file_system.cpp:3485)
+[  16% ] first_scan_filesystem | Loading global class names...
+[  33% ] first_scan_filesystem | Verifying GDExtensions...
+[  50% ] first_scan_filesystem | Creating autoload scripts...
+[  66% ] first_scan_filesystem | Initializing plugins...
+[  83% ] first_scan_filesystem | Starting file scan...
+[ DONE ] first_scan_filesystem
+
+[   0% ] update_scripts_classes | Started Registering global classes... (5 steps)
+[   0% ] update_scripts_classes |
+[  16% ] update_scripts_classes |
+[  33% ] update_scripts_classes |
+[  50% ] update_scripts_classes |
+[  66% ] update_scripts_classes |
+[ DONE ] update_scripts_classes
+
+[   0% ] loading_editor_layout | Started Loading editor (5 steps)
+[   0% ] loading_editor_layout | Loading editor layout...
+[  16% ] loading_editor_layout | Loading docks...
+[ DONE ] loading_editor_layout
+
+ERROR: Cannot save file '/Users/jp/Library/Application Support/Godot/editor_settings-4.7.tres'.
+   at: save (scene/resources/resource_format_text.cpp:1768)
+ERROR: Error saving editor settings to /Users/jp/Library/Application Support/Godot/editor_settings-4.7.tres
+   at: save (editor/settings/editor_settings.cpp:1525)
+EXIT: 0
+```
+
+Verbatim syntax checks:
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/ui/runner_hud.gd --log-file /tmp/f4-syntax-0.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+EXIT: 0
+
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/ui/pause_menu.gd --log-file /tmp/f4-syntax-1.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+EXIT: 0
+
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/ui/game_over.gd --log-file /tmp/f4-syntax-2.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+EXIT: 0
+
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/ui/hud_glyph.gd --log-file /tmp/f4-syntax-3.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+EXIT: 0
+
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/ui/dev/mock_runner_game.gd --log-file /tmp/f4-syntax-4.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+EXIT: 0
+
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://tests/runner_visual_smoke.gd --log-file /tmp/f4-syntax-5.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+EXIT: 0
+
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/environment/dev/capture_previews.gd --log-file /tmp/f4-syntax-6.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+EXIT: 0
 
 ```
+
+Verbatim visual smoke, including real-facade bind check:
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd --log-file /tmp/f4-visual.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+HAZARD DRAW CENSUS: pr_backlog_low/ peak=6
+HAZARD DRAW CENSUS: pr_backlog_high/ peak=8
+HAZARD DRAW CENSUS: bug_swarm/ peak=6
+HAZARD DRAW CENSUS: merge_conflict/ peak=9
+HAZARD DRAW CENSUS: deprecated_pit/full peak=8
+HAZARD DRAW CENSUS: deprecated_pit/two_lane peak=8
+HAZARD DRAW CENSUS: laser_grid/ground peak=8
+HAZARD DRAW CENSUS: laser_grid/mid peak=8
+HAZARD DRAW CENSUS: laser_grid/high peak=8
+HAZARD DRAW CENSUS: laser_grid/timed peak=8
+HAZARD DRAW CENSUS: comment_flood/ peak=7
+HAZARD DRAW CENSUS: build_shockwave/ peak=6
+HAZARD CASES CHECKED: 12; summed peak draw census=90
+POWER-UP VISUALS: 6 checked; reuse, collection and pause PASS
+PURSUER THREAT 1 MERGED VISIBLE AABB: [P: (-2.824963, 0.013877, -0.408651), S: (5.649928, 2.288509, 0.587685)]
+PURSUER VISUAL: threat, catch, retreat, reuse and pause checked
+RUNNER UI MOCK: HUD, pursuit, pause, results, focus and save PASS
+RUNNER UI REAL FACADE: autostart=false, start_run, autopilot 3s PASS
+RUNNER VISUAL SMOKE: PASS (0 failures)
+EXIT: 0
+```
+
+Verbatim scaffold, direct backend smoke and environment logs:
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_scaffold_check.gd --log-file /tmp/f4-runtime-0.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+RUNNER SCAFFOLD: PASS (0 failures / 277 checks)
+EXIT: 0
+```
+
+Host direct run (reported result verbatim):
+
+```text
+RUNNER SMOKE: PASS (0 failures / 64 checks)
+```
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://scenes/runner/environment/dev/environment_check.gd --log-file /tmp/f4-runtime-2.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+SPIKE: renderer=gl_compatibility scale=0.5 glow_threshold=0.75 fog=22..88 particles=320
+ENV CHECK: PASS (0 failures)
+EXIT: 0
+```
+
+F4 touched files (relative to project root unless noted):
+
+- `scenes/runner/ui/runner_hud.gd` (existing scene already has the required root and layer).
+- `scenes/runner/ui/hud_glyph.gd` and generated `.gd.uid`.
+- `scenes/runner/ui/pause_menu.gd` and `.tscn`.
+- `scenes/runner/ui/game_over.gd` and `.tscn`.
+- `scenes/runner/ui/dev/mock_runner_game.gd`, generated `.gd.uid`, and `hud_preview.tscn`.
+- `tests/runner_visual_smoke.gd`.
+- `scenes/runner/environment/dev/capture_previews.gd`.
+- Repository `docs/endless-runner.md`.

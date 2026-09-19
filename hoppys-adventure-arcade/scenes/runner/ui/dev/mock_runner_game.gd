@@ -1,0 +1,294 @@
+extends Node3D
+## Standalone facade fixture. No backend systems or persistence are used.
+const Config = preload("res://scenes/runner/data/run_config.tres")
+const Hud = preload("res://scenes/runner/ui/runner_hud.tscn")
+const PauseMenu = preload("res://scenes/runner/ui/pause_menu.tscn")
+const GameOver = preload("res://scenes/runner/ui/game_over.tscn")
+const Leaderboard = preload("res://scenes/runner/systems/runner_leaderboard.gd")
+signal run_started(seed: int)
+signal state_changed(state: StringName)
+signal health_changed(hp: int, max_hp: int)
+signal damage_taken(kind: StringName, hp: int)
+signal damage_blocked(kind: StringName, reason: StringName)
+signal shield_changed(active: bool)
+signal pursuit_started(recovery_seconds: float)
+signal pursuit_progress(remaining: float, total: float)
+signal pursuit_recovered(reason: StringName)
+signal caught
+signal run_finished(result: Dictionary)
+signal leaderboard_saved(entries: Array, rank: int)
+signal score_changed(score: int, multiplier: float)
+signal bonus_awarded(points: int, reason: StringName)
+signal speed_changed(speed: float, normalized: float)
+signal difficulty_changed(difficulty: float)
+signal power_up_collected(kind: StringName, duration: float)
+signal power_up_expired(kind: StringName)
+signal hazard_cleared(hazard: Area3D)
+signal hazards_blasted(count: int)
+signal player_action(action: StringName)
+signal chunk_spawned(chunk: Node3D)
+signal paused_changed(paused: bool)
+
+
+class MockCamera extends Node3D:
+	var last_shake := 0.0
+	func shake(strength: float, _duration: float = 0.35) -> void:
+		last_shake = strength
+	func punch_fov(_degrees: float, _seconds: float) -> void:
+		pass
+
+@export var autoplay := true
+var config: Resource = Config
+var state: StringName = &"ready"
+var paused := false
+var seed := 4704
+var run_id := "mock-f4"
+var elapsed := 0.0
+var distance := 0.0
+var speed := 12.0
+var normalized_speed := 0.0
+var difficulty := 0.0
+var hp := 2
+var score := 0
+var multiplier := 1.0
+var player: CharacterBody3D
+var camera_rig: Node3D
+var cosmetic_rng := RandomNumberGenerator.new()
+var hud: CanvasLayer
+var pause_menu: CanvasLayer
+var game_over: CanvasLayer
+var submit_calls := 0
+var save_succeeds := true
+var menu_calls := 0
+var demo_time := 0.0
+var pursued := false
+var remaining := 0.0
+var effects := {}
+var shield := false
+var _action_tick := 0
+var _chunk_tick := 0
+var _caught_time := 0.0
+var _events := {}
+var _result := {}
+var _board: Array[Dictionary] = []
+
+func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	cosmetic_rng.seed = seed
+	player = CharacterBody3D.new()
+	add_child(player)
+	camera_rig = MockCamera.new()
+	add_child(camera_rig)
+	hud = Hud.instantiate()
+	pause_menu = PauseMenu.instantiate()
+	game_over = GameOver.instantiate()
+	for overlay in [hud, pause_menu, game_over]:
+		add_child(overlay)
+		overlay.bind(self)
+
+func _process(delta: float) -> void:
+	if autoplay:
+		advance_demo(delta)
+
+func start_run(run_seed: int = 4704) -> void:
+	seed = run_seed
+	cosmetic_rng.seed = seed
+	state = &"running"
+	state_changed.emit(state)
+	run_started.emit(seed)
+	health_changed.emit(hp, int(config.max_hp))
+	score_changed.emit(score, multiplier)
+	speed_changed.emit(speed, normalized_speed)
+
+## Same deterministic timeline for interactive preview, smoke and capture.
+## Recovery uses the configured duration; catch ends at the 40 second mark.
+func advance_demo(delta: float) -> void:
+	if paused or state == &"finished":
+		return
+	demo_time += delta
+	if has_node("Backdrop"):
+		get_node("Backdrop").set_scroll_speed(speed if state == &"running" else 0.0)
+	if state == &"ready" and demo_time >= 2:
+		start_run()
+	if state == &"caught":
+		_caught_time += delta
+		if _caught_time >= float(config.caught_sequence_seconds):
+			finish_demo()
+		return
+	if state == &"running":
+		elapsed += delta
+		var actions := [&"jump", &"land", &"roll", &"roll_end", &"lane_left", &"lane_right"]
+		while _action_tick < int(elapsed):
+			player_action.emit(actions[_action_tick % actions.size()])
+			_action_tick += 1
+		while _chunk_tick < int(elapsed / 4.0):
+			var chunk := Node3D.new()
+			add_child(chunk)
+			chunk_spawned.emit(chunk)
+			chunk.queue_free()
+			_chunk_tick += 1
+		normalized_speed = clampf(elapsed / 36, 0, 1)
+		speed = lerpf(12, 24, normalized_speed)
+		distance += speed * delta
+		speed_changed.emit(speed, normalized_speed)
+		var next_score := int(elapsed * 24)
+		if score != next_score:
+			score = next_score
+			score_changed.emit(score, multiplier)
+		var next_difficulty := normalized_speed
+		if absf(next_difficulty - difficulty) >= 0.01:
+			difficulty = next_difficulty
+			difficulty_changed.emit(difficulty)
+		for kind in effects.keys():
+			effects[kind].remaining = maxf(0, effects[kind].remaining - delta)
+			if effects[kind].remaining <= 0:
+				effects.erase(kind)
+				power_up_expired.emit(kind)
+				if kind == &"nitro":
+					multiplier = 1
+					score_changed.emit(score, multiplier)
+		if pursued:
+			remaining = maxf(0, remaining - delta)
+			pursuit_progress.emit(remaining, float(config.recovery_seconds))
+			if remaining <= 0:
+				pursued = false
+				hp = int(config.max_hp)
+				health_changed.emit(hp, hp)
+				pursuit_recovered.emit(&"timer")
+	for at in [3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 14.0, 30.0, 34.0, 38.4, 40.0]:
+		if demo_time >= at and not _events.has(at):
+			_events[at] = true
+			match at:
+				3.0: collect(&"approve_shield", 0)
+				5.0: hit()
+				7.0: collect(&"auto_fix", 0)
+				4.0: collect(&"nitro", 4)
+				6.0: collect(&"code_review", 0)
+				9.0: hit()
+				14.0: collect(&"nitro", 8)
+				30.0: collect(&"lgtm", 3)
+				34.0: hit()
+				38.4: hit()
+				40.0: finish_demo()
+
+func collect(kind: StringName = &"nitro", duration: float = 8) -> void:
+	if state != &"running" or paused:
+		return
+	if duration > 0:
+		effects[kind] = {"remaining": duration, "total": duration}
+	power_up_collected.emit(kind, duration)
+	bonus_awarded.emit(25, &"pickup")
+	if kind == &"approve_shield":
+		shield = true
+		shield_changed.emit(true)
+	elif kind == &"auto_fix":
+		for i in 3:
+			var hazard := Area3D.new()
+			add_child(hazard)
+			hazard_cleared.emit(hazard)
+			hazard.queue_free()
+		hazards_blasted.emit(3)
+	if kind == &"nitro":
+		multiplier = 2
+		score_changed.emit(score, multiplier)
+
+func hit() -> void:
+	if state != &"running" or paused:
+		return
+	if shield:
+		damage_blocked.emit(&"pr_backlog_low", &"shield")
+		shield = false
+		shield_changed.emit(false)
+		return
+	hp = maxi(0, hp - 1)
+	damage_taken.emit(&"pr_backlog_low", hp)
+	health_changed.emit(hp, int(config.max_hp))
+	power_up_expired.emit(&"code_review")
+	if hp == 0:
+		_caught_time = 0.0
+		state = &"caught"
+		state_changed.emit(state)
+		caught.emit()
+	elif not pursued:
+		pursued = true
+		remaining = float(config.recovery_seconds)
+		pursuit_started.emit(remaining)
+
+func finish_demo() -> void:
+	if not _result.is_empty():
+		return
+	_result = {"run_id": run_id, "mode": "runner", "outcome": "caught", "score": score,
+		"score_exact": float(score), "duration": elapsed, "distance": distance,
+		"hazards_dodged": 24, "power_ups": 6, "hazards_blasted": 3, "hits_taken": 3,
+		"recoveries": 1, "blocked_hits": 1, "seed": seed, "max_speed_reached": speed,
+		"best_multiplier": 2.0, "chunks_spawned": 12, "score_rule_revision": 1,
+		"submitted_at": 0, "rank": 3, "qualifies": true, "player_name": "Hoppy"}
+	_board.clear()
+	for i in 10:
+		_board.append({"run_id": run_id if i == 2 else "fixture-%d" % i,
+			"name": "Hoppy" if i == 2 else "Reviewer %02d" % (i + 1),
+			"score": score + (2 - i) * 50, "duration": elapsed, "seed": seed, "submitted_at": 0})
+	leaderboard_saved.emit(get_leaderboard(), 3)
+	state = &"finished"
+	state_changed.emit(state)
+	run_finished.emit(get_result())
+
+func pause() -> void:
+	if state == &"running" and not paused:
+		paused = true
+		paused_changed.emit(true)
+
+func resume() -> void:
+	if paused:
+		paused = false
+		paused_changed.emit(false)
+
+func toggle_pause() -> void:
+	if paused:
+		resume()
+	else:
+		pause()
+
+func retry() -> void:
+	resume()
+	get_tree().reload_current_scene()
+
+func go_to_menu() -> void:
+	resume()
+	menu_calls += 1
+	game_over.hide()
+
+func hit_stop(_seconds: float) -> void:
+	pass
+
+func submit_name(value: String) -> bool:
+	submit_calls += 1
+	if not save_succeeds or _result.is_empty():
+		return false
+	var clean := Leaderboard.sanitize_name(value)
+	_result.player_name = clean
+	for entry in _board:
+		if entry.run_id == run_id:
+			entry.name = clean
+	leaderboard_saved.emit(get_leaderboard(), int(_result.rank))
+	return true
+
+func get_leaderboard() -> Array[Dictionary]:
+	return _board.duplicate(true)
+
+func get_result() -> Dictionary:
+	return _result.duplicate(true)
+
+func get_active_effects() -> Dictionary:
+	return effects.duplicate(true)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("pause") and state == &"running":
+		toggle_pause()
+		get_viewport().set_input_as_handled()
+	elif event is InputEventKey and event.pressed and not event.echo:
+		match event.physical_keycode:
+			KEY_H: hit()
+			KEY_N: collect()
+			_: return
+		get_viewport().set_input_as_handled()
