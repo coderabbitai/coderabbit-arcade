@@ -1,12 +1,29 @@
 extends Node
 ## Seeded chunk selection, the seam gap rule, despawn and power-up placement (systems spec §5.2).
-## PR 1 scaffold: state and the public API; the algorithm lands in PR 2.
 
 const RunnerGame = preload("res://scenes/runner/runner_game.gd")
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
 const ChunkLibrary = preload("res://scenes/runner/data/chunk_library.gd")
+const PowerUpDefs = preload("res://scenes/runner/powerups/power_up_defs.gd")
+## Typed so `kind` is a checked property access and not a dynamic one (power_up.gd never
+## preloads the spawner, so this adds no cycle).
+const PowerUp = preload("res://scenes/runner/powerups/power_up.gd")
 const POWER_UP_SCENE := "res://scenes/runner/powerups/power_up.tscn"
 const LIBRARY_PATH := "res://scenes/runner/data/chunk_library.tres"
+const CHUNKS_PATH := "World/Chunks"
+## Chunks tagged this way are the rest beats the spawner leans on while the pursuer is close.
+const BREATHER_TAG := "breather"
+## Chunk slot meta value that asks for the jump-height pickup row (chunk.gd HEIGHT_JUMP).
+const SLOT_HEIGHT_JUMP := "jump"
+const BREATHER_PURSUED_WEIGHT := 2.0
+## Difficulty ranges are authored to two decimals; compare with a little slack.
+const DIFFICULTY_EPSILON := 0.0001
+## Auto-Fix clears hazards from just behind the player out to blast_range_z ahead.
+const BLAST_NEAR_Z := 1.0
+## Hard stop so a degenerate library (zero-length chunks) can never spin _fill().
+const FILL_GUARD := 64
+## Newest-first cap on the debug log the smoke test prints when it fails.
+const CHUNK_LOG_LIMIT := 256
 
 var game: RunnerGame
 var config: RunConfig
@@ -24,18 +41,42 @@ var last_powerup_kind: StringName = &""
 var chunks_since_powerup := 0
 var chunks_spawned := 0
 
+var _chunk_log := PackedStringArray()
+var _power_up_scene: PackedScene
+var _power_up_scene_checked := false
+
 func setup(runner: RunnerGame) -> void:
 	game = runner
 	config = runner.config
+	metas.clear()
 	if ResourceLoader.exists(LIBRARY_PATH):
 		library = load(LIBRARY_PATH) as ChunkLibrary
-	metas.clear() # PR 2: instantiate each scene once to read exports, then free the prototypes.
+	if library == null:
+		push_warning("Runner chunk library missing at %s; the spawner has nothing to place" % LIBRARY_PATH)
+		return
+	for scene in library.scenes:
+		var meta := _read_meta(scene)
+		if not meta.is_empty():
+			metas.append(meta)
+	if metas.is_empty():
+		push_warning("Runner chunk library at %s holds no usable chunks" % LIBRARY_PATH)
 
 func reset(run_seed: int) -> void:
+	# Leave the tree before freeing, so no stale hazard is left in runner_hazards this frame.
 	for chunk in active:
-		if is_instance_valid(chunk):
-			chunk.queue_free()
+		if not is_instance_valid(chunk):
+			continue
+		var parent := chunk.get_parent()
+		if parent != null:
+			parent.remove_child(chunk)
+		chunk.queue_free()
 	active.clear()
+	var root := _chunks_root()
+	if root != null:
+		for child in root.get_children():
+			root.remove_child(child)
+			child.queue_free()
+	_chunk_log.clear()
 	spawn_rng.seed = run_seed
 	powerup_rng.seed = run_seed ^ 0x9E3779B9
 	last_index = -1
@@ -43,14 +84,306 @@ func reset(run_seed: int) -> void:
 	last_powerup_kind = &""
 	chunks_since_powerup = 0
 	chunks_spawned = 0
+	# Clean run-in: the first chunk starts 2.5 s of travel ahead of the player.
 	frontier_z = -(float(config.base_speed) * 2.5) if config != null else 0.0
-
-## Auto-Fix: clear every blocking hazard within blast_range_z ahead of the player.
-func clear_hazards_in_range() -> int:
-	return 0 # PR 2.
+	_fill()
 
 func get_active_chunks() -> Array[Node3D]:
 	return active
 
-func _physics_process(_delta: float) -> void:
-	pass # PR 2: advance chunks toward +Z, despawn past despawn_z, refill to max_active_chunks.
+## Newest-last log of every placement: "%.1fs d=%.2f <name>[ mirrored] gap=%.1f".
+func get_chunk_log() -> PackedStringArray:
+	return _chunk_log
+
+## Auto-Fix: clear every blocking hazard within blast_range_z ahead of the player. Emits
+## hazard_cleared per hazard; the caller emits hazards_blasted with the returned count.
+func clear_hazards_in_range() -> int:
+	var tree := get_tree()
+	if tree == null or config == null:
+		return 0
+	var far_z := -absf(float(config.blast_range_z))
+	var count := 0
+	for node in tree.get_nodes_in_group(&"runner_hazards"):
+		var hazard := node as Area3D
+		if hazard == null or not is_instance_valid(hazard):
+			continue
+		if not hazard.has_method("is_blocking") or not hazard.is_blocking():
+			continue
+		var z := hazard.global_position.z
+		if z < far_z or z > BLAST_NEAR_Z:
+			continue
+		hazard.clear()
+		count += 1
+		if game != null:
+			game.hazard_cleared.emit(hazard)
+	return count
+
+func _physics_process(delta: float) -> void:
+	if game == null or config == null:
+		return
+	if game.state != &"running" and game.state != &"caught":
+		return
+	var dz := float(game.speed) * delta
+	frontier_z += dz
+	for chunk in active:
+		if is_instance_valid(chunk):
+			chunk.position.z += dz
+	_despawn()
+	_fill()
+
+# --- placement ---
+
+## Top up the active set. frontier_z is re-read from the last chunk first, because chunks have
+## moved since the previous call.
+func _fill() -> void:
+	if game == null or config == null or metas.is_empty():
+		return
+	var root := _chunks_root()
+	if root == null:
+		return
+	if not active.is_empty():
+		var last := active[active.size() - 1]
+		if is_instance_valid(last):
+			frontier_z = last.back_edge_z()
+	var placed := 0
+	while active.size() < int(config.max_active_chunks) and frontier_z > float(config.spawn_horizon_z):
+		placed += 1
+		if placed > FILL_GUARD:
+			push_warning("Runner spawner hit the fill guard; check chunk lengths")
+			return
+		if not _place_next(root):
+			return
+
+func _place_next(root: Node3D) -> bool:
+	var index := _pick_index(float(game.difficulty))
+	if index < 0:
+		return false
+	var meta := metas[index]
+	var scene: PackedScene = meta["scene"]
+	var chunk := scene.instantiate() as Node3D
+	if chunk == null:
+		push_warning("Runner chunk %s did not instantiate as a Node3D" % meta["name"])
+		return false
+	last_index = index
+	# Park the chunk on the frontier before it enters the tree, so its hazards never spend a frame
+	# at the origin; the exact z follows once entry_clear() can be measured.
+	chunk.position = Vector3(0.0, 0.0, frontier_z)
+	root.add_child(chunk)
+	var gap := _gap_for(chunk)
+	chunk.position.z = frontier_z - gap
+	var mirrored := bool(meta["mirror_x"]) and spawn_rng.randf() < float(config.chunk_mirror_chance)
+	chunk.setup(game, mirrored)
+	active.append(chunk)
+	chunks_spawned += 1
+	chunks_since_powerup += 1
+	frontier_z = chunk.back_edge_z()
+	_log_placement(meta, mirrored, gap)
+	_maybe_place_power_up(chunk)
+	if game != null:
+		game.chunk_spawned.emit(chunk)
+	return true
+
+## Seam rule (contract §7): the player always gets v x 1.02 x t_spacing seconds between the last
+## forced action of the previous chunk and the first of the next one.
+func _gap_for(chunk: Node3D) -> float:
+	var spacing := config.t_spacing(float(game.difficulty))
+	if _is_pursued():
+		spacing += float(config.t_spacing_pursued_bonus)
+	# game.speed already carries the Nitro multiplier; never plan tighter than the base speed, so
+	# the catch deceleration cannot pack chunks together.
+	var v_eff := maxf(float(game.speed), float(config.base_speed))
+	var previous_exit := 0.0
+	if not active.is_empty():
+		var previous := active[active.size() - 1]
+		if is_instance_valid(previous):
+			previous_exit = previous.exit_clear()
+	return maxf(0.0, v_eff * float(config.gap_safety) * spacing - previous_exit - chunk.entry_clear())
+
+## Weighted pick among the chunks whose difficulty range covers `d`, never repeating the previous
+## chunk while an alternative exists. Breathers double their weight while the pursuer is close.
+func _pick_index(d: float) -> int:
+	var candidates: Array[int] = []
+	for i in metas.size():
+		var meta := metas[i]
+		if d >= float(meta["min_difficulty"]) - DIFFICULTY_EPSILON \
+				and d <= float(meta["max_difficulty"]) + DIFFICULTY_EPSILON:
+			candidates.append(i)
+	if candidates.is_empty():
+		push_warning("Runner spawner found no chunk for difficulty %.2f; falling back to the whole library" % d)
+		for i in metas.size():
+			candidates.append(i)
+	if candidates.size() > 1 and last_index >= 0:
+		candidates.erase(last_index)
+	if candidates.is_empty():
+		return -1
+	var pursued := _is_pursued()
+	var weights := PackedFloat32Array()
+	for i in candidates:
+		var weight := maxf(float(metas[i]["weight"]), 0.0)
+		if pursued and bool(metas[i]["breather"]):
+			weight *= BREATHER_PURSUED_WEIGHT
+		weights.append(weight)
+	var pick := spawn_rng.rand_weighted(weights)
+	if pick < 0 or pick >= candidates.size():
+		pick = spawn_rng.randi_range(0, candidates.size() - 1)
+	return candidates[pick]
+
+func _log_placement(meta: Dictionary, mirrored: bool, gap: float) -> void:
+	var line := "%.1fs d=%.2f %s%s gap=%.1f" % [
+		float(game.elapsed), float(game.difficulty), meta["name"],
+		" mirrored" if mirrored else "", gap
+	]
+	_chunk_log.append(line)
+	if _chunk_log.size() > CHUNK_LOG_LIMIT:
+		_chunk_log.remove_at(0)
+
+# --- power-ups ---
+
+## Contract §7: a pickup needs a 10 s cooldown, at least one chunk since the last one, and a
+## difficulty-scaled roll. The roll is only consumed once the first two gates pass, so the stream
+## stays deterministic per seed.
+func _maybe_place_power_up(chunk: Node3D) -> void:
+	if game.elapsed - last_powerup_time < float(config.powerup_cooldown_seconds):
+		return
+	if chunks_since_powerup < 1:
+		return
+	if powerup_rng.randf() >= config.powerup_chance(float(game.difficulty)):
+		return
+	var slots: Array = chunk.get_slots()
+	if slots.is_empty():
+		return
+	var slot := slots[powerup_rng.randi_range(0, slots.size() - 1)] as Node3D
+	if slot == null:
+		return
+	var kind := _pick_power_up_kind()
+	if kind == &"":
+		return
+	var scene := _power_up_packed_scene()
+	if scene == null:
+		return
+	var pickup := scene.instantiate() as PowerUp
+	if pickup == null:
+		push_warning("Runner power-up scene did not instantiate as a power_up.gd Area3D")
+		return
+	pickup.kind = kind
+	var height := float(config.pickup_height_run)
+	if String(chunk.slot_height(slot)) == SLOT_HEIGHT_JUMP:
+		height = float(config.pickup_height_jump)
+	pickup.position = Vector3(slot.position.x, height, slot.position.z)
+	chunk.add_child(pickup)
+	pickup.setup(game)
+	last_powerup_time = game.elapsed
+	last_powerup_kind = kind
+	chunks_since_powerup = 0
+
+## Weighted over power_up_defs, skipping the previous kind and anything the player already holds.
+func _pick_power_up_kind() -> StringName:
+	var held := _held_power_ups()
+	var kinds: Array[StringName] = []
+	var weights := PackedFloat32Array()
+	for kind in PowerUpDefs.kinds():
+		var candidate: StringName = kind
+		if candidate == last_powerup_kind or held.has(candidate):
+			continue
+		kinds.append(candidate)
+		weights.append(float(PowerUpDefs.weight(candidate)))
+	if kinds.is_empty():
+		# Everything is on cooldown or held: fall back to anything but a straight repeat.
+		for kind in PowerUpDefs.kinds():
+			var candidate: StringName = kind
+			if candidate == last_powerup_kind:
+				continue
+			kinds.append(candidate)
+			weights.append(float(PowerUpDefs.weight(candidate)))
+	if kinds.is_empty():
+		return &""
+	var pick := powerup_rng.rand_weighted(weights)
+	if pick < 0 or pick >= kinds.size():
+		pick = powerup_rng.randi_range(0, kinds.size() - 1)
+	return kinds[pick]
+
+## Kinds whose effect is already running or stored, asked for defensively: the managers are
+## siblings that may still be stubs.
+func _held_power_ups() -> Dictionary:
+	var held := {}
+	if game == null:
+		return held
+	var effects := game.effect_manager
+	if effects != null and is_instance_valid(effects):
+		if effects.has_method("get_active_effects"):
+			for kind in effects.get_active_effects():
+				held[kind] = true
+		if effects.has_method("has_super_jump") and effects.has_super_jump():
+			held[&"super_jump"] = true
+		if "code_review_held" in effects and bool(effects.get(&"code_review_held")):
+			held[&"code_review"] = true
+	var hits := game.hit_manager
+	if hits != null and is_instance_valid(hits) and "shield" in hits and bool(hits.get(&"shield")):
+		held[&"approve_shield"] = true
+	return held
+
+func _power_up_packed_scene() -> PackedScene:
+	if _power_up_scene_checked:
+		return _power_up_scene
+	_power_up_scene_checked = true
+	if ResourceLoader.exists(POWER_UP_SCENE):
+		_power_up_scene = load(POWER_UP_SCENE) as PackedScene
+	if _power_up_scene == null:
+		push_warning("Runner power-up scene missing at %s; no pickups will spawn" % POWER_UP_SCENE)
+	return _power_up_scene
+
+# --- housekeeping ---
+
+func _despawn() -> void:
+	var despawn_z := float(config.despawn_z)
+	for i in range(active.size() - 1, -1, -1):
+		var chunk := active[i]
+		if not is_instance_valid(chunk):
+			active.remove_at(i)
+			continue
+		if chunk.back_edge_z() <= despawn_z:
+			continue
+		active.remove_at(i)
+		# Leave the tree first, so the hazards drop out of runner_hazards this frame.
+		var parent := chunk.get_parent()
+		if parent != null:
+			parent.remove_child(chunk)
+		chunk.queue_free()
+
+func _chunks_root() -> Node3D:
+	if game == null:
+		return null
+	var root := game.chunks
+	if root != null and is_instance_valid(root):
+		return root
+	return game.get_node_or_null(NodePath(CHUNKS_PATH)) as Node3D
+
+func _is_pursued() -> bool:
+	if game == null:
+		return false
+	var hits := game.hit_manager
+	if hits == null or not is_instance_valid(hits) or not hits.has_method("is_pursued"):
+		return false
+	return bool(hits.is_pursued())
+
+## Read one chunk's exports off a throwaway instance; the prototype never enters the tree.
+func _read_meta(scene: PackedScene) -> Dictionary:
+	if scene == null:
+		return {}
+	var proto := scene.instantiate() as Node3D
+	if proto == null:
+		push_warning("Runner chunk library holds a scene whose root is not a Node3D")
+		return {}
+	var tags: PackedStringArray = proto.get(&"tags")
+	var meta := {
+		"scene": scene,
+		"name": scene.resource_path.get_file().get_basename(),
+		"length": float(proto.get(&"length")),
+		"weight": float(proto.get(&"weight")),
+		"min_difficulty": float(proto.get(&"min_difficulty")),
+		"max_difficulty": float(proto.get(&"max_difficulty")),
+		"mirror_x": bool(proto.get(&"mirror_x")),
+		"breather": tags.has(BREATHER_TAG)
+	}
+	proto.free()
+	return meta

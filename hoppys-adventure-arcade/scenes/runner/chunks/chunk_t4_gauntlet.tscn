@@ -1,0 +1,25 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/runner/chunks/chunk.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/runner/hazards/hazard.tscn" id="2"]
+
+[node name="ChunkT4Gauntlet" type="Node3D"]
+script = ExtResource("1")
+length = 66.0
+weight = 3.0
+min_difficulty = 0.7
+max_difficulty = 1.0
+mirror_x = true
+tags = PackedStringArray("t4", "flood")
+
+[node name="Hazard1" parent="." instance=ExtResource("2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -57)
+kind = &"pr_backlog_high"
+
+[node name="Hazard2" parent="." instance=ExtResource("2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 0, -33)
+kind = &"comment_flood"
+
+[node name="Hazard3" parent="." instance=ExtResource("2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -9)
+kind = &"build_shockwave"

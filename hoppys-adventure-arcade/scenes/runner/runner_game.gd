@@ -1,12 +1,20 @@
 extends Node3D
 ## The Endless Runner facade (contract §3 and §4). Every frontend scene talks to this node and
-## nothing else: signals out, the methods in §4.3 in.
-## PR 1 scaffold: signals, state, mounting and the session/pause facade. The run simulation, the
-## caught sequence and _finish_run land in PR 2.
+## nothing else: signals out, the methods in §4.3 in. It also owns the run clock, the caught
+## sequence and the single leaderboard write.
 
 const RunnerLeaderboard = preload("res://scenes/runner/systems/runner_leaderboard.gd")
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
 const CONFIG_PATH := "res://scenes/runner/data/run_config.tres"
+## Seconds the corridor takes to decelerate to a stop once the pursuer catches Hoppy.
+const CAUGHT_STOP_SECONDS := 0.4
+## Camera shake strengths for the two events the backend owns.
+const SHAKE_ON_HIT := 0.5
+const SHAKE_ON_CAUGHT := 1.0
+## A hazard counts as dodged once its origin is this far behind the player (who stands at z = 0).
+const DODGE_LINE_Z := 1.0
+## Rebuild the dodge bookkeeping once it grows past this many entries.
+const DODGE_IDS_LIMIT := 1024
 
 ## Contract §3 MOUNT points: mount node path -> optional frontend scenes. Each is instantiated only
 ## if it exists, and receives bind(self) before run_started is emitted.
@@ -56,6 +64,9 @@ signal paused_changed(paused: bool)
 @export var config: RunConfig = preload(CONFIG_PATH)
 ## Tests instantiate the scene with autostart off and call start_run() themselves.
 @export var autostart := true
+## Where this session reads and writes the board. Tests point it at a throwaway file so a headless
+## run never touches the player's real leaderboard; the game leaves it at the default.
+var leaderboard_path := RunnerLeaderboard.DEFAULT_PATH
 
 # Read-only properties (contract §4.2). Treat these as outputs; drive the run through the methods.
 var state: StringName = &"ready"
@@ -64,7 +75,8 @@ var seed := 0
 var run_id := ""
 ## Unpaused running seconds.
 var elapsed := 0.0
-## Metres travelled.
+## Metres travelled. RunnerGame owns this accumulator; the spawner moves chunks by the same dz but
+## must not add to it, or the distance would double-count.
 var distance := 0.0
 var speed := 0.0
 var normalized_speed := 0.0
@@ -72,6 +84,10 @@ var difficulty := 0.0
 var hp := 0
 var score := 0
 var multiplier := 1.0
+## Blocking hazards that passed the player without landing a hit, for the run result.
+var hazards_dodged := 0
+## Running total behind the hazards_blasted signal, for the run result.
+var hazards_blasted_total := 0
 ## Seeded per run; the frontend may use it for deterministic cosmetics.
 var cosmetic_rng := RandomNumberGenerator.new()
 
@@ -99,6 +115,14 @@ var _finished := false
 var _hit_stop_active := false
 ## Whatever Engine.time_scale was when the current hit-stop started (tests run the runner fast).
 var _time_scale_before_hit_stop := 1.0
+## The catch cinematic: guarded so it only ever runs once, and timed here because RunnerGame is the
+## one node that keeps processing while the tree is paused.
+var _caught_started := false
+var _caught_timer := 0.0
+## Hazard instance ids already counted (dodged or hit), so each hazard is scored once.
+var _dodged_ids := {}
+## The mounted frontend corridor, if one exists.
+var _corridor: Node = null
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -110,6 +134,7 @@ func _ready() -> void:
 			player, pursuer, camera_rig, debug_overlay]:
 		if node != null and node.has_method("setup"):
 			node.setup(self)
+	_connect_signals()
 	_mount_frontend()
 	if autostart:
 		start_run(0)
@@ -121,6 +146,9 @@ func start_run(run_seed := 0) -> void:
 	cosmetic_rng.seed = seed
 	_result = {}
 	_finished = false
+	_caught_started = false
+	_caught_timer = 0.0
+	_dodged_ids.clear()
 	elapsed = 0.0
 	distance = 0.0
 	difficulty = 0.0
@@ -129,6 +157,8 @@ func start_run(run_seed := 0) -> void:
 	speed = float(config.base_speed)
 	normalized_speed = 0.0
 	hp = int(config.max_hp)
+	hazards_dodged = 0
+	hazards_blasted_total = 0
 	for node in [speed_controller, hit_manager, score_manager, effect_manager, autopilot,
 			player, pursuer, camera_rig]:
 		if node != null and node.has_method("reset"):
@@ -201,15 +231,15 @@ func submit_name(name: String) -> bool:
 	if _result.is_empty() or run_id.is_empty():
 		return false
 	var clean := RunnerLeaderboard.sanitize_name(name)
-	if RunnerLeaderboard.rename(run_id, clean) != OK:
+	if RunnerLeaderboard.rename(run_id, clean, leaderboard_path) != OK:
 		return false
 	_result["player_name"] = clean
-	var entries := RunnerLeaderboard.load_entries()
+	var entries := RunnerLeaderboard.load_entries(leaderboard_path)
 	leaderboard_saved.emit(entries, int(_result.get("rank", 0)))
 	return true
 
 func get_leaderboard() -> Array[Dictionary]:
-	return RunnerLeaderboard.load_entries()
+	return RunnerLeaderboard.load_entries(leaderboard_path)
 
 ## Empty until the run is finished.
 func get_result() -> Dictionary:
@@ -229,7 +259,113 @@ func set_autopilot(enabled: bool) -> void:
 	if player != null and player.has_method("set_controls_enabled"):
 		player.set_controls_enabled(not enabled and state == &"running")
 
+# --- run loop ---
+
+func _physics_process(delta: float) -> void:
+	# RunnerGame processes while paused (it owns the pause menu), so the clock is gated by hand.
+	if paused:
+		return
+	if state == &"running":
+		elapsed += delta
+		distance += speed * delta
+		_track_dodges()
+	elif state == &"caught":
+		distance += speed * delta
+		_track_dodges()
+		_caught_timer += delta
+		if _caught_timer >= float(config.caught_sequence_seconds):
+			_finish_run(&"caught")
+	_drive_corridor()
+
+## Count every blocking hazard that made it past the player. A hazard that hit is no longer
+## blocking, and Auto-Fix removes cleared ones from the group, so neither is counted as a dodge.
+func _track_dodges() -> void:
+	var tree := get_tree()
+	if tree == null:
+		return
+	for node in tree.get_nodes_in_group(&"runner_hazards"):
+		var hazard := node as Node3D
+		if hazard == null or not is_instance_valid(hazard):
+			continue
+		if hazard.global_position.z <= DODGE_LINE_Z:
+			continue
+		var id := hazard.get_instance_id()
+		if _dodged_ids.has(id):
+			continue
+		_dodged_ids[id] = true
+		if hazard.has_method("is_blocking") and hazard.is_blocking():
+			hazards_dodged += 1
+	if _dodged_ids.size() > DODGE_IDS_LIMIT:
+		_prune_dodge_ids()
+
+## Drop ids whose hazard has been freed, so a long run does not grow the dictionary forever.
+func _prune_dodge_ids() -> void:
+	var kept := {}
+	for id in _dodged_ids:
+		if is_instance_id_valid(id):
+			kept[id] = true
+	_dodged_ids = kept
+
+## The frontend corridor scrolls itself from the authoritative speed (contract §5.5).
+func _drive_corridor() -> void:
+	if _corridor == null or not is_instance_valid(_corridor):
+		return
+	if _corridor.has_method("set_scroll_speed"):
+		_corridor.set_scroll_speed(speed)
+	if _corridor.has_method("set_pursuit"):
+		_corridor.set_pursuit(_pursuit_amount())
+
+## 0 retreated .. 1 about to catch, mirrored from the pursuer.
+func _pursuit_amount() -> float:
+	if pursuer != null and is_instance_valid(pursuer) and &"threat" in pursuer:
+		return clampf(float(pursuer.get(&"threat")), 0.0, 1.0)
+	return 0.0
+
 # --- internals ---
+
+## The facade mirrors the managers' own signals into its read-only properties and forwards the
+## player-visual hooks, so no system has to reach into RunnerGame's state.
+func _connect_signals() -> void:
+	health_changed.connect(_on_health_changed)
+	score_changed.connect(_on_score_changed)
+	damage_taken.connect(_on_damage_taken)
+	shield_changed.connect(_on_shield_changed)
+	power_up_collected.connect(_on_power_up_collected)
+	power_up_expired.connect(_on_power_up_expired)
+	hazards_blasted.connect(_on_hazards_blasted)
+	# The HitManager calls _on_caught(); a manager that emits `caught` instead still starts the
+	# cinematic, because the sequence is guarded and the signal it emits re-enters as a no-op.
+	caught.connect(_on_caught)
+
+func _on_health_changed(value: int, _max_hp: int) -> void:
+	hp = value
+
+func _on_score_changed(value: int, value_multiplier: float) -> void:
+	score = value
+	multiplier = value_multiplier
+
+func _on_damage_taken(_kind: StringName, _value: int) -> void:
+	if camera_rig != null and is_instance_valid(camera_rig) and camera_rig.has_method("shake"):
+		camera_rig.shake(SHAKE_ON_HIT)
+	if player != null and is_instance_valid(player) and player.has_method("play_hurt"):
+		player.play_hurt()
+
+func _on_shield_changed(active: bool) -> void:
+	if player != null and is_instance_valid(player) and player.has_method("apply_shield"):
+		player.apply_shield(active)
+
+func _on_power_up_collected(kind: StringName, _duration: float) -> void:
+	_set_aura(kind, true)
+
+func _on_power_up_expired(kind: StringName) -> void:
+	_set_aura(kind, false)
+
+func _set_aura(kind: StringName, on: bool) -> void:
+	if player != null and is_instance_valid(player) and player.has_method("apply_aura"):
+		player.apply_aura(kind, on)
+
+func _on_hazards_blasted(count: int) -> void:
+	hazards_blasted_total += count
 
 func _set_state(value: StringName) -> void:
 	if state == value:
@@ -237,16 +373,95 @@ func _set_state(value: StringName) -> void:
 	state = value
 	state_changed.emit(state)
 
-## Second hit while pursued: lock controls and play the catch cinematic.
+## Second hit while pursued: lock controls and play the catch cinematic. Idempotent.
 func _on_caught() -> void:
-	pass # PR 2: state caught, stop the world, shake, pursuer.catch(), emit caught.
+	if _caught_started or _finished:
+		return
+	_caught_started = true
+	_caught_timer = 0.0
+	_set_state(&"caught")
+	if autopilot != null and is_instance_valid(autopilot) and autopilot.has_method("set_enabled"):
+		autopilot.set_enabled(false)
+	if player != null and is_instance_valid(player):
+		if player.has_method("set_controls_enabled"):
+			player.set_controls_enabled(false)
+		if player.has_method("play_dead"):
+			player.play_dead()
+	if speed_controller != null and is_instance_valid(speed_controller) and speed_controller.has_method("begin_stop"):
+		speed_controller.begin_stop(CAUGHT_STOP_SECONDS)
+	if camera_rig != null and is_instance_valid(camera_rig) and camera_rig.has_method("shake"):
+		camera_rig.shake(SHAKE_ON_CAUGHT)
+	if pursuer != null and is_instance_valid(pursuer) and pursuer.has_method("catch"):
+		pursuer.catch()
+	caught.emit()
 
 ## Build the result, write the leaderboard once and emit run_finished exactly once per run.
-func _finish_run(_outcome: StringName) -> void:
+func _finish_run(outcome: StringName) -> void:
 	if _finished:
 		return
 	_finished = true
-	# PR 2: build `result`, RunnerLeaderboard.submit, leaderboard_saved, state finished, run_finished.
+	var now := int(Time.get_unix_time_from_system())
+	var player_name := RunnerLeaderboard.sanitize_name("")
+	var final_score := _system_int(score_manager, &"score", score)
+	var result := {
+		"run_id": run_id,
+		"mode": "runner",
+		"outcome": String(outcome),
+		"score": final_score,
+		"score_exact": _system_float(score_manager, &"exact", float(final_score)),
+		"duration": elapsed,
+		"distance": distance,
+		"hazards_dodged": hazards_dodged,
+		"power_ups": _system_int(effect_manager, &"power_ups_collected", 0),
+		"hazards_blasted": hazards_blasted_total,
+		"hits_taken": _system_int(hit_manager, &"hits_taken", 0),
+		"recoveries": _system_int(hit_manager, &"recoveries", 0),
+		"blocked_hits": _system_int(hit_manager, &"blocked_hits", 0),
+		"seed": seed,
+		"max_speed_reached": _system_float(speed_controller, &"max_speed_reached", speed),
+		"best_multiplier": _system_float(score_manager, &"best_multiplier", multiplier),
+		"chunks_spawned": _system_int(spawner, &"chunks_spawned", 0),
+		"score_rule_revision": int(config.score_rule_revision),
+		"submitted_at": now,
+		"rank": 0,
+		"qualifies": false,
+		"player_name": player_name
+	}
+	# One write per run (contract §4.3): the entry carries only the leaderboard §4.3 fields.
+	var submission := RunnerLeaderboard.submit({
+		"run_id": run_id,
+		"name": player_name,
+		"score": final_score,
+		"duration": elapsed,
+		"seed": seed,
+		"submitted_at": now
+	}, leaderboard_path)
+	var rank := int(submission.get("rank", 0))
+	result["rank"] = rank
+	result["qualifies"] = rank > 0
+	_result = result
+	var entries: Array = submission.get("entries", [])
+	leaderboard_saved.emit(entries, rank)
+	_set_state(&"finished")
+	run_finished.emit(get_result())
+
+## Read an int off a sibling system without assuming it exists yet.
+func _system_int(node: Node, property: StringName, fallback: int) -> int:
+	var value: Variant = _system_value(node, property)
+	if value is int or value is float:
+		return int(value)
+	return fallback
+
+func _system_float(node: Node, property: StringName, fallback: float) -> float:
+	var value: Variant = _system_value(node, property)
+	if value is int or value is float:
+		return float(value)
+	return fallback
+
+func _system_value(node: Node, property: StringName) -> Variant:
+	if node == null or not is_instance_valid(node) or not (property in node):
+		return null
+	return node.get(property)
 
 ## Instantiate every frontend scene that exists and bind it to this facade. A missing or broken
 ## frontend file must never stop the scene from loading (contract §1 rule 2).
@@ -263,9 +478,11 @@ func _mount_frontend() -> void:
 			if instance.has_method("bind"):
 				instance.bind(self)
 			# A real corridor replaces the backend graybox lighting and grid (contract §3).
-			if mount == environment_mount and graybox_environment != null:
-				graybox_environment.queue_free()
-				graybox_environment = null
+			if mount == environment_mount:
+				_corridor = instance
+				if graybox_environment != null:
+					graybox_environment.queue_free()
+					graybox_environment = null
 
 ## Contract §3: only a non-null PackedScene is instantiated; anything else is warned about and the
 ## mount is skipped (a frontend scene has no backend graybox to fall back to).

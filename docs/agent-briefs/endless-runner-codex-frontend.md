@@ -330,13 +330,21 @@ been run successfully on 4.7.1.stable; keep the scaffold `World/GrayboxEnvironme
 PR 2 (which relaxes that assertion) is merged into this branch.
 
 ```sh
+#!/usr/bin/env bash
+# Final acceptance: fails fast on any error and refuses engines other than 4.7.1.stable.
+# Set DIAGNOSTIC=1 to allow another 4.7.x build; such a run is diagnostic only and must be
+# labelled as such in docs/endless-runner.md.
+set -euo pipefail
 GODOT_BIN="${GODOT_BIN:-/Applications/Godot.app/Contents/MacOS/Godot}"
-# Final acceptance requires 4.7.1.stable; any other build is diagnostic only.
-"$GODOT_BIN" --version | grep -q '^4\.7\.1\.stable' || echo "DIAGNOSTIC RUN: not Godot 4.7.1.stable"
+version="$("$GODOT_BIN" --version)"
+if [[ "$version" != 4.7.1.stable* ]]; then
+  if [[ "${DIAGNOSTIC:-0}" == "1" ]]; then echo "DIAGNOSTIC RUN on $version (not acceptance)"; else
+    echo "Acceptance requires Godot 4.7.1.stable, found $version" >&2; exit 1; fi
+fi
 "$GODOT_BIN" --headless --path hoppys-adventure-arcade --import
-for f in $(git ls-files hoppys-adventure-arcade/scenes/runner hoppys-adventure-arcade/tests | grep '\.gd$'); do
+while IFS= read -r f; do
   "$GODOT_BIN" --headless --path hoppys-adventure-arcade --script "res://${f#hoppys-adventure-arcade/}" --check-only
-done
+done < <(git ls-files 'hoppys-adventure-arcade/scenes/runner/**/*.gd' 'hoppys-adventure-arcade/tests/*.gd')
 "$GODOT_BIN" --headless --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd
 "$GODOT_BIN" --headless --path hoppys-adventure-arcade --script res://tests/menu_smoke.gd
 "$GODOT_BIN" --path hoppys-adventure-arcade --scene res://scenes/runner/environment/dev/corridor_preview.tscn

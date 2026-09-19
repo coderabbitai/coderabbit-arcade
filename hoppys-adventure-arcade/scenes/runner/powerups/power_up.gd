@@ -58,7 +58,7 @@ func collect(_player: Node) -> void:
 	if game != null and game.effect_manager != null:
 		game.effect_manager.apply(kind)
 	# A visual without the hook still has to disappear; the backend owns its lifetime.
-	if visual != null:
+	if is_instance_valid(visual):
 		if visual.has_method("on_collected"):
 			visual.on_collected()
 		else:

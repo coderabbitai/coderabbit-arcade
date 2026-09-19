@@ -18,7 +18,6 @@ const TREE := {
 	"World": "Node3D",
 	"World/Floor": "StaticBody3D",
 	"World/Chunks": "Node3D",
-	"World/GrayboxEnvironment": "Node3D",
 	"World/Environment": "Node3D",
 	"Player": "CharacterBody3D",
 	"Player/BodyShape": "CollisionShape3D",
@@ -120,6 +119,7 @@ func run() -> void:
 		check(node != null, "missing node: " + path)
 		if node != null:
 			check(node.is_class(TREE[path]), "%s is a %s, expected %s" % [path, node.get_class(), TREE[path]])
+	_check_environment(game)
 	for signal_name in SIGNALS:
 		check(game.has_signal(signal_name), "missing signal: " + signal_name)
 	for method in METHODS:
@@ -200,6 +200,21 @@ func run() -> void:
 
 func wait(seconds: float) -> void:
 	await create_timer(seconds).timeout
+
+## Contract §3: World carries the backend graybox environment, and a mounted frontend corridor
+## frees it. Either shape is valid, so accept the graybox or a populated World/Environment.
+func _check_environment(game: Node) -> void:
+	var graybox := game.get_node_or_null("World/GrayboxEnvironment")
+	if graybox != null and graybox.is_queued_for_deletion():
+		graybox = null
+	if graybox != null:
+		check(graybox is Node3D, "World/GrayboxEnvironment is a %s, expected Node3D" % graybox.get_class())
+	var mount := game.get_node_or_null("World/Environment")
+	var mounted := mount != null and mount.get_child_count() > 0
+	check(graybox != null or mounted,
+		"World needs the graybox environment, or a corridor mounted under World/Environment")
+	if mounted:
+		check(graybox == null, "a mounted corridor must free World/GrayboxEnvironment")
 
 ## Every row of the contract §8 hazard table survives a round trip through hazard.tscn.
 func _check_hazards() -> void:
