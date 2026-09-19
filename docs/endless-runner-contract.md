@@ -1,6 +1,6 @@
 # Endless Runner — Backend/Frontend Contract
 
-Version 1.1 · 2026-09-19 · GDScript
+Version 1.2 · 2026-09-19 · GDScript
 
 **Engine version policy.** The project pins **Godot 4.7.1** (GDD). The editor installed on the build
 machine during this cycle is **4.7.0 stable** (`4.7.stable.official.5b4e0cb0f`), so every verification
@@ -204,6 +204,10 @@ bit 2 = x +2), `dodge_hint: StringName`.
 | `set_laser_state(state: StringName)` | Timed laser only: `ground`, `high`, `off` |
 
 Visual bounds must stay within 110 % of `hitbox_size` on every axis so what you see is what hits you.
+This rule applies to the collision-volume artwork; flat ground-projection quads at y ≈ 0 whose x/z extents
+equal the hitbox footprint (floor markers, safe-gap markers) are exempt on the y axis. Performance budget:
+a hazard visual should produce at most ~14 draw calls (count `MeshInstance3D`, `MultiMeshInstance3D`,
+`GPUParticles3D` and `Label3D`; a `Label3D` with an outline costs two) because up to six hazards are visible.
 
 ### 5.3 `powerups/visuals/<kind>_visual.tscn` — extends `powerups/power_up_visual_base.gd`
 
@@ -313,4 +317,5 @@ mouse-hover failures on a clean `main`; the docs validated it on 4.7.1. New runn
 ## 10. Change log
 
 - 1.0 (2026-09-19): initial contract reconciled from the backend, procgen/tuning and frontend design passes.
+- 1.2 (2026-09-19): §5.2 — ground-projection quads exempt from the 110 % rule on y; per-hazard draw-call budget stated.
 - 1.1 (2026-09-19): engine version policy (4.7.1 pin, 4.7.0 validation); AppRouter rule scoped to in-game overlays; routes wording clarified; leaderboard writes keep a `.bak`; Nitro cap arithmetic and viewport-scale restore semantics clarified; return-type rule generalised; mount resources validated as `PackedScene`; timed laser cycle spelled out.
