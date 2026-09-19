@@ -252,8 +252,8 @@ built from sine/square/saw/noise with attack-decay envelopes, following `audio_s
 `footstep`, `jump`, `land`, `roll`, `lane_left`/`lane_right` (stereo, panned), `powerup`, `nitro`, `lgtm`,
 `auto_fix`, `shield_block`, `hit`, `pursuit_start`, `pursuit_drone` (2 s loop), `heartbeat` (1 s loop),
 `retreat`, `recovered_chime`, `caught`, `game_over`. Peak ≤ 0.8 full scale. Players: `OneShots`
-(`AudioStreamPolyphonic`, polyphony 10, bus `SFX`), `Footsteps`, `Drone`, `Heartbeat`. Same sound not
-re-triggered within 40 ms. Footstep cadence `lerp(0.42, 0.20, normalized)` while running and grounded.
+(`AudioStreamPolyphonic`, polyphony 7, bus `SFX`), `Footsteps`, `Drone`, `Heartbeat` — 7 + 3 = a hard total of
+10 simultaneous voices even during pursuit. Same sound not re-triggered within 40 ms. Footstep cadence `lerp(0.42, 0.20, normalized)` while running and grounded.
 Triggers: `player_action` → jump/land/roll/lane; `power_up_collected` → powerup (+ kind sting);
 `damage_blocked` → shield_block; `damage_taken` → hit + `AudioService.duck_music(-6, 0.4)` +
 `hit_stop` is backend-owned (do not call unless you want it); `pursuit_started` → alarm + drone fade in;

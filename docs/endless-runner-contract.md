@@ -46,7 +46,7 @@ Rules:
 
 ## 2. Scene flow and routes
 
-```
+```text
 hub ──AppRouter.go("runner")──▶ runner_menu.tscn (RunnerMenu)
         ▲                            │ Play → AppRouter.go("runner_game")
         │ Return / ui_cancel         ▼
@@ -68,7 +68,7 @@ hub ──AppRouter.go("runner")──▶ runner_menu.tscn (RunnerMenu)
 
 ## 3. `runner_game.tscn` structure
 
-```
+```text
 RunnerGame (Node3D, runner_game.gd, process_mode ALWAYS)            backend
 ├─ Systems (Node, PAUSABLE)
 │  ├─ SpeedController  ├─ HitManager  ├─ ScoreManager  ├─ EffectManager
