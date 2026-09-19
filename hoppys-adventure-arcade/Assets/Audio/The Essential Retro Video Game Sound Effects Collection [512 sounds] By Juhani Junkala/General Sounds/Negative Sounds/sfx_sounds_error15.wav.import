@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://dg4uaa5uhur0t"
+path="res://.godot/imported/sfx_sounds_error15.wav-9293eaa8e3e2977aa2209bc6d7ebae0c.sample"
+
+[deps]
+
+source_file="res://Assets/Audio/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Negative Sounds/sfx_sounds_error15.wav"
+dest_files=["res://.godot/imported/sfx_sounds_error15.wav-9293eaa8e3e2977aa2209bc6d7ebae0c.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=2

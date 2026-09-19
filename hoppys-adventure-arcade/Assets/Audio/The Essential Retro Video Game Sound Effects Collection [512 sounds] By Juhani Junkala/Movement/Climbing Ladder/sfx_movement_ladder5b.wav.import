@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://cx3howsedsesq"
+path="res://.godot/imported/sfx_movement_ladder5b.wav-79de7e31ab81f61e9bf55b908c1bf851.sample"
+
+[deps]
+
+source_file="res://Assets/Audio/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/Movement/Climbing Ladder/sfx_movement_ladder5b.wav"
+dest_files=["res://.godot/imported/sfx_movement_ladder5b.wav-79de7e31ab81f61e9bf55b908c1bf851.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=2

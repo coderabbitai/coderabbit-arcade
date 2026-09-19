@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://co1wf1y88mko3"
+path="res://.godot/imported/tipa16.mp3-1b7bb1ac365086b21ecf550ec5f3718f.mp3str"
+
+[deps]
+
+source_file="res://Assets/Audio/Platformer/Obital Ops/tipa16.mp3"
+dest_files=["res://.godot/imported/tipa16.mp3-1b7bb1ac365086b21ecf550ec5f3718f.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4
