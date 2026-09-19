@@ -151,6 +151,7 @@ func run() -> void:
 	await check_hazards()
 	await check_powerups_and_pursuer()
 	await check_runner_ui()
+	await check_runner_audio()
 	root.get_node("AudioService").shutdown()
 	await create_timer(0.3).timeout
 	failures += _logger.errors()
@@ -517,7 +518,7 @@ func check_runner_ui() -> void:
 	check(hud.hp_row.get_child(0).filled and not hud.hp_row.get_child(1).filled, "hit updates approval pips")
 	check(hud.pursuit_warning.visible and hud.pursuit_remaining < float(mock.config.recovery_seconds), "demo pursuit")
 	check(hud.score_label.text == "%08d" % mock.score, "score count-up reaches facade score")
-	check(is_equal_approx(mock.camera_rig.last_shake, 0.7), "damage camera shake")
+	check(is_zero_approx(mock.camera_rig.last_shake), "HUD leaves backend-owned damage camera shake untouched")
 	mock.pursuit_started.emit(7.5)
 	mock.pursuit_progress.emit(3.25, 7.5)
 	check(hud.pursuit_label.text == "UNREVIEWED BACKLOG · 3.2", "pursuit formats signal value")
@@ -619,3 +620,203 @@ func check_runner_ui() -> void:
 	game.free()
 	await frames()
 	print("RUNNER UI REAL FACADE: autostart=false, start_run, autopilot 3s PASS")
+
+func check_runner_audio() -> void:
+	const Synth = preload("res://scenes/runner/audio/sfx_synth.gd")
+	const RunnerAudio = preload("res://scenes/runner/audio/runner_audio.tscn")
+	const Mock = preload("res://scenes/runner/ui/dev/mock_runner_game.gd")
+	var mock := Mock.new()
+	mock.autoplay = false
+	root.add_child(mock)
+	var audio := RunnerAudio.instantiate()
+	mock.add_child(audio)
+	var counts := {}
+	var peak := [0]
+	audio.sound_played.connect(func(kind: StringName, stream: AudioStream) -> void:
+		check(stream != null, "audio hook has stream: " + kind)
+		counts[kind] = int(counts.get(kind, 0)) + 1
+		peak[0] = maxi(peak[0], audio.active_voice_count())
+		check(audio.active_voice_count() <= 10, "audio hard ten voice cap")
+	)
+	audio.bind(mock)
+	audio.bind(mock)
+	audio.set_process(false)
+	check(audio.name == &"RunnerAudio" and audio.process_mode == Node.PROCESS_MODE_ALWAYS, "audio scene contract")
+	check(audio.get_child_count() == 4 and audio.one_shots.stream.polyphony == 7, "seven plus three voice layout")
+	for player: AudioStreamPlayer in audio.get_children():
+		check(player.bus == &"SFX" and player.max_polyphony == 1, "SFX routing and dedicated player cap")
+	var service := root.get_node("AudioService")
+	check(service.music.stream.resource_path == audio.MUSIC_PATH and service.music.stream.loop, "runner BGM loaded and looping")
+	check(service.music.volume_db == -12.0, "runner BGM level")
+	for kind: StringName in Synth.RECIPES:
+		var stream := Synth.sound(kind)
+		check(stream == Synth.sound(kind), "cached PCM: " + kind)
+		check(stream.format == AudioStreamWAV.FORMAT_16_BITS and stream.mix_rate == 22050, "PCM format: " + kind)
+		var data := stream.data
+		var maximum := 0
+		for i in range(0, data.size(), 2):
+			maximum = maxi(maximum, absi(data.decode_s16(i)))
+		check(maximum > 0 and maximum <= int(0.8 * 32767), "non-silent bounded PCM: " + kind)
+		if kind in [&"pursuit_drone", &"heartbeat"]:
+			check(stream.loop_mode == AudioStreamWAV.LOOP_FORWARD and stream.loop_end == data.size() / 2, "complete loop: " + kind)
+		if kind in [&"lane_left", &"lane_right"]:
+			var energy := [0.0, 0.0]
+			for i in range(0, data.size(), 4):
+				energy[0] += absf(data.decode_s16(i))
+				energy[1] += absf(data.decode_s16(i + 2))
+			check(stream.stereo and (energy[0] > energy[1]) == (kind == &"lane_left"), "lane stereo pan: " + kind)
+	# Drive game time synchronously. Fresh slots isolate each demo tick from the
+	# real-time mixer; actual mixer contention is exercised by the burst below.
+	for i in 405:
+		audio.one_shots.stop()
+		audio.one_shots.play()
+		audio._playback = audio.one_shots.get_stream_playback()
+		audio._voices.clear()
+		audio._voice_kinds.clear()
+		mock.advance_demo(0.1)
+		audio._process(0.1)
+	check(mock.state == &"finished", "audio demo completes")
+	for kind: StringName in Synth.RECIPES:
+		check(int(counts.get(kind, 0)) > 0, "demo played trigger: " + kind)
+	check(counts.get(&"heartbeat", 0) == 1, "demo heartbeat starts exactly once across low progress ticks")
+	check(not audio.heartbeat.playing and not audio.drone.playing, "finished stops pursuit loops")
+	# Explicit edge cases, cadence, pause, smoothing and a saturated pursuit.
+	mock.state_changed.emit(&"running")
+	mock.player_action.emit(&"land")
+	mock.speed_changed.emit(12.0, 0.0)
+	audio._step_time = 0.0
+	var steps := int(counts.get(&"footstep", 0))
+	audio._process(0.41)
+	check(counts.get(&"footstep", 0) == steps, "slow cadence waits 0.42 seconds")
+	audio._process(0.02)
+	check(counts.get(&"footstep", 0) == steps + 1, "slow cadence step")
+	mock.player_action.emit(&"jump")
+	audio._process(1.0)
+	check(not audio.footsteps.playing, "no airborne footsteps")
+	mock.player_action.emit(&"roll")
+	mock.player_action.emit(&"land")
+	audio._process(1.0)
+	check(not audio.footsteps.playing, "no rolling footsteps")
+	mock.player_action.emit(&"roll_end")
+	await create_timer(0.05).timeout
+	mock.speed_changed.emit(32.0, 1.5)
+	mock.power_up_collected.emit(&"nitro", 8.0)
+	var previous_pitch: float = audio._pitch
+	audio._process(0.01)
+	check(audio._pitch > previous_pitch and audio._pitch < 1.2, "pitch smoothly approaches unclamped normalized plus nitro")
+	audio._process(2.0)
+	check(is_equal_approx(service.music.pitch_scale, 1.2), "pitch formula at nitro overspeed")
+	mock.power_up_expired.emit(&"nitro")
+	audio._process(2.0)
+	check(absf(service.music.pitch_scale - 1.15) < 0.001, "nitro expiration lowers pitch")
+	mock.paused_changed.emit(true)
+	steps = int(counts.get(&"footstep", 0))
+	audio._process(1.0)
+	check(counts.get(&"footstep", 0) == steps and audio.one_shots.stream_paused, "pause freezes SFX and cadence")
+	mock.paused_changed.emit(false)
+	await create_timer(0.05).timeout
+	mock.pursuit_started.emit(18.0)
+	mock.pursuit_progress.emit(6.3, 18.0)
+	check(not audio.heartbeat.playing, "heartbeat strict threshold")
+	for i in 20:
+		mock.pursuit_progress.emit(6.0 - i * 0.1, 18.0)
+	check(counts.get(&"heartbeat", 0) == 2, "new pursuit resets heartbeat latch once")
+	mock.damage_taken.emit(&"bug_swarm", 1)
+	await create_timer(0.10).timeout
+	check(service.music.volume_db < -17.0, "damage ducks music six dB")
+	for kind in [&"jump", &"roll", &"lane_left", &"lane_right"]:
+		mock.player_action.emit(kind)
+	for kind in [&"nitro", &"lgtm", &"auto_fix"]:
+		mock.power_up_collected.emit(kind, 1.0)
+	mock.player_action.emit(&"land")
+	mock.player_action.emit(&"roll_end")
+	audio._process(0.3)
+	check(peak[0] <= 10, "never exceeds ten voices")
+	# No awaits: all seven slots and the footstep start in this same frame.
+	audio.one_shots.stop()
+	audio.one_shots.play()
+	audio._playback = audio.one_shots.get_stream_playback()
+	audio._voices.clear()
+	audio._voice_kinds.clear()
+	audio._pending.clear()
+	audio._last_play.clear()
+	check(audio.drone.playing and audio.heartbeat.playing, "pursuit loops already playing")
+	audio._play(&"footstep", audio.footsteps)
+	var ambient := [&"jump", &"roll", &"lane_left", &"lane_right", &"land", &"nitro", &"lgtm"]
+	for kind in ambient:
+		audio._play(kind)
+	check(audio._voices.size() == 7 and audio.active_voice_count() == 10, "seven ambient one-shots plus three dedicated players saturate at exactly ten")
+	var before_burst := counts.duplicate()
+	var oldest_ambient: Array = audio._voices.slice(0, 2)
+	# Still the same frame: important cues must reserve the two oldest ambient slots.
+	audio._play(&"hit")
+	audio._play(&"caught")
+	check(audio._pending.has(&"hit") and audio._pending.has(&"caught"), "same-frame important cues queue for mixer release")
+	check(audio._voices.size() == 5 and not audio._voices.has(oldest_ambient[0]) and not audio._voices.has(oldest_ambient[1]), "important cues evict only the two oldest ambient voices")
+	var reserved_survivors: Array = audio._voices.duplicate()
+	for i in 3:
+		audio._process(0.001)
+	check(audio._voices == reserved_survivors, "pending retries do not repeatedly evict ambient voices")
+	var previous_max_fps := Engine.max_fps
+	Engine.max_fps = 60
+	# Dummy mixer ticks can be 100 ms apart; advance game time explicitly.
+	for i in 20:
+		await process_frame
+		audio._process(0.004)
+		# Sustained ambient demand cannot take reserved slots or evict important voices.
+		var protected_voices: Array = []
+		for voice in audio._voices:
+			if audio.HIGH_PRIORITY.has(audio._voice_kinds[voice]):
+				protected_voices.append(voice)
+		audio._last_play.clear()
+		for kind in ambient + [&"footstep", &"auto_fix"]:
+			audio._play(kind)
+		for voice in protected_voices:
+			check(audio._voices.has(voice), "ambient demand never displaces an important voice")
+		if counts.get(&"hit", 0) > before_burst.get(&"hit", 0) and counts.get(&"caught", 0) > before_burst.get(&"caught", 0):
+			break
+	Engine.max_fps = previous_max_fps
+	for kind in [&"hit", &"caught"]:
+		check(int(counts.get(kind, 0)) == int(before_burst.get(kind, 0)) + 1, "same-frame important cue eventually plays exactly once: " + kind)
+	# Negative case and TTL boundary, without yielding to the mixer.
+	audio.one_shots.stop()
+	audio.one_shots.play()
+	audio._playback = audio.one_shots.get_stream_playback()
+	audio._voices.clear()
+	audio._voice_kinds.clear()
+	audio._pending.clear()
+	audio._last_play.clear()
+	for kind in [&"hit", &"caught", &"game_over", &"shield_block", &"pursuit_start", &"retreat", &"recovered_chime"]:
+		audio._play(kind)
+	var protected_pool: Array = audio._voices.duplicate()
+	check(protected_pool.size() == 7, "negative case fills pool with important cues")
+	var jumps_before := int(counts.get(&"jump", 0))
+	audio._play(&"jump")
+	audio._play(&"powerup")
+	check(audio._voices == protected_pool, "ambient cue cannot evict any voice in an important-only pool")
+	var queued_at: float = audio._pending[&"jump"]
+	audio._play(&"jump")
+	check(audio._pending[&"jump"] == queued_at, "pending duplicate does not extend TTL")
+	audio._process(0.121)
+	check(not audio._pending.has(&"jump") and counts.get(&"jump", 0) == jumps_before, "ambient cue drops after 120 ms without playback")
+	check(audio._pending.has(&"powerup"), "important cue survives ambient TTL")
+	check(audio._voices == protected_pool, "pending retries preserve important-only pool")
+	audio._process(0.180)
+	check(not audio._pending.has(&"powerup"), "important pending cue expires after 300 ms")
+	var jumps := int(counts.get(&"jump", 0))
+	mock.player_action.emit(&"jump")
+	mock.player_action.emit(&"jump")
+	check(counts.get(&"jump", 0) <= jumps + 1, "same sound rate limited within 40 ms")
+	mock.pursuit_recovered.emit(&"timer")
+	check(not audio.heartbeat.playing, "recovery stops heartbeat")
+	await create_timer(0.4).timeout
+	check(not audio.drone.playing and is_equal_approx(service.music.volume_db, -12.0), "drone fades out and music duck recovers")
+	mock.pursuit_started.emit(18.0)
+	mock.pursuit_progress.emit(1.0, 18.0)
+	mock.caught.emit()
+	check(not audio.heartbeat.playing, "caught stops heartbeat")
+	check(service.get_child_count() == 2, "AudioService retains exactly two child players")
+	print("RUNNER AUDIO: 19 recipes/triggers; demo heartbeat starts=1; peak voices=", peak[0], "; AudioService players=", service.get_child_count())
+	mock.free()
+	await frames()
+	check(is_equal_approx(service.music.pitch_scale, 1.0), "audio teardown resets pitch")

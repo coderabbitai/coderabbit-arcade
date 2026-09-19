@@ -1,6 +1,6 @@
-# Runner assets (F0 and F1)
+# Runner assets
 
-No external downloads or bundled third-party assets are used by these milestones.
+No external downloads. F5 reuses the existing bundled music package.
 
 | Asset | Path | Creator | Source | Licence | Modifications |
 | --- | --- | --- | --- | --- | --- |
@@ -9,5 +9,5 @@ No external downloads or bundled third-party assets are used by these milestones
 | Five procedural shaders | scenes/runner/shaders/*.gdshader | Project contributors | Original shader source | Project source terms; no third-party asset licence | Original |
 | Monospace labels | SystemFont resolved at runtime | Installed font vendors | Menlo / Consolas / DejaVu Sans Mono fallback, following menu_style.gd | Respective installed font licences; no font files redistributed | None |
 | Palette | scenes/runner/environment/runner_palette.gd | Project contributors | Frontend brief and existing menu palette | Project source terms | Centralized constants |
-
-Audio is deferred to F5. The existing cyberpunk track is not loaded by F0/F1; its package licence and composer caveat must be recorded before use.
+| Procedural runner SFX | scenes/runner/audio/sfx_synth.gd | Project contributors | Original deterministic PCM recipes | Project source terms; no third-party asset licence | Original |
+| Cyberpunk Street BGM | res://Assets/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg | Luis Zuno / ansimuz | Assets/cyberpunk-street-files/public-license.pdf | CC0 | none; the PDF does not name the music's composer |

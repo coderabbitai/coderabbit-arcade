@@ -1,0 +1,80 @@
+extends RefCounted
+## Original deterministic PCM recipes. No resources or gameplay RNG are consumed.
+const RATE := 22050
+# seconds, start Hz, end Hz, waveform, gain
+const RECIPES := {
+	&"footstep": [0.07, 140.0, 65.0, "noise", 0.35],
+	&"jump": [0.22, 240.0, 880.0, "square", 0.48],
+	&"land": [0.13, 180.0, 45.0, "noise", 0.55],
+	&"roll": [0.28, 320.0, 80.0, "noise", 0.40],
+	&"lane_left": [0.12, 700.0, 280.0, "saw", 0.35],
+	&"lane_right": [0.12, 280.0, 700.0, "saw", 0.35],
+	&"powerup": [0.24, 660.0, 1320.0, "sine", 0.55],
+	&"nitro": [0.65, 110.0, 880.0, "saw", 0.55],
+	&"lgtm": [0.65, 523.25, 1046.5, "chord", 0.65],
+	&"auto_fix": [0.38, 1320.0, 330.0, "square", 0.50],
+	&"shield_block": [0.30, 980.0, 490.0, "chord", 0.60],
+	&"hit": [0.30, 220.0, 40.0, "noise", 0.75],
+	&"pursuit_start": [0.75, 440.0, 220.0, "square", 0.60],
+	&"pursuit_drone": [2.0, 55.0, 55.0, "drone", 0.45],
+	&"heartbeat": [1.0, 65.0, 65.0, "heartbeat", 0.65],
+	&"retreat": [0.50, 440.0, 110.0, "saw", 0.45],
+	&"recovered_chime": [0.70, 659.25, 1318.5, "chord", 0.60],
+	&"caught": [0.85, 120.0, 25.0, "noise", 0.78],
+	&"game_over": [1.20, 440.0, 110.0, "chord", 0.65],
+}
+static var _cache: Dictionary = {}
+
+static func sound(kind: StringName) -> AudioStreamWAV:
+	if _cache.has(kind):
+		return _cache[kind]
+	if not RECIPES.has(kind):
+		return null
+	var recipe: Array = RECIPES[kind]
+	var seconds := float(recipe[0])
+	var count := int(seconds * RATE)
+	var stereo := kind == &"lane_left" or kind == &"lane_right"
+	var looping := kind == &"pursuit_drone" or kind == &"heartbeat"
+	var channels := 2 if stereo else 1
+	var data := PackedByteArray()
+	data.resize(count * channels * 2)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4705 + String(kind).hash()
+	var phase := 0.0
+	for i in count:
+		var t := float(i) / RATE
+		var progress := float(i) / count
+		var frequency := lerpf(float(recipe[1]), float(recipe[2]), progress)
+		var envelope := minf(t / 0.008, 1.0) * pow(1.0 - progress, 1.6)
+		var sample := sin(phase)
+		match String(recipe[3]):
+			"square": sample = 0.65 * (1.0 if sin(phase) >= 0 else -1.0) + 0.35 * sample
+			"saw": sample = 0.65 * (2.0 * fposmod(phase / TAU, 1.0) - 1.0) + 0.35 * sample
+			"noise": sample = sample * 0.55 + rng.randf_range(-1.0, 1.0) * 0.45
+			"chord": sample = (sample + sin(phase * 1.25) + sin(phase * 1.5)) / 3.0
+			"drone":
+				# Integral cycles over two seconds, including the amplitude modulation.
+				sample = (sin(TAU * 55.0 * t) + sin(TAU * 57.0 * t)) * 0.5
+				envelope = 0.7 + 0.3 * cos(TAU * t)
+			"heartbeat":
+				var beat := fposmod(t, 0.5)
+				envelope = sin(PI * beat / 0.16) * exp(-beat * 18.0) if beat < 0.16 else 0.0
+				sample = sin(TAU * 65.0 * beat)
+		phase += TAU * frequency / RATE
+		var value := clampf(sample * envelope * float(recipe[4]), -0.8, 0.8)
+		for channel in channels:
+			var pan := 1.0
+			if stereo:
+				pan = 1.0 if (channel == 0) == (kind == &"lane_left") else 0.2
+			data.encode_s16((i * channels + channel) * 2, int(value * pan * 32767.0))
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = RATE
+	stream.stereo = stereo
+	stream.data = data
+	if looping:
+		stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		stream.loop_begin = 0
+		stream.loop_end = count
+	_cache[kind] = stream
+	return stream

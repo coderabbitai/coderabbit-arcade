@@ -241,8 +241,6 @@ func _paused(value: bool) -> void:
 
 func _damage(_kind: StringName, _hp: int) -> void:
 	_flash(Color(1, 1, 1, 0.55))
-	if is_instance_valid(game.camera_rig) and game.camera_rig.has_method("shake"):
-		game.camera_rig.shake(0.7)
 
 func _blocked(_kind: StringName, _reason: StringName) -> void:
 	_flash(Color(Palette.MINT, 0.3))

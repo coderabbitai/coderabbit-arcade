@@ -1,8 +1,8 @@
-# Endless Runner frontend: F0-F4
+# Endless Runner frontend: F0-F5
 
 Engine policy: the project pins Godot 4.7.1. The F0/F1 verification recorded here ran on the installed Godot 4.7.0 stable (`4.7.stable.official.5b4e0cb0f`). Final acceptance must re-run the contract §9 commands on 4.7.1; no 4.7.1 results are recorded here. Both versions are supported for development, and any behavioral differences must be recorded in contract §10.
 
-The requested F0 and F1 source files and development scenes are present and verified as described in the renderer findings and verification sections below, with final acceptance on Godot 4.7.1 still pending. F2 now adds Hoppy, its preview, and the first visual smoke test. The backend mounts Hoppy and the corridor automatically. F3 is complete: hazards, power-ups and the pursuer are implemented and verified. F4 is implemented and verified: HUD, pause menu, game over and standalone mock facade demo. Only F5 (audio) and F6 (runner menu, integration and final docs) remain deferred.
+The requested F0 and F1 source files and development scenes are present and verified as described in the renderer findings and verification sections below, with final acceptance on Godot 4.7.1 still pending. F2 now adds Hoppy, its preview, and the first visual smoke test. The backend mounts Hoppy and the corridor automatically. F3 is complete: hazards, power-ups and the pursuer are implemented and verified. F4 is implemented and verified: HUD, pause menu, game over and standalone mock facade demo. F5 audio is implemented and verified: procedural synth cues, `runner_audio.tscn` / `runner_audio.gd`, a polyphony cap of 10 and visual smoke coverage. Only F6 (runner menu, full-loop integration and final docs) remains deferred.
 
 ## Run
 
@@ -66,11 +66,11 @@ The explicit leftover fix adds CPU pillar-z storage and a copy-returning accesso
 
 ## Behavior and ownership
 
-F4: `RunnerHud` uses CanvasLayer 10, `PauseMenu` 21 and `GameOver` 22. UI is built in `_ready()` with the shared menu Style helpers. The HUD uses 28 px anchored margins for the expanding viewport, hex approval checks, local power-up countdown bars, elapsed time, count-up score, multiplier, speed, queued toasts and Nitro banner. Pursuit ring/text use signal recovery and remaining values. Vignette strength follows pursuit from 0 to 0.85, resets on recovery, and reaches 1 on catch. Hit and block flashes use separate colors; damage requests camera shake 0.7. Gameplay widgets disappear on caught and dim on pause.
+F4: `RunnerHud` uses CanvasLayer 10, `PauseMenu` 21 and `GameOver` 22. UI is built in `_ready()` with the shared menu Style helpers. The HUD uses 28 px anchored margins for the expanding viewport, hex approval checks, local power-up countdown bars, elapsed time, count-up score, multiplier, speed, queued toasts and Nitro banner. Pursuit ring/text use signal recovery and remaining values. Vignette strength follows pursuit from 0 to 0.85, resets on recovery, and reaches 1 on catch. Hit and block flashes use separate colors. `RunnerGame._on_damage_taken()` solely owns the damage camera shake; the frontend only reads the backend-owned `camera_rig`. Gameplay widgets disappear on caught and dim on pause.
 
 Only the facade controls gameplay and pause. The pause menu never handles `ui_cancel` or writes tree pause state. Resume, Restart and Runner Menu call facade methods. Game Over listens to `run_finished` and calls its own `show_result(result, game.get_leaderboard())`; it never opens early on `caught` or `leaderboard_saved`. Its centered 680x560 panel contains stats, rank, qualifying name entry and ten rows highlighted by run ID. Successful Save locks the field, disables Save, refreshes the board and focuses Retry; failures retain editable input and show an error. Enter saves, Down moves from name to Save, and explicit focus loops support keyboard/controller navigation. Only visible Game Over handles `ui_cancel`.
 
-The standalone Node3D mock exposes all facade signals, properties and methods without mounting backend gameplay systems. It runs a deterministic 40 s sequence with speed ramp, effects, hit, pursuit, recovery, a fresh pursuit and catch, then a fake top ten. Escape, P and gamepad Start pause its clock; H hits and N collects Nitro. The timeline also drives shield blocking, Auto-Fix, pickup bonuses, player actions and chunk spawns. Its persistence is in memory; route methods remain within the fixture. The fast smoke drives the same `advance_demo` timeline, then tests the real facade with autostart disabled, `start_run` and three seconds of autopilot. No F5 audio work was added.
+The standalone Node3D mock exposes all facade signals, properties and methods without mounting backend gameplay systems. It runs a deterministic 40 s sequence with speed ramp, effects, hit, pursuit, recovery, a fresh pursuit and catch, then a fake top ten. Escape, P and gamepad Start pause its clock; H hits and N collects Nitro. The timeline also drives shield blocking, Auto-Fix, pickup bonuses, player actions and chunk spawns. Its persistence is in memory; route methods remain within the fixture. The fast smoke drives the same `advance_demo` timeline, then tests the real facade with autostart disabled, `start_run` and three seconds of autopilot. That F4 increment did not include audio; F5 audio is now implemented and verified below.
 
 
 Hoppy extends the backend visual base and implements all six contract methods. It faces -Z with standing mesh bounds y 0..1.8. `AnimationPlayer` drives the feet pivot `Root` and `Root/Model`; scene-root yaw and bank implement lane lean independently. Every clip supplies rest tracks to clear previous held poses. Run cadence is `lerp(0.85, 1.9, normalized)`, including values above 1; other clips retain real-time duration. Hurt flashes at 0.001/0.12/0.24 s, then returns to the preceding idle/run state unless another state interrupts it. Hit flashes clear after 0.06 s without mutating shared materials. Effects and animation inherit PAUSABLE behavior.
@@ -115,7 +115,38 @@ See `hoppys-adventure-arcade/Assets/runner/LICENSES.md` for the asset inventory.
 
 ## Audio
 
-Deferred to F5. Procedural AudioStreamWAV SFX are planned. The CC0 `res://Assets/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg` is the music candidate specified by the brief; its package licence and composer caveat must be reviewed and recorded in LICENSES.md before use. F0/F1 add no runner audio. The existing project autoload starts the hub track during dev runs.
+F5 audio is implemented and verified through visual smoke coverage of procedural synth cues and the hard polyphony cap of 10. `runner_audio.tscn` / `runner_audio.gd` provide `RunnerAudio`, a `Node` with `process_mode ALWAYS` and an idempotent `bind(game)` that disconnects its previous facade. The backend already mounts this scene. Pause signals suspend SFX playback, footstep timing and drone fades. Scene teardown disconnects signals, stops voices and restores music pitch to 1.0. Only F6 (runner menu including its music, full-loop integration and final docs) remains deferred.
+
+All SFX use cached, deterministic 16-bit 22050 Hz PCM built in `sfx_synth.gd`, following the shared service's tone synthesis pattern. Attack/decay envelopes bound every sample to at most 0.8 full scale. Lane sounds use stereo panning; other sounds are mono. These are original project recipes, with no downloads.
+
+| SFX | Trigger | Recipe |
+| --- | --- | --- |
+| footstep | Running, grounded and not rolling | 70 ms noise/sine thud, 140 to 65 Hz |
+| jump | jump or super_jump action | 220 ms square/sine rise, 240 to 880 Hz |
+| land | land action | 130 ms noise/sine thump, 180 to 45 Hz |
+| roll | roll action | 280 ms noise sweep, 320 to 80 Hz |
+| lane_left / lane_right | Corresponding lane action | 120 ms saw/sine sweep; left/right channel gain 1.0 versus 0.2 |
+| powerup | Every power_up_collected | 240 ms sine rise, 660 to 1320 Hz |
+| nitro | Nitro pickup, after powerup | 650 ms saw rise, 110 to 880 Hz |
+| lgtm | LGTM pickup, after powerup | 650 ms ascending major chord |
+| auto_fix | Auto-Fix pickup, after powerup | 380 ms square descent, 1320 to 330 Hz |
+| shield_block | damage_blocked, all contract reasons | 300 ms metallic major chord |
+| hit | damage_taken | 300 ms noise/sine impact; also duck_music(-6, 0.4) |
+| pursuit_start | pursuit_started | 750 ms descending square alarm |
+| pursuit_drone | pursuit_started | Seamless 2 s loop, 55/57 Hz beating sine; fade in 0.4 s |
+| heartbeat | First pursuit_progress with remaining/total below 0.35 | 1 s loop with two decaying 65 Hz pulses |
+| retreat | pursuit_recovered | 500 ms descending saw |
+| recovered_chime | pursuit_recovered, with retreat | 700 ms ascending major chord |
+| caught | caught | 850 ms low noise/sine boom |
+| game_over | run_finished | 1.2 s falling major chord |
+
+All four players route to `SFX`: OneShots uses AudioStreamPolyphonic with exactly seven slots, plus one voice each for Footsteps, Drone and Heartbeat. Total runner SFX capacity is ten, excluding shared music/UI audio. When a start fails at capacity, the new cue enters a deduplicated pending queue. Important cues retry first and may evict the oldest ambient voice; ambient cues never evict voices. Slots released for important retries are reserved until those retries play or expire. Slots become reusable on a later audio mix; retries run at the top of processing. Ambient pending cues expire after 120 ms of unpaused game time and important cues after 300 ms. Identical sounds have a 40 ms game-time retrigger gate, advanced by unpaused process delta. Only successful starts update the gate and emit the playback signal. `sound_played(kind, stream)` fires only after a successful playback start; `active_voice_count()` supports verification.
+
+Footstep cadence is `lerp(0.42, 0.20, clamp(normalized, 0, 1))` seconds. Jump/super_jump and land track grounded state; roll/roll_end suppress steps without falsely grounding an airborne player. Heartbeat has an explicit latch reset on pursuit_started, starts once below the threshold, and stops on recovery, catch or finish. Recovery/catch fade the drone out over 0.3 s; finish stops it immediately.
+
+BGM is the existing `res://Assets/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg`, loop enabled, passed to `AudioService.play_music(stream, -12.0)` during bind. The shared player routes it to `Music`. Attribution: Luis Zuno / ansimuz, CC0 per `Assets/cyberpunk-street-files/public-license.pdf`, no modifications. The PDF does not name the music's composer. The exact asset row and caveat are in `Assets/runner/LICENSES.md`.
+
+Pitch approaches `1.0 + 0.10 * normalized + (0.05 while Nitro)` with exponential smoothing `1 - exp(-5 * delta)` via `AudioService.set_music_pitch`. Normalized speed can exceed 1 during Nitro; only footstep cadence clamps it. Nitro expiry removes the extra 0.05. Calls to the shared service are guarded with `has_method`; it retains its existing two players.
 
 ## Renderer findings: gl_compatibility
 
@@ -571,7 +602,7 @@ No new F4 backend API or implementation change is requested. Backend PR 2 is mer
 
 ## Known gaps
 
-No remaining F0/F1 renderer or preview gaps are reported by the coordinator on 4.7.0; final acceptance on the pinned 4.7.1 remains pending. F2 headless checks are complete. The coordinator ran graphical Godot on the host and captured Hoppy back-facing in the corridor; Codex itself did not run graphical Godot. The coordinator's F3b 19-fixture host gallery capture reports `CAPTURE: gallery error=0 draw_calls=168`; its pre-fix budget line was `GALLERY DRAW BUDGET: 168 / 183`. Hazards, power-ups and the pursuer have host capture and headless verification below. F4 overlays are complete and headlessly checked; the host captured both successfully (`CAPTURE: hud error=0`, `CAPTURE: gameover error=0`). Runner audio remains outside this run's scope.
+No remaining F0/F1 renderer or preview gaps are reported by the coordinator on 4.7.0; final acceptance on the pinned 4.7.1 remains pending. F2 headless checks are complete. The coordinator ran graphical Godot on the host and captured Hoppy back-facing in the corridor; Codex itself did not run graphical Godot. The coordinator's F3b 19-fixture host gallery capture reports `CAPTURE: gallery error=0 draw_calls=168`; its pre-fix budget line was `GALLERY DRAW BUDGET: 168 / 183`. Hazards, power-ups and the pursuer have host capture and headless verification below. F4 overlays are complete and headlessly checked; the host captured both successfully (`CAPTURE: hud error=0`, `CAPTURE: gameover error=0`). Runner audio was outside that historical run's scope; F5 audio is now implemented and verified in the F5 verification section below.
 
 ## Touched files
 
@@ -846,7 +877,7 @@ ENV CHECK: PASS (0 failures)
 
 ## F3b validator corrections verification
 
-The gallery budget now derives from the 12 hazard cases, six power-ups and one pursuer: 281. Tags use 0.007 pixel size and wrap within 1.33 m; pursuer headlines use cream, 0.011 pixel size and no outlines, with horizontal fitting to avoid overlap. Cards are 0.92 x 0.40 m at 1.04 x 0.49 m spacing. Retreat restores the cached non-zero threat pose before toppling. Collection stops processing and resets the hidden ring scale; reuse enables processing. Smoke assertions include hidden draw-producing nodes, count outlined labels as two, and require each pickup and pursuer to remain within 14 draws plus exactly one pursuer light. All six pickup roots use PascalCase. F4 (HUD, pause menu, game over and mock demo) is now implemented and verified in the section below. Only F5 (audio) and F6 (runner menu, integration and final docs) remain deferred. This agent (Codex) performed no graphical runs, commits or pushes; the coordinator performed the recorded host captures.
+The gallery budget now derives from the 12 hazard cases, six power-ups and one pursuer: 281. Tags use 0.007 pixel size and wrap within 1.33 m; pursuer headlines use cream, 0.011 pixel size and no outlines, with horizontal fitting to avoid overlap. Cards are 0.92 x 0.40 m at 1.04 x 0.49 m spacing. Retreat restores the cached non-zero threat pose before toppling. Collection stops processing and resets the hidden ring scale; reuse enables processing. Smoke assertions include hidden draw-producing nodes, count outlined labels as two, and require each pickup and pursuer to remain within 14 draws plus exactly one pursuer light. All six pickup roots use PascalCase. F4 (HUD, pause menu, game over and mock demo) is now implemented and verified in the section below. F5 audio is implemented and verified. Only F6 (runner menu, full-loop integration and final docs) remains deferred. This agent (Codex) performed no graphical runs, commits or pushes; the coordinator performed the recorded host captures.
 
 Verbatim plain-text import log, run from repository root (exit 0):
 
@@ -868,10 +899,10 @@ WARNING: Detected another project.godot at res://Assets/SynthCitiesGodot. The fo
 [ DONE ] first_scan_filesystem
 
 [   0% ] update_scripts_classes | Started Registering global classes... (4 steps)
-[   0% ] update_scripts_classes | 
-[  20% ] update_scripts_classes | 
-[  40% ] update_scripts_classes | 
-[  60% ] update_scripts_classes | 
+[   0% ] update_scripts_classes |
+[  20% ] update_scripts_classes |
+[  40% ] update_scripts_classes |
+[  60% ] update_scripts_classes |
 [ DONE ] update_scripts_classes
 
 [   0% ] loading_editor_layout | Started Loading editor (5 steps)
@@ -996,7 +1027,7 @@ Import exits 0 with the existing macOS certificate and sandboxed editor-settings
 
 The unmodified `tests/runner_smoke.gd` passes in both the host run and the validator's direct headless run: `RUNNER SMOKE: PASS (0 failures / 64 checks)`. No temporary test wrapper or backend change is needed.
 
-F4 feedback follow-up: the demo now emits all previously undriven facade signals, accepts the supplied run seed, and uses the mapped pause action. Bars remain 90x6, rebuilt HP pips ignore mouse input, and result buttons remain 62 px high. The expanded visual smoke passes at 1600x900, 1440x900 and 1000x720 using the project's scaled canvas bounds, and checks demo shield, blocked-hit, Auto-Fix and bonus delivery. All seven F4-related scripts pass check-only and scaffold passes 277 checks. The unmodified `tests/runner_smoke.gd` passes all 64 checks on the host and in the validator's direct headless run. The earlier leaderboard readback limitation applies only to the Codex restricted sandbox. Only F5 (audio) and F6 (runner menu, integration and final docs) remain deferred.
+F4 feedback follow-up: the demo now emits all previously undriven facade signals, accepts the supplied run seed, and uses the mapped pause action. Bars remain 90x6, rebuilt HP pips ignore mouse input, and result buttons remain 62 px high. The expanded visual smoke passes at 1600x900, 1440x900 and 1000x720 using the project's scaled canvas bounds, and checks demo shield, blocked-hit, Auto-Fix and bonus delivery. All seven F4-related scripts pass check-only and scaffold passes 277 checks. The unmodified `tests/runner_smoke.gd` passes all 64 checks on the host and in the validator's direct headless run. The earlier leaderboard readback limitation applies only to the Codex restricted sandbox. F5 audio is implemented and verified. Only F6 (runner menu, full-loop integration and final docs) remains deferred.
 
 Verbatim plain-text import log (Godot log file, without terminal ANSI escapes; progress-row trailing spaces trimmed):
 
@@ -1146,3 +1177,323 @@ F4 touched files (relative to project root unless noted):
 - `tests/runner_visual_smoke.gd`.
 - `scenes/runner/environment/dev/capture_previews.gd`.
 - Repository `docs/endless-runner.md`.
+
+## Verification: F5 audio (2026-09-19)
+
+F5 is implemented and verified; only F6 is deferred. No graphical runs, commits, pushes, backend changes or shared AudioService changes were made. Installed engine: Godot 4.7.0; final pinned 4.7.1 acceptance remains pending. Headless checks validate stream creation and playback scheduling, not physical speaker output.
+
+The five transcripts below record the earlier F5 retry fix, before the final two-tier cue-priority follow-up. The audio demo now advances game time synchronously. Same-frame saturation starts seven distinct one-shots and Footsteps with Drone and Heartbeat already looping, asserting exactly ten voices without any awaits. The final priority regression fills seven ambient slots and requests `hit` and `caught` in the same frame, then verifies both playback signals under continuing ambient demand. A full important-only pool rejects ambient eviction; deterministic checks cover retry reservations, deduplication, and both TTLs. The Dummy mixer can take about 100 ms per tick, so that check yields rate-limited frames while explicitly advancing game time. Queue lifetime and the 40 ms retrigger gate both use unpaused game time; ambient pending cues expire after 120 ms and important cues after 300 ms. Important cues retry first and may evict the oldest ambient voice; ambient cues never evict voices. Slots released for important retries are reserved until those retries play or expire. Polyphony remains seven, plus three dedicated players for a hard cap of ten.
+
+`run()` already awaited `check_runner_audio()` before AudioService shutdown. The real-facade PASS print already occurred exactly once in the supplied source; each transcript below confirms one occurrence. Preview fixture loads, including `hud_preview`, report failure and increment the failure count if the PackedScene is null. A missing HUD fixture skips both HUD/game-over captures and still reaches the normal PREVIEW CAPTURE report and quit path.
+
+The host and validator's unmodified direct backend smoke passes all 64 checks, as supplied in the feedback:
+
+```text
+RUNNER SMOKE: PASS (0 failures / 64 checks)
+```
+
+The current restricted Codex environment still cannot persist the `user://` leaderboard and reproduces the 61-check readback failure. This is recorded separately below, not presented as the host result or a backend regression. No backend code change is requested. Earlier F5 menu-smoke results remain historical: two documented Godot 4.7.0 hover baseline failures; menu work is outside this follow-up.
+
+The following historical outputs predate the final cue-priority regression checks. They are Godot log-file outputs with commands and exit statuses (only import progress-row trailing spaces are trimmed), run from the repository root. Import exits zero despite certificate/editor-settings sandbox diagnostics. Explicit `/tmp` logs avoid the engine crash encountered when its default log location was unwritable.
+
+Import
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --import --quit --log-file /tmp/f5-feedback/import.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+[   0% ] first_scan_filesystem | Started Project initialization (5 steps)
+[   0% ] first_scan_filesystem | Scanning file structure...
+WARNING: Detected another project.godot at res://Assets/SynthCitiesGodot. The folder will be ignored.
+   at: _should_skip_directory (editor/file_system/editor_file_system.cpp:3485)
+[  16% ] first_scan_filesystem | Loading global class names...
+[  33% ] first_scan_filesystem | Verifying GDExtensions...
+[  50% ] first_scan_filesystem | Creating autoload scripts...
+[  66% ] first_scan_filesystem | Initializing plugins...
+[  83% ] first_scan_filesystem | Starting file scan...
+[ DONE ] first_scan_filesystem
+
+[   0% ] update_scripts_classes | Started Registering global classes... (2 steps)
+[   0% ] update_scripts_classes |
+[  33% ] update_scripts_classes |
+[ DONE ] update_scripts_classes
+
+[   0% ] loading_editor_layout | Started Loading editor (5 steps)
+[   0% ] loading_editor_layout | Loading editor layout...
+[  16% ] loading_editor_layout | Loading docks...
+[ DONE ] loading_editor_layout
+
+ERROR: Cannot save file '/Users/jp/Library/Application Support/Godot/editor_settings-4.7.tres'.
+   at: save (scene/resources/resource_format_text.cpp:1768)
+ERROR: Error saving editor settings to /Users/jp/Library/Application Support/Godot/editor_settings-4.7.tres
+   at: save (editor/settings/editor_settings.cpp:1525)
+EXIT: 0
+```
+
+Check-only: scenes/runner/audio/runner_audio.gd
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/audio/runner_audio.gd --log-file /tmp/f5-feedback/runner_audio-check.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+EXIT: 0
+```
+
+Check-only: scenes/runner/audio/sfx_synth.gd
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/audio/sfx_synth.gd --log-file /tmp/f5-feedback/sfx_synth-check.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+EXIT: 0
+```
+
+Check-only: scenes/runner/environment/dev/capture_previews.gd
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://scenes/runner/environment/dev/capture_previews.gd --log-file /tmp/f5-feedback/capture_previews-check.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+EXIT: 0
+```
+
+Check-only: tests/runner_visual_smoke.gd
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --check-only --script res://tests/runner_visual_smoke.gd --log-file /tmp/f5-feedback/runner_visual_smoke-check.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+EXIT: 0
+```
+
+Visual smoke run 1
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd --log-file /tmp/f5-feedback/visual-1.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+HAZARD DRAW CENSUS: pr_backlog_low/ peak=6
+HAZARD DRAW CENSUS: pr_backlog_high/ peak=8
+HAZARD DRAW CENSUS: bug_swarm/ peak=6
+HAZARD DRAW CENSUS: merge_conflict/ peak=9
+HAZARD DRAW CENSUS: deprecated_pit/full peak=8
+HAZARD DRAW CENSUS: deprecated_pit/two_lane peak=8
+HAZARD DRAW CENSUS: laser_grid/ground peak=8
+HAZARD DRAW CENSUS: laser_grid/mid peak=8
+HAZARD DRAW CENSUS: laser_grid/high peak=8
+HAZARD DRAW CENSUS: laser_grid/timed peak=8
+HAZARD DRAW CENSUS: comment_flood/ peak=7
+HAZARD DRAW CENSUS: build_shockwave/ peak=6
+HAZARD CASES CHECKED: 12; summed peak draw census=90
+POWER-UP VISUALS: 6 checked; reuse, collection and pause PASS
+PURSUER THREAT 1 MERGED VISIBLE AABB: [P: (-2.824963, 0.013877, -0.408651), S: (5.649928, 2.288509, 0.587685)]
+PURSUER VISUAL: threat, catch, retreat, reuse and pause checked
+RUNNER UI MOCK: HUD, pursuit, pause, results, focus and save PASS
+RUNNER UI REAL FACADE: autostart=false, start_run, autopilot 3s PASS
+RUNNER AUDIO: 19 recipes/triggers; demo heartbeat starts=1; peak voices=10; AudioService players=2
+RUNNER VISUAL SMOKE: PASS (0 failures)
+EXIT: 0
+```
+
+Visual smoke run 2
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd --log-file /tmp/f5-feedback/visual-2.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+HAZARD DRAW CENSUS: pr_backlog_low/ peak=6
+HAZARD DRAW CENSUS: pr_backlog_high/ peak=8
+HAZARD DRAW CENSUS: bug_swarm/ peak=6
+HAZARD DRAW CENSUS: merge_conflict/ peak=9
+HAZARD DRAW CENSUS: deprecated_pit/full peak=8
+HAZARD DRAW CENSUS: deprecated_pit/two_lane peak=8
+HAZARD DRAW CENSUS: laser_grid/ground peak=8
+HAZARD DRAW CENSUS: laser_grid/mid peak=8
+HAZARD DRAW CENSUS: laser_grid/high peak=8
+HAZARD DRAW CENSUS: laser_grid/timed peak=8
+HAZARD DRAW CENSUS: comment_flood/ peak=7
+HAZARD DRAW CENSUS: build_shockwave/ peak=6
+HAZARD CASES CHECKED: 12; summed peak draw census=90
+POWER-UP VISUALS: 6 checked; reuse, collection and pause PASS
+PURSUER THREAT 1 MERGED VISIBLE AABB: [P: (-2.824963, 0.013877, -0.408651), S: (5.649928, 2.288509, 0.587685)]
+PURSUER VISUAL: threat, catch, retreat, reuse and pause checked
+RUNNER UI MOCK: HUD, pursuit, pause, results, focus and save PASS
+RUNNER UI REAL FACADE: autostart=false, start_run, autopilot 3s PASS
+RUNNER AUDIO: 19 recipes/triggers; demo heartbeat starts=1; peak voices=10; AudioService players=2
+RUNNER VISUAL SMOKE: PASS (0 failures)
+EXIT: 0
+```
+
+Visual smoke run 3
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd --log-file /tmp/f5-feedback/visual-3.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+HAZARD DRAW CENSUS: pr_backlog_low/ peak=6
+HAZARD DRAW CENSUS: pr_backlog_high/ peak=8
+HAZARD DRAW CENSUS: bug_swarm/ peak=6
+HAZARD DRAW CENSUS: merge_conflict/ peak=9
+HAZARD DRAW CENSUS: deprecated_pit/full peak=8
+HAZARD DRAW CENSUS: deprecated_pit/two_lane peak=8
+HAZARD DRAW CENSUS: laser_grid/ground peak=8
+HAZARD DRAW CENSUS: laser_grid/mid peak=8
+HAZARD DRAW CENSUS: laser_grid/high peak=8
+HAZARD DRAW CENSUS: laser_grid/timed peak=8
+HAZARD DRAW CENSUS: comment_flood/ peak=7
+HAZARD DRAW CENSUS: build_shockwave/ peak=6
+HAZARD CASES CHECKED: 12; summed peak draw census=90
+POWER-UP VISUALS: 6 checked; reuse, collection and pause PASS
+PURSUER THREAT 1 MERGED VISIBLE AABB: [P: (-2.824963, 0.013877, -0.408651), S: (5.649928, 2.288509, 0.587685)]
+PURSUER VISUAL: threat, catch, retreat, reuse and pause checked
+RUNNER UI MOCK: HUD, pursuit, pause, results, focus and save PASS
+RUNNER UI REAL FACADE: autostart=false, start_run, autopilot 3s PASS
+RUNNER AUDIO: 19 recipes/triggers; demo heartbeat starts=1; peak voices=10; AudioService players=2
+RUNNER VISUAL SMOKE: PASS (0 failures)
+EXIT: 0
+```
+
+Visual smoke run 4
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd --log-file /tmp/f5-feedback/visual-4.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+HAZARD DRAW CENSUS: pr_backlog_low/ peak=6
+HAZARD DRAW CENSUS: pr_backlog_high/ peak=8
+HAZARD DRAW CENSUS: bug_swarm/ peak=6
+HAZARD DRAW CENSUS: merge_conflict/ peak=9
+HAZARD DRAW CENSUS: deprecated_pit/full peak=8
+HAZARD DRAW CENSUS: deprecated_pit/two_lane peak=8
+HAZARD DRAW CENSUS: laser_grid/ground peak=8
+HAZARD DRAW CENSUS: laser_grid/mid peak=8
+HAZARD DRAW CENSUS: laser_grid/high peak=8
+HAZARD DRAW CENSUS: laser_grid/timed peak=8
+HAZARD DRAW CENSUS: comment_flood/ peak=7
+HAZARD DRAW CENSUS: build_shockwave/ peak=6
+HAZARD CASES CHECKED: 12; summed peak draw census=90
+POWER-UP VISUALS: 6 checked; reuse, collection and pause PASS
+PURSUER THREAT 1 MERGED VISIBLE AABB: [P: (-2.824963, 0.013877, -0.408651), S: (5.649928, 2.288509, 0.587685)]
+PURSUER VISUAL: threat, catch, retreat, reuse and pause checked
+RUNNER UI MOCK: HUD, pursuit, pause, results, focus and save PASS
+RUNNER UI REAL FACADE: autostart=false, start_run, autopilot 3s PASS
+RUNNER AUDIO: 19 recipes/triggers; demo heartbeat starts=1; peak voices=10; AudioService players=2
+RUNNER VISUAL SMOKE: PASS (0 failures)
+EXIT: 0
+```
+
+Visual smoke run 5
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd --log-file /tmp/f5-feedback/visual-5.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+HAZARD DRAW CENSUS: pr_backlog_low/ peak=6
+HAZARD DRAW CENSUS: pr_backlog_high/ peak=8
+HAZARD DRAW CENSUS: bug_swarm/ peak=6
+HAZARD DRAW CENSUS: merge_conflict/ peak=9
+HAZARD DRAW CENSUS: deprecated_pit/full peak=8
+HAZARD DRAW CENSUS: deprecated_pit/two_lane peak=8
+HAZARD DRAW CENSUS: laser_grid/ground peak=8
+HAZARD DRAW CENSUS: laser_grid/mid peak=8
+HAZARD DRAW CENSUS: laser_grid/high peak=8
+HAZARD DRAW CENSUS: laser_grid/timed peak=8
+HAZARD DRAW CENSUS: comment_flood/ peak=7
+HAZARD DRAW CENSUS: build_shockwave/ peak=6
+HAZARD CASES CHECKED: 12; summed peak draw census=90
+POWER-UP VISUALS: 6 checked; reuse, collection and pause PASS
+PURSUER THREAT 1 MERGED VISIBLE AABB: [P: (-2.824963, 0.013877, -0.408651), S: (5.649928, 2.288509, 0.587685)]
+PURSUER VISUAL: threat, catch, retreat, reuse and pause checked
+RUNNER UI MOCK: HUD, pursuit, pause, results, focus and save PASS
+RUNNER UI REAL FACADE: autostart=false, start_run, autopilot 3s PASS
+RUNNER AUDIO: 19 recipes/triggers; demo heartbeat starts=1; peak voices=10; AudioService players=2
+RUNNER VISUAL SMOKE: PASS (0 failures)
+EXIT: 0
+```
+
+Direct backend smoke in restricted Codex environment
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_smoke.gd --log-file /tmp/f5-feedback/runner.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+ERROR: RUNNER SMOKE: this run is not on the leaderboard
+   at: push_error (core/variant/variant_utility.cpp:1023)
+   GDScript backtrace (most recent call first):
+       [0] check (res://tests/runner_smoke.gd:50)
+       [1] _leaderboard_phase (res://tests/runner_smoke.gd:253)
+       [2] run (res://tests/runner_smoke.gd:90)
+       [3] _catch_phase (res://tests/runner_smoke.gd:237)
+       [4] _wait_run_seconds (res://tests/runner_smoke.gd:380)
+       [5] _wait_until (res://tests/runner_smoke.gd:399)
+RUNNER SMOKE: seed 12345, elapsed 76.0 s, distance 1736 m, speed 0.0, state finished, hp 0, score 1004
+  hit: t=56.07 v=24.6 pr_backlog_high -> hp 1, lane 2/2 x=2.00 y=0.00 roll=false air=false reckless=0 [pr_backlog_high z=-0.7 x=0.0 ROLL blocking=false]
+  hit: t=75.02 v=24.9 laser_grid -> hp 1, lane 1/1 x=0.00 y=0.00 roll=false air=false reckless=0 [laser_grid z=0.3 x=0.0 TIMED blocking=false]
+  hit: t=76.03 v=24.9 build_shockwave -> hp 0, lane 1/1 x=0.00 y=0.00 roll=false air=false reckless=0 [build_shockwave z=-0.9 x=0.0 JUMP blocking=false]
+  chunk: 0.0s d=0.00 chunk_t1_first_wall gap=0.3
+  chunk: 0.0s d=0.00 chunk_t1_first_bar gap=0.0
+  chunk: 0.0s d=0.00 chunk_breather_a gap=0.0
+  chunk: 0.5s d=0.03 chunk_t1_first_bar gap=0.0
+  chunk: 2.5s d=0.12 chunk_t1_wall_then_bar gap=0.0
+  chunk: 5.6s d=0.28 chunk_t2_shockwave_rhythm gap=0.0
+  chunk: 8.4s d=0.42 chunk_t2_laser_low_high gap=1.0
+  chunk: 10.8s d=0.54 chunk_t3_flood_laser gap=2.5
+  chunk: 13.4s d=0.67 chunk_t3_merge_swarm mirrored gap=0.0
+  chunk: 15.6s d=0.78 chunk_breather_a gap=0.0
+  chunk: 16.4s d=0.82 chunk_t3_merge_swarm mirrored gap=0.0
+  chunk: 18.4s d=0.92 chunk_t4_laser_rhythm gap=0.0
+  chunk: 21.2s d=1.00 chunk_t4_gauntlet gap=4.0
+  chunk: 24.1s d=1.00 chunk_t4_pit_run gap=5.0
+  chunk: 26.3s d=1.00 chunk_t4_laser_rhythm gap=4.1
+  chunk: 29.2s d=1.00 chunk_breather_b mirrored gap=0.0
+  chunk: 30.2s d=1.00 chunk_breather_a gap=0.0
+  chunk: 30.9s d=1.00 chunk_t4_pit_run gap=0.0
+  chunk: 32.9s d=1.00 chunk_t4_gauntlet mirrored gap=4.2
+  chunk: 35.8s d=1.00 chunk_breather_a gap=0.0
+  chunk: 36.5s d=1.00 chunk_t4_laser_rhythm gap=0.0
+  chunk: 39.2s d=1.00 chunk_t4_pit_run gap=5.2
+  chunk: 41.4s d=1.00 chunk_t4_gauntlet mirrored gap=4.3
+  chunk: 44.3s d=1.00 chunk_t4_pit_run gap=5.3
+  chunk: 46.5s d=1.00 chunk_t4_laser_rhythm gap=4.4
+  chunk: 49.4s d=1.00 chunk_breather_a gap=0.0
+  chunk: 50.1s d=1.00 chunk_t4_gauntlet gap=0.0
+  chunk: 52.8s d=1.00 chunk_t4_pit_run gap=5.4
+  chunk: 55.0s d=1.00 chunk_t4_gauntlet gap=4.5
+  chunk: 57.8s d=1.00 chunk_breather_a gap=0.0
+  chunk: 58.6s d=1.00 chunk_t4_pit_run gap=0.0
+  chunk: 60.5s d=1.00 chunk_breather_b gap=0.0
+  chunk: 61.5s d=1.00 chunk_t4_pit_run gap=0.0
+  chunk: 63.4s d=1.00 chunk_t4_laser_rhythm gap=8.4
+  chunk: 66.4s d=1.00 chunk_t4_pit_run gap=9.4
+  chunk: 68.7s d=1.00 chunk_t4_laser_rhythm gap=8.5
+  chunk: 71.7s d=1.00 chunk_t4_gauntlet gap=8.6
+  chunk: 74.7s d=1.00 chunk_t4_pit_run gap=5.7
+RUNNER SMOKE: FAIL (1 failures / 61 checks)
+EXIT: 1
+```
+
+Scaffold
+
+```text
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_scaffold_check.gd --log-file /tmp/f5-feedback/scaffold.log
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+RUNNER SCAFFOLD: PASS (0 failures / 277 checks)
+EXIT: 0
+```

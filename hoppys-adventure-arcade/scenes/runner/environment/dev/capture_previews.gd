@@ -17,6 +17,10 @@ func run() -> void:
 		if fixture == "hazard_gallery":
 			directory = "hazards/visuals"
 		var scene := load("res://scenes/runner/%s/dev/%s.tscn" % [directory, fixture]) as PackedScene
+		if scene == null:
+			push_error("PREVIEW CAPTURE: fixture failed to load: " + fixture)
+			failures += 1
+			continue
 		var instance := scene.instantiate()
 		root.add_child(instance)
 		await create_timer(1.5 if fixture == "hoppy_preview" else 1.0).timeout
@@ -47,23 +51,27 @@ func run() -> void:
 		instance.free()
 		await process_frame
 	var hud_scene := load("res://scenes/runner/ui/dev/hud_preview.tscn") as PackedScene
-	var hud_preview := hud_scene.instantiate()
-	hud_preview.autoplay = false
-	root.add_child(hud_preview)
-	for target in [16.0, 40.5]:
-		while hud_preview.demo_time < target and hud_preview.state != &"finished":
-			hud_preview.advance_demo(0.1)
-			hud_preview.hud._process(0.1)
-		await create_timer(0.3).timeout
-		await RenderingServer.frame_post_draw
-		var suffix := "hud" if target < 40 else "gameover"
-		var output := ProjectSettings.globalize_path("res://../docs/previews/endless-runner-%s.png" % suffix)
-		var error := root.get_texture().get_image().save_png(output)
-		print("CAPTURE: ", suffix, " error=", error)
-		if error != OK:
-			failures += 1
-	hud_preview.free()
-	await process_frame
+	if hud_scene == null:
+		push_error("PREVIEW CAPTURE: fixture failed to load: hud_preview (HUD/game-over captures skipped)")
+		failures += 1
+	else:
+		var hud_preview := hud_scene.instantiate()
+		hud_preview.autoplay = false
+		root.add_child(hud_preview)
+		for target in [16.0, 40.5]:
+			while hud_preview.demo_time < target and hud_preview.state != &"finished":
+				hud_preview.advance_demo(0.1)
+				hud_preview.hud._process(0.1)
+			await create_timer(0.3).timeout
+			await RenderingServer.frame_post_draw
+			var suffix := "hud" if target < 40 else "gameover"
+			var output := ProjectSettings.globalize_path("res://../docs/previews/endless-runner-%s.png" % suffix)
+			var error := root.get_texture().get_image().save_png(output)
+			print("CAPTURE: ", suffix, " error=", error)
+			if error != OK:
+				failures += 1
+		hud_preview.free()
+		await process_frame
 	root.get_node("AudioService").shutdown()
 	await create_timer(0.3).timeout
 	print("PREVIEW CAPTURE: ", "PASS" if failures == 0 else "FAIL")
