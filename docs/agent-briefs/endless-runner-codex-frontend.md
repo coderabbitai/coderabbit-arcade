@@ -322,19 +322,21 @@ Screenshots to `docs/previews/endless-runner-{spike,corridor,gallery,hud,gameove
 | F5 | `sfx_synth.gd`, `runner_audio.tscn/gd` | every trigger audible in the mock; ≤ 10 voices; pitch ramp audible |
 | F6 | `runner_menu.tscn/gd`, `tests/runner_visual_smoke.gd`, `docs/endless-runner.md`, previews | full loop with the backend: hub → menu → play → hit → pursuit → 18 s clean recovery → hit (new pursuit) → second hit during pursuit → caught → game over → save → retry → menu → hub |
 
-Check commands (repo root). Confirm the engine first: `/Applications/Godot.app/Contents/MacOS/Godot --version` must
-report `4.7.1.stable` for final acceptance; results from any other 4.7.x build (the build machine currently has
-4.7.0) are diagnostic and must be labelled as such in `docs/endless-runner.md`. Final acceptance of the frontend stays
-blocked until every check below has been run successfully on 4.7.1.stable; keep the scaffold `World/GrayboxEnvironment`
-note in the doc until the backend's PR 2 (which relaxes that assertion) is merged into this branch.
+Check commands (repo root). Set `GODOT_BIN` to the editor binary (`/Applications/Godot.app/Contents/MacOS/Godot`
+on the build Mac) and confirm the engine first: `"$GODOT_BIN" --version` must report `4.7.1.stable` for final
+acceptance; results from any other 4.7.x build (the build machine currently has 4.7.0) are diagnostic and must be
+labelled as such in `docs/endless-runner.md`. Final acceptance of the frontend stays blocked until every check below has
+been run successfully on 4.7.1.stable; keep the scaffold `World/GrayboxEnvironment` note in the doc until the backend's
+PR 2 (which relaxes that assertion) is merged into this branch.
 
 ```sh
-/Applications/Godot.app/Contents/MacOS/Godot --version
-/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --import
-/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://scenes/runner/<file>.gd --check-only
-/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd
-/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/menu_smoke.gd
-/Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --scene res://scenes/runner/environment/dev/corridor_preview.tscn
+GODOT_BIN="${GODOT_BIN:-/Applications/Godot.app/Contents/MacOS/Godot}"
+"$GODOT_BIN" --version
+"$GODOT_BIN" --headless --path hoppys-adventure-arcade --import
+"$GODOT_BIN" --headless --path hoppys-adventure-arcade --script res://scenes/runner/<file>.gd --check-only
+"$GODOT_BIN" --headless --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd
+"$GODOT_BIN" --headless --path hoppys-adventure-arcade --script res://tests/menu_smoke.gd
+"$GODOT_BIN" --path hoppys-adventure-arcade --scene res://scenes/runner/environment/dev/corridor_preview.tscn
 ```
 
 `menu_smoke.gd` has two pre-existing mouse-hover failures on the installed Godot 4.7.0 (diagnostic baseline per
