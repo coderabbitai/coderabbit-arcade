@@ -170,7 +170,7 @@ freezes on pause. No lights.
 | kind | Composition | Idle | Hit / cleared | Text |
 |---|---|---|---|---|
 | `pr_backlog_low` (5.6×1.0×1.2) | three rows of stacked `NAVY` PR cards spanning the corridor, `ORANGE`/`DANGER` glow edge strips | cards wobble | cards fly apart and fade / cards shrink to 0 with `MINT` flash, tag `AUTO-FIXED` | `PR #4821 +1,204 −38`, `needs review`, `47 files` |
-| `pr_backlog_high` (5.6×1.8×1.2, y 1.1–2.9) | rail at y 3.0 with hanging cards; `MATRIX` α 0.25 floor quad marks the safe roll gap | cards sway | cards drop and bounce / as above | `STALE · 47 DAYS`, `CI FAILING` |
+| `pr_backlog_high` (5.6×1.8×1.2, y 1.1–2.9) | rail at y 3.0 with hanging cards; the standard `DANGER` α 0.35 floor marker covers the hitbox footprint, **plus** (approved exception to the marker rule) a second `MATRIX` α 0.25 quad drawn just above it that reads as the safe roll gap | cards sway | cards drop and bounce / as above | `STALE · 47 DAYS`, `CI FAILING` |
 | `bug_swarm` (1.6×0.9×1.2) | `DANGER` core sphere with six legs + 36-particle glyph swarm (`#`, `*`) | jitter | burst / particles turn `MINT`, core pops | `throw new Error()` |
 | `merge_conflict` (3.6×1.0×1.2) | two slabs `<<<<<<< HEAD` (`MATRIX` strip) and `>>>>>>> feature/x` (`LILAC` strip) with a zigzag `DANGER` seam and `=======` | slabs slide in antiphase, seam pulses | seam flashes, slabs shake / slabs merge into one `MINT` box `MERGED` | as listed + `MERGE CONFLICT` tag |
 | `deprecated_pit` (5.6 or 3.6 × 0.4 × 3.0) | near-black quad at y 0.015 as the hole, `ORANGE`/`NAVY` striped rim boxes, glyph particles falling in, flat `@deprecated` label | label flicker | rim flash / rim `MINT`, label `REMOVED` | `@deprecated`, `since v0.9` |
@@ -234,13 +234,13 @@ strength 0 → 0.85 while pursued, back to 0 on `pursuit_recovered`, 1.0 on `cau
 0.18 s on `damage_taken`, `MINT` 0.3 on `damage_blocked`). On `damage_taken` also
 `game.camera_rig.shake(0.7)`. Hide gameplay widgets on `caught`; dim on pause.
 
-### 4.7 `scenes/runner/ui/pause_menu.tscn` (root `PauseMenu`, CanvasLayer 9, `process_mode ALWAYS`, hidden) — `bind(game)`
+### 4.7 `scenes/runner/ui/pause_menu.tscn` (root `PauseMenu`, CanvasLayer 21 — above the HUD's 10 and the contract's Overlays mount at 20, `process_mode ALWAYS`, hidden) — `bind(game)`
 
 Shows on `paused_changed(true)`: dim + panel `PAUSED`, buttons `Resume` → `game.resume()`, `Restart` →
 `game.retry()`, `Runner Menu` → `game.go_to_menu()`; focus loop; footer `ESC / START  resume`. Do **not**
 bind `ui_cancel` (the backend owns the pause key). Never touch `get_tree().paused`.
 
-### 4.8 `scenes/runner/ui/game_over.tscn` (root `GameOver`, CanvasLayer 8, `process_mode ALWAYS`, hidden) — `bind(game)`
+### 4.8 `scenes/runner/ui/game_over.tscn` (root `GameOver`, CanvasLayer 22 — above the pause menu, `process_mode ALWAYS`, hidden) — `bind(game)`
 
 On `run_finished(result)`: call your own `show_result(result, game.get_leaderboard())`. Dim fade, panel
 680×560: heading `CAUGHT BY THE BACKLOG` (`ROSE`), stats grid (`SCORE %08d` `MINT`, `TIME mm:ss.d`,
