@@ -67,7 +67,13 @@ static func load_entries(path := DEFAULT_PATH) -> Array[Dictionary]:
 static func save_entries(entries: Array, path := DEFAULT_PATH) -> Error:
 	var base_dir := path.get_base_dir()
 	if base_dir != "":
-		DirAccess.make_dir_recursive_absolute(base_dir)
+		# OK when the directory already exists, so the common case is unaffected; a real failure
+		# (a file standing where the directory belongs) is reported here instead of surfacing later
+		# as a confusing ConfigFile.save() error. Nothing has been written yet.
+		var dir_error := DirAccess.make_dir_recursive_absolute(base_dir)
+		if dir_error != OK:
+			push_warning("Runner leaderboard: cannot create %s (error %d); %s was not written" % [base_dir, dir_error, path])
+			return dir_error
 	var config := ConfigFile.new()
 	config.set_value("meta", "version", SCHEMA_VERSION)
 	config.set_value("leaderboard", "entries", entries)
@@ -87,7 +93,12 @@ static func save_entries(entries: Array, path := DEFAULT_PATH) -> Error:
 	error = DirAccess.rename_absolute(tmp, path)
 	if error != OK:
 		if backed_up:
-			DirAccess.rename_absolute(backup, path)
+			# Only this save's own backup is ever put back. A `.bak` left by an earlier crash is
+			# never restored over the destination: `backed_up` is true only when the rename above
+			# is what created this one.
+			var restore_error := DirAccess.rename_absolute(backup, path)
+			if restore_error != OK:
+				push_warning("Runner leaderboard: cannot restore %s from %s (error %d); load_entries() still reads the backup" % [path, backup, restore_error])
 		push_warning("Runner leaderboard: cannot write %s (error %d); the new board is at %s" % [path, error, tmp])
 		return error
 	if backed_up:

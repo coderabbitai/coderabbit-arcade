@@ -80,6 +80,11 @@ const POWER_UP_KINDS := [&"approve_shield", &"code_review", &"super_jump", &"nit
 
 var failures := 0
 var checks := 0
+## Never the default board: this test drives real RunnerGame instances with `autostart` on, so a
+## check that stalls long enough lets a run reach `caught` and write the player's own
+## user://leaderboard.cfg. Every RunnerGame here is pointed at this throwaway file before it can
+## start, and _report() removes it on every exit path (systems spec §8).
+var leaderboard_path := "user://scaffold_leaderboard_%d.cfg" % OS.get_process_id()
 
 func _initialize() -> void:
 	call_deferred("run")
@@ -108,17 +113,29 @@ func run() -> void:
 	if game == null:
 		await _report()
 		return
+	# Before add_child: _ready() honours `autostart`, so the run is already live by the time the
+	# node is in the tree and a later assignment would race it.
+	game.leaderboard_path = leaderboard_path
 	root.add_child(game)
 	for i in 3:
 		await process_frame
 
 	check(game.name == "RunnerGame", "runner_game.tscn root is not named RunnerGame")
 	check(game.process_mode == Node.PROCESS_MODE_ALWAYS, "RunnerGame is not PROCESS_MODE_ALWAYS")
+	# Everything below dereferences these paths through typed get_node() calls, which abort the whole
+	# run on a null. Report every missing node first, then stop: an incomplete scene has already
+	# failed the contract §3 check, and carrying on would trade the report for a crash.
+	var tree_complete := true
 	for path in TREE:
 		var node := game.get_node_or_null(NodePath(path))
 		check(node != null, "missing node: " + path)
-		if node != null:
-			check(node.is_class(TREE[path]), "%s is a %s, expected %s" % [path, node.get_class(), TREE[path]])
+		if node == null:
+			tree_complete = false
+			continue
+		check(node.is_class(TREE[path]), "%s is a %s, expected %s" % [path, node.get_class(), TREE[path]])
+	if not tree_complete:
+		await _report()
+		return
 	_check_environment(game)
 	for signal_name in SIGNALS:
 		check(game.has_signal(signal_name), "missing signal: " + signal_name)
@@ -201,13 +218,20 @@ func run() -> void:
 	# Routing: runner_game resolves, the tree is never handed over paused, and the facade's
 	# go_to_menu() lands back on the runner menu.
 	router.go("runner_game")
-	await wait(0.7)
+	var routed := await _wait_router_idle(router)
+	check(routed, "AppRouter.go(\"runner_game\") never went idle")
 	check(current_scene != null and current_scene.scene_file_path == router.ROUTES["runner_game"],
 		"AppRouter.go(\"runner_game\") did not load runner_game.tscn")
+	# The router owns this instance, so the override cannot precede its _ready(); it is set as early
+	# as the transition settles so a run that outlives the teardown still cannot reach the default
+	# board. Only the direct instantiation above is race-free.
+	if current_scene != null and "leaderboard_path" in current_scene:
+		current_scene.leaderboard_path = leaderboard_path
 	check(not paused, "routing to runner_game left the tree paused")
 	if current_scene != null and current_scene.has_method("go_to_menu"):
 		current_scene.go_to_menu()
-		await wait(0.7)
+		var returned := await _wait_router_idle(router)
+		check(returned, "go_to_menu() left AppRouter busy")
 		check(current_scene.scene_file_path == router.ROUTES["runner"],
 			"go_to_menu() did not return to the runner menu")
 	check(not router.busy, "AppRouter stayed busy after routing")
@@ -215,6 +239,19 @@ func run() -> void:
 
 func wait(seconds: float) -> void:
 	await create_timer(seconds).timeout
+
+## Wait out an AppRouter transition rather than guessing at its duration. `go()` sets `busy` before
+## its first await and clears it only after the fade-out, the `change_scene_to_file()` and the
+## fade-in have all finished, so `not busy` is exactly the point where `current_scene` is the new
+## scene and the veil is back to pass-through — there is no separate transition flag to poll.
+## Returns false on timeout, which keeps a stuck router a reported failure instead of a hung run.
+func _wait_router_idle(router: Node, timeout_seconds := 3.0) -> bool:
+	var deadline := Time.get_ticks_msec() + int(timeout_seconds * 1000.0)
+	while router.busy:
+		if Time.get_ticks_msec() > deadline:
+			return false
+		await process_frame
+	return true
 
 ## Contract §3: World carries the backend graybox environment, and a mounted frontend corridor
 ## frees it. Either shape is valid, so accept the graybox or a populated World/Environment.
@@ -293,7 +330,12 @@ func _instantiate(path: String) -> Node:
 		return null
 	return packed.instantiate()
 
+## Every exit path comes through here, including the two early returns in run(), so the throwaway
+## board and the scratch files of a half-finished write never outlive the test.
 func _report() -> void:
+	for suffix in ["", ".tmp", ".bak"]:
+		if FileAccess.file_exists(leaderboard_path + suffix):
+			DirAccess.remove_absolute(leaderboard_path + suffix)
 	print("RUNNER SCAFFOLD: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures / ", checks, " checks)")
 	root.get_node("AudioService").shutdown()
 	await wait(0.3)
