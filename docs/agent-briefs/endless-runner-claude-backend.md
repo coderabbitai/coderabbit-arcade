@@ -45,19 +45,31 @@ has no new failures.
 
 Only Workstream 1 edits `runner_game.tscn` / `runner_game.gd` after PR 1.
 
-## Definition of done (per PR)
+## Definition of done
+
+**PR 1 (contract scaffold):**
 
 ```sh
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --import
-/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_logic.gd
-/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_chunk_validator.gd
-/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_smoke.gd
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_scaffold_check.gd
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/menu_smoke.gd
 ```
 
+Plus `--check-only` on every new or modified `.gd` (errors naming the autoload singletons `AppRouter`,
+`AudioService`, `SaveService` are a known limitation of `--check-only`, not defects). `runner_game.tscn`
+and `runner_menu.tscn` load headless with no `push_error`.
+
+**PR 2 (playable graybox):** everything above, plus
+
+```sh
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_logic.gd
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_chunk_validator.gd
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_smoke.gd
+```
+
 All runner tests print `PASS`. `menu_smoke.gd` may keep its two pre-existing mouse-hover failures on
-Godot 4.7.0 but must not gain new ones. No `push_error` output during `runner_game.tscn` load. Report
-what you ran and the exact output; never claim a test passed without evidence.
+Godot 4.7.0 but must not gain new ones. Report what you ran and the exact output; never claim a test
+passed without evidence.
 
 ## Orchestration loops (run by the coordinator, Fable 5.1)
 
