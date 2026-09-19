@@ -24,6 +24,11 @@ const FAKE_GAME_SOURCE := "extends \"res://scenes/runner/runner_game.gd\"\nvar c
 const FAKE_HAZARD_SOURCE := "extends Node3D\nvar kind: StringName = &\"pr_backlog_low\"\nvar dodge_hint: StringName = &\"JUMP\"\nvar box := Vector3(5.6, 1.0, 1.2)\nvar center_y := 0.5\nvar blocking := true\nfunc is_blocking() -> bool:\n\treturn blocking\nfunc occupies_lane(index: int) -> bool:\n\treturn absf((float(index) - 1.0) * 2.0 - global_position.x) < box.x * 0.5 + 0.39\nfunc get_world_aabb() -> AABB:\n\treturn AABB(global_position + Vector3(0.0, center_y, 0.0) - box * 0.5, box)\n"
 ## Spawner stand-in for Auto-Fix (systems spec §5.2 clear_hazards_in_range).
 const FAKE_SPAWNER_SOURCE := "extends Node\nvar cleared := 0\nvar calls := 0\nfunc clear_hazards_in_range() -> int:\n\tcalls += 1\n\treturn cleared\n"
+## The contract §5.1 visual hooks reset() has to clear, recorded instead of drawn.
+const FAKE_VISUAL_SOURCE := "extends Node3D\nvar auras: Array = []\nvar shields: Array = []\nfunc show_aura(kind: StringName, on: bool) -> void:\n\tauras.append([kind, on])\nfunc show_shield(on: bool) -> void:\n\tshields.append(on)\n"
+## The slice of the player the autopilot drives: the lane tween with runner_player's one-queued-
+## change limit, plus a request counter so a bot that spams request_lane is visible.
+const FAKE_PLAYER_SOURCE := "extends Node\nvar target_lane := 1\nvar lane_t := 1.0\nvar queued_lane_dir := 0\nvar requests := 0\nfunc request_lane(direction: int) -> void:\n\trequests += 1\n\tvar dir := signi(direction)\n\tif lane_t < 1.0:\n\t\tqueued_lane_dir = dir\n\t\treturn\n\ttarget_lane = clampi(target_lane + dir, 0, 2)\n\tlane_t = 0.0\nfunc finish_tween() -> void:\n\tif lane_t >= 1.0:\n\t\treturn\n\tlane_t = 1.0\n\tif queued_lane_dir == 0:\n\t\treturn\n\tvar dir := queued_lane_dir\n\tqueued_lane_dir = 0\n\ttarget_lane = clampi(target_lane + dir, 0, 2)\n\tlane_t = 0.0\n"
 
 var failures := 0
 var checks := 0
@@ -32,7 +37,10 @@ var game_script: GDScript
 var hazard_script: GDScript
 ## The real hazard.gd (Area3D), used by section 11; loaded at runtime for the same reason.
 var real_hazard_script: GDScript
+## The real runner_player.gd (CharacterBody3D), used by section 12; also loaded at runtime.
+var real_player_script: GDScript
 var spawner_script: GDScript
+var player_script: GDScript
 var hit_manager_script: GDScript
 var score_manager_script: GDScript
 var effect_manager_script: GDScript
@@ -59,10 +67,13 @@ func run() -> void:
 	speed_controller_script = load("res://scenes/runner/systems/speed_controller.gd") as GDScript
 	autopilot_script = load("res://scenes/runner/systems/autopilot.gd") as GDScript
 	real_hazard_script = load("res://scenes/runner/hazards/hazard.gd") as GDScript
+	real_player_script = load("res://scenes/runner/player/runner_player.gd") as GDScript
 	game_script = _compile(FAKE_GAME_SOURCE)
 	hazard_script = _compile(FAKE_HAZARD_SOURCE)
 	spawner_script = _compile(FAKE_SPAWNER_SOURCE)
-	if game_script == null or hazard_script == null or spawner_script == null or real_hazard_script == null:
+	player_script = _compile(FAKE_PLAYER_SOURCE)
+	if game_script == null or hazard_script == null or spawner_script == null \
+			or player_script == null or real_hazard_script == null or real_player_script == null:
 		check(false, "the test harness scripts failed to compile")
 		_report()
 		return
@@ -74,9 +85,15 @@ func run() -> void:
 	_test_score()
 	_test_effects()
 	_test_leaderboard()
+	_test_finish_write_failure()
 	_test_config_sanity()
 	_test_autopilot()
 	_test_timed_laser_shutdown()
+	_test_super_jump_invuln()
+	_test_dodge_tracking()
+	_test_difficulty_emission()
+	_test_hazard_visual_mount_order()
+	_test_player_reset_clears_visual_state()
 	_report()
 
 # --- 1. HitManager: SAFE -> PURSUED -> DEAD ---
@@ -175,6 +192,19 @@ func _test_shield() -> void:
 	check(events["damage_blocked"].size() == 1 and events["damage_blocked"][0][1] == &"shield",
 		"4: the blocked hit reports reason shield")
 	check(hits.recoveries == 0, "4: a shield used while SAFE is not a recovery")
+	# The shield pops on one hazard and grants the same i-frames the damage path does, so a second,
+	# different hazard overlapping on one of the next ticks cannot land damage right after the block.
+	check(is_equal_approx(hits.iframe_remaining, 0.8), "4: the shield block starts the i-frames, %.3f s"
+		% hits.iframe_remaining)
+	var follow_up: StringName = hits.report_hit(_hazard(&"merge_conflict"))
+	check(follow_up == hits.BLOCKED_INVULN,
+		"4: the hit right after a shield block is blocked by the i-frames, got %s" % follow_up)
+	check(events["damage_blocked"].size() == 2 and events["damage_blocked"][1][1] == &"iframes",
+		"4: the hit right after a shield block reports reason iframes")
+	check(hits.hp == 2 and hits.state == hits.HitState.SAFE, "4: the follow-up block costs nothing")
+	_tick([hits], _ticks(0.9))
+	check(hits.report_hit(_hazard(&"comment_flood")) == hits.DAMAGED,
+		"4: a hit once the shield i-frames have run out lands")
 
 	var pursued_game := _make_game()
 	var pursued_events := _watch(pursued_game)
@@ -191,6 +221,12 @@ func _test_shield() -> void:
 		"4: pursuit_recovered reports the shield")
 	# Systems spec §4: recoveries counts every PURSUED -> SAFE exit, by shield as well as by timer.
 	check(pursued.recoveries == 1, "4: the shield recovery is counted in recoveries")
+	check(is_equal_approx(pursued.iframe_remaining, 0.8),
+		"4: the shield recovery starts the i-frames too, %.3f s" % pursued.iframe_remaining)
+	var after_recovery: StringName = pursued.report_hit(_hazard(&"bug_swarm"))
+	check(after_recovery == pursued.BLOCKED_INVULN,
+		"4: the hit right after a shield recovery is blocked by the i-frames, got %s" % after_recovery)
+	check(pursued.is_safe() and pursued.hp == 2, "4: the recovered runner keeps its health")
 
 # --- 5. Invulnerability sources and hazard dedupe ---
 
@@ -395,6 +431,53 @@ func _test_leaderboard() -> void:
 		"8: a corrupt board still accepts the next run")
 	check(RunnerLeaderboard.load_entries(corrupt).size() == 1, "8: the recovered board holds one entry")
 
+# --- 8b. A leaderboard write that fails never reports a rank (contract §4.3) ---
+
+## submit() ranks the run against the board it built in memory, so a run whose write failed would
+## otherwise be reported as placed. The run itself must still end normally.
+func _test_finish_write_failure() -> void:
+	# An ordinary file standing where the board's directory would be: every write under it fails,
+	# on any platform and without touching file permissions.
+	var blocker := "user://test_leaderboard_blocker_%d" % (randi() % 1000000)
+	temp_paths.append(blocker)
+	var file := FileAccess.open(blocker, FileAccess.WRITE)
+	check(file != null, "8b: the blocking file was written")
+	if file == null:
+		return
+	file.store_string("not a directory")
+	file.close()
+	var blocked := blocker + "/leaderboard.cfg"
+	check(RunnerLeaderboard.submit(_entry("probe", 10), blocked)["error"] != OK,
+		"8b: the blocked path really cannot be written")
+
+	var writable := "user://test_leaderboard_finish_%d.cfg" % (randi() % 1000000)
+	temp_paths.append(writable)
+	var saved := _finish_caught_run(writable)
+	var ok_result: Dictionary = saved["result"]
+	check(int(ok_result.get("leaderboard_error", -1)) == OK,
+		"8b: a saved run reports leaderboard_error OK, got %s" % ok_result.get("leaderboard_error", "<missing>"))
+	check(int(ok_result["rank"]) == 1 and bool(ok_result["qualifies"]), "8b: a saved run keeps its rank")
+	check(int(saved["saved"]) == 1, "8b: leaderboard_saved fires once for a saved run")
+	check(int(saved["finished"]) == 1, "8b: run_finished fires once for a saved run")
+
+	var lost := _finish_caught_run(blocked)
+	var result: Dictionary = lost["result"]
+	check(int(result.get("leaderboard_error", OK)) != OK,
+		"8b: a failed write reports leaderboard_error %s" % result.get("leaderboard_error", "<missing>"))
+	check(int(result["rank"]) == 0, "8b: a failed write keeps rank 0, got %d" % int(result["rank"]))
+	check(not bool(result["qualifies"]), "8b: a failed write never qualifies")
+	check(int(lost["saved"]) == 0, "8b: leaderboard_saved fired %d times for a failed write"
+		% int(lost["saved"]))
+	check(int(lost["finished"]) == 1, "8b: run_finished fired %d times for a failed write"
+		% int(lost["finished"]))
+	check(RunnerLeaderboard.load_entries(blocked).is_empty(), "8b: nothing reached the blocked board")
+	var game: Node3D = lost["game"]
+	check(game.state == &"finished", "8b: the run still ends finished, got %s" % game.state)
+	check(not game.submit_name("Test"), "8b: submit_name fails when the board cannot be written")
+	check(int(lost["saved"]) == 0, "8b: a failed submit_name never emits leaderboard_saved")
+	# The blocker is a file; DirAccess.remove_absolute in _report() clears it either way.
+	check(not FileAccess.file_exists(blocked), "8b: the failed write left no board behind")
+
 # --- 9. RunConfig sanity ---
 
 func _test_config_sanity() -> void:
@@ -488,6 +571,60 @@ func _test_autopilot() -> void:
 	check(merged.size() == 1, "10: hazards within 0.8 m are one slice")
 	check(not bool(merged[0]["jumpable"]) and not bool(merged[0]["rollable"]),
 		"10: a merged slice only claims what answers all of it")
+	check(int(merged[0]["key"]) == wall.get_instance_id(),
+		"10: a merged slice is keyed by its nearest hazard")
+
+	# A merged slice keeps one key for its whole life. Keying it by the smallest instance id of the
+	# moment moved the key as hazards entered and left the scan range, so an already-answered slice
+	# came back under a new key and earned a second manoeuvre.
+	var merged_key := StringName(str(merged[0]["key"]))
+	bot._done[merged_key] = true
+	var tail_only: Array = bot.slices_for([bar], 24.0, 0.0)
+	check(tail_only.size() == 1 and StringName(str(tail_only[0]["key"])) == merged_key,
+		"10: a merged slice keeps its key when the hazard that owns it is gone")
+	bot._prune(tail_only, [])
+	check(bot._next_slice(tail_only).is_empty(),
+		"10: an answered merged slice is never planned a second time")
+	bot.reset()
+
+	# A high pickup hangs over one lane: the jump only reaches it from that lane.
+	var high_pickup := _pickup(Vector3(2.0, 1.8, -20.0))
+	var pickups: Array = bot.pickup_targets([high_pickup], 24.0)
+	check(pickups.size() == 1 and int(pickups[0]["lane"]) == 2 and bool(pickups[0]["high"]),
+		"10: a pickup above running height in lane 2 is read as high")
+	var detour: Dictionary = bot.plan_pickup(pickups, [], 1, 24.0)
+	check(StringName(detour["action"]) == bot.ACTION_LANE and int(detour["lane"]) == 2
+		and int(detour["steps"]) == 1, "10: a high pickup in another lane is approached by lane")
+	var hop: Dictionary = bot.plan_pickup(pickups, [], 2, 24.0)
+	check(StringName(hop["action"]) == bot.ACTION_JUMP,
+		"10: a high pickup is jumped once the player is in its lane")
+	var late := _pickup(Vector3(2.0, 1.8, -1.0))
+	var late_targets: Array = bot.pickup_targets([late], 24.0)
+	check(StringName(bot.plan_pickup(late_targets, [], 1, 24.0)["action"]) == bot.ACTION_NONE,
+		"10: a high pickup too close to change lanes for is left alone")
+
+	# A lane plan is answered by arrival, not by one request: marking it done after the first
+	# transition left a two-step move stranded in the lane it was only passing through.
+	var mover: Node = _fake_player()
+	mover.target_lane = 0
+	var two_step := {"action": bot.ACTION_LANE, "lane": 2, "steps": 2}
+	var lane_key := StringName("two-step")
+	bot._execute(two_step, 0.0, 24.0, mover, lane_key)
+	check(int(mover.target_lane) == 1 and not bot._done.has(lane_key),
+		"10: the first transition of a two-step lane plan does not answer it")
+	bot._execute(two_step, 0.0, 24.0, mover, lane_key)
+	check(int(mover.queued_lane_dir) == 1, "10: the second step is queued behind the running tween")
+	var issued := int(mover.requests)
+	bot._execute(two_step, 0.0, 24.0, mover, lane_key)
+	bot._execute(two_step, 0.0, 24.0, mover, lane_key)
+	check(int(mover.requests) == issued,
+		"10: the bot does not spam request_lane while a change is already queued")
+	check(not bot._done.has(lane_key), "10: the plan stays pending in the lane it passes through")
+	mover.finish_tween()
+	check(int(mover.target_lane) == 2, "10: the queued step starts when the tween ends")
+	bot._execute(two_step, 0.0, 24.0, mover, lane_key)
+	check(bot._done.has(lane_key), "10: the lane plan is answered by reaching the target lane")
+	bot.reset()
 
 	check(is_equal_approx(bot.jump_trigger_z(24.0), -(24.0 * 0.22 + 0.4)), "10: the jump lead is 0.22 s")
 	check(is_equal_approx(bot.roll_trigger_z(24.0), -(24.0 * 0.15 + 0.4)), "10: the roll lead is 0.15 s")
@@ -565,6 +702,207 @@ func _test_timed_laser_shutdown() -> void:
 	_check_laser_inert(hit_pair, 3.0, state_at_hit, "a consumed laser")
 	check(hits.hits_taken == 1, "11: the consumed laser never reported a second hit")
 
+# --- 12. Super Jump invulnerability survives a re-launch (systems spec §4, contract §12) ---
+
+## Super Jump is invulnerable in flight and for super_jump_landing_invuln seconds after landing. A
+## second Super Jump launched while that landing countdown is still running has to go back to the
+## in-flight half: if the countdown is left alone, the i-frames expire under the new arc and the
+## hazard the player jumped over lands a hit.
+func _test_super_jump_invuln() -> void:
+	var game := _make_game()
+	var hits: Node = _systems(game)["hits"]
+	var player := _real_player(game)
+	var landing := float(game.config.super_jump_landing_invuln)
+
+	player._grant_super_jump_invuln()
+	check(hits.is_invulnerable(), "12: a Super Jump grants invulnerability")
+	check(hits.invuln_sources.size() == 1, "12: the Super Jump registers one source")
+	_tick_invuln(player, 0.4)
+	check(is_zero_approx(player._super_jump_invuln_remaining), "12: nothing counts down in flight")
+	check(hits.is_invulnerable(), "12: the whole flight is invulnerable")
+
+	player._on_land()
+	check(is_equal_approx(player._super_jump_invuln_remaining, landing),
+		"12: landing starts the %.2f s window" % landing)
+	_tick_invuln(player, landing * 0.6)
+	check(hits.is_invulnerable(), "12: the landing window is still invulnerable at 60%")
+
+	# The second launch: the landing countdown has to be dropped, and the source added only once.
+	player._grant_super_jump_invuln()
+	check(is_zero_approx(player._super_jump_invuln_remaining),
+		"12: a new Super Jump clears the landing countdown, %.3f s left"
+		% player._super_jump_invuln_remaining)
+	check(hits.invuln_sources.size() == 1, "12: the second Super Jump does not add a second source")
+	_tick_invuln(player, landing)
+	check(hits.is_invulnerable(), "12: the second flight never expires mid-air")
+
+	player._on_land()
+	_tick_invuln(player, landing + 0.1)
+	check(not player._super_jump_invuln, "12: the last landing window still runs out")
+	check(not hits.is_invulnerable(), "12: the expired window gives its invulnerability back")
+	check(hits.invuln_sources.is_empty(), "12: the Super Jump source is removed exactly once")
+
+# --- 13. Dodges are counted per crossing (contract §4.2 result.hazards_dodged) ---
+
+## A blocking hazard that passes the player counts once, and its instance id stops the next ticks
+## counting it again. The id is forgotten again while the hazard sits at or ahead of the dodge line,
+## so a hazard that is repositioned or reused in front of the player is counted once per crossing
+## instead of being remembered as dodged for the rest of the run.
+func _test_dodge_tracking() -> void:
+	var game := _tree_game()
+	var hazard := _hazard(&"pr_backlog_low")
+	hazard.add_to_group(&"runner_hazards")
+	# DODGE_LINE_Z is 1.0: +2 is behind the player, -6 is back out in front of it.
+	var behind := Vector3(0.0, 0.0, 2.0)
+	var ahead := Vector3(0.0, 0.0, -6.0)
+
+	hazard.position = ahead
+	game._track_dodges()
+	check(int(game.hazards_dodged) == 0, "13: a hazard in front of the player is not a dodge")
+
+	hazard.position = behind
+	game._track_dodges()
+	check(int(game.hazards_dodged) == 1, "13: a hazard past the dodge line counts once")
+	game._track_dodges()
+	check(int(game.hazards_dodged) == 1, "13: the same hazard is not counted twice while behind")
+
+	hazard.position = ahead
+	game._track_dodges()
+	check(int(game.hazards_dodged) == 1, "13: moving it back in front counts nothing by itself")
+
+	hazard.position = behind
+	game._track_dodges()
+	check(int(game.hazards_dodged) == 2, "13: the second crossing counts once more")
+	game._track_dodges()
+	check(int(game.hazards_dodged) == 2, "13: a third crossing is not invented by an extra tick")
+
+# --- 14. The terminal difficulty 1.0 is always announced, exactly once (contract §4.1) ---
+
+## difficulty_changed is suppressed while the value moves less than DIFFICULTY_EPSILON, which would
+## otherwise swallow the last step onto exactly 1.0: the frontend keys its top-difficulty state off
+## that emission, so it has to arrive, and it must not repeat once the curve is pinned at 1.0.
+func _test_difficulty_emission() -> void:
+	var game := _make_game()
+	var speed: Node = _systems(game)["speed"]
+	var ramp := float(game.config.time_to_max_speed)
+	var epsilon: float = speed.DIFFICULTY_EPSILON
+	var emitted: Array[float] = []
+	game.difficulty_changed.connect(func(value: float) -> void:
+		emitted.append(value))
+
+	# Just under the top: inside the epsilon of 1.0, but not yet 1.0.
+	game.elapsed = ramp * (1.0 - epsilon * 0.5)
+	speed._physics_process(TICK)
+	check(emitted.size() == 1, "14: the ramp announces difficulty on the way up, got %d" % emitted.size())
+	var last := emitted[emitted.size() - 1]
+	check(last < 1.0 and 1.0 - last < epsilon,
+		"14: the last pre-max emission is %.4f, expected inside the epsilon below 1.0" % last)
+
+	# Intermediate moves smaller than the epsilon stay suppressed.
+	game.elapsed += ramp * epsilon * 0.1
+	speed._physics_process(TICK)
+	check(emitted.size() == 1, "14: a sub-epsilon step is still suppressed, got %d" % emitted.size())
+
+	# Past time_to_max_speed the curve clamps to exactly 1.0, which always goes out.
+	game.elapsed = ramp + 5.0
+	speed._physics_process(TICK)
+	check(emitted.size() == 2, "14: the terminal 1.0 is emitted, got %d emissions" % emitted.size())
+	check(is_equal_approx(emitted[emitted.size() - 1], 1.0),
+		"14: the final emission is %.4f, expected 1.0" % emitted[emitted.size() - 1])
+
+	# Every later tick is still pinned at 1.0 and has to stay quiet.
+	for i in 10:
+		game.elapsed += 1.0
+		speed._physics_process(TICK)
+	check(emitted.size() == 2, "14: difficulty 1.0 is never re-emitted, got %d emissions" % emitted.size())
+	check(is_equal_approx(float(speed.difficulty), 1.0), "14: the curve stays at 1.0")
+
+# --- 15. A hazard is configured before it mounts its visual (contract §5.2) ---
+
+## `_apply_visual_vars()` feeds the visual `lanes_mask`, which is computed from `config.lane_width`
+## and `config.hurtbox_radius`, and `chunk.setup()` negates the child x on a mirrored chunk. Both
+## only arrive in `setup()`, which the spawner calls after the chunk is already in the tree, so a
+## visual mounted straight from `_ready()` would be configured from the contract §7 fallbacks and an
+## un-mirrored lane. The mount waits for `setup()` and stays idempotent: never two visuals.
+func _test_hazard_visual_mount_order() -> void:
+	var game := _make_game()
+	# A lane width the hazard.gd DEFAULT_LANE_WIDTH fallback (2.0) cannot produce.
+	game.config.lane_width = 5.0
+	var hazard := Area3D.new()
+	hazard.set_script(real_hazard_script)
+	hazard.kind = &"bug_swarm"
+	root.add_child(hazard)
+	junk.append(hazard)
+	check(hazard.config == null, "15: a hazard in the tree has no config until setup()")
+	check(not is_instance_valid(hazard.visual),
+		"15: _ready() mounts no visual while the config is still missing")
+
+	hazard.setup(game)
+	check(hazard.config != null, "15: setup() assigns the config")
+	check(is_instance_valid(hazard.visual), "15: setup() mounts the visual")
+	check(hazard.get_child_count() == 2,
+		"15: the hazard holds one collision shape and one visual, got %d children"
+			% hazard.get_child_count())
+	# What `_apply_visual_vars()` reads: the lane geometry has to come from the RunConfig, not from
+	# the fallbacks, at the moment the visual is mounted.
+	check(is_equal_approx(hazard.lane_x(2), 5.0),
+		"15: lane 2 sits at the config lane width, got %.2f" % hazard.lane_x(2))
+	check(hazard.lanes_mask() == 0b010,
+		"15: a 1.6 m hazard at x 0 occupies only the middle 5 m lane, got %d" % hazard.lanes_mask())
+
+	# The _ready() fallback, for a hazard that never gets a setup(): the deferred call is
+	# `_mount_visual()` itself, so calling it is the same path the engine would take.
+	var orphan := Area3D.new()
+	orphan.set_script(real_hazard_script)
+	orphan.kind = &"merge_conflict"
+	root.add_child(orphan)
+	junk.append(orphan)
+	orphan._mount_visual()
+	check(is_instance_valid(orphan.visual),
+		"15: a hazard that is never set up still falls back to the graybox")
+	var mounted: Node = orphan.visual
+	orphan.setup(game)
+	orphan._mount_visual()
+	check(orphan.visual == mounted and orphan.get_child_count() == 2,
+		"15: the visual is mounted exactly once, %d children" % orphan.get_child_count())
+
+# --- 16. reset() clears the mounted visual's power-up state (contract §5.1) ---
+
+## The visual outlives a run: it is mounted once in setup() and never re-created by start_run(). An
+## aura or the shield glow left on by the previous run would therefore still be showing on the first
+## frame of the next one, so reset() has to switch every one of them off.
+func _test_player_reset_clears_visual_state() -> void:
+	var game := _make_game()
+	_systems(game)
+	var player := _real_player(game)
+	var visual := _recording_visual()
+	check(visual != null, "16: the recording visual failed to compile")
+	if visual == null:
+		return
+	player.visual = visual
+
+	player.apply_aura(&"nitro", true)
+	player.apply_shield(true)
+	check(visual.auras.size() == 1 and visual.shields.size() == 1,
+		"16: the harness visual received the aura and the shield")
+	visual.auras.clear()
+	visual.shields.clear()
+
+	player.reset()
+	var cleared := {}
+	for call in visual.auras:
+		check(not bool(call[1]), "16: reset() only ever switches an aura off, got %s on" % call[0])
+		cleared[call[0]] = true
+	for kind in player.AURA_KINDS:
+		check(cleared.has(kind), "16: reset() left the %s aura alone" % kind)
+	check(visual.shields.size() == 1 and not bool(visual.shields[0]),
+		"16: reset() clears the shield glow exactly once, got %s" % [visual.shields])
+
+	# The same reset() on a player with no visual at all must not touch anything (graybox runs).
+	player.visual = null
+	player.reset()
+	check(true, "16: reset() survives a player with no visual")
+
 # --- harness ---
 
 func _compile(source: String) -> GDScript:
@@ -615,6 +953,59 @@ func _hazard(kind: StringName) -> Node3D:
 	junk.append(hazard)
 	return hazard
 
+## A power-up stand-in for the autopilot's greedy planner: pickup_targets only reads
+## global_position, so a bare Node3D in the tree is the whole surface.
+func _pickup(at: Vector3) -> Node3D:
+	var pickup := Node3D.new()
+	root.add_child(pickup)
+	pickup.position = at
+	junk.append(pickup)
+	return pickup
+
+## A runner_visual_base stand-in that records the power-up hooks reset() has to clear.
+func _recording_visual() -> Node3D:
+	var script := _compile(FAKE_VISUAL_SOURCE)
+	if script == null:
+		return null
+	var node := Node3D.new()
+	node.set_script(script)
+	junk.append(node)
+	return node
+
+## A player stand-in with only the lane state the autopilot reads and drives.
+func _fake_player() -> Node:
+	var player := Node.new()
+	player.set_script(player_script)
+	junk.append(player)
+	return player
+
+## The real runner_player.gd, outside the tree: the Super Jump invulnerability half only touches its
+## own fields, `config` and game.hit_manager, so none of the @onready shapes or the visual are
+## needed, and nothing ever calls move_and_slide() on it.
+func _real_player(game: Node3D) -> CharacterBody3D:
+	var player := CharacterBody3D.new()
+	player.set_script(real_player_script)
+	player.game = game
+	player.config = game.config
+	junk.append(player)
+	return player
+
+## Age the player's Super Jump invulnerability by hand. The full _physics_process is the whole
+## movement step and needs the tree; this is the one timer section 12 is about.
+func _tick_invuln(player: CharacterBody3D, seconds: float) -> void:
+	for i in _ticks(seconds):
+		player._update_super_jump_invuln(TICK)
+
+## A facade inside the tree, for the run-loop helpers that call get_tree(). Scripted only after
+## add_child for the reason spelled out in _finish_caught_run().
+func _tree_game() -> Node3D:
+	var game := Node3D.new()
+	root.add_child(game)
+	game.set_script(game_script)
+	game.config = base_config.duplicate()
+	junk.append(game)
+	return game
+
 ## A real hazard.gd timed laser, in the tree (its hitbox and group need it) and on its own facade
 ## with a real HitManager behind it. kind/variant are set before the hazard enters the tree so
 ## _ready() builds the timed def.
@@ -654,6 +1045,33 @@ func _check_laser_inert(pair: Dictionary, seconds: float, state: StringName, tag
 		check(not laser.is_blocking(), "11: %s stays finished (at %.1f s)" % [tag, elapsed])
 		check(laser.laser_state == state, "11: %s stops advancing its state (at %.1f s), got %s"
 			% [tag, elapsed, laser.laser_state])
+
+## Drive one caught run on a bare facade all the way to run_finished. RunnerGame times the catch
+## sequence in its own _physics_process, so ticking it is the whole run-end path, leaderboard write
+## included. Returns {game, result, finished, saved}.
+func _finish_caught_run(path: String) -> Dictionary:
+	# Scripted only once it is in the tree: runner_game.gd's _ready() would go looking for the
+	# scene's child systems, and setting the script afterwards skips it while get_tree() still
+	# answers, which is what the run loop needs. Nothing here ever awaits, so the engine never
+	# ticks the node behind the test's back.
+	var game := Node3D.new()
+	root.add_child(game)
+	game.set_script(game_script)
+	game.config = base_config.duplicate()
+	junk.append(game)
+	_systems(game)
+	game.run_id = "finish-%d" % (randi() % 1000000)
+	game.leaderboard_path = path
+	game.state = &"caught"
+	var seen := {"game": game, "result": {}, "finished": 0, "saved": 0}
+	game.run_finished.connect(func(result: Dictionary) -> void:
+		seen["finished"] += 1
+		seen["result"] = result)
+	game.leaderboard_saved.connect(func(_entries: Array, _rank: int) -> void:
+		seen["saved"] += 1)
+	for i in _ticks(float(game.config.caught_sequence_seconds) + 0.5):
+		game._physics_process(TICK)
+	return seen
 
 func _entry(run_id: String, score: int) -> Dictionary:
 	return {
@@ -733,5 +1151,6 @@ func _report() -> void:
 	game_script = null
 	hazard_script = null
 	spawner_script = null
+	player_script = null
 	print("RUNNER LOGIC: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures / ", checks, " checks)")
 	quit(failures)

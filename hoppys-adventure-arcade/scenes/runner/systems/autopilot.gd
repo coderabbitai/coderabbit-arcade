@@ -36,6 +36,14 @@ var reckless_slices := 0
 var _done := {}
 var _ignored := {}
 var _seen := {}
+## Slice key -> the lane plan still being carried out, so a multi-step lane change keeps its goal
+## instead of being re-planned from the lane it is only passing through. Pruned with the key sets.
+var _pending := {}
+## Hazard instance id -> the key of the slice it belongs to, carried across ticks so a merged slice
+## keeps one key for its whole life. Without it the key would follow the membership, and an
+## already-answered slice would come back under a new key the moment that hazard is cleared,
+## consumed, or falls out of the scan range.
+var _slice_keys := {}
 
 func setup(runner: RunnerGame) -> void:
 	game = runner
@@ -53,6 +61,8 @@ func reset(new_config: RunConfig = null) -> void:
 	_done = {}
 	_ignored = {}
 	_seen = {}
+	_pending = {}
+	_slice_keys = {}
 
 func set_enabled(on: bool) -> void:
 	enabled = on
@@ -84,6 +94,10 @@ func jump_trigger_z(v: float) -> float:
 	var lead := float(config.autopilot_jump_lead) if config != null else 0.22
 	return -(v * lead + 0.4)
 
+## Seconds one lane transition takes (contract §7), the cost of every step of a lane plan.
+func lane_change_time() -> float:
+	return float(config.lane_change_time) if config != null else 0.13
+
 func roll_trigger_z(v: float) -> float:
 	var lead := float(config.autopilot_roll_lead) if config != null else 0.15
 	return -(v * lead + 0.4)
@@ -105,6 +119,8 @@ func slices_for(hazards: Array, v: float, now: float) -> Array[Dictionary]:
 	entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return float(a["front_z"]) > float(b["front_z"]))
 	var slices: Array[Dictionary] = []
+	# Member instance ids per slice, head first, in the same order as `slices`.
+	var members: Array[Array] = []
 	for entry in entries:
 		var merged := false
 		if not slices.is_empty():
@@ -115,8 +131,8 @@ func slices_for(hazards: Array, v: float, now: float) -> Array[Dictionary]:
 				last["blocked"] = int(last["blocked"]) | int(entry["blocked"])
 				last["jumpable"] = bool(last["jumpable"]) and bool(entry["jumpable"])
 				last["rollable"] = bool(last["rollable"]) and bool(entry["rollable"])
-				last["key"] = mini(int(last["key"]), int(entry["key"]))
 				(last["hazards"] as Array).append(entry["hazard"])
+				(members[members.size() - 1] as Array).append(int(entry["key"]))
 				merged = true
 		if merged:
 			continue
@@ -129,7 +145,40 @@ func slices_for(hazards: Array, v: float, now: float) -> Array[Dictionary]:
 			"rollable": entry["rollable"],
 			"hazards": [entry["hazard"]]
 		})
+		members.append([int(entry["key"])])
+	_stabilise_keys(slices, members)
 	return slices
+
+## Give every slice the one key it keeps for its whole life. A brand new slice is keyed by its head
+## (nearest) hazard, since `entries` is sorted nearest-first; a slice that already existed keeps the
+## key any of its members carried last tick, so losing the hazard the key came from does not turn an
+## answered slice into a fresh one and earn it a second manoeuvre.
+func _stabilise_keys(slices: Array[Dictionary], members: Array[Array]) -> void:
+	var next_keys := {}
+	var taken := {}
+	for index in slices.size():
+		var slice: Dictionary = slices[index]
+		var ids: Array = members[index]
+		var key := _slice_key(ids, taken)
+		slice["key"] = key
+		taken[key] = true
+		for id: int in ids:
+			next_keys[id] = key
+	_slice_keys = next_keys
+
+## The key one slice inherits: the key a member already carried, else the head hazard's own id.
+## `taken` keeps a slice that has split in two from handing the same key to both halves.
+func _slice_key(ids: Array, taken: Dictionary) -> int:
+	for id: int in ids:
+		if not _slice_keys.has(id):
+			continue
+		var previous := int(_slice_keys[id])
+		if not taken.has(previous):
+			return previous
+	for id: int in ids:
+		if not taken.has(id):
+			return id
+	return int(ids[0])
 
 ## The action that answers one slice from `lane`: {action, lane, steps}.
 func plan_for(slice: Dictionary, lane: int) -> Dictionary:
@@ -193,6 +242,22 @@ func plan_pickup(targets: Array, slices: Array, lane: int, v: float) -> Dictiona
 			# Only leave the ground when nothing else is close enough to land into.
 			if _slice_within(slices, v * 0.8):
 				continue
+			# A jump only reaches a high pickup hanging over the lane the player is already in:
+			# take the lane first and jump on a later tick, once it is the lane underneath.
+			if target_lane != lane:
+				var steps := absi(target_lane - lane)
+				# Only while the detour still fits in front of it: one lane tween per step and
+				# then a jump lead. A pickup that is already level with the player cannot be
+				# collected any more, and diving at it lands in whatever it is hanging over.
+				if front_z > jump_trigger_z(v) - v * lane_change_time() * float(steps):
+					continue
+				return {
+					"action": ACTION_LANE,
+					"lane": target_lane,
+					"steps": steps,
+					"front_z": front_z,
+					"key": key
+				}
 			return {"action": ACTION_JUMP, "lane": lane, "steps": 0, "front_z": front_z, "key": key}
 		if target_lane != lane:
 			return {
@@ -254,8 +319,22 @@ func _physics_process(_delta: float) -> void:
 			_execute(greed, float(greed.get("front_z", 0.0)), v, player,
 				StringName(str(greed.get("key", ""))))
 		return
-	var plan := plan_for(slice, lane)
-	_execute(plan, float(slice["front_z"]), v, player, StringName(str(slice["key"])))
+	var key := StringName(str(slice["key"]))
+	var plan := _pending_plan(key, slice, lane)
+	_execute(plan, float(slice["front_z"]), v, player, key)
+
+## The plan for this slice: a lane change already under way is carried on rather than re-planned
+## from the lane the player is only passing through (which would read as "this lane is free" and
+## abandon the move half-way). The plan is dropped as soon as the slice blocks the lane it aims at.
+func _pending_plan(key: StringName, slice: Dictionary, lane: int) -> Dictionary:
+	if not _pending.has(key):
+		return plan_for(slice, lane)
+	var plan: Dictionary = _pending[key]
+	var goal := clampi(int(plan.get("lane", lane)), 0, LANE_COUNT - 1)
+	if goal == lane or not _lane_blocked(int(slice.get("blocked", 0)), goal):
+		return plan
+	_pending.erase(key)
+	return plan_for(slice, lane)
 
 ## Run the plan once its trigger distance is reached (systems spec §8).
 func _execute(plan: Dictionary, front_z: float, v: float, player: Node, key: StringName) -> void:
@@ -277,13 +356,31 @@ func _execute(plan: Dictionary, front_z: float, v: float, player: Node, key: Str
 			if player.has_method("request_roll"):
 				player.request_roll()
 		ACTION_LANE:
-			var steps := maxi(int(plan.get("steps", 1)), 1)
-			var direction := signi(int(plan.get("lane", 1)) - _player_lane(player))
+			# A lane plan is answered by arrival, not by one request: a two-step move needs a
+			# second transition, and the player only accepts one queued change at a time, so the
+			# plan stays pending and is re-issued across ticks until the target lane is reached.
+			var goal := clampi(int(plan.get("lane", 1)), 0, LANE_COUNT - 1)
+			var direction := signi(goal - _player_lane(player))
 			if direction != 0 and player.has_method("request_lane"):
-				for i in steps:
+				if not _lane_change_queued(player):
 					player.request_lane(direction)
+				if _player_lane(player) != goal:
+					if key != &"":
+						_pending[key] = plan
+					return
+			_pending.erase(key)
 	if key != &"":
 		_done[key] = true
+
+## True when the player already has a change queued behind a running tween: it only keeps one, so a
+## further request_lane would overwrite it and every later tick would repeat the same request.
+func _lane_change_queued(player: Node) -> bool:
+	if &"queued_lane_dir" in player:
+		return int(player.get(&"queued_lane_dir")) != 0
+	# Unknown player model: only ask while nothing is moving.
+	if &"lane_t" in player:
+		return float(player.get(&"lane_t")) < 1.0
+	return false
 
 ## One entry per blocking hazard, or {} when it cannot hurt the player on this pass.
 func _hazard_entry(hazard: Variant, v: float, now: float) -> Dictionary:
@@ -362,12 +459,21 @@ func _prune(slices: Array, targets: Array) -> void:
 	_done = _intersect(_done, live)
 	_ignored = _intersect(_ignored, live)
 	_seen = _intersect(_seen, live)
+	_pending = _intersect_plans(_pending, live)
 
 func _intersect(source: Dictionary, live: Dictionary) -> Dictionary:
 	var kept := {}
 	for key in source:
 		if live.has(key):
 			kept[key] = true
+	return kept
+
+## _intersect for the pending plans, which carry the plan itself rather than a flag.
+func _intersect_plans(source: Dictionary, live: Dictionary) -> Dictionary:
+	var kept := {}
+	for key in source:
+		if live.has(key):
+			kept[key] = source[key]
 	return kept
 
 func _player_lane(player: Node) -> int:

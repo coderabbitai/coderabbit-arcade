@@ -1,6 +1,6 @@
 # Endless Runner — Backend/Frontend Contract
 
-Version 1.2 · 2026-09-19 · GDScript
+Version 1.3 · 2026-09-19 · GDScript
 
 **Engine version policy.** The project pins **Godot 4.7.1** (GDD). The editor installed on the build
 machine during this cycle is **4.7.0 stable** (`4.7.stable.official.5b4e0cb0f`), so every verification
@@ -31,8 +31,13 @@ Rules:
 
 1. The backend ships **graybox placeholders** at four frontend paths in the contract PR
    (`runner_menu.tscn`, `ui/runner_hud.tscn`, `ui/pause_menu.tscn`, `ui/game_over.tscn`) so the game
-   is playable with no art. After that PR the backend never edits them again; the frontend may
-   overwrite or delete them freely.
+   is playable with no art. The frontend may overwrite or delete them freely.
+   `ui/runner_hud`, `ui/pause_menu` and `ui/game_over` are frozen from the end of that PR: the backend
+   never edits them again. `scenes/runner/runner_menu.*` has exactly one further backend edit, in PR 2,
+   bringing the graybox up to the §2 four-button set so `tests/runner_scaffold_check.gd` can assert the
+   same structure (`RunnerMenu` root, `buttons.size() == 4`) against either scene. **Once the frontend's
+   F6 `runner_menu` lands it is exclusively frontend-owned and the backend never edits it again**; any
+   later backend scaffold need goes in `docs/endless-runner.md` under "Requests to backend" instead.
 2. Every other frontend scene is **optional at runtime**. Backend code mounts a frontend scene only if
    `ResourceLoader.exists(path)`; otherwise it builds a primitive graybox in code. A missing or broken
    frontend file must never stop `runner_game.tscn` from loading.
@@ -60,8 +65,11 @@ hub ──AppRouter.go("runner")──▶ runner_menu.tscn (RunnerMenu)
 - Inside `runner_game.tscn` (pause menu, game over), frontend buttons call `game.retry()` /
   `game.go_to_menu()` rather than `AppRouter` directly, so the tree is never left paused. The runner
   menu scene, which has no game instance, calls `AppRouter.go(...)` / `AppRouter.quit_game()` itself.
-- The runner menu keeps the hub's return contract: a "Return to Main Menu" button → `AppRouter.go("hub")`
-  and `ui_cancel` → hub. Quit → `AppRouter.quit_game()`.
+- The runner menu offers exactly four buttons, in this order: **`01 Play`** → `AppRouter.go("runner_game")`,
+  **`02 Leaderboard`** → toggles a panel showing the top 10 read with the static
+  `runner_leaderboard.load_entries()` (no game instance needed; short boards pad with `---`),
+  **`03 Return to Main Menu`** → `AppRouter.go("hub")`, **`04 Quit Game`** → `AppRouter.quit_game()`.
+  It keeps the hub's return contract, and `ui_cancel` closes the leaderboard panel first, else → hub.
 - Music: the runner menu and `runner_audio` call `AudioService.play_music(stream, -12.0)`; the call is a
   no-op if that stream is already playing, so menu → game does not restart the track. `AppRouter`
   restores the hub track when routing to `hub`.
@@ -123,7 +131,7 @@ never moves in Z (`axis_lock_linear_z`); chunks move toward +Z at the authoritat
 | `score_changed(score: int, multiplier: float)` | Only when the integer score or the multiplier changes |
 | `bonus_awarded(points: int, reason: StringName)` | Pickup or blast bonus |
 | `speed_changed(speed: float, normalized: float)` | Every physics tick; `normalized = (speed − base_speed) / (max_speed − base_speed)`, may exceed 1.0 during Nitro |
-| `difficulty_changed(difficulty: float)` | When difficulty moves by ≥ 0.01 |
+| `difficulty_changed(difficulty: float)` | When difficulty moves by ≥ 0.01, plus the terminal 1.0 — that last step is always announced even though it is inside the 0.01 window, and 1.0 is never emitted twice |
 | `power_up_collected(kind: StringName, duration: float)` | `duration` 0 for one-shot kinds |
 | `power_up_expired(kind: StringName)` | Timed effect ended, Code Review Bonus lost, or Super Jump consumed |
 | `hazard_cleared(hazard: Area3D)` | Auto-Fix removed one hazard (its visual already received `on_cleared()`) |
@@ -154,11 +162,19 @@ frontend may use it for deterministic cosmetics).
 | `get_active_effects() -> Dictionary` | `kind → {remaining, total}` snapshot for HUD polling |
 | `camera_rig.shake(strength: float, duration := 0.35)` / `camera_rig.punch_fov(degrees: float, seconds: float)` | Camera juice |
 
+`start_run(seed := 0)` (backend-initiated; the frontend restarts through `retry()`) unpauses first: it goes
+through `resume()`, so `paused`, `get_tree().paused` and `paused_changed(false)` all agree and a run started
+from a paused state never begins frozen. It also clears the player visual's power-up state — `show_aura(kind,
+false)` for every aura kind and `show_shield(false)` — so a fresh run never opens wearing the last one's glow.
+
 `result` fields: `run_id, mode ("runner"), outcome ("caught"), score:int, score_exact:float,
 duration:float, distance:float, hazards_dodged:int, power_ups:int, hazards_blasted:int, hits_taken:int,
 recoveries:int, blocked_hits:int, seed:int, max_speed_reached:float, best_multiplier:float,
 chunks_spawned:int, score_rule_revision:int, submitted_at:int, rank:int (1–10, 0 = not placed),
-qualifies:bool, player_name:String`.
+qualifies:bool, leaderboard_error:int, player_name:String`.
+`leaderboard_error` is always present and is `OK` (0) when the board was written. Any other value
+means the write failed, and then `rank` is 0, `qualifies` is `false` and `leaderboard_saved` is not
+emitted for that run.
 
 Leaderboard entry fields: `run_id, name, score:int, duration:float, seed:int, submitted_at:int`.
 The runner menu reads the board without a game instance via the static
@@ -183,8 +199,8 @@ sets base vars **before** calling `on_spawned()`. Visuals never free themselves;
 | `set_anim_state(state: StringName)` | `idle`, `run`, `jump`, `fall`, `roll`, `hurt`, `dead`. Called on change only. After `hurt` the visual auto-returns to `run` (or `idle`) unless a new state arrived; the backend also sends `run` after `land` / `roll_end` |
 | `set_run_speed(normalized: float)` | Every physics tick; scale run cycle speed |
 | `set_lane_lean(direction: float)` | −1..1 during a lane change, 0 otherwise |
-| `show_aura(kind: StringName, on: bool)` | On power-up collect / expire for `lgtm`, `nitro`, `code_review` |
-| `show_shield(on: bool)` | On `shield_changed` |
+| `show_aura(kind: StringName, on: bool)` | On power-up collect / expire for `lgtm`, `nitro`, `code_review`. Also `false` for every kind on `start_run` (the visual outlives a run) |
+| `show_shield(on: bool)` | On `shield_changed`, and `false` on `start_run` |
 | `on_hit()` | Flash hook on unblocked hit |
 
 Hoppy faces −Z, feet at y = 0, total height 1.8 m; the roll pose must fit inside 0.9 m.
@@ -236,7 +252,7 @@ The physical floor is backend-owned and invisible once a corridor mounts. The co
 | `ui/pause_menu.tscn` | CanvasLayer, `process_mode ALWAYS` | Shows on `paused_changed(true)`; buttons → `game.resume()`, `game.retry()`, `game.go_to_menu()` |
 | `ui/game_over.tscn` | CanvasLayer, `process_mode ALWAYS`, hidden | `show_result(result: Dictionary, leaderboard: Array)` is called by the frontend itself from `run_finished`; name entry → `game.submit_name()`; Retry / Menu as above |
 | `audio/runner_audio.tscn` | Node, `process_mode ALWAYS` | SFX on bus `SFX`; BGM via `AudioService.play_music` |
-| `runner_menu.tscn` | root named **`RunnerMenu`** | See §2 |
+| `runner_menu.tscn` | root named **`RunnerMenu`** | See §2. Exposes `buttons: Array[Button]` with the four §2 entries (`01 Play`, `02 Leaderboard`, `03 Return to Main Menu`, `04 Quit Game`); `tests/runner_scaffold_check.gd` asserts `buttons.size() == 4` |
 
 `AudioService` API available to the frontend: `play_music(stream: AudioStream, volume_db := -10.0)`,
 `play_default_music()`, `set_music_pitch(scale: float)`, `duck_music(db: float, seconds: float)`,
@@ -317,5 +333,6 @@ mouse-hover failures on a clean `main`; the docs validated it on 4.7.1. New runn
 ## 10. Change log
 
 - 1.0 (2026-09-19): initial contract reconciled from the backend, procgen/tuning and frontend design passes.
+- 1.3 (2026-09-19): §4.3 — `result.leaderboard_error:int` added; a failed leaderboard write keeps `rank` 0 / `qualifies` false and emits no `leaderboard_saved`.
 - 1.2 (2026-09-19): §5.2 — ground-projection quads exempt from the 110 % rule on y; per-hazard draw-call budget stated.
 - 1.1 (2026-09-19): engine version policy (4.7.1 pin, 4.7.0 validation); AppRouter rule scoped to in-game overlays; routes wording clarified; leaderboard writes keep a `.bak`; Nitro cap arithmetic and viewport-scale restore semantics clarified; return-type rule generalised; mount resources validated as `PackedScene`; timed laser cycle spelled out.

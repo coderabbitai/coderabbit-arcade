@@ -73,6 +73,13 @@ Corridor" preview — reuse that look), `app/audio_service.gd`, `app/app_router.
   `scenes/runner/pursuer/pursuer_visual.{tscn,gd}`, `Assets/runner/**`, `tests/runner_visual_smoke.gd`,
   `docs/endless-runner.md`, `docs/previews/endless-runner-*.png`. The backend left graybox placeholders
   at `runner_menu.tscn`, `ui/runner_hud.tscn`, `ui/pause_menu.tscn`, `ui/game_over.tscn`; overwrite them.
+  The three `ui/*` placeholders were frozen at the end of the backend's PR 1. `runner_menu` had one
+  further backend edit in PR 2 — the graybox was brought up to the contract §2 four-button set so
+  `tests/runner_scaffold_check.gd` can assert the same structure (`RunnerMenu` root,
+  `buttons.size() == 4`) against the graybox or your F6 scene, which is why your menu must keep both.
+  **The moment your F6 `runner_menu` lands, `scenes/runner/runner_menu.*` is exclusively yours and the
+  backend never edits it again**; a later backend scaffold need arrives as an entry under "Requests to
+  backend" in `docs/endless-runner.md`, not as a change to your scene.
 - Branch: `codex/endless-runner-frontend`, PR into `endless-runner`.
 
 ## 2. Art direction
@@ -329,25 +336,94 @@ labelled as such in `docs/endless-runner.md`. Final acceptance of the frontend s
 been run successfully on 4.7.1.stable; keep the scaffold `World/GrayboxEnvironment` note in the doc until the backend's
 PR 2 (which relaxes that assertion) is merged into this branch.
 
+The automated run is entirely headless and deterministic: the `corridor_preview.tscn` launch opens a window,
+so it is behind `INTERACTIVE=1` and is a manual eyeball pass, not part of the acceptance gate.
+
 ```sh
 #!/usr/bin/env bash
 # Final acceptance: fails fast on any error and refuses engines other than 4.7.1.stable.
 # Set DIAGNOSTIC=1 to allow another 4.7.x build; such a run is diagnostic only and must be
-# labelled as such in docs/endless-runner.md.
+# labelled as such in docs/endless-runner.md. Set INTERACTIVE=1 to also open the corridor preview
+# window at the end; the default run stays headless.
 set -euo pipefail
 GODOT_BIN="${GODOT_BIN:-/Applications/Godot.app/Contents/MacOS/Godot}"
 version="$("$GODOT_BIN" --version)"
 if [[ "$version" != 4.7.1.stable* ]]; then
-  if [[ "${DIAGNOSTIC:-0}" == "1" ]]; then echo "DIAGNOSTIC RUN on $version (not acceptance)"; else
-    echo "Acceptance requires Godot 4.7.1.stable, found $version" >&2; exit 1; fi
+  if [[ "${DIAGNOSTIC:-0}" == "1" && "$version" == 4.7.* ]]; then
+    echo "DIAGNOSTIC RUN on $version (another 4.7.x build; not acceptance)"
+  else
+    echo "Acceptance requires Godot 4.7.1.stable (DIAGNOSTIC=1 allows other 4.7.x only), found $version" >&2; exit 1
+  fi
 fi
 "$GODOT_BIN" --headless --path hoppys-adventure-arcade --import
+
+# --check-only on every runner script, tracked AND untracked (a new visual that is not committed yet
+# still has to parse). It passes on no *unexpected* diagnostics: running without autoloads always
+# reports `Identifier not found: AppRouter` in the scripts that use that autoload (runner_game.gd,
+# runner_menu.gd) and the `Failed to compile depended scripts` / `Failed to load script ...
+# "Compilation failed"` cascade in everything that preloads one of them. Anything else is real.
+check_only() {
+  local f="$1" out
+  out="$("$GODOT_BIN" --headless --path hoppys-adventure-arcade --check-only --script "res://$f" 2>&1 || true)"
+  out="$(printf '%s\n' "$out" | awk '
+    /^Godot Engine/ { next }
+    /Compile Error: Identifier not found: AppRouter/ { skip = 1; next }
+    /Compile Error: Failed to compile depended scripts\./ { skip = 1; next }
+    /Failed to load script .* with error "Compilation failed"\./ { skip = 1; next }
+    /^[[:space:]]*at: / { if (skip) { skip = 0; next } }
+    NF { skip = 0; print }
+  ')"
+  if [[ -n "$out" ]]; then
+    printf 'check-only: unexpected diagnostics in %s\n%s\n' "$f" "$out" >&2
+    return 1
+  fi
+}
+status=0
 while IFS= read -r f; do
-  "$GODOT_BIN" --headless --path hoppys-adventure-arcade --script "res://${f#hoppys-adventure-arcade/}" --check-only
-done < <(git ls-files 'hoppys-adventure-arcade/scenes/runner/**/*.gd' 'hoppys-adventure-arcade/tests/*.gd')
-"$GODOT_BIN" --headless --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd
-"$GODOT_BIN" --headless --path hoppys-adventure-arcade --script res://tests/menu_smoke.gd
-"$GODOT_BIN" --path hoppys-adventure-arcade --scene res://scenes/runner/environment/dev/corridor_preview.tscn
+  check_only "${f#hoppys-adventure-arcade/}" || status=1
+done < <(git ls-files --cached --others --exclude-standard \
+  -- 'hoppys-adventure-arcade/scenes/runner/*.gd' 'hoppys-adventure-arcade/tests/*.gd' | sort -u)
+[[ $status -eq 0 ]] || exit 1
+echo "check-only: no unexpected diagnostics"
+
+# Godot exits 0 when a --script cannot be loaded, so a deleted or renamed test would pass silently.
+run_test() {
+  local f="hoppys-adventure-arcade/tests/$1"
+  [[ -f "$f" ]] || { echo "missing test script: $f" >&2; exit 1; }
+  "$GODOT_BIN" --headless --path hoppys-adventure-arcade --script "res://tests/$1"
+}
+
+run_test runner_visual_smoke.gd
+
+# menu_smoke has exactly two documented mouse-hover failures on 4.7.0 (contract §9). A DIAGNOSTIC run
+# tolerates only that precise signature and must label it as such in docs/endless-runner.md; a
+# different failure count, a new message, a parse error or a missing scene exits 1 even under
+# DIAGNOSTIC, and a real 4.7.1 acceptance run fails on any menu_smoke failure at all.
+# runner_visual_smoke above stays strict. tee keeps the output streaming while it is captured;
+# PIPESTATUS[0] is the test's own status, since run_test runs in a subshell inside the pipeline. The
+# explicit `exit 1` is required: under `set -e` bash does not abort on `cmd || [[ cond ]]`.
+menu_log="$(mktemp)"
+trap 'rm -f "$menu_log"' EXIT
+set +e
+run_test menu_smoke.gd 2>&1 | tee "$menu_log"
+menu_status=${PIPESTATUS[0]}
+set -e
+if [[ $menu_status -ne 0 ]]; then
+  if [[ "${DIAGNOSTIC:-0}" == "1" ]] \
+      && grep -qF 'MENU SMOKE: FAIL (2 failures)' "$menu_log" \
+      && grep -qF 'Mouse hover overrides old gamepad focus' "$menu_log" \
+      && grep -qF 'Pointer exit releases mode preview' "$menu_log"; then
+    echo "DIAGNOSTIC: tolerating the two documented 4.7.0 menu_smoke hover failures; label them in docs/endless-runner.md"
+  else
+    echo "menu_smoke failed with something other than the documented 4.7.0 hover baseline" >&2
+    exit 1
+  fi
+fi
+
+# Manual, opt-in: this opens a window, so it is never part of the automated run.
+if [[ "${INTERACTIVE:-0}" == "1" ]]; then
+  "$GODOT_BIN" --path hoppys-adventure-arcade --scene res://scenes/runner/environment/dev/corridor_preview.tscn
+fi
 ```
 
 `menu_smoke.gd` has two pre-existing mouse-hover failures on the installed Godot 4.7.0 (diagnostic baseline per

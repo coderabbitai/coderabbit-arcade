@@ -113,7 +113,11 @@ func _publish() -> void:
 	game.normalized_speed = normalized()
 	game.difficulty = difficulty
 	game.speed_changed.emit(speed, game.normalized_speed)
-	if absf(difficulty - _emitted_difficulty) < DIFFICULTY_EPSILON:
+	# The terminal 1.0 is always announced, even though the last emitted value is inside the epsilon:
+	# the frontend keys its top-difficulty state off it. Every intermediate value keeps the epsilon
+	# suppression, and 1.0 is never emitted twice.
+	var reached_max := difficulty >= 1.0 and _emitted_difficulty < 1.0
+	if not reached_max and absf(difficulty - _emitted_difficulty) < DIFFICULTY_EPSILON:
 		return
 	_emitted_difficulty = difficulty
 	game.difficulty_changed.emit(difficulty)

@@ -88,6 +88,10 @@ func report_hit(hazard: Node) -> StringName:
 	if shield:
 		blocked_hits += 1
 		shield = false
+		# The shield pops on one hazard, so it has to grant the same breathing room the damage path
+		# does: without the i-frames a second, different hazard overlapping on one of the next ticks
+		# would land damage immediately after the block.
+		iframe_remaining = iframe_seconds()
 		if game != null:
 			game.shield_changed.emit(false)
 		_emit_blocked(kind, REASON_SHIELD)

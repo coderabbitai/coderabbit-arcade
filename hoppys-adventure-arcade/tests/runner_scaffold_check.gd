@@ -157,6 +157,20 @@ func run() -> void:
 	game.toggle_pause()
 	await process_frame
 	check(not game.paused and not paused, "toggle_pause did not resume the tree")
+
+	# Contract §4.3: a restart asked for while paused must never begin frozen.
+	var pause_events: Array[bool] = []
+	game.paused_changed.connect(func(value: bool) -> void: pause_events.append(value))
+	game.pause()
+	await process_frame
+	check(game.paused and paused, "pause() did not pause the tree before the restart")
+	game.start_run(4321)
+	await process_frame
+	check(not game.paused, "start_run from a paused state left the facade paused")
+	check(not paused, "start_run from a paused state left the tree paused")
+	check(game.state == &"running", "start_run from a paused state did not go live (state %s)" % game.state)
+	check(not pause_events.is_empty() and not pause_events[pause_events.size() - 1],
+		"start_run did not emit paused_changed(false) on its way out of the pause")
 	check(game.get_result().is_empty(), "get_result must be empty before the run finishes")
 	check(game.get_active_effects().is_empty(), "get_active_effects must start empty")
 	check(not game.submit_name("Test"), "submit_name must fail before the run finishes")
@@ -176,7 +190,8 @@ func run() -> void:
 		for i in 3:
 			await process_frame
 		check(menu.name == "RunnerMenu", "runner_menu.tscn root is not named RunnerMenu")
-		check(menu.buttons.size() == 3, "runner menu should offer Play / Main Menu / Quit")
+		check(menu.buttons.size() == 4,
+			"runner menu should offer Play / Leaderboard / Return to Main Menu / Quit Game (contract §2)")
 		menu.free()
 	await process_frame
 

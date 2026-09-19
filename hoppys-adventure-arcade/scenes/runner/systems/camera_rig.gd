@@ -1,9 +1,12 @@
 extends Node3D
 ## Camera follow, shake and FOV punch (contract §7 camera row, systems spec §1.3).
 ## Exports stay tunable by the frontend; the rig itself is backend-owned.
-## Every write to the Camera3D happens in _physics_process: the player moves there, and an
+## Every per-frame write to the Camera3D happens in _physics_process: the player moves there, and an
 ## interpolated Camera3D written from _process both warns and defeats physics interpolation
-## (project.godot physics/common/physics_interpolation is on).
+## (project.godot physics/common/physics_interpolation is on). The exceptions are the one-shot
+## teleports in setup(), reset() and _aim(), which place the camera outside the physics step on
+## boot and on restart; each of those calls reset_physics_interpolation() so the camera snaps to
+## the new pose instead of sliding in from the previous run's.
 
 const RunnerGame = preload("res://scenes/runner/runner_game.gd")
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
@@ -51,6 +54,9 @@ func reset() -> void:
 	if camera != null:
 		camera.position = base_position
 		camera.fov = base_fov
+		# Teleport, not a move: drop the interpolated previous pose so the first frame after a
+		# restart renders at base_position/base_fov instead of easing over from the last run.
+		camera.reset_physics_interpolation()
 
 ## Point the camera at `target` from base_position without touching the rig transform.
 func _aim(target: Vector3) -> void:
@@ -62,6 +68,7 @@ func _aim(target: Vector3) -> void:
 	var pitch := atan2(dir.y, sqrt(dir.x * dir.x + dir.z * dir.z))
 	var yaw := atan2(-dir.x, -dir.z)
 	camera.rotation = Vector3(pitch, yaw, 0.0)
+	camera.reset_physics_interpolation()
 
 func shake(strength: float, duration := 0.35) -> void:
 	if duration <= 0.0 or strength <= 0.0:
