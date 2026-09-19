@@ -22,12 +22,14 @@ a backend-owned file.
 
 <completeness_contract>
 Work milestone by milestone (F0 → F6). Do not stop after the first scene works. Each milestone has a
-definition of done; verify it before moving on. Finish all six.
+definition of done; verify it before moving on. Finish all seven (F0 through F6).
 </completeness_contract>
 
 <verification_loop>
 After each milestone run the headless load check and the milestone's dev scene. Before finalizing, run
-`tests/runner_visual_smoke.gd` and `tests/menu_smoke.gd` and include their output verbatim in your report.
+`tests/runner_smoke.gd`, `tests/runner_visual_smoke.gd` and `tests/menu_smoke.gd` and include their output
+verbatim in your report. The visual smoke must print `RUNNER FULL LOOP: PASS` as well as
+`RUNNER VISUAL SMOKE: PASS` — the aggregate line alone is not acceptance.
 Never report a check as passed without its output.
 </verification_loop>
 
@@ -327,7 +329,7 @@ Screenshots to `docs/previews/endless-runner-{spike,corridor,gallery,hud,gameove
 | F3 | 8 hazard + 6 power-up visuals, `pursuer_visual`, `dev/hazard_gallery.tscn` | every visual ≤ 110 % of its hitbox; hooks idempotent after two `on_spawned()`; telegraphs readable |
 | F4 | HUD, pause, game over, `mock_runner_game.gd`, `hud_preview.tscn` | whole demo works from the mock with keyboard and simulated gamepad; anchors hold at 1440×900 and 1000×720 |
 | F5 | `sfx_synth.gd`, `runner_audio.tscn/gd` | every trigger audible in the mock; ≤ 10 voices; pitch ramp audible |
-| F6 | `runner_menu.tscn/gd`, `tests/runner_visual_smoke.gd`, `docs/endless-runner.md`, previews | full loop with the backend: hub → menu → play → hit → pursuit → 18 s clean recovery → hit (new pursuit) → second hit during pursuit → caught → game over → save → retry → menu → hub |
+| F6 | `runner_menu.tscn/gd`, `tests/runner_visual_smoke.gd`, `docs/endless-runner.md`, previews | full loop with the backend: hub → menu → play → hit → pursuit → a clean `recovery_seconds` (RunConfig) window ending in `pursuit_recovered("timer")` → hit (new pursuit) → second hit during pursuit → caught → game over → save → retry → menu → hub. Evidence is `RUNNER FULL LOOP: PASS` from `tests/runner_visual_smoke.gd`, which the acceptance gate greps for |
 
 Check commands (repo root). Set `GODOT_BIN` to the editor binary (`/Applications/Godot.app/Contents/MacOS/Godot`
 on the build Mac) and confirm the engine first: `"$GODOT_BIN" --version` must report `4.7.1.stable` for final
@@ -381,8 +383,13 @@ check_only() {
 status=0
 while IFS= read -r f; do
   check_only "${f#hoppys-adventure-arcade/}" || status=1
+# Both runner pathspecs on purpose: git's `*` does cross `/`, so the first already matches nested
+# scripts, but the `**/` form says so explicitly and the pair stays correct whichever glob semantics
+# a reader (or a future git) assumes. `sort -u` drops the duplicates the overlap produces.
 done < <(git ls-files --cached --others --exclude-standard \
-  -- 'hoppys-adventure-arcade/scenes/runner/*.gd' 'hoppys-adventure-arcade/tests/*.gd' | sort -u)
+  -- 'hoppys-adventure-arcade/scenes/runner/*.gd' \
+     'hoppys-adventure-arcade/scenes/runner/**/*.gd' \
+     'hoppys-adventure-arcade/tests/*.gd' | sort -u)
 [[ $status -eq 0 ]] || exit 1
 echo "check-only: no unexpected diagnostics"
 
@@ -393,17 +400,38 @@ run_test() {
   "$GODOT_BIN" --headless --path hoppys-adventure-arcade --script "res://tests/$1"
 }
 
-run_test runner_visual_smoke.gd
+# The frontend branch carries the backend as well, and these visuals mount inside the backend's own
+# scenes, so the frontend gate must keep the backend smoke green (65 checks on the merged tree).
+run_test runner_smoke.gd
+
+# One trap for both captured logs: a second `trap ... EXIT` would silently replace the first.
+# tee keeps the output streaming while it is captured; PIPESTATUS[0] is the test's own status, since
+# run_test runs in a subshell inside the pipeline.
+visual_log="$(mktemp)"
+menu_log="$(mktemp)"
+trap 'rm -f "$visual_log" "$menu_log"' EXIT
+
+# runner_visual_smoke stays strict, and acceptance names the F6 end-to-end loop instead of trusting
+# the aggregate line: `RUNNER FULL LOOP: PASS` is printed only when hub -> menu -> play -> hit ->
+# pursuit -> recovery -> caught -> game over -> save -> retry -> menu -> hub has actually run. A
+# refactor that skipped or dropped that check would still print a green aggregate, so both markers
+# are required on top of exit 0.
+set +e
+run_test runner_visual_smoke.gd 2>&1 | tee "$visual_log"
+visual_status=${PIPESTATUS[0]}
+set -e
+if [[ $visual_status -ne 0 ]] \
+    || ! grep -qF 'RUNNER FULL LOOP: PASS' "$visual_log" \
+    || ! grep -qF 'RUNNER VISUAL SMOKE: PASS' "$visual_log"; then
+  echo "runner_visual_smoke must exit 0 and print both RUNNER FULL LOOP: PASS and RUNNER VISUAL SMOKE: PASS (the F6 hub -> menu -> play -> caught -> retry -> menu -> hub loop)" >&2
+  exit 1
+fi
 
 # menu_smoke has exactly two documented mouse-hover failures on 4.7.0 (contract §9). A DIAGNOSTIC run
 # tolerates only that precise signature and must label it as such in docs/endless-runner.md; a
 # different failure count, a new message, a parse error or a missing scene exits 1 even under
-# DIAGNOSTIC, and a real 4.7.1 acceptance run fails on any menu_smoke failure at all.
-# runner_visual_smoke above stays strict. tee keeps the output streaming while it is captured;
-# PIPESTATUS[0] is the test's own status, since run_test runs in a subshell inside the pipeline. The
-# explicit `exit 1` is required: under `set -e` bash does not abort on `cmd || [[ cond ]]`.
-menu_log="$(mktemp)"
-trap 'rm -f "$menu_log"' EXIT
+# DIAGNOSTIC, and a real 4.7.1 acceptance run fails on any menu_smoke failure at all. The explicit
+# `exit 1` is required: under `set -e` bash does not abort on `cmd || [[ cond ]]`.
 set +e
 run_test menu_smoke.gd 2>&1 | tee "$menu_log"
 menu_status=${PIPESTATUS[0]}

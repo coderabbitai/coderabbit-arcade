@@ -26,6 +26,9 @@ const FAKE_HAZARD_SOURCE := "extends Node3D\nvar kind: StringName = &\"pr_backlo
 const FAKE_SPAWNER_SOURCE := "extends Node\nvar cleared := 0\nvar calls := 0\nfunc clear_hazards_in_range() -> int:\n\tcalls += 1\n\treturn cleared\n"
 ## The contract §5.1 visual hooks reset() has to clear, recorded instead of drawn.
 const FAKE_VISUAL_SOURCE := "extends Node3D\nvar auras: Array = []\nvar shields: Array = []\nfunc show_aura(kind: StringName, on: bool) -> void:\n\tauras.append([kind, on])\nfunc show_shield(on: bool) -> void:\n\tshields.append(on)\n"
+## The contract §5.2 hazard visual hooks, recorded. It extends the real hazard_visual_base.gd, so a
+## hook the backend calls under a name the base does not declare shows up here as a miss.
+const FAKE_HAZARD_VISUAL_SOURCE := "extends \"res://scenes/runner/hazards/hazard_visual_base.gd\"\nvar cleared_calls := 0\nvar hit_calls := 0\nvar laser_states: Array = []\nvar telegraphs: Array = []\nfunc on_cleared() -> void:\n\tcleared_calls += 1\nfunc on_hit_player() -> void:\n\thit_calls += 1\nfunc set_laser_state(state: StringName) -> void:\n\tlaser_states.append(state)\nfunc set_telegraph(t: float) -> void:\n\ttelegraphs.append(t)\n"
 ## The slice of the player the autopilot drives: the lane tween with runner_player's one-queued-
 ## change limit, plus a request counter so a bot that spams request_lane is visible.
 const FAKE_PLAYER_SOURCE := "extends Node\nvar target_lane := 1\nvar lane_t := 1.0\nvar queued_lane_dir := 0\nvar requests := 0\nfunc request_lane(direction: int) -> void:\n\trequests += 1\n\tvar dir := signi(direction)\n\tif lane_t < 1.0:\n\t\tqueued_lane_dir = dir\n\t\treturn\n\ttarget_lane = clampi(target_lane + dir, 0, 2)\n\tlane_t = 0.0\nfunc finish_tween() -> void:\n\tif lane_t >= 1.0:\n\t\treturn\n\tlane_t = 1.0\n\tif queued_lane_dir == 0:\n\t\treturn\n\tvar dir := queued_lane_dir\n\tqueued_lane_dir = 0\n\ttarget_lane = clampi(target_lane + dir, 0, 2)\n\tlane_t = 0.0\n"
@@ -401,8 +404,46 @@ func _test_leaderboard() -> void:
 	check(entries.size() == 10, "8: the board keeps ten entries, got %d" % entries.size())
 	check(int(entries[0]["score"]) == 210 and int(entries[9]["score"]) == 120,
 		"8: the board is sorted by score")
-	check(not FileAccess.file_exists(path + ".tmp"), "8: no .tmp is left behind")
-	check(not FileAccess.file_exists(path + ".bak"), "8: no .bak is left behind")
+	# Both are scratch files of the systems spec §7 write: the .tmp becomes the board and the .bak is
+	# dropped once it is in place, so a successful write must leave neither. A .bak is only ever
+	# retained for recovery, by a crash between the two renames.
+	check(not FileAccess.file_exists(path + ".tmp"),
+		"8: a successful write leaves no .tmp behind")
+	check(not FileAccess.file_exists(path + ".bak"),
+		"8: the .bak is temporary and must not survive a successful write")
+
+	# The other half of that rule: a .bak is retained only when recovery is required. A crash between
+	# save_entries' two renames leaves the board under .bak alone, and load_entries() reads it.
+	var orphan := "user://test_leaderboard_bak_%d.cfg" % (randi() % 1000000)
+	temp_paths.append(orphan)
+	check(int(RunnerLeaderboard.submit(_entry("run-bak", 777), orphan)["error"]) == OK,
+		"8: the recovery fixture board was written")
+	check(DirAccess.rename_absolute(orphan, orphan + ".bak") == OK,
+		"8: the crash fixture leaves only a .bak")
+	var from_backup := RunnerLeaderboard.load_entries(orphan)
+	check(from_backup.size() == 1 and int(from_backup[0]["score"]) == 777,
+		"8: a .bak left by a crash mid-write loads as the last good board")
+
+	# ...and the converse: a stale .bak is never restored over a write that succeeded. save_entries
+	# only puts a backup back when this save is what created it, and a live destination means this
+	# save moves the board onto the stale file and drops it on success.
+	var stale := "user://test_leaderboard_stale_%d.cfg" % (randi() % 1000000)
+	temp_paths.append(stale)
+	check(int(RunnerLeaderboard.submit(_entry("run-old", 5), stale)["error"]) == OK,
+		"8: the stale fixture board was written")
+	var stale_file := FileAccess.open(stale + ".bak", FileAccess.WRITE)
+	check(stale_file != null, "8: the stale .bak fixture was written")
+	if stale_file != null:
+		stale_file.store_string("[meta]\nversion=1\n\n[leaderboard]\nentries=[]\n")
+		stale_file.close()
+	check(int(RunnerLeaderboard.submit(_entry("run-new", 900), stale)["error"]) == OK,
+		"8: a write over a stale .bak still succeeds")
+	var after_stale := RunnerLeaderboard.load_entries(stale)
+	check(after_stale.size() == 2 and int(after_stale[0]["score"]) == 900,
+		"8: the successful write wins; a stale .bak is never restored over it")
+	check(not FileAccess.file_exists(stale + ".bak"),
+		"8: a successful write clears the stale .bak as well")
+
 	var stored := ConfigFile.new()
 	check(stored.load(path) == OK, "8: the board file parses")
 	check(int(stored.get_value("meta", "version", 0)) == RunnerLeaderboard.SCHEMA_VERSION,
@@ -449,6 +490,10 @@ func _test_finish_write_failure() -> void:
 	var blocked := blocker + "/leaderboard.cfg"
 	check(RunnerLeaderboard.submit(_entry("probe", 10), blocked)["error"] != OK,
 		"8b: the blocked path really cannot be written")
+	# The failure is reported before anything is moved, so nothing of a half-finished write is left.
+	check(not FileAccess.file_exists(blocked) and not FileAccess.file_exists(blocked + ".tmp")
+			and not FileAccess.file_exists(blocked + ".bak"),
+		"8b: a write to an unwritable directory leaves no partial destination")
 
 	var writable := "user://test_leaderboard_finish_%d.cfg" % (randi() % 1000000)
 	temp_paths.append(writable)
@@ -659,6 +704,13 @@ func _test_autopilot() -> void:
 ## advancing. A laser that keeps cycling re-arms `monitoring` on its next `on` slot, keeps driving
 ## set_laser_state()/set_telegraph() on a visual that was told it is gone, and re-shows the graybox
 ## that clear() just hid.
+##
+## Contract §9: this has to prove the same thing with or without the frontend checked out, and
+## `_mount_visual()` picks its mount from the environment — hazards/visuals/<kind>_visual.tscn when
+## that scene exists, the code-built graybox when it does not. So neither half is asserted on
+## whatever happened to be mounted: `_mount_recording_hazard_visual()` installs a recorder extending
+## hazard_visual_base.gd for the contract §5.2 hook half, and `_force_graybox()` installs the
+## contract §3 graybox for the visibility half. Both halves, and the same checks, run either way.
 func _test_timed_laser_shutdown() -> void:
 	var armed := _timed_laser()
 	var laser: Area3D = armed["hazard"]
@@ -673,25 +725,65 @@ func _test_timed_laser_shutdown() -> void:
 	_run_laser(armed, 0.6)
 	check(laser.laser_state == &"high" and laser.monitoring, "11: the hitbox re-arms on the high phase")
 
-	# Auto-Fix cleared it.
+	# Auto-Fix cleared it, with a recorder standing in for whatever the environment would mount.
 	var cleared_pair := _timed_laser()
 	var cleared: Area3D = cleared_pair["hazard"]
+	var hooks: Node3D = _mount_recording_hazard_visual(cleared)
+	check(hooks != null, "11: the recording hazard visual failed to mount")
+	if hooks == null:
+		return
 	_run_laser(cleared_pair, 0.1)
 	check(cleared.monitoring, "11: the laser was armed before clear()")
+	check(hooks.laser_states == [&"ground"],
+		"11: a running laser drives set_laser_state, got %s" % [hooks.laser_states])
+	check(not hooks.telegraphs.is_empty(), "11: a running laser drives set_telegraph")
 	cleared.clear()
 	var state_at_clear: StringName = cleared.laser_state
+	var telegraphs_at_clear: int = hooks.telegraphs.size()
 	check(not cleared.is_blocking(), "11: clear() stops the hazard blocking")
 	check(not cleared.is_physics_processing(), "11: clear() stops the timed cycle")
 	check(not cleared.is_in_group(&"runner_hazards"), "11: a cleared hazard leaves the group")
-	check(not cleared.visual.visible, "11: clear() hides the graybox")
+	check(hooks.cleared_calls == 1,
+		"11: clear() calls on_cleared() exactly once, got %d" % hooks.cleared_calls)
 	# A full 3 s period: without the shutdown this walks ground -> off -> high -> off -> ground.
 	_check_laser_inert(cleared_pair, 3.0, state_at_clear, "a cleared laser")
-	check(not cleared.visual.visible, "11: a cleared laser never re-shows its graybox")
+	check(hooks.laser_states == [&"ground"],
+		"11: a cleared laser never calls set_laser_state again, got %s" % [hooks.laser_states])
+	check(hooks.telegraphs.size() == telegraphs_at_clear,
+		"11: a cleared laser never calls set_telegraph again")
+	cleared.clear()
+	check(hooks.cleared_calls == 1, "11: a second clear() never calls on_cleared() again")
+
+	# The same shutdown on the contract §3 graybox mount, forced so the graybox rules are asserted
+	# in a checkout that has the frontend visual scenes as well as in one that does not.
+	var boxed_pair := _timed_laser()
+	var boxed: Area3D = boxed_pair["hazard"]
+	var graybox := _force_graybox(boxed)
+	check(graybox != null, "11: the graybox failed to mount")
+	if graybox == null:
+		return
+	_run_laser(boxed_pair, 0.1)
+	check(graybox.visible, "11: an on-phase laser shows its graybox")
+	_run_laser(boxed_pair, 1.2)
+	check(boxed.laser_state == OFF_STATE and not graybox.visible,
+		"11: the off phase hides the graybox")
+	_run_laser(boxed_pair, 0.6)
+	check(boxed.laser_state == &"high" and graybox.visible,
+		"11: the high phase shows the graybox again")
+	boxed.clear()
+	var boxed_state_at_clear: StringName = boxed.laser_state
+	check(not graybox.visible, "11: clear() hides the graybox")
+	_check_laser_inert(boxed_pair, 3.0, boxed_state_at_clear, "a cleared graybox laser", graybox)
+	check(not graybox.visible, "11: a cleared laser never re-shows its graybox")
 
 	# It took its one hit.
 	var hit_pair := _timed_laser()
 	var hit: Area3D = hit_pair["hazard"]
 	var hits: Node = hit_pair["hits"]
+	var hit_hooks: Node3D = _mount_recording_hazard_visual(hit)
+	check(hit_hooks != null, "11: the recording hazard visual failed to mount on the hit laser")
+	if hit_hooks == null:
+		return
 	_run_laser(hit_pair, 0.1)
 	check(hit.monitoring, "11: the laser was armed before hit_player()")
 	hit.hit_player(null)
@@ -699,8 +791,16 @@ func _test_timed_laser_shutdown() -> void:
 	check(hit.consumed and not hit.is_blocking(), "11: the hit consumes the hazard")
 	check(hits.hits_taken == 1, "11: the hit reached the hit manager")
 	check(not hit.is_physics_processing(), "11: hit_player() stops the timed cycle")
+	check(hit_hooks.hit_calls == 1,
+		"11: hit_player() calls on_hit_player() exactly once, got %d" % hit_hooks.hit_calls)
+	check(hit_hooks.cleared_calls == 0, "11: a hit is not an Auto-Fix clear")
 	_check_laser_inert(hit_pair, 3.0, state_at_hit, "a consumed laser")
 	check(hits.hits_taken == 1, "11: the consumed laser never reported a second hit")
+	check(hit_hooks.laser_states == [&"ground"],
+		"11: a consumed laser never calls set_laser_state again, got %s" % [hit_hooks.laser_states])
+	hit.hit_player(null)
+	check(hit_hooks.hit_calls == 1 and hits.hits_taken == 1,
+		"11: a second hit_player() on a consumed laser is a no-op")
 
 # --- 12. Super Jump invulnerability survives a re-launch (systems spec §4, contract §12) ---
 
@@ -962,6 +1062,42 @@ func _pickup(at: Vector3) -> Node3D:
 	junk.append(pickup)
 	return pickup
 
+## Swap whatever `_mount_visual()` chose for a hazard_visual_base.gd recorder, so the contract §5.2
+## hooks can be asserted without depending on which mount this checkout produced. The displaced
+## visual leaves the tree (it must stop processing) and is freed with the rest of the junk.
+func _mount_recording_hazard_visual(hazard: Area3D) -> Node3D:
+	var script := _compile(FAKE_HAZARD_VISUAL_SOURCE)
+	if script == null:
+		return null
+	_unmount_visual(hazard)
+	var node := Node3D.new()
+	node.set_script(script)
+	hazard.visual = node
+	hazard.add_child(node)
+	junk.append(node)
+	return node
+
+## Mount the contract §3 graybox on a hazard, exactly as `_mount_visual()`'s fallback branch does
+## (`_build_graybox()` also rebuilds `_graybox_box`, which `_apply_laser_state()` resizes). A
+## checkout with the frontend visual scenes would otherwise never reach the graybox rules.
+func _force_graybox(hazard: Area3D) -> MeshInstance3D:
+	_unmount_visual(hazard)
+	var graybox: MeshInstance3D = hazard._build_graybox()
+	hazard._graybox = graybox
+	hazard.visual = graybox
+	hazard.add_child(graybox)
+	junk.append(graybox)
+	return graybox
+
+## Detach the mounted visual and forget the graybox, leaving the hazard ready for a test-owned mount.
+func _unmount_visual(hazard: Area3D) -> void:
+	if is_instance_valid(hazard.visual):
+		hazard.remove_child(hazard.visual)
+		junk.append(hazard.visual)
+	hazard.visual = null
+	hazard._graybox = null
+	hazard._graybox_box = null
+
 ## A runner_visual_base stand-in that records the power-up hooks reset() has to clear.
 func _recording_visual() -> Node3D:
 	var script := _compile(FAKE_VISUAL_SOURCE)
@@ -1033,8 +1169,11 @@ func _run_laser(pair: Dictionary, seconds: float) -> void:
 
 ## Advance a finished laser `seconds` in 0.5 s slices, asserting after each that it is still inert.
 ## One 3 s jump would land back on the same phase of the 3 s cycle and hide a machine that never
-## stopped, so the invariants have to be checked mid-cycle as well.
-func _check_laser_inert(pair: Dictionary, seconds: float, state: StringName, tag: String) -> void:
+## stopped, so the invariants have to be checked mid-cycle as well. `hidden`, when given, is the
+## graybox: `_apply_laser_state()` re-shows it on any `on` slot, and a re-show that the next slot
+## hid again would be invisible to a single check at the end.
+func _check_laser_inert(pair: Dictionary, seconds: float, state: StringName, tag: String,
+		hidden: Node3D = null) -> void:
 	var laser: Area3D = pair["hazard"]
 	var elapsed := 0.0
 	while elapsed < seconds - 0.0001:
@@ -1045,6 +1184,8 @@ func _check_laser_inert(pair: Dictionary, seconds: float, state: StringName, tag
 		check(not laser.is_blocking(), "11: %s stays finished (at %.1f s)" % [tag, elapsed])
 		check(laser.laser_state == state, "11: %s stops advancing its state (at %.1f s), got %s"
 			% [tag, elapsed, laser.laser_state])
+		if hidden != null:
+			check(not hidden.visible, "11: %s keeps its graybox hidden (at %.1f s)" % [tag, elapsed])
 
 ## Drive one caught run on a bare facade all the way to run_finished. RunnerGame times the catch
 ## sequence in its own _physics_process, so ticking it is the whole run-end path, leaderboard write

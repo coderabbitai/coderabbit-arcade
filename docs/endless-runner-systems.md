@@ -40,9 +40,13 @@ Reaction budget: 0.35 s choice reaction + 0.05 s input/render latency + 0.30 s w
 
 ### 1.2 Speed and difficulty curve
 
-`difficulty = clamp(elapsed / 165, 0, 1)`; `speed = lerp(12, 24, smoothstep(0, 1, difficulty))`; after
-165 s `speed += 1.0 m/s per 60 s` until `hard_cap 26` (reached at 285 s). Difficulty stays 1.0 in the
-tail. Nitro multiplies the current speed by 1.25 (capped at 32) and does not advance `elapsed`.
+`RunConfig.time_to_max_speed` (default 165 s) is the single timing source; no other value may restate it.
+`difficulty = clamp(elapsed / time_to_max_speed, 0, 1)`;
+`speed = lerp(base_speed, max_speed, smoothstep(0, 1, difficulty))` (12 → 24 by default). Past
+`time_to_max_speed` a tail adds `tail_speed_per_minute` (default 1.0 m/s per 60 s) **measured from the
+moment max is reached**, i.e. `(elapsed - time_to_max_speed) / 60 × tail_speed_per_minute`, clamped to
+`hard_cap_speed` (default 26, reached 120 s into the tail). Difficulty stays 1.0 in the tail. Nitro
+multiplies the current speed by 1.25 (capped at 32) and does not advance `elapsed`.
 
 `difficulty_changed` is emitted when the value has moved by ≥ 0.01 since the last emission, **plus** the
 step onto exactly 1.0, which always goes out even though it falls inside that window — otherwise the
@@ -279,13 +283,29 @@ Storage: section `meta/version`; section `leaderboard/entries` (Array of Diction
 version → treat as empty. Validate each entry on load (types, finite, non-negative). Sort: score desc,
 duration desc, insertion `order` asc (Godot's `sort_custom` is not stable). Dedupe by `run_id`
 (replace). Sanitize: trim → drop controls (< 32, 127, and C1 controls 0x80–0x9F) → truncate to 16 → trim again → blank → `"Hoppy"`.
-Atomic write with backup: `DirAccess.make_dir_recursive_absolute(base_dir)`; `config.save(path + ".tmp")`
-(on error return it — the destination is untouched); if the destination exists, `rename_absolute(path,
-path + ".bak")`; `rename_absolute(tmp, path)`; on success remove `.bak`; on failure restore `.bak` → `path`,
-leave the `.tmp` in place, `push_warning` with its location, and return the error. `load_entries` falls
-back to `.bak` when `path` is missing but `.bak` exists (crash between the two renames).
+Atomic write with backup. Every step checks its own error and returns it; the destination is only ever
+replaced by a rename that succeeded:
+1. `DirAccess.make_dir_recursive_absolute(base_dir)` — returns OK when the directory already exists, so
+   any other value is a real failure (`push_warning`, return it; nothing has been written).
+2. `config.save(path + ".tmp")` — on error return it; the destination is untouched.
+3. If the destination exists, `rename_absolute(path, path + ".bak")` — on error `push_warning` naming
+   where the new board is left (`.tmp`) and return it. Set `backed_up` **only** here, so the code knows
+   this save is what created the `.bak`.
+4. `rename_absolute(tmp, path)` — on error restore `.bak` → `path` **only if `backed_up`** (a `.bak` from
+   an earlier crash is never restored over the destination; a restore that itself fails is warned about),
+   leave the `.tmp` in place, `push_warning` naming its location, and return the error.
+5. On success remove the `.bak`.
+
+The `.bak` is therefore temporary and must not remain after a successful write — neither must the `.tmp`
+— and it is retained only when recovery is required. `load_entries` falls back to `.bak` when `path` is
+missing but `.bak` exists (crash between the two renames).
 
 ## 8. Tests (all `extends SceneTree`, run headless, `quit(failures)`, print `NAME: PASS/FAIL (n failures)`)
+
+Every test that instantiates `RunnerGame` must override `leaderboard_path` to a throwaway
+`user://` file **before** `add_child()` — `_ready()` honours `autostart`, so a later assignment races
+a live run — and must delete that file and its `.tmp`/`.bak` siblings on every exit path; otherwise a
+run that reaches `caught` writes the player's real `user://leaderboard.cfg`.
 
 **`tests/runner_logic.gd`** (systems instantiated as plain nodes under `root`, driven by direct
 `_physics_process(1.0/60)` calls, config `duplicate()`d):
