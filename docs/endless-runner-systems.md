@@ -184,14 +184,14 @@ Hazard fronts sit 2.4 m into a band (depth 1.2 → occupies +2.4..+3.6); pits at
 | 14 | `chunk_t3_flood_laser` | 48 | 0.45–0.85 | 3 | `. . .` / `. . .` / `L L L` (+`O` centre) / `. . .` / `. . .` / `. . .` / `F F .` / `. . .` |
 | 15 | `chunk_t3_merge_swarm` | 48 | 0.45–0.85 | 3 | `. . .` / `. . .` / `b . .` (+`O` lane −2) / `. . .` / `. o .` / `. . .` / `. M M` / `. . .` |
 | 16 | `chunk_t3_timed_laser_intro` | 42 | 0.50–0.85 | 2 | `. . .` / `. o .` / `. . .` / `T T T` / `. . .` / `. . .` / `. . .` |
-| 17 | `chunk_t4_gauntlet` | 48 | 0.70–1.00 | 3 | `. . .` / `F F ^` / `. . .` / `. . .` / `. . .` / `. . .` / `S S S` / `. . .` |
+| 17 | `chunk_t4_gauntlet` | 66 | 0.70–1.00 | 3 | `. . .` / `^ ^ ^` / `. . .` / `. . .` / `. . .` / `F F .` / `. . .` / `. . .` / `. . .` / `S S S` / `. . .` |
 | 18 | `chunk_t4_laser_rhythm` | 66 | 0.70–1.00 | 2 | `. . .` / `T T T` / `. . .` / `. . .` / `. . .` / `l l l` / `. o .` / `. . .` / `. . .` / `L L L` (+`O`) / `. . .` |
-| 19 | `chunk_t4_pit_run` | 48 | 0.70–1.00 | 3 | `. . .` / `M . M` / `. . .` / `. . .` / `. . .` / `. . .` / `_ _ _` (+`O` centre) / `. . .` |
+| 19 | `chunk_t4_pit_run` | 48 | 0.70–1.00 | 3 | `. . .` / `b . b` / `. . .` / `. . .` / `. . .` / `. . .` / `_ _ _` (+`O` centre) / `. . .` |
 
-Note on #17: `F F ^` means a comment flood in lanes −2/0 and a high wall in lane +2 at the same z
-(the escape is: move to lane +2 and roll). Note on #19: `M . M` is two single-lane merge blocks (use two
-`bug_swarm`-sized `merge_conflict` halves or a `pr_backlog_low` per lane if a one-lane merge variant is
-not authored; the free lane is the centre).
+Note on #17: three forced actions 24 m apart — shockwave (jump) at 8.4 m, comment flood in lanes −2/0
+(lane dodge to +2) at 32.4 m, full-width high wall (roll) at 56.4 m. Note on #19: two bug swarms flank the
+centre lane 27.9 m after the pit — hold the centre or jump. Every hazard used in the catalog is one of the
+kinds/variants in contract §8; no one-lane merge or one-lane wall variant exists.
 
 Authoring rules (checked by the validator): length % 6 == 0; ≥ 6 m clear at entry and exit;
 heavy→heavy slices ≥ 24 m apart, pit→anything ≥ 30 m; passable from any entry lane; approach cost
@@ -204,7 +204,7 @@ JUMP-type hazard's front (`jump`).
 - `setup(game)`: load `chunk_library.tres`; instantiate each scene once to read exports into `metas`; free prototypes.
 - `reset(seed)`: free `World/Chunks` children; `spawn_rng.seed = seed`, `powerup_rng.seed = seed ^ 0x9E3779B9`; `frontier_z = −(base_speed × 2.5)` (clean run-in); `_fill()`.
 - `_physics_process(delta)` while `running` or `caught`: `dz = speed × delta`; `distance += dz`; move every active chunk by `+dz`; despawn chunks whose `back_edge_z() > despawn_z` (`queue_free`); `_fill()`.
-- `_fill()`: while `active.size() < max_active_chunks` and the frontier (back edge of the last chunk) is `> spawn_horizon_z`: pick and place the next chunk.
+- `_fill()`: while `active.size() < max_active_chunks` and `frontier_z > spawn_horizon_z`: pick and place the next chunk, then **advance `frontier_z = chunk.back_edge_z()`** so the next iteration and the horizon check use the new frontier. `frontier_z` is recomputed from the last active chunk's back edge at the start of every `_fill()` call, because chunks move between calls.
 - Pick: candidates with `min_difficulty ≤ difficulty ≤ max_difficulty`, excluding the last index when more than one candidate; breather weights ×2 while PURSUED; `spawn_rng.rand_weighted(weights)`. If no candidate, fall back to all metas and `push_warning`.
 - Place: `gap = max(0, v_eff × 1.02 × (t_spacing(d) + (0.15 if pursued else 0)) − prev.exit_clear − next.entry_clear)` where `v_eff` includes the Nitro multiplier while active; `chunk.position.z = frontier_z − gap`; `mirrored = mirror_x and spawn_rng.randf() < 0.5`; `chunk.setup(game, mirrored)`; log `"%.1fs d=%.2f %s%s gap=%.1f"`; emit `chunk_spawned`.
 - Power-ups: if `elapsed − last_powerup_time ≥ 10` and at least one chunk since the last pickup chunk and `powerup_rng.randf() < lerp(0.55, 0.35, d)`: choose one slot; choose kind by weight excluding the previous kind and kinds currently active/held; instantiate `power_up.tscn` at the slot (y 1.0 or 2.2); update `last_powerup_time`.
