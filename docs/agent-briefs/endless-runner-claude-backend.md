@@ -21,7 +21,9 @@ contract. Read these first, in order:
   `ui/game_over`), and never touch them again afterwards.
 - No new autoloads. Managers are children of `RunnerGame`.
 - Never mutate `run_config.tres` at runtime. Balance values come from the contract §7; do not invent others.
-- Every backend → frontend call is guarded with `has_method`. A missing frontend file must never break `runner_game.tscn`.
+- Every backend → frontend call is defensive: fetch the frontend node with `get_node_or_null()` (or keep the
+  reference returned by the mount), check `is_instance_valid()`, then `has_method()` before invoking. A missing,
+  failed or freed frontend node must never break `runner_game.tscn`.
 - Follow the Godot 4.7 pitfalls list in the systems spec §9.
 
 ## Work packages
