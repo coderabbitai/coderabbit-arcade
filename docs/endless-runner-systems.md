@@ -132,7 +132,7 @@ whose material tint changes per anim state (so graybox testers see state changes
 1. `DEAD` → `&"ignored"`.
 2. Already in `consumed_ids` → `&"ignored"`; else record the instance id.
 3. `iframe_remaining > 0` or any invulnerability source → `damage_blocked(kind, reason)`; return `&"blocked_invuln"`. The hazard is still consumed (LGTM smashes through).
-4. `shield` → `shield = false`, `shield_changed(false)`, `damage_blocked(kind, &"shield")`. **If PURSUED: state = SAFE, hp = max_hp, recovery_remaining = 0, `health_changed`, `pursuit_recovered(&"shield")`.** Return `&"blocked_shield"`.
+4. `shield` → `shield = false`, `shield_changed(false)`, `damage_blocked(kind, &"shield")`. **If PURSUED: state = SAFE, hp = max_hp, recovery_remaining = 0, `recoveries += 1`, `health_changed`, `pursuit_recovered(&"shield")`.** Return `&"blocked_shield"`. (`recoveries` therefore counts every exit from PURSUED back to SAFE, by timer or by shield.)
 5. Damage: `hp -= 1`, `iframe_remaining = hit_iframes`, `damage_taken(kind, hp)`, `health_changed`, notify `effect_manager.on_damage_applied()` (drops Code Review Bonus). `hp == 1` → PURSUED, `recovery_remaining = recovery_seconds`, `pursuit_started(recovery_seconds)`. `hp == 0` → DEAD, `caught()`.
 
 `_physics_process` (only while the game is `running`): decrement `iframe_remaining`; if PURSUED,
