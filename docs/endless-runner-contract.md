@@ -1,6 +1,6 @@
 # Endless Runner — Backend/Frontend Contract
 
-Version 1.3 · 2026-09-19 · GDScript
+Version 2.0 · 2026-09-19 · GDScript · v2 (stages, turns, bosses) is specified in §11 and overrides §2–§8 where they conflict
 
 **Engine version policy.** The project pins **Godot 4.7.1** (GDD). The editor installed on the build
 machine during this cycle is **4.7.0 stable** (`4.7.stable.official.5b4e0cb0f`), so every verification
@@ -332,7 +332,212 @@ mouse-hover failures on a clean `main`; the docs validated it on 4.7.1. New runn
 
 ## 10. Change log
 
+- 2.0 (2026-09-19): §11 v2 addendum — run phases (run → turn → boss → stage_clear), `StageManager`, `TurnRig`, boss encounters with telegraphed projectiles and auto-fire tool pickups, faster speed ramp (`time_to_max_speed` 100 s + per-stage bumps), pursuit alert signals, new facade signals/properties/result fields, boss visual hooks, projectile hitbox table, tool table, optional UI mounts (`pursuit_alert`, `boss_hud`, `stage_banner`, `stage_clear`), corridor `set_turn`, leaderboard `SCHEMA_VERSION` 2 (v1 boards are not comparable and are read as empty).
 - 1.0 (2026-09-19): initial contract reconciled from the backend, procgen/tuning and frontend design passes.
 - 1.3 (2026-09-19): §4.3 — `result.leaderboard_error:int` added; a failed leaderboard write keeps `rank` 0 / `qualifies` false and emits no `leaderboard_saved`. A board whose `meta/version` is newer than the supported schema is one such failure: it reads as empty and `submit`/`rename` refuse to overwrite it, returning `ERR_FILE_UNRECOGNIZED`.
 - 1.2 (2026-09-19): §5.2 — ground-projection quads exempt from the 110 % rule on y; per-hazard draw-call budget stated.
 - 1.1 (2026-09-19): engine version policy (4.7.1 pin, 4.7.0 validation); AppRouter rule scoped to in-game overlays; routes wording clarified; leaderboard writes are atomic through a `.tmp` and a temporary `.bak` that is removed once the new board is in place, so a successful write leaves neither behind (a `.bak` survives only a crash mid-write, and `load_entries` falls back to it); Nitro cap arithmetic and viewport-scale restore semantics clarified; return-type rule generalised; mount resources validated as `PackedScene`; timed laser cycle spelled out.
+
+
+## 11. v2 addendum — stages, turns, boss fights (contract 2.0)
+
+Everything in §1–§10 stays in force unless a rule below replaces it. The user decisions behind v2: **endless
+with escalating stages** (never a finite campaign), **automatic cinematic turns** (no turn input, no new way to
+lose), **tools auto-fire on pickup** (no fire button). Frontend design detail lives in
+`docs/agent-briefs/endless-runner-v2-frontend-design.md`; backend detail in `docs/endless-runner-systems.md` §10.
+
+### 11.1 Run phases
+
+`state` is unchanged (`ready → running → caught → finished`). A new orthogonal read-only property
+`phase: StringName ∈ {idle, run, turn, boss, stage_clear}` is owned by `Systems/StageManager` and emitted through
+`phase_changed(phase)`. `caught` aborts any phase to `idle`.
+
+| Phase | Enters | Ends | Spawner | `run_clock` |
+|---|---|---|---|---|
+| `run` | `start_run()` or after `stage_clear` | `stage_distance` reached **and** no blocking hazard ahead of `stage_clear_line_z` (drain; hard timeout `stage_drain_timeout` then remaining hazards are cleared silently, no bonus) | places chunks until `target − stage_drain_distance`, then only moves/despawns | advances |
+| `turn` | run drained | `turn_seconds` | idle | frozen |
+| `boss` | turn finished | boss HP 0 (`boss_defeated`) or `boss_timeout_seconds` (`boss_retreated`), then `boss_outro_seconds` | idle | frozen |
+| `stage_clear` | boss resolved | `stage_clear_seconds` | idle | frozen |
+
+`elapsed` still counts every unpaused second (result `duration`, timed-laser phase). `run_clock` counts RUN-phase
+seconds only and drives speed and difficulty. Stage index starts at 1 and never resets; boss slot
+`= (stage_index − 1) % 3`, cycle `c = (stage_index − 1) / 3` (integer division).
+
+### 11.2 Speed and difficulty (replaces §7 Speed row)
+
+`speed_at(run_clock) = lerp(base_speed + b, max_speed + b, smoothstep(0, 1, clamp(run_clock / time_to_max_speed, 0, 1)))`
+with the tail `+ tail_speed_per_minute` per 60 s of run_clock past `time_to_max_speed`, capped at
+`hard_cap_speed + b`, where the stage bonus `b = min(stage_speed_step × (stage_index − 1), stage_speed_bonus_max)`.
+Defaults: `time_to_max_speed 100` (was 165), `stage_speed_step 1.0`, `stage_speed_bonus_max 6.0`. Nitro still
+multiplies by `nitro_speed_multiplier` and caps at `nitro_speed_cap` (raised to 38).
+`difficulty = max(clamp(run_clock / time_to_max_speed, 0, 1), min(stage_difficulty_step × (stage_index − 1), 1))`
+with `stage_difficulty_step 0.25`; chunk tiers, weights and the §8 hazard table are unchanged.
+
+### 11.3 `runner_game.tscn` delta (extends §3)
+
+```
+World
+├─ Floor, Chunks                       unchanged, never rotated
+└─ TurnRig (Node3D, systems/turn_rig.gd)
+   ├─ GrayboxEnvironment                moved from World/
+   ├─ Environment                       moved from World/; mount environment/corridor.tscn
+   └─ BossArena (boss/boss_arena.tscn, boss/boss_encounter.gd)
+      ├─ Boss (Node3D) └─ Visual        mount boss/visuals/<kind>_visual.tscn
+      ├─ Projectiles (Node3D)           hazards/projectile.tscn instances
+      └─ Tools (Node3D)                 powerups/tool_pickup.tscn instances
+Systems
+└─ StageManager (systems/stage_manager.gd), inserted after Spawner, before Autopilot
+HUD mounts (optional, PAUSABLE, `bind(game)`): ui/pursuit_alert.tscn, ui/boss_hud.tscn,
+                                              ui/stage_banner.tscn, ui/stage_clear.tscn
+```
+
+Gameplay never rotates: chunks, hazards, projectiles, tools and the player stay in the unrotated frame, so every
+z-test (`despawn_z`, `blast_range_z`, dodge line, autopilot) is unchanged. `RunnerGame.track_z(node)` /
+`track_aabb(node)` are the rig-local accessors backend code uses (identity when the rig is unrotated).
+
+### 11.4 Facade additions (extends §4)
+
+Signals (additive; §4.1 unchanged):
+
+| Signal | Emitted by | Notes |
+|---|---|---|
+| `phase_changed(phase: StringName)` | StageManager | on change only |
+| `stage_started(index: int, name: StringName, speed: float)` | StageManager | `name` is the stage's boss display name, e.g. `&"Flaky Test Swarm"`; `speed` = base speed for the stage |
+| `stage_cleared(index: int, bonus: int)` | StageManager | after `boss_defeated`/`boss_retreated`; bonus already added to score |
+| `turn_started(direction: int, seconds: float)` / `turn_finished()` | StageManager | `direction` −1 left, +1 right; the seam is hazard-, pickup- and tool-free |
+| `boss_spawned(kind: StringName, hp: int)` | BossEncounter | after `boss_intro_seconds` starts |
+| `boss_health_changed(hp: int, max_hp: int)` | BossEncounter | |
+| `boss_phase_changed(phase: int)` | BossEncounter | 1-based; at 100 % / 66 % / 33 % HP |
+| `boss_attack_telegraph(lane_mask: int, kind: StringName, seconds: float)` | BossEncounter | `lane_mask` bit i = lane index i (§11.7); `kind` = projectile variant |
+| `boss_projectile_fired(projectile: Area3D, lane_mask: int, kind: StringName, speed: float)` | BossEncounter | at the end of the telegraph |
+| `boss_defeated(kind: StringName, bonus: int)` / `boss_retreated(kind: StringName, bonus: int)` | BossEncounter | exactly one of the two per fight |
+| `tool_collected(kind: StringName, damage: int)` | BossEncounter | `damage` 0 when the boss's phase resists the tool |
+| `pursuit_alert(kind: StringName, seconds_to_catch: float)` | HitManager | `warn` at pursuit start, `critical` when `recovery_remaining ≤ pursuit_critical_seconds`, `clear` on recovery or catch |
+| `pursuer_distance_changed(normalized: float)` | Pursuer | 0 retreated … 1 catching; epsilon-gated |
+
+Read-only properties: `phase`, `stage_index: int`, `stage_name: StringName`, `stage_distance: float`,
+`stage_distance_target: float`, `run_clock: float`, `boss: Node3D` (null outside a fight), `boss_kind`, `boss_hp`,
+`boss_max_hp`, `boss_phase: int`. Methods: `get_stage_info() -> Dictionary`
+(`index, name, phase, distance, target, speed_bonus, difficulty_floor`), `get_boss_info() -> Dictionary`
+(`kind, name, hp, max_hp, phase, accepted_tools, pending_attacks`). `result` gains `stages_cleared`,
+`stage_reached`, `bosses_defeated`, `bosses_escaped`, `tools_used`, `boss_damage_dealt`, `turns_taken` (all int).
+Projectiles count in `hazards_dodged` (it is a stat, not a score input). `camera_rig.shake(0.35)` fires on every
+damaging tool hit (backend-owned, as in §4.2).
+
+### 11.5 Boss visuals — `boss/visuals/<kind>_visual.tscn` extends `boss/boss_visual_base.gd`
+
+Kinds: `flaky_test_swarm`, `merge_conflict_hydra`, `legacy_monolith`. Base vars set before `on_spawned()`:
+`kind`, `boss_name: String`, `max_hp: int`, `phase_count: int`, `hover_z: float`, `sway_amplitude: float`,
+`sway_period: float`. The visual sways itself in `_process` (PAUSABLE); the backend never moves it per tick.
+
+| Hook | When |
+|---|---|
+| `on_spawned()` | once, after the vars are set; idempotent |
+| `set_phase(phase: int)` | on `boss_phase_changed` |
+| `set_health(hp: int, max_hp: int)` | on `boss_health_changed` |
+| `play_telegraph(lane_mask: int, kind: StringName, seconds: float)` | on `boss_attack_telegraph` |
+| `play_attack(kind: StringName)` | at fire |
+| `play_hit(tool_kind: StringName, damage: int)` | damaging tool |
+| `play_resist(tool_kind: StringName)` | resisted tool (damage 0) |
+| `play_defeat()` / `play_retreat()` | fight end; the backend frees the boss after `boss_outro_seconds` |
+
+Envelope: ≤ 7 m wide × 4.5 m tall × 3 m deep, centre y 2.6 at `hover_z`, bottom edge never below y 1.6; ≤ 40 draw
+calls at peak. The boss has no hitbox. Graybox fallback: a tinted box with a Label3D name plate (backend).
+
+### 11.6 Projectiles (extends §8) — `hazards/visuals/projectile_visual.tscn` extends `hazards/hazard_visual_base.gd`
+
+`kind = &"projectile"`, `variant` selects the shape; the base also receives `closing_speed: float` before
+`on_spawned()`. Projectiles are hit-once hazards in group `runner_hazards` (Auto-Fix clears them), spawned at the
+boss and moving +Z at `closing_speed` relative to the player.
+
+| variant | W × H × D (m) | y range | lanes | dodge_hint |
+|---|---|---|---|---|
+| `orb` | 1.6 × 0.9 × 1.2 | 0–0.9 | 1 | JUMP_OR_LANE |
+| `low` | 5.6 × 0.9 × 1.2 | 0–0.9 | all | JUMP |
+| `high` | 5.6 × 0.4 × 1.2 | 1.1–1.5 | all | ROLL |
+| `wide` | 3.6 × 1.0 × 1.2 | 0–1.0 | 2 adjacent | LANE |
+
+Visuals ≤ 110 % of the hitbox (ground-projection quads exempt on y as in §5.2). Reaction budget guaranteed by
+`tests/runner_boss_validator.gd`: telegraph + travel ≥ 0.98 s at maximum escalation, jump reaction ≥ 0.35 s.
+
+### 11.7 Tools — `powerups/visuals/<kind>_visual.tscn` extends `powerups/power_up_visual_base.gd`
+
+Tools are pickups (`powerups/tool_pickup.tscn`, extends `power_up.gd`, group `runner_tools`, layer Pickup) that
+**auto-fire on pickup**: collecting one deals its damage to the boss immediately (or 0 if resisted) and adds
+`tool_bonus` score. Lane indexing everywhere: index 0/1/2 ↔ x −2/0/+2; `lane_mask` bit i = lane index i.
+
+| kind | display | damage | weight | spawn y |
+|---|---|---|---|---|
+| `review_comment` | Review Comment | 10 | 35 | 1.0 |
+| `lint_rule` | Lint | 12 | 25 | 1.0 |
+| `unit_test` | Unit Test | 15 | 25 | 1.0 |
+| `auto_fix_patch` | Auto-Fix | 20 | 15 | 2.2 (jump height) |
+
+Boss phases that resist all but specific tools: Hydra phase 2 accepts only `unit_test`, `lint_rule`; Monolith
+phase 2 accepts only `auto_fix_patch`, `review_comment`; Monolith phase 3 accepts only `unit_test`. Everything
+else accepts all four. Tools spawn only during `boss`, from `boss_tool_spawn_z`, in a lane with no live projectile
+within `boss_tool_lane_clearance`, never the same lane twice in a row; a fight never goes more than
+`boss_tool_guarantee_seconds` without a tool in flight. Existing power-ups keep working in fights (Auto-Fix clears
+projectiles; Nitro/LGTM invulnerability applies; Shield blocks a projectile).
+
+### 11.8 UI mounts (extends §5.6) — all optional, `bind(game: Node)`, PAUSABLE, no backend graybox
+
+| Scene | Purpose | Reads |
+|---|---|---|
+| `ui/pursuit_alert.tscn` | Star Fox-style incoming-transmission panel with radar/pulse; states the catch rule | `pursuit_started`, `pursuit_progress`, `pursuit_alert`, `pursuit_recovered`, `damage_blocked`, `caught` |
+| `ui/boss_hud.tscn` | boss name plate, HP bar, phase pips | `boss_*` signals, `get_boss_info()` |
+| `ui/stage_banner.tscn` | `STAGE n / <boss name>` banner; deferred until `turn_finished` | `stage_started`, `turn_*` |
+| `ui/stage_clear.tscn` | stage-clear card (time, tools used, bonus) | `stage_cleared`, `boss_defeated`/`boss_retreated`, `get_stage_info()` |
+
+`ui/runner_hud.tscn`, `ui/pause_menu.tscn`, `ui/game_over.tscn` keep their v1 contract; the frontend may restyle
+them for legibility (font ≥ 18 units, outline ≥ 6, panel-backed; see the v2 frontend design §1). The F3
+`DebugOverlay` (backend) prints phase, stage, boss HP/phase and pending attacks so graybox play stays readable.
+
+### 11.9 Corridor (extends §5.5)
+
+Optional methods, all `has_method`-guarded by the backend: `set_turn(progress: float, direction: int)` (called every
+physics tick during `turn`, `progress` 0→1; the frontend owns the visual bend and must make p = 1 visually identical
+to p = 0), `set_phase(phase: StringName)`, `set_boss_arena(active: bool)`. When the corridor lacks `set_turn`, the
+backend `TurnRig` yaws the graybox environment instead (fallback only). The camera swing
+(`turn_camera_yaw_degrees` 18, `turn_camera_bank_degrees` 6, returning to zero at p = 1) is backend-owned in
+`camera_rig.gd` and always applies.
+
+### 11.10 RunConfig additions (all defaults in `run_config.gd`; the `.tres` stays empty)
+
+```
+Speed:     time_to_max_speed 100.0 (was 165), stage_speed_step 1.0, stage_speed_bonus_max 6.0, nitro_speed_cap 38.0
+Stages:    stage_base_distance 900.0, stage_distance_step 250.0, stage_distance_max 2000.0, stage_difficulty_step 0.25
+           stage_drain_distance 120.0, stage_drain_timeout 6.0, stage_clear_line_z 8.0, stage_clear_seconds 3.0
+           stage_clear_bonus_base 400, stage_clear_bonus_per_stage 150
+Turn:      turn_seconds 2.5, turn_yaw_degrees 90.0 (graybox fallback), turn_camera_yaw_degrees 18.0, turn_camera_bank_degrees 6.0
+Boss:      boss_z -14.0, boss_sway_amplitude 2.4, boss_sway_period 3.2, boss_intro_seconds 1.2, boss_outro_seconds 1.0
+           boss_timeout_seconds 55.0, boss_phase_thresholds [1.0, 0.66, 0.33]
+           boss_hp_growth 1.35, boss_projectile_speed_growth 1.08, boss_projectile_speed_max 34.0
+           boss_telegraph_growth 0.88, boss_telegraph_min 0.60, boss_attack_interval_growth 0.90, boss_attack_interval_min 0.55
+           boss_kill_bonus_base 600, boss_kill_bonus_per_stage 200, boss_retreat_bonus_ratio 0.35
+Tools:     boss_tool_spawn_z -55.0, boss_tool_interval_growth 0.93, boss_tool_interval_min 1.4
+           boss_tool_guarantee_seconds 4.0, boss_tool_lane_clearance 3.0, boss_shield_tool_bias 0.7, tool_bonus 20
+Pursuit:   pursuit_critical_seconds 5.0, pursuer_distance_epsilon 0.01
+Autopilot: autopilot_telegraph_lead 0.12, autopilot_tool_greed 1.0
+```
+
+Boss base table (slot → kind, HP, projectile speed, telegraph P1/P2/P3, attack interval P1/P2/P3, tool interval):
+0 `flaky_test_swarm` 100 / 26 / 0.90-0.80-0.72 / 1.6-1.4-1.2 / 2.6; 1 `merge_conflict_hydra` 140 / 28 /
+0.85-0.78-0.70 / 1.5-1.3-1.1 / 2.3; 2 `legacy_monolith` 180 / 30 / 0.80-0.72-0.65 / 1.4-1.2-1.0 / 2.0.
+Escalation per cycle c: HP × 1.35^c, projectile speed × 1.08^c (≤ 34), telegraph × 0.88^c (≥ 0.60), attack
+interval × 0.90^c (≥ 0.55), tool interval × 0.93^c (≥ 1.4). Attack patterns per phase are in the systems spec §10.
+
+### 11.11 Leaderboard
+
+`SCHEMA_VERSION` becomes 2: v2 scores include stage and boss bonuses and are not comparable with v1, so a v1
+board is read as empty and replaced on the first v2 write (the newer-schema refusal of §10 still applies to any
+version > 2). Entry fields are unchanged.
+
+### 11.12 Verification (extends §9)
+
+New: `tests/runner_boss_validator.gd` (every boss × phase × pattern × entry lane × cycle 0–4 is dodgeable by the
+real autopilot planner from the telegraph; tools reachable within `boss_tool_guarantee_seconds`). `runner_smoke.gd`
+proves stage 1 → turn → boss 1 → stage clear → stage 2 with zero projectile hits under a shortened config, and a
+catch mid-fight ending the run once. `runner_visual_smoke.gd` gains `HUD LEGIBILITY`, `PURSUIT ALERT`,
+`BOSS VISUALS`, `TOOLS AND PROJECTILES`, `TURN` sections and a 30-recipe audio census (voices ≤ 10); the full loop
+must cross a stage seam, a turn, a boss and a stage-clear card.

@@ -466,3 +466,166 @@ active → roll, off → nothing. Jump trigger `front_z ≥ −(v × 0.22 + 0.4)
 - Tween/Timer nodes under PAUSABLE parents freeze on pause; anything that must keep running lives under ALWAYS nodes.
 - `change_scene_to_file` to the same path (Retry) yields a fresh instance; old scene freed at end of frame.
 - The `AppRouter` veil tween must run while paused → `AppRouter.process_mode = ALWAYS` and unpause before switching scenes.
+
+
+## 10. v2 systems — stages, turns, boss fights (systems spec 2.0)
+
+Authoritative tuning and facade live in the contract §11; this section is the implementation spec. Style rules
+unchanged. Two clocks: `elapsed` (total unpaused seconds) and `run_clock` (RUN-phase seconds; drives speed and
+difficulty; frozen in `turn`, `boss`, `stage_clear`).
+
+### 10.1 `systems/stage_manager.gd` — phase state machine
+
+Vars: `phase: StringName = &"idle"`, `stage_index := 0`, `stage_distance := 0.0`, `stage_distance_target := 0.0`,
+`run_clock := 0.0`, `_phase_timer := 0.0`, `_turn_direction := 0`, `stage_rng := RandomNumberGenerator.new()`
+(seeded `seed ^ 0x5F356495` in `reset(seed)` so a run is reproducible). `reset(seed)` → `idle`; `begin()` (called by
+`RunnerGame.start_run` after every system reset) → `_enter_run()` with `stage_index = 1`.
+
+Per physics tick (only while `game.state == &"running"` and not paused), in this order:
+
+1. `run`: `run_clock += delta`; `stage_distance += game.speed × delta`; `stage_distance_target =
+   min(stage_base_distance + stage_distance_step × (stage_index − 1), stage_distance_max)`. When
+   `stage_distance ≥ target − stage_drain_distance` call `spawner.set_spawning(false)`. When `stage_distance ≥ target`
+   and no node in `runner_hazards` with `is_blocking()` has `track_z < stage_clear_line_z`, or `_phase_timer ≥
+   stage_drain_timeout` (then `clear()` every remaining blocking hazard silently, no dodge/bonus), enter `turn`.
+2. `turn`: `_phase_timer += delta`; `progress = clamp(_phase_timer / turn_seconds, 0, 1)`; call
+   `turn_rig.set_turn(progress, dir)` and `camera_rig.set_turn(progress, dir)`; at `progress ≥ 1` emit
+   `turn_finished`, reset both to `(0, 0)`, enter `boss`.
+3. `boss`: delegate to `boss_encounter.tick(delta)`; on `boss_encounter.finished` (defeated or retreated, after the
+   outro) enter `stage_clear`.
+4. `stage_clear`: `_phase_timer += delta`; at `stage_clear_seconds` → `stage_index += 1`, `_enter_run()`.
+
+`_enter_run()`: `stage_distance = 0`, `spawner.set_spawning(true)`, `speed_controller.set_stage_bonus(b)` (see
+10.2), emit `stage_started(stage_index, StageDefs.boss_name(stage_index), speed_controller.base_for_stage())`.
+Enter/exit helpers emit `phase_changed(phase)` on change only, and forward `set_phase` / `set_boss_arena` to the
+corridor when present (`has_method`). `turn_started(dir, turn_seconds)` is emitted on entering `turn` with
+`dir = stage_rng.randi_range(0, 1) * 2 − 1`. `stage_cleared(stage_index, bonus)` is emitted on entering
+`stage_clear` with `bonus = stage_clear_bonus_base + stage_clear_bonus_per_stage × (stage_index − 1)` added to the
+score first (`score_manager.add_bonus(bonus, &"stage_clear")`). `caught` → `phase = &"idle"` (emit), boss encounter
+aborted (`boss_encounter.abort()` frees projectiles/tools and the boss without bonuses). The `result` fields
+`stages_cleared`, `stage_reached`, `bosses_defeated`, `bosses_escaped`, `tools_used`, `boss_damage_dealt`,
+`turns_taken` are read from StageManager/BossEncounter counters in `_finish_run`.
+
+`data/stage_defs.gd`: static `boss_slot(i)`, `cycle(i)`, `boss_kind(i)`, `boss_name(i)`, `speed_bonus(i, config)`,
+`difficulty_floor(i, config)`, `distance_target(i, config)`.
+
+### 10.2 `systems/speed_controller.gd` v2
+
+`speed_at(t)` is evaluated at `game.run_clock` (not `elapsed`). New `stage_bonus := 0.0` set by
+`set_stage_bonus(b)`; `base`, `max` and `hard_cap` each add `stage_bonus` inside `speed_at()`; `normalized()` keeps
+`(speed − base_eff) / (max_eff − base_eff)`. `difficulty_at(t) = max(clamp(t / time_to_max_speed, 0, 1),
+difficulty_floor)` with `difficulty_floor` set by `set_difficulty_floor(f)` from StageDefs. During `turn`, `boss`
+and `stage_clear` the speed holds at the value reached (the treadmill keeps moving at that speed for the corridor
+and projectiles); Nitro still applies. Tests: section 14 re-expresses the terminal-1.0 rule on `run_clock`, adds
+stage bonus cases (b = 0, 3, 6 → caps 26/29/32; Nitro ≤ 38) and the floor rule.
+
+### 10.3 `boss/boss_encounter.gd` (+ `boss/boss_arena.tscn`, `boss/boss_defs.gd`)
+
+`BossArena` root (Node3D, `boss_encounter.gd`) children `Boss` (Node3D) → `Visual` mount, `Projectiles`, `Tools`.
+`start(stage_index)`: read defs (kind, name, base HP, speeds, telegraphs, intervals, patterns, accepted tools per
+phase) scaled by the cycle escalation (contract §11.10); `hp = max_hp`; `phase = 1`; mount the visual
+(`ResourceLoader.exists` → `load as PackedScene` → set base vars → `add_child` → `on_spawned()`; graybox fallback: a
+DANGER box 4×2.4×1.5 with a Label3D name); position `Boss` at `(0, 2.6, boss_z)`; `_intro = boss_intro_seconds`;
+emit `boss_spawned(kind, hp)` and `boss_health_changed(hp, max_hp)`; `_attack_timer = attack_interval(phase)`;
+`_tool_timer = tool_interval × 0.5`.
+
+`tick(delta)`: intro countdown (no attacks) → ACTIVE: `_attack_timer -= delta`; when ≤ 0 pick the next beat of the
+current pattern (patterns cycle a fixed beat list; lanes from `stage_rng` where the pattern says "random", never
+repeating the immediately previous lane mask), emit `boss_attack_telegraph(mask, variant, telegraph)`, call
+`visual.play_telegraph(...)`, queue `{mask, variant, remaining: telegraph}`; when a queued telegraph reaches 0 spawn
+`hazards/projectile.tscn` under `Projectiles` at the boss position projected to each lane centre of the mask (one
+projectile per contiguous lane group: `orb` → one lane, `wide` → 2 adjacent, `low`/`high` → full width), set
+`kind = &"projectile"`, `variant`, `closing_speed`, `setup(game)`, emit `boss_projectile_fired(...)`, call
+`visual.play_attack(variant)`; `_attack_timer = attack_interval(phase)`. Tool spawning: `_tool_timer -= delta`; when
+≤ 0, or when `boss_tool_guarantee_seconds` passed with no tool alive, spawn `powerups/tool_pickup.tscn` under `Tools`
+at `(lane_x, y, boss_tool_spawn_z)` with a lane that has no live projectile within `boss_tool_lane_clearance` and
+differs from the last tool lane; kind rolled by weight, biased to the accepted set with `boss_shield_tool_bias`
+during a resisting phase; `_tool_timer = tool_interval`. Timeout: `_fight_timer ≥ boss_timeout_seconds` →
+`_retreat()`.
+
+Damage: `apply_tool(kind)` (called by `tool_pickup.collect`): `damage = ToolDefs.damage(kind) if accepted else 0`;
+`hp = max(hp − damage, 0)`; `boss_damage_dealt += damage`; `tools_used += 1`; emit `tool_collected(kind, damage)`;
+`visual.play_hit / play_resist`; `camera_rig.shake(0.35)` when damaging; `score.add_bonus(tool_bonus, &"tool")`;
+`boss_health_changed`; phase thresholds crossed → `phase += 1`, emit `boss_phase_changed(phase)`,
+`visual.set_phase(phase)`, `_attack_timer = min(_attack_timer, 0.6)`; `hp == 0` → `_defeat()`. `_defeat()`: bonus
+`= boss_kill_bonus_base + boss_kill_bonus_per_stage × (stage_index − 1)` added to score, emit
+`boss_defeated(kind, bonus)`, `visual.play_defeat()`, clear queued telegraphs, `clear()` live projectiles (no dodge
+credit), free live tools, `_outro = boss_outro_seconds`; `_retreat()`: bonus `= kill_bonus × boss_retreat_bonus_ratio ×
+(1 − hp / max_hp)`, emit `boss_retreated`, `visual.play_retreat()`, same cleanup. After the outro `finished` is
+set (a plain bool the StageManager polls), the boss node is freed. `abort()` (on caught) frees everything without
+signals or bonuses.
+
+Patterns (beat lists; `L` = random single lane, `Ladj` = two adjacent lanes leaving one free, `alt` = alternate):
+Swarm P1 `orb L`; P2 `orb Ladj` (two orbs); P3 `high, low` alt. Hydra P1 `wide (one lane free)`; P2 `orb lane0 +
+orb lane2`, every 3rd beat `high`; P3 `wide, low` alt. Monolith P1 `low`; P2 `wide alt sides`, every 3rd beat
+`high`; P3 `low, high, orb L`. Accepted tools: all, except Hydra P2 {`unit_test`, `lint_rule`}, Monolith P2
+{`auto_fix_patch`, `review_comment`}, Monolith P3 {`unit_test`}.
+
+### 10.4 `hazards/projectile.gd/.tscn` and `powerups/tool_pickup.gd/.tscn`
+
+`projectile.gd extends "res://scenes/runner/hazards/hazard.gd"`: `closing_speed: float`; `_ready` keeps hazard.gd's
+layer/group setup; `_physics_process` (enabled while alive): `position.z += closing_speed × delta`; free past
+`despawn_z`. `hazard_defs.gd` gains the four `projectile` variants (contract §11.6). Visual mount path
+`hazards/visuals/projectile_visual.tscn` receives `closing_speed` as an extra base var (add it to
+`hazard_visual_base.gd` with default 0.0). Consumed/cleared projectiles stop processing (existing rule).
+
+`tool_pickup.gd extends "res://scenes/runner/powerups/power_up.gd"`: group `runner_tools` instead of
+`runner_powerups`; `collect(player)` → `game.boss_encounter.apply_tool(kind)` (guarded), plays the visual
+`on_collected()`, frees itself; moves +Z at `game.speed` like chunks (so Nitro raises throughput); frees past
+`despawn_z`. `powerups/tool_defs.gd`: kinds, display names, damage, weights, spawn y (contract §11.7). Visual mount
+`powerups/visuals/<kind>_visual.tscn`; graybox fallback: an ORANGE sphere r 0.35 with a Label3D tag.
+
+### 10.5 `systems/turn_rig.gd` and `camera_rig.set_turn`
+
+`turn_rig.gd` (Node3D at `World/TurnRig`): `set_turn(progress, direction)`: if the mounted corridor
+`has_method("set_turn")` → forward and keep `rotation.y = 0`; else (graybox) `rotation.y = direction ×
+deg_to_rad(turn_yaw_degrees) × smoothstep(0, 1, progress)`; `(0, 0)` resets. `camera_rig.gd` gains
+`set_turn(progress, direction)`: `yaw = direction × deg_to_rad(turn_camera_yaw_degrees) × sin(PI × progress)`,
+`bank = direction × deg_to_rad(turn_camera_bank_degrees) × sin(PI × progress)`, applied in `_physics_process` on top
+of the follow/shake result (yaw about the player's position, so the camera ends exactly where it started at p = 1).
+`RunnerGame.track_z(node) = turn_rig.to_local(node.global_position).z` when the rig exists, else
+`node.global_position.z` (identity today because chunks never sit under the rig); `_track_dodges`,
+`clear_hazards_in_range` and the autopilot entry use it.
+
+### 10.6 Spawner and autopilot
+
+`chunk_spawner.gd`: `spawning := true`, `set_spawning(on)`; `_fill()` returns early when `not spawning or game.phase
+!= &"run"`; movement/despawn continue in every phase; breather weighting/pursuit relief unchanged.
+`clear_hazards_in_range()` also clears projectiles (they are in `runner_hazards`).
+
+`autopilot.gd`: each planned slice carries `closing_v` (`closing_speed` when present, else `game.speed`) and its
+trigger distance is computed from it; projectile entries never merge with chunk-hazard entries. While
+`phase == &"boss"`: subscribe to `boss_attack_telegraph`, plan from the telegraph (arrival = telegraph + travel at
+`closing_v`), act at `arrival − manoeuvre_cost − autopilot_telegraph_lead`; between attacks run the greedy pickup
+over `runner_tools`, skipping lanes a pending attack will block, scaled by `autopilot_tool_greed`. Planning stays
+pure so `runner_boss_validator.gd` can drive it offline.
+
+### 10.7 HitManager, Pursuer, DebugOverlay, score
+
+HitManager emits `pursuit_alert(&"warn", recovery_seconds)` with `pursuit_started`, `&"critical"` once when
+`recovery_remaining ≤ pursuit_critical_seconds`, `&"clear"` on recovery or catch. Pursuer emits
+`pursuer_distance_changed(normalized)` when it changes by more than `pursuer_distance_epsilon`. DebugOverlay adds
+lines for phase, stage index/distance/target, boss kind/hp/phase, pending attacks and tool count. ScoreManager:
+`add_bonus(points, reason)` reasons gain `&"tool"`, `&"boss_kill"`, `&"boss_retreat"`, `&"stage_clear"`.
+Leaderboard `SCHEMA_VERSION = 2` (contract §11.11).
+
+### 10.8 Tests (extends §8)
+
+`runner_logic.gd` new sections: stage machine (targets, drain, timeout clear, phase ordering, one `stage_started`
+per stage, `run_clock` frozen outside `run`); escalation formula at cycles 0–4 hitting floors/caps; boss HP/phase
+transitions and one `boss_phase_changed` per crossing; tool damage incl. resisted phases (`tool_collected(kind, 0)`);
+boss timeout → `boss_retreated` with the partial bonus and never `boss_defeated`; turn state (signals once, rig and
+camera back at zero, no spawn during the bend); `pursuit_alert` ordering and the epsilon gate; caught mid-boss aborts
+to `idle` with `run_finished` once and boss stats in the result; speed with stage bonus and difficulty floor.
+`runner_smoke.gd`: duplicated config `stage_base_distance 260`, `time_to_max_speed 20`, boss HP scaled to ~40, at the
+existing acceleration: stage 1 → `turn_started`/`turn_finished` → `boss_spawned` → tools damage → `boss_defeated` →
+`stage_cleared` → `stage_started(2, …)` within a bounded wall clock with zero projectile hits; a second probe forcing
+PURSUED plus a projectile mid-fight ends the run once with the boss stats present. `runner_chunk_validator.gd`: the
+spawner places nothing outside `run`; `BossArena` holds no chunk; tool spawns respect clearance/no-repeat/y ∈ {1.0,
+2.2}. New `runner_boss_validator.gd`: every boss × phase × pattern × entry lane × cycle 0–4 through the virtual
+runner (gravity 28, jump 9.8/0.70 s, roll 0.70 s, lane tween 0.13 s) driven by the real autopilot planner from the
+telegraph: zero hits; `telegraph + travel ≥ 0.98 s`; jump launch window leaves ≥ 0.35 s; every pattern leaves a free
+lane or is jumpable/rollable; an accepted tool is reachable at least once per `boss_tool_guarantee_seconds`.
+`runner_scaffold_check.gd`: new tree paths (`World/TurnRig/...`, `Systems/StageManager`), new signals/properties,
+optional UI mounts tolerated when absent. Every test that instantiates RunnerGame keeps the `leaderboard_path`
+override before `add_child`.
