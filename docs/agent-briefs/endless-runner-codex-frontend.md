@@ -2,7 +2,9 @@
 
 <task>
 Implement the complete frontend (visuals, UI, audio) of the Endless Runner microgame in Hoppy's
-Adventure Arcade, a Godot 4.7 GDScript project at `hoppys-adventure-arcade/` inside this repository.
+Adventure Arcade, a Godot **4.7.1**-pinned GDScript project at `hoppys-adventure-arcade/` inside this repository
+(the build machine currently has 4.7.0 stable; results on 4.7.0 are diagnostic and final acceptance re-runs on
+4.7.1 per the contract's engine version policy).
 The backend (player controller, hazards, spawner, pursuit, score, leaderboard) is built by another agent
 against a shared contract. Your work must plug into that contract exactly and must look and sound like
 the CodeRabbit story it tells: Hoppy sprints through a live codebase while the Unreviewed PR Backlog chases.
@@ -314,4 +316,5 @@ Check commands (repo root):
 /Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --scene res://scenes/runner/environment/dev/corridor_preview.tscn
 ```
 
-`menu_smoke.gd` has two pre-existing mouse-hover failures on Godot 4.7.0; do not add new ones.
+`menu_smoke.gd` has two pre-existing mouse-hover failures on the installed Godot 4.7.0 (diagnostic baseline per
+contract §9); do not add new ones.

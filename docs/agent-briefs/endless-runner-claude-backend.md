@@ -1,7 +1,8 @@
 # Agent brief — Endless Runner backend (Claude / Opus 5)
 
 You are implementing the **backend** of the Endless Runner microgame in Hoppy's Adventure Arcade
-(Godot 4.7, GDScript). A separate agent (Codex) builds the frontend in parallel against a shared
+(Godot **4.7.1** pinned, GDScript; the build machine currently has 4.7.0 stable, so results produced on
+4.7.0 are diagnostic and final acceptance re-runs on 4.7.1 per the contract's engine version policy). A separate agent (Codex) builds the frontend in parallel against a shared
 contract. Read these first, in order:
 
 1. `docs/endless-runner-contract.md` — the contract. Paths, node names, signals, hitbox table, tuning.
@@ -67,8 +68,9 @@ and `runner_menu.tscn` load headless with no `push_error`.
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_smoke.gd
 ```
 
-All runner tests print `PASS`. `menu_smoke.gd` may keep its two pre-existing mouse-hover failures on
-Godot 4.7.0 but must not gain new ones. Report what you ran and the exact output; never claim a test
+All runner tests print `PASS`. `menu_smoke.gd` has two pre-existing mouse-hover failures when run on the
+installed 4.7.0 (diagnostic baseline, recorded in the contract §9); it must not gain new ones, and is
+expected to pass fully on the pinned 4.7.1. Report what you ran and the exact output; never claim a test
 passed without evidence.
 
 ## Orchestration loops (run by the coordinator, Fable 5.1)
