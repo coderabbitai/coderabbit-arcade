@@ -44,6 +44,10 @@ Reaction budget: 0.35 s choice reaction + 0.05 s input/render latency + 0.30 s w
 165 s `speed += 1.0 m/s per 60 s` until `hard_cap 26` (reached at 285 s). Difficulty stays 1.0 in the
 tail. Nitro multiplies the current speed by 1.25 (capped at 32) and does not advance `elapsed`.
 
+`difficulty_changed` is emitted when the value has moved by ≥ 0.01 since the last emission, **plus** the
+step onto exactly 1.0, which always goes out even though it falls inside that window — otherwise the
+frontend would never hear the terminal difficulty. Once 1.0 has been emitted it is never re-emitted.
+
 | t (s) | 0 | 33 | 50 | 83 | 116 | 140 | 165 | 285 |
 |---|---|---|---|---|---|---|---|---|
 | d | 0 | 0.20 | 0.30 | 0.50 | 0.70 | 0.85 | 1.0 | 1.0 |
@@ -63,7 +67,7 @@ a chunk's back edge passes z = +12. Lateral follow `camera.x = lerp(camera.x, pl
 |---|---|---|
 | `scenes/runner/runner_layers.gd` | RefCounted consts | `WORLD 1, PLAYER_BODY 2, ENEMY_HITBOX 4, PLAYER_HURTBOX 8, PICKUP 16` |
 | `scenes/runner/data/run_config.gd` + `run_config.tres` | Resource | Every tunable in contract §7 as `@export`; `score_rule_revision := 1` |
-| `scenes/runner/runner_game.gd` + `.tscn` | Node3D facade | Contract §3–4: states, signal forwarding, mounting, `start_run`, pause, caught sequence, `_finish_run` once |
+| `scenes/runner/runner_game.gd` + `.tscn` | Node3D facade | Contract §3–4: states, signal forwarding, mounting, `start_run` (calls `resume()` first, so a restart from a paused state never begins frozen), pause, caught sequence, `_finish_run` once |
 | `scenes/runner/systems/speed_controller.gd` | Node | Single speed owner; difficulty; Nitro multiplier; `begin_stop(seconds)` for the catch |
 | `scenes/runner/systems/hit_manager.gd` | Node | SAFE / PURSUED / DEAD state machine (§4) |
 | `scenes/runner/systems/score_manager.gd` | Node | Fractional score, multiplier composition, bonuses |
@@ -84,7 +88,8 @@ a chunk's back edge passes z = +12. Lateral follow `camera.x = lerp(camera.x, pl
 | `scenes/runner/data/chunk_library.gd` + `chunk_library.tres` | Resource | `scenes: Array[PackedScene]` |
 | `tests/runner_logic.gd`, `tests/runner_chunk_validator.gd`, `tests/runner_smoke.gd` | SceneTree scripts | §8 |
 | `app/app_router.gd`, `app/audio_service.gd` | autoloads | Contract §2 / §5.6 additions |
-| Graybox placeholders (frozen after PR 1): `scenes/runner/runner_menu.tscn/.gd`, `scenes/runner/ui/runner_hud.tscn/.gd`, `ui/pause_menu.tscn/.gd`, `ui/game_over.tscn/.gd` | | Minimal `Style`-themed UI so the loop is playable |
+| Graybox placeholders (frozen after PR 1): `scenes/runner/ui/runner_hud.tscn/.gd`, `scenes/runner/ui/pause_menu.tscn/.gd`, `scenes/runner/ui/game_over.tscn/.gd` | | Minimal `Style`-themed UI so the loop is playable |
+| `scenes/runner/runner_menu.tscn/.gd` | Node3D | Backend fallback graybox only; the frontend's F6 menu replaces it. Brought up to the contract §2 four-button set in PR 2 — `01 Play`, `02 Leaderboard` (top-10 panel from the static `runner_leaderboard.load_entries()`), `03 Return to Main Menu`, `04 Quit Game` — so `runner_scaffold_check.gd` can assert `RunnerMenu` + `buttons.size() == 4` against either scene. That is the backend's **last** edit here: once the frontend menu lands the path is exclusively frontend-owned (contract §1 rule 1) |
 
 ## 3. Player (`runner_player.gd`)
 
@@ -119,6 +124,12 @@ Public: `setup(game)`, `set_controls_enabled(bool)`, `request_jump()`, `request_
 `request_lane(dir)`, `sync_input_state()`, `play_hurt()`, `play_dead()`, `get_hurtbox_aabb(standing) -> AABB`,
 `lane`, `target_lane`, `is_rolling`, `is_airborne`.
 
+`reset()` restores lane 1, the roll/jump timers, the standing hurtbox and the `idle` pose, **and** clears the
+mounted visual's power-up state: `apply_aura(kind, false)` for every `AURA_KINDS` entry and
+`apply_shield(false)`. The visual is mounted once in `setup()` and outlives the run, so without that a new
+run would open still wearing the previous run's aura or shield glow. Both calls are guarded by
+`is_instance_valid(visual)` + `has_method(...)`, so a graybox or a missing visual is a no-op.
+
 Visual mount: `player/hoppy_runner_visual.tscn` if it exists, else a code-built capsule + two ear boxes
 whose material tint changes per anim state (so graybox testers see state changes).
 
@@ -132,7 +143,7 @@ whose material tint changes per anim state (so graybox testers see state changes
 1. `DEAD` → `&"ignored"`.
 2. Already in `consumed_ids` → `&"ignored"`; else record the instance id.
 3. `iframe_remaining > 0` or any invulnerability source → `damage_blocked(kind, reason)`; return `&"blocked_invuln"`. The hazard is still consumed (LGTM smashes through).
-4. `shield` → `shield = false`, `shield_changed(false)`, `damage_blocked(kind, &"shield")`. **If PURSUED: state = SAFE, hp = max_hp, recovery_remaining = 0, `recoveries += 1`, `health_changed`, `pursuit_recovered(&"shield")`.** Return `&"blocked_shield"`. (`recoveries` therefore counts every exit from PURSUED back to SAFE, by timer or by shield.)
+4. `shield` → `shield = false`, `iframe_remaining = hit_iframes`, `shield_changed(false)`, `damage_blocked(kind, &"shield")`. **If PURSUED: state = SAFE, hp = max_hp, recovery_remaining = 0, `recoveries += 1`, `health_changed`, `pursuit_recovered(&"shield")`.** Return `&"blocked_shield"`. (`recoveries` therefore counts every exit from PURSUED back to SAFE, by timer or by shield. The shield block starts `hit_iframes` exactly like the damage path in step 5, so the next hazard overlapping in that window reports `&"iframes"`, not damage.)
 5. Damage: `hp -= 1`, `iframe_remaining = hit_iframes`, `damage_taken(kind, hp)`, `health_changed`, notify `effect_manager.on_damage_applied()` (drops Code Review Bonus). `hp == 1` → PURSUED, `recovery_remaining = recovery_seconds`, `pursuit_started(recovery_seconds)`. `hp == 0` → DEAD, `caught()`.
 
 `_physics_process` (only while the game is `running`): decrement `iframe_remaining`; if PURSUED,
@@ -216,8 +227,17 @@ JUMP-type hazard's front (`jump`).
 
 `_ready`: layer `ENEMY_HITBOX`, mask `PLAYER_HURTBOX`, `monitoring = true`, `monitorable = false`;
 build one `CollisionShape3D` with a new `BoxShape3D` sized from `hazard_defs` (kind + variant), offset to
-the y range; `add_to_group(&"runner_hazards")`; `area_entered.connect(_on_area_entered)`; mount the
-visual (set base vars, then `on_spawned()`) or build a red-tinted `BoxMesh` of hitbox size.
+the y range; `add_to_group(&"runner_hazards")`; `area_entered.connect(_on_area_entered)`.
+
+Init order: the visual is mounted from `setup(game)`, not from `_ready()`. The spawner adds the chunk to
+the tree and only then calls `chunk.setup()`, which negates the child x on a mirrored chunk and hands
+each hazard the RunConfig, so a visual mounted in `_ready()` would receive `lanes_mask` computed from
+the hazard.gd fallback `lane_width` / `hurtbox_radius` and an un-mirrored x. `_ready()` therefore mounts
+only when `setup()` already ran (`config != null`) and otherwise defers `_mount_visual()` as an
+end-of-frame fallback for a hazard that never gets a `setup()`; `setup()` mounts as soon as the node is
+ready. `_mount_visual()` is idempotent (and a no-op once `clear()` has run), so a hazard can never carry
+two visuals. Mounting means: instance `hazards/visuals/<kind>_visual.tscn` if it exists, set the base
+vars, then `on_spawned()`, else build a tinted `BoxMesh` of hitbox size (graybox).
 `_on_area_entered(area)`: if `area.get_parent().is_in_group(&"runner_player")` → `hit_player(player)`.
 `hit_player`: `if consumed or not active: return; consumed = true; set_deferred("monitoring", false);
 game.hit_manager.report_hit(self); visual.on_hit_player()`. `clear()`: `consumed = true; active = false;
@@ -272,19 +292,32 @@ back to `.bak` when `path` is missing but `.bak` exists (crash between the two r
 1. HitManager: fresh SAFE 2 hp; hit → PURSUED 1 hp, `pursuit_started` once; immediate second hit → blocked `iframes`; +0.9 s then hit → DEAD, `caught` once; further hits ignored.
 2. Recovery: 17.99 s still PURSUED; 18.01 s → SAFE 2 hp, `pursuit_recovered("timer")`; new hit → new cycle.
 3. Shared tick: `recovery_remaining = 0.005`, `report_hit`, one tick → DEAD.
-4. Shield: SAFE + shield → blocked, stays SAFE; PURSUED + shield → SAFE 2 hp, `pursuit_recovered("shield")`.
+4. Shield: SAFE + shield → blocked, stays SAFE; PURSUED + shield → SAFE 2 hp, `pursuit_recovered("shield")`. Either block starts `hit_iframes`: the hit straight after it is `blocked_invuln` / `iframes`, and only a hit past the window damages again.
 5. Invulnerability sources add/remove; dedupe by instance id.
 6. ScoreManager: 60 ticks → 10 points; Nitro ×2; Code Review ×1.5 composes to ×3; damage drops Code Review; `score_changed` only on integer change; `add_bonus`; 30 fps vs 60 fps equal totals.
 7. EffectManager: refresh-not-stack; Nitro sets speed multiplier + invulnerability and clears both on expiry; Super Jump token consumed once.
 8. Leaderboard on `user://test_leaderboard_<rand>.cfg` (deleted after): sanitize cases; 12 submits keep 10 in order; dedupe keeps count; rename; corrupt file → empty load then successful submit; no `.tmp` left; `meta/version` present.
 9. RunConfig sanity: detection size rule; `jump_velocity² / (2 gravity) ≥ 1.6`; tuning values within contract ranges.
 
-**`tests/runner_chunk_validator.gd`** loads every `chunks/chunk_*.tscn` and checks: V1 lane bounds
+Beyond the authored list the same file carries: 10 autopilot planning; 11 a finished timed laser stops
+advancing; 12 Super Jump invulnerability survives a re-launch; 13 dodges counted per crossing; 14 the
+terminal `difficulty_changed(1.0)` is emitted exactly once and never repeated; 15 a hazard receives the
+RunConfig before it mounts its visual, and mounts exactly one; 16 `reset()` clears the mounted visual's
+auras and shield glow.
+
+**`tests/runner_scaffold_check.gd`** additionally drives the pause facade on a real `runner_game.tscn`:
+`toggle_pause()` both ways, then `pause()` → `start_run()` → the tree and the facade are both unpaused,
+the state is `running` and `paused_changed(false)` was emitted; and it asserts the runner menu exposes
+four buttons.
+
+**`tests/runner_chunk_validator.gd`** loads every `chunks/chunk_*.tscn` and checks: V0 no hazard has
+mounted a visual before `chunk.setup()` handed out the RunConfig, and every hazard afterwards has the
+config, exactly one visual and lane geometry read from the RunConfig; V1 lane bounds
 and declared lanes; V2 depth ≥ 1.2 (pits 3.0) and `dodge_hint` matches geometry; V3 clear zones;
 V4 no overlapping hitboxes; V5 every z-slice has an escape (a free lane or a JUMP/ROLL/TIMED hazard);
 V6 forced-action spacing ≥ `v_max(tier) × t_spacing`; V7 approach-cost caps and tier restrictions;
 V8 slot placement; V9 bot path simulation from 3 entry lanes × {PREFER_LANE, PREFER_JUMP, GREEDY_PICKUP}
-× {v_min, v_max} with a virtual preceding heavy action, zero hits; V10 mirrored copy passes V1–V9.
+× {v_min, v_max} with a virtual preceding heavy action, zero hits; V10 mirrored copy passes V0–V9.
 Also: at every difficulty 0..1 step 0.1 at least two eligible chunks exist.
 
 **`tests/runner_smoke.gd`**: accelerated 6× with `Engine.time_scale = 6.0` **and** `Engine.physics_ticks_per_second = 360`

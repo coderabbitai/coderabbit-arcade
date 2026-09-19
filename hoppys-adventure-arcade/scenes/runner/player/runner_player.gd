@@ -128,6 +128,11 @@ func reset() -> void:
 	_clear_super_jump_invuln()
 	_set_roll_shapes(false)
 	_set_lane_lean(0.0)
+	# The visual outlives a run, so a fresh run must not open wearing the last run's aura or shield
+	# glow. Both calls are no-ops on a null visual and on a graybox without the hooks.
+	for kind in AURA_KINDS:
+		apply_aura(kind, false)
+	apply_shield(false)
 	sync_input_state()
 	_set_anim_state(&"idle")
 
@@ -405,11 +410,15 @@ func _set_roll_shapes(rolling: bool) -> void:
 
 # --- 5. Super Jump invulnerability --------------------------------------------------------------
 
+## Every launch clears the post-landing countdown first: a Super Jump taken while the landing window
+## from the previous one is still ticking has to stay invulnerable for its whole flight instead of
+## expiring in mid-air. The source itself is only added once, so the HitManager still sees one
+## add_invulnerability per uninterrupted Super Jump streak.
 func _grant_super_jump_invuln() -> void:
+	_super_jump_invuln_remaining = 0.0
 	if _super_jump_invuln:
 		return
 	_super_jump_invuln = true
-	_super_jump_invuln_remaining = 0.0
 	_call_hit_manager(&"add_invulnerability")
 
 func _update_super_jump_invuln(delta: float) -> void:

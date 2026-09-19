@@ -133,6 +133,8 @@ func _validate(path: String, mirrored: bool) -> Dictionary:
 		return {}
 	root.add_child(chunk)
 	chunk.position = Vector3.ZERO
+	# The spawner adds the chunk to the tree and only then calls setup(), so this is the real order.
+	var mounted_before_setup := _mounted_visuals(chunk)
 	if chunk.has_method("setup"):
 		chunk.setup(game, mirrored)
 	var tag := path.get_file().trim_suffix(".tscn")
@@ -140,6 +142,7 @@ func _validate(path: String, mirrored: bool) -> Dictionary:
 		tag += " (mirrored)"
 	chunk_log.clear()
 	var before := failures
+	_check_visual_mount(tag, chunk, mounted_before_setup)
 	var infos := _hazard_infos(chunk)
 	var meta := {
 		"name": tag,
@@ -162,6 +165,40 @@ func _validate(path: String, mirrored: bool) -> Dictionary:
 			print("  " + line)
 	chunk.free()
 	return meta
+
+# --- V0: hazards are configured before they mount their visuals ---
+
+## Hazards mounted in a chunk see the RunConfig before `_apply_visual_vars()` runs. The visual is fed
+## `lanes_mask`, which is computed from `config.lane_width` and `config.hurtbox_radius`, and
+## `chunk.setup()` negates the child x on a mirrored chunk; both only arrive with `setup()`, which the
+## spawner calls after `add_child`. A visual mounted straight from `_ready()` would therefore be
+## configured from the hazard.gd fallbacks and an un-mirrored lane, so nothing may be mounted before
+## `setup()` and exactly one visual may exist after it.
+func _check_visual_mount(tag: String, chunk: Node3D, mounted_before_setup: int) -> void:
+	check(mounted_before_setup == 0,
+		"%s: %d hazard visuals were mounted before chunk.setup() handed out the RunConfig"
+			% [tag, mounted_before_setup])
+	for hazard in chunk.get_hazards():
+		var node := hazard as Node3D
+		if node == null:
+			continue
+		check(node.config != null, "%s: %s never received the RunConfig" % [tag, node.name])
+		check(is_instance_valid(node.visual), "%s: %s mounted no visual" % [tag, node.name])
+		check(node.get_child_count() == 2,
+			"%s: %s holds %d children, expected one collision shape and one visual"
+				% [tag, node.name, node.get_child_count()])
+		# The lane geometry `_apply_visual_vars()` reads comes from the RunConfig, not the fallbacks.
+		check(is_equal_approx(node.lane_x(2), float(config.lane_width)),
+			"%s: %s puts lane 2 at %.2f, expected the RunConfig lane width %.2f"
+				% [tag, node.name, node.lane_x(2), float(config.lane_width)])
+
+func _mounted_visuals(chunk: Node3D) -> int:
+	var mounted := 0
+	for hazard in chunk.get_hazards():
+		var node := hazard as Node3D
+		if node != null and is_instance_valid(node.visual):
+			mounted += 1
+	return mounted
 
 # --- V1 / V2: hazard geometry against the contract §8 table ---
 

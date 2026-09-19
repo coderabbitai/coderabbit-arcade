@@ -147,7 +147,10 @@ func _pause_phase() -> void:
 	game.resume()
 	await process_frame
 	check(not paused, "resume() did not unpause the tree")
-	check(not bool(events["paused_changed"][-1]), "paused_changed(false) was not emitted")
+	# Size first, so a resume that never announced itself fails the check instead of indexing an
+	# array that is still one entry short.
+	check(events["paused_changed"].size() == paused_before + 2
+		and not bool(events["paused_changed"][-1]), "paused_changed(false) was not emitted")
 
 ## Real Godot input dispatch, not a method call: Space is bound by physical_keycode (contract §6).
 func _input_phase() -> void:
@@ -202,10 +205,14 @@ func _pursuit_phase() -> void:
 	# Back to fair driving: the recovery timer needs a clean stretch.
 	game.autopilot.set_mode(PREFER_LANE)
 	game.set_autopilot(true)
-	var window := (float(game.config.recovery_seconds) + 4.0) / TIME_SCALE
+	# Slack on top of the timer for the bot to find its clean stretch. Named, so the wait and the
+	# failure message can never quote different numbers.
+	var recovery_slack := 4.0
+	var deadline := float(game.config.recovery_seconds) + recovery_slack
 	var recovered := await _wait_until(func() -> bool: return not events["pursuit_recovered"].is_empty(),
-		window)
-	check(recovered, "the pursuit never ended inside recovery_seconds + 1")
+		deadline / TIME_SCALE)
+	check(recovered, "the pursuit never ended inside recovery_seconds + %.0f = %.1f game seconds"
+		% [recovery_slack, deadline])
 	if not recovered:
 		return
 	check(StringName(events["pursuit_recovered"][0]) == &"timer", "the recovery was not the timer")
@@ -247,6 +254,8 @@ func _leaderboard_phase() -> void:
 	check(int(result["seed"]) == SEED, "the result lost the seed")
 	check(int(result["hits_taken"]) >= 2, "the result counted %d hits" % int(result["hits_taken"]))
 	check(int(result["score"]) > 0, "the result scored 0")
+	check(int(result.get("leaderboard_error", -1)) == OK,
+		"the board write reported error %s" % result.get("leaderboard_error", "<missing>"))
 	check(events["leaderboard_saved"] > 0, "leaderboard_saved was never emitted")
 	var board: Array = game.get_leaderboard()
 	var entry := _find_entry(board, game.run_id)

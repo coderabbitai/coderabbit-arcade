@@ -141,6 +141,10 @@ func _ready() -> void:
 
 ## Reset every system, place the first chunks and go live. seed 0 picks a random seed.
 func start_run(run_seed := 0) -> void:
+	# A restart asked for from the pause menu (or any caller that skips retry()) must never begin
+	# frozen: go through resume() so `paused`, `tree.paused` and paused_changed(false) all agree.
+	# It is a no-op when the run was not paused.
+	resume()
 	seed = run_seed if run_seed != 0 else randi()
 	run_id = "%d-%d" % [Time.get_unix_time_from_system(), seed]
 	cosmetic_rng.seed = seed
@@ -231,7 +235,11 @@ func submit_name(name: String) -> bool:
 	if _result.is_empty() or run_id.is_empty():
 		return false
 	var clean := RunnerLeaderboard.sanitize_name(name)
-	if RunnerLeaderboard.rename(run_id, clean, leaderboard_path) != OK:
+	# Only a write that reached disk renames the run: a failed rename leaves the board untouched, so
+	# the frontend is told nothing was saved rather than shown a name the board does not carry.
+	var error := RunnerLeaderboard.rename(run_id, clean, leaderboard_path)
+	if error != OK:
+		push_warning("Runner leaderboard: cannot rename this run in %s (error %d)" % [leaderboard_path, error])
 		return false
 	_result["player_name"] = clean
 	var entries := RunnerLeaderboard.load_entries(leaderboard_path)
@@ -279,6 +287,9 @@ func _physics_process(delta: float) -> void:
 
 ## Count every blocking hazard that made it past the player. A hazard that hit is no longer
 ## blocking, and Auto-Fix removes cleared ones from the group, so neither is counted as a dodge.
+## An id is forgotten again while its hazard sits at or ahead of the dodge line, so a hazard that is
+## repositioned or reused in front of the player is counted once more the next time it crosses,
+## instead of being remembered as dodged forever.
 func _track_dodges() -> void:
 	var tree := get_tree()
 	if tree == null:
@@ -287,9 +298,10 @@ func _track_dodges() -> void:
 		var hazard := node as Node3D
 		if hazard == null or not is_instance_valid(hazard):
 			continue
-		if hazard.global_position.z <= DODGE_LINE_Z:
-			continue
 		var id := hazard.get_instance_id()
+		if hazard.global_position.z <= DODGE_LINE_Z:
+			_dodged_ids.erase(id)
+			continue
 		if _dodged_ids.has(id):
 			continue
 		_dodged_ids[id] = true
@@ -425,6 +437,7 @@ func _finish_run(outcome: StringName) -> void:
 		"submitted_at": now,
 		"rank": 0,
 		"qualifies": false,
+		"leaderboard_error": OK,
 		"player_name": player_name
 	}
 	# One write per run (contract §4.3): the entry carries only the leaderboard §4.3 fields.
@@ -436,12 +449,21 @@ func _finish_run(outcome: StringName) -> void:
 		"seed": seed,
 		"submitted_at": now
 	}, leaderboard_path)
-	var rank := int(submission.get("rank", 0))
+	# submit() ranks the run against the board it built in memory, so a rank only means the run
+	# placed once the write succeeded. leaderboard_error is always present (OK on success) so the
+	# frontend can tell "did not place" apart from "could not be saved".
+	var error := int(submission.get("error", OK))
+	result["leaderboard_error"] = error
+	var rank := int(submission.get("rank", 0)) if error == OK else 0
 	result["rank"] = rank
 	result["qualifies"] = rank > 0
 	_result = result
-	var entries: Array = submission.get("entries", [])
-	leaderboard_saved.emit(entries, rank)
+	if error == OK:
+		var entries: Array = submission.get("entries", [])
+		leaderboard_saved.emit(entries, rank)
+	else:
+		push_warning("Runner leaderboard: this run was not written to %s (error %d); it keeps rank 0"
+			% [leaderboard_path, error])
 	_set_state(&"finished")
 	run_finished.emit(get_result())
 

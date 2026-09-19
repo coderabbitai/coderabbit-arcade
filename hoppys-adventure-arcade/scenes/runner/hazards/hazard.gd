@@ -60,7 +60,14 @@ func _ready() -> void:
 	_timed = HazardDefs.is_timed(def)
 	_bounds = Vector2(float(def.get("y_min", 0.0)), float(def.get("y_max", 0.0)))
 	_build_shape()
-	_mount_visual()
+	if config != null:
+		_mount_visual()
+	else:
+		# The spawner adds the chunk to the tree and only then calls chunk.setup(), which applies the
+		# mirror and hands each hazard the RunConfig, so mounting here would configure the visual
+		# from the contract §7 fallback lane width and an un-mirrored x. Wait for setup(); the
+		# deferred call is the end-of-frame fallback for a hazard that never gets one.
+		_mount_visual.call_deferred()
 	if not area_entered.is_connected(_on_area_entered):
 		area_entered.connect(_on_area_entered)
 	# Only the timed laser needs a per-tick state machine.
@@ -69,6 +76,11 @@ func _ready() -> void:
 func setup(runner: RunnerGame) -> void:
 	game = runner
 	config = runner.config
+	# Mount now that lane_width / hurtbox_radius and the mirrored x are known: _apply_visual_vars()
+	# reads lanes_mask() off both. Before _ready() there is no `def` and no global transform, so a
+	# setup() that runs first leaves the mount to _ready(); _mount_visual() is idempotent either way.
+	if is_node_ready():
+		_mount_visual()
 
 ## Still able to damage the player. A timed laser in `off` is still blocking: it will switch back
 ## on, and Auto-Fix has to be able to remove it.
@@ -232,7 +244,15 @@ func _apply_laser_state() -> void:
 	_graybox.position = hitbox_offset()
 	_graybox.visible = laser_state != OFF_STATE
 
+## Mount the frontend visual, or the graybox. Called from setup() and, as a fallback, deferred from
+## _ready(); the guard keeps it to exactly one visual whichever of the two wins.
 func _mount_visual() -> void:
+	if is_instance_valid(visual):
+		return
+	if not active:
+		# Auto-Fix cleared the hazard before anything was mounted: a removed hazard never puts a
+		# visual on screen, so the pending fallback mount stops here.
+		return
 	var path := VISUAL_DIR + String(kind) + "_visual.tscn"
 	if ResourceLoader.exists(path):
 		var scene := _load_scene(path)
