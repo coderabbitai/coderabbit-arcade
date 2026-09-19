@@ -38,6 +38,8 @@ class MockCamera extends Node3D:
 		pass
 
 @export var autoplay := true
+@export var result_qualifies := true
+@export var result_leaderboard_error: Error = OK
 var config: Resource = Config
 var state: StringName = &"ready"
 var paused := false
@@ -219,18 +221,21 @@ func hit() -> void:
 func finish_demo() -> void:
 	if not _result.is_empty():
 		return
+	var placed := result_qualifies and result_leaderboard_error == OK
 	_result = {"run_id": run_id, "mode": "runner", "outcome": "caught", "score": score,
 		"score_exact": float(score), "duration": elapsed, "distance": distance,
 		"hazards_dodged": 24, "power_ups": 6, "hazards_blasted": 3, "hits_taken": 3,
 		"recoveries": 1, "blocked_hits": 1, "seed": seed, "max_speed_reached": speed,
 		"best_multiplier": 2.0, "chunks_spawned": 12, "score_rule_revision": 1,
-		"submitted_at": 0, "rank": 3, "qualifies": true, "leaderboard_error": OK, "player_name": "Hoppy"}
+		"submitted_at": 0, "rank": 3 if placed else 0, "qualifies": placed, "leaderboard_error": result_leaderboard_error, "player_name": "Hoppy"}
 	_board.clear()
 	for i in 10:
-		_board.append({"run_id": run_id if i == 2 else "fixture-%d" % i,
-			"name": "Hoppy" if i == 2 else "Reviewer %02d" % (i + 1),
+		var current := placed and i == 2
+		_board.append({"run_id": run_id if current else "fixture-%d" % i,
+			"name": "Hoppy" if current else "Reviewer %02d" % (i + 1),
 			"score": score + (2 - i) * 50, "duration": elapsed, "seed": seed, "submitted_at": 0})
-	leaderboard_saved.emit(get_leaderboard(), 3)
+	if result_leaderboard_error == OK:
+		leaderboard_saved.emit(get_leaderboard(), int(_result.rank))
 	state = &"finished"
 	state_changed.emit(state)
 	run_finished.emit(get_result())

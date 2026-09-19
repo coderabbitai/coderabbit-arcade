@@ -654,6 +654,7 @@ func check_runner_ui() -> void:
 	over.save_button.pressed.emit()
 	check(mock.submit_calls == 1 and over.save_button.disabled and not over.name_field.editable, "submit name called exactly once")
 	check("Ada" in over.board.get_child(2).text and over.retry_button.has_focus(), "saved board rerenders and Retry focused")
+	var qualifying_result: Dictionary = mock.get_result()
 	var unplaced: Dictionary = mock.get_result()
 	unplaced.qualifies = false
 	unplaced.rank = 0
@@ -676,6 +677,45 @@ func check_runner_ui() -> void:
 	check(over.visible, "unbound public show_result safely ignores cancel")
 	mock.free()
 	await frames()
+	for variant in ["nonqualifier", "leaderboard error"]:
+		var variant_mock := fixture.instantiate()
+		variant_mock.autoplay = false
+		variant_mock.result_qualifies = variant != "nonqualifier"
+		variant_mock.result_leaderboard_error = ERR_CANT_CREATE if variant == "leaderboard error" else OK
+		root.add_child(variant_mock)
+		variant_mock.finish_demo()
+		var variant_over: CanvasLayer = variant_mock.game_over
+		check(not variant_over.name_field.is_visible_in_tree() and variant_over.save_button.disabled, "%s blocks name and Save" % variant)
+		check(variant_over.retry_button.has_focus(), "%s initially focuses Retry" % variant)
+		check(variant_over.error_label.visible == (variant == "leaderboard error"), "%s error caption visibility" % variant)
+		if variant == "leaderboard error":
+			check(variant_over.error_label.text == "Leaderboard could not be saved.", "leaderboard error explains failed persistence")
+		for button: Button in [variant_over.retry_button, variant_over.menu_button]:
+			var target: Button = variant_over.menu_button if button == variant_over.retry_button else variant_over.retry_button
+			for neighbor: StringName in [&"focus_next", &"focus_previous", &"focus_neighbor_top", &"focus_neighbor_bottom", &"focus_neighbor_left", &"focus_neighbor_right"]:
+				check(button.get_node(button.get(neighbor)) == target, "%s %s reaches other action" % [variant, neighbor])
+		variant_over.menu_button.grab_focus()
+		check(variant_over.menu_button.has_focus(), "%s Menu can receive focus" % variant)
+		variant_over.save_button.pressed.emit()
+		variant_over.name_field.text_submitted.emit("Blocked")
+		variant_over._save()
+		check(variant_mock.submit_calls == 0, "%s never calls submit_name" % variant)
+		# Even a stale visible row must not bypass the result guard.
+		variant_over.name_row.show()
+		variant_over._save()
+		check(variant_mock.submit_calls == 0, "%s result guard blocks stale controls" % variant)
+		if variant == "leaderboard error":
+			var failed_result: Dictionary = variant_mock.get_result()
+			failed_result.qualifies = true
+			variant_over.show_result(failed_result, variant_mock.get_leaderboard())
+			check(variant_over.save_button.disabled and variant_over.retry_button.has_focus(), "leaderboard error overrides qualifying flag")
+			variant_over.name_row.show()
+			variant_over._save()
+			check(variant_mock.submit_calls == 0, "leaderboard error guard blocks qualifying flag")
+		variant_over.show_result(qualifying_result, variant_mock.get_leaderboard())
+		check(variant_over.name_row.visible and not variant_over.save_button.disabled and variant_over.name_field.editable and variant_over.name_field.has_focus() and not variant_over.error_label.visible, "%s resets to qualifying flow" % variant)
+		variant_mock.free()
+		await frames()
 	var coarse_mock := fixture.instantiate()
 	coarse_mock.autoplay = false
 	root.add_child(coarse_mock)

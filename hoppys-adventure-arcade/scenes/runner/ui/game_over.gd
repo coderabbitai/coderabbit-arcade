@@ -94,12 +94,14 @@ func _finished(value: Dictionary) -> void:
 func show_result(value: Dictionary, leaderboard: Array) -> void:
 	result = value.duplicate(true)
 	saved = false
-	save_button.disabled = false
+	var can_save := _can_save_result()
+	save_button.disabled = not can_save
 	save_button.text = "Save"
-	name_field.editable = true
+	name_field.editable = can_save
 	name_field.text = String(result.get("player_name", ""))
-	name_row.visible = bool(result.get("qualifies", false))
-	error_label.hide()
+	name_row.visible = can_save
+	error_label.text = "Leaderboard could not be saved." if int(result.get("leaderboard_error", OK)) != OK else ""
+	error_label.visible = not error_label.text.is_empty()
 	for child in stats.get_children():
 		child.free()
 	var lines := ["SCORE %08d" % int(result.get("score", 0)), "TIME " + _time(float(result.get("duration", 0))),
@@ -150,8 +152,11 @@ func _focus_chain() -> void:
 		controls[i].focus_neighbor_left = previous
 		controls[i].focus_neighbor_right = next
 
+func _can_save_result() -> bool:
+	return bool(result.get("qualifies", false)) and int(result.get("leaderboard_error", OK)) == OK
+
 func _save() -> void:
-	if saved or not visible or not name_row.visible or game == null:
+	if saved or not _can_save_result() or not visible or not name_row.visible or game == null:
 		return
 	if not game.submit_name(name_field.text):
 		error_label.text = "Could not save to disk."
