@@ -140,7 +140,9 @@ decrement `recovery_remaining`, emit `pursuit_progress(remaining, total)`; at �
 `recoveries += 1`, `health_changed`, `pursuit_recovered(&"timer")`.
 
 Ordering guarantee: Area3D overlap signals are delivered at the start of a physics tick, before any
-`_physics_process`, and `report_hit` never grants recovery. A hit on the same tick the timer would
+`_physics_process`, and `report_hit` never grants *timer* recovery (the shield exception in step 4 — a blocked hit
+while PURSUED restores SAFE/full hp, clears the timer, counts a recovery and emits `pursuit_recovered(&"shield")` —
+is the only path by which `report_hit` ends a pursuit). A hit on the same tick the timer would
 expire therefore kills (baseline §9: "resolve queued damage before recovery"). `runner_logic.gd`
 models this with `recovery_remaining = 0.005`, `report_hit()`, then one tick.
 
@@ -299,6 +301,10 @@ hit for 2 s. `pause()` for 1 s → score unchanged, `paused_changed` seen; `resu
 `InputEventKey` with `physical_keycode = KEY_SPACE` → `player_action("jump")`. Routing:
 `AppRouter.go("runner_game")` twice, then `runner`, then `hub`: `not busy`, tree unpaused, AudioService
 still has 2 children. Reset `time_scale` before quitting.
+
+**Boot check** (`--scene res://scenes/runner/runner_game.tscn --quit-after <frames>`): this plays a real
+autopilot-free run to its game over and submits the score to the real `user://leaderboard.cfg`, so point
+`runner_game.leaderboard_path` at a throwaway file (as `runner_smoke.gd` does) before running it unattended.
 
 **Autopilot** (`systems/autopilot.gd`): each tick while running, group hazards ahead
 (`z ∈ (−lookahead, 0.5]`, z-ranges expanded ±0.8) into slices; plan the nearest unresolved slice at

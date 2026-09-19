@@ -331,9 +331,12 @@ PR 2 (which relaxes that assertion) is merged into this branch.
 
 ```sh
 GODOT_BIN="${GODOT_BIN:-/Applications/Godot.app/Contents/MacOS/Godot}"
-"$GODOT_BIN" --version
+# Final acceptance requires 4.7.1.stable; any other build is diagnostic only.
+"$GODOT_BIN" --version | grep -q '^4\.7\.1\.stable' || echo "DIAGNOSTIC RUN: not Godot 4.7.1.stable"
 "$GODOT_BIN" --headless --path hoppys-adventure-arcade --import
-"$GODOT_BIN" --headless --path hoppys-adventure-arcade --script res://scenes/runner/<file>.gd --check-only
+for f in $(git ls-files hoppys-adventure-arcade/scenes/runner hoppys-adventure-arcade/tests | grep '\.gd$'); do
+  "$GODOT_BIN" --headless --path hoppys-adventure-arcade --script "res://${f#hoppys-adventure-arcade/}" --check-only
+done
 "$GODOT_BIN" --headless --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd
 "$GODOT_BIN" --headless --path hoppys-adventure-arcade --script res://tests/menu_smoke.gd
 "$GODOT_BIN" --path hoppys-adventure-arcade --scene res://scenes/runner/environment/dev/corridor_preview.tscn
