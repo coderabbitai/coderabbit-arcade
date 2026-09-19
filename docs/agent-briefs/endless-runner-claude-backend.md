@@ -36,7 +36,8 @@ contract. Read these first, in order:
 `data/run_config.gd` + `.tres`; `hazards/hazard_defs.gd`; `powerups/power_up_defs.gd`; the four
 `*_visual_base.gd`; `runner_game.gd` with every signal/enum/facade method (stubs allowed) and
 `runner_game.tscn` with the full tree; loadable stubs of every systems script, `hazard.gd/.tscn`,
-`power_up.gd/.tscn`, `chunk.gd`, `runner_player.gd/.tscn`; the four graybox UI placeholders. Exit:
+`power_up.gd/.tscn`, `chunk.gd`, `runner_player.gd/.tscn`; the four graybox UI placeholders;
+`tests/runner_scaffold_check.gd` (the structural check invoked by the PR 1 acceptance commands). Exit:
 `--import` clean, `--check-only` clean on every new `.gd`, `runner_game.tscn` loads headless, `menu_smoke.gd`
 has no new failures.
 
