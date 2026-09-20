@@ -19,10 +19,10 @@ result against it line by line. Paths are relative to `hoppys-adventure-arcade/`
   lane k ∈ {−1, 0, +1} names the same three lanes by their world offset; index = k + 1. The player's
   capsule radius is 0.4, so a hazard whose x-extent is ±0.8 around a lane centre (per-lane width 1.6)
   cannot touch a player in an adjacent lane.
-- Physics 60 Hz. Jump apex 1.715 m, airtime 0.70 s. Per-tick travel at the Nitro cap (32 m/s) is
-  0.53 m; the minimum hazard depth of 1.2 m plus the 0.8 m capsule footprint gives ≥ 3 overlapping
+- Physics 60 Hz. Jump apex 1.715 m, airtime 0.70 s. Per-tick travel at the v2 Nitro cap (38 m/s) is
+  0.63 m; the minimum hazard depth of 1.2 m plus the 0.8 m capsule footprint (2.0 m) gives ≥ 3 overlapping
   ticks at any legal speed, so `Area3D` overlap detection cannot tunnel. `runner_logic.gd` asserts
-  `(min_hazard_depth + 0.8) / (hard_cap × nitro_multiplier / 60) ≥ 2.0`.
+  `(min_hazard_depth + 0.8) / (nitro_speed_cap / 60) ≥ 2.0` against the stage-adjusted caps.
 
 ### 1.1 Physics derivations (feet height y(t) = 9.8 t − 14 t²)
 
@@ -37,7 +37,7 @@ result against it line by line. Paths are relative to `hoppys-adventure-arcade/`
 
 Pass time over a hazard of depth d is (d + 0.8) / v. Slack = window − pass time grows with speed, so
 reaction time, not timing precision, is the limiter at high speed. A jump covers 8.4 m at 12 m/s,
-16.8 m at 24 m/s, 22.4 m at 32 m/s; this drives spacing.
+16.8 m at 24 m/s, 22.4 m at 32 m/s (26.6 m at the 38 m/s Nitro cap); this drives spacing.
 
 Reaction budget: 0.35 s choice reaction + 0.05 s input/render latency + 0.30 s worst-case manoeuvre
 (two lane changes) = 0.70 s minimum. Heavy actions (jump, roll) occupy 0.70 s. Hence
