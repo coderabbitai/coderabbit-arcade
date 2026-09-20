@@ -347,7 +347,7 @@ Graybox: coloured `SphereMesh` per kind.
 
 ## 7. Leaderboard (`runner_leaderboard.gd`, static)
 
-`DEFAULT_PATH "user://leaderboard.cfg"`, `SCHEMA_VERSION 1`, `MAX_ENTRIES 10`, `MAX_NAME 16`.
+`DEFAULT_PATH "user://leaderboard.cfg"`, `SCHEMA_VERSION 2` (v1 boards migrate in place, §10.7), `MAX_ENTRIES 10`, `MAX_NAME 16`.
 `load_entries(path)`, `save_entries(entries, path)`, `submit(entry, path) -> {rank, entries, error}`,
 `rename(run_id, name, path) -> Error`, `sanitize_name(raw)`, `sort_entries(entries)`.
 Storage: section `meta/version`; section `leaderboard/entries` (Array of Dictionary). Any version that is
@@ -607,7 +607,7 @@ HitManager emits `pursuit_alert(&"warn", recovery_seconds)` with `pursuit_starte
 `pursuer_distance_changed(normalized)` when it changes by more than `pursuer_distance_epsilon`. DebugOverlay adds
 lines for phase, stage index/distance/target, boss kind/hp/phase, pending attacks and tool count. ScoreManager:
 `add_bonus(points, reason)` reasons gain `&"tool"`, `&"boss_kill"`, `&"boss_retreat"`, `&"stage_clear"`.
-Leaderboard `SCHEMA_VERSION = 2` (contract §11.11).
+Leaderboard `SCHEMA_VERSION = 2`: version-1 boards are read normally and rewritten as version 2 on the next successful save; only versions > 2 are refused (contract §11.11).
 
 ### 10.8 Tests (extends §8)
 

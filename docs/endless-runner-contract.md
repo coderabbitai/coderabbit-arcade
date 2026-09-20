@@ -322,6 +322,7 @@ Power-up kinds: `approve_shield`, `auto_fix`, `lgtm`, `nitro`, `super_jump`, `co
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_logic.gd
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_chunk_validator.gd
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_smoke.gd
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_boss_validator.gd   # v2, see §11.12
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --script res://tests/menu_smoke.gd
 ```
@@ -332,7 +333,7 @@ mouse-hover failures on a clean `main`; the docs validated it on 4.7.1. New runn
 
 ## 10. Change log
 
-- 2.0 (2026-09-19): §11 v2 addendum — run phases (run → turn → boss → stage_clear), `StageManager`, `TurnRig`, boss encounters with telegraphed projectiles and auto-fire tool pickups, faster speed ramp (`time_to_max_speed` 100 s + per-stage bumps), pursuit alert signals, new facade signals/properties/result fields, boss visual hooks, projectile hitbox table, tool table, optional UI mounts (`pursuit_alert`, `boss_hud`, `stage_banner`, `stage_clear`), corridor `set_turn`, leaderboard `SCHEMA_VERSION` 2 (v1 boards are not comparable and are read as empty).
+- 2.0 (2026-09-19): §11 v2 addendum — run phases (run → turn → boss → stage_clear), `StageManager`, `TurnRig`, boss encounters with telegraphed projectiles and auto-fire tool pickups, faster speed ramp (`time_to_max_speed` 100 s + per-stage bumps), pursuit alert signals, new facade signals/properties/result fields, boss visual hooks, projectile hitbox table, tool table, optional UI mounts (`pursuit_alert`, `boss_hud`, `stage_banner`, `stage_clear`), corridor `set_turn`, leaderboard `SCHEMA_VERSION` 2 with in-place migration of v1 boards.
 - 1.0 (2026-09-19): initial contract reconciled from the backend, procgen/tuning and frontend design passes.
 - 1.3 (2026-09-19): §4.3 — `result.leaderboard_error:int` added; a failed leaderboard write keeps `rank` 0 / `qualifies` false and emits no `leaderboard_saved`. A board whose `meta/version` is newer than the supported schema is one such failure: it reads as empty and `submit`/`rename` refuse to overwrite it, returning `ERR_FILE_UNRECOGNIZED`.
 - 1.2 (2026-09-19): §5.2 — ground-projection quads exempt from the 110 % rule on y; per-hazard draw-call budget stated.
@@ -529,9 +530,10 @@ interval × 0.90^c (≥ 0.55), tool interval × 0.93^c (≥ 1.4). Attack pattern
 
 ### 11.11 Leaderboard
 
-`SCHEMA_VERSION` becomes 2: v2 scores include stage and boss bonuses and are not comparable with v1, so a v1
-board is read as empty and replaced on the first v2 write (the newer-schema refusal of §10 still applies to any
-version > 2). Entry fields are unchanged.
+`SCHEMA_VERSION` becomes 2. Entry fields are unchanged, so a version-1 board is **migrated in place**: its
+entries are read normally and the next successful save rewrites the file as version 2 (players keep their v1
+scores even though v2 scores also include stage and boss bonuses). The newer-schema refusal still applies to any
+version > 2.
 
 ### 11.12 Verification (extends §9)
 

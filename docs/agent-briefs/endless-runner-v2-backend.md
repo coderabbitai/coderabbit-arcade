@@ -53,24 +53,26 @@ Files: `systems/autopilot.gd` (closing speed per slice, telegraph planning, tool
 `tests/runner_smoke.gd`, `tests/runner_chunk_validator.gd`, new `tests/runner_boss_validator.gd`; per systems §10.8.
 Integration fixes discovered here go back to A/B files only through the coordinator (report them; do not edit).
 
-## Definition of done (run from the repo root; paste verbatim)
+## Definition of done
+
+Use the v1 brief's acceptance gate (`docs/agent-briefs/endless-runner-claude-backend.md`: version check, `check_only()`,
+`run_test <file> <marker>` with the noise filter, `DIAGNOSTIC=1` for other 4.7.x builds) and add the v2 suite:
 
 ```sh
-GODOT_BIN=/Applications/Godot.app/Contents/MacOS/Godot
-"$GODOT_BIN" --headless --path hoppys-adventure-arcade --import
-"$GODOT_BIN" --headless --path hoppys-adventure-arcade --script res://tests/runner_scaffold_check.gd
-"$GODOT_BIN" --headless --path hoppys-adventure-arcade --script res://tests/runner_logic.gd
-"$GODOT_BIN" --headless --path hoppys-adventure-arcade --script res://tests/runner_chunk_validator.gd
-"$GODOT_BIN" --headless --path hoppys-adventure-arcade --script res://tests/runner_boss_validator.gd
-"$GODOT_BIN" --headless --path hoppys-adventure-arcade --script res://tests/runner_smoke.gd
-"$GODOT_BIN" --headless --path hoppys-adventure-arcade --script res://tests/menu_smoke.gd
+run_test runner_scaffold_check.gd 'RUNNER SCAFFOLD: PASS'
+run_test runner_logic.gd 'RUNNER LOGIC: PASS'
+run_test runner_chunk_validator.gd 'RUNNER CHUNKS: PASS'
+run_test runner_boss_validator.gd 'RUNNER BOSS: PASS'
+run_test runner_smoke.gd 'RUNNER SMOKE: PASS'
+# menu_smoke.gd through the documented DIAGNOSTIC tolerance block (exactly the two 4.7.0 hover failures)
 ```
 
-All runner tests print `PASS` with 0 failures; `menu_smoke.gd` keeps exactly its two documented 4.7.0 hover
-failures. `--check-only` on every new or modified `.gd` shows no unexpected diagnostics (only the documented
-`AppRouter` cascade from `runner_game.gd` / `runner_menu.gd`). `runner_game.tscn` loads headless with no `push_error`
-with and without the frontend visuals present. A 60 s graybox autopilot run reaches `boss_spawned` under the
-shortened smoke config. Report exactly what you ran and the output; never claim a pass without evidence.
+Every runner test prints its marker with 0 failures; each `run_test` fails closed on a non-zero exit, a missing marker
+or engine error lines, so a later test cannot mask an earlier failure. `--check-only` on every new or modified `.gd`
+shows no unexpected diagnostics (only the documented `AppRouter` cascade from `runner_game.gd` / `runner_menu.gd`).
+`runner_game.tscn` loads headless with no `push_error` with and without the frontend visuals present. A 60 s graybox
+autopilot run reaches `boss_spawned` under the shortened smoke config. Report exactly what you ran and the output;
+never claim a pass without evidence.
 
 ## Orchestration (coordinator, Fable 5.1)
 
