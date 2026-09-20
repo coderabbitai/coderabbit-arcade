@@ -139,20 +139,21 @@ New `scenes/runner/ui/pursuit_alert.gd` + `.tscn`, a `Control` child of the HUD'
 
 ### 3.1 Base hooks — `scenes/runner/boss/boss_visual_base.gd` (backend-owned file; frontend consumes)
 
-Base vars set before `on_spawned()`: `kind: StringName`, `max_hp: int`, `phase_count: int`, `hover_z: float`,
-`sway_extent: float`.
-
-| Hook | When | Frontend behaviour |
+| Hook (contract §11.5 names) | When | Frontend behaviour |
 |---|---|---|
-| `on_spawned()` | after vars set | build once, reset tweens/particles, `set_state(&"idle")`, `set_phase(0)` |
-| `set_state(state)` | on change: `idle`, `telegraph`, `attack`, `hurt`, `phase_change`, `defeated` | animation layer; `hurt` auto-returns after 0.25 s |
-| `set_phase(phase: int)` | 0-based, on `boss_phase_changed` | palette shift, extra limbs/rings, faster sway |
-| `on_hit(tool_kind, damage)` | after damage resolves | hit flash + damage number + tool-coloured sparks |
-| `on_telegraph(lane, kind, seconds)` | on `boss_attack_telegraph` | aim/charge pose toward `x = (lane - 1) * 2` over `seconds` |
-| `on_projectile(kind)` | at fire | release pose + muzzle flash (the projectile node is backend-spawned) |
-| `on_defeated()` | on `boss_defeated` | 1.6 s break-up, then the backend frees it |
+| `on_spawned()` | after vars set | build once, reset tweens/particles, internal state `idle`, phase 1 |
+| `set_phase(phase: int)` | 1-based, on `boss_phase_changed` | palette shift, extra limbs/rings, faster sway; internal `phase_change` beat 0.9 s |
+| `set_health(hp, max_hp)` | on `boss_health_changed` | drives HP-dependent looks (cracks widen, wall intensity drops) |
+| `play_hit(tool_kind, damage)` | damaging tool | `hurt` beat: flash + damage number + tool-coloured sparks, auto-returns after 0.25 s |
+| `play_resist(tool_kind)` | resisted tool | dull grey flash, `RESISTED` tag, no damage number |
+| `play_telegraph(lane_mask, kind, seconds)` | on `boss_attack_telegraph` | aim/charge pose toward the lanes in `lane_mask` (bit i = lane i, x = (i − 1) × 2) over `seconds` |
+| `play_attack(kind)` | at fire | release pose + muzzle flash (the projectile node is backend-spawned) |
+| `play_defeat()` / `play_retreat()` | fight end | 1.6 s break-up / fly-away, then the backend frees it |
 
-The visual sways itself in `_process` (PAUSABLE) from `sway_extent`; no per-tick backend call.
+Base vars (set before `on_spawned()`): `kind`, `boss_name`, `max_hp`, `phase_count`, `hover_z`, `sway_amplitude`,
+`sway_period`. The visual sways itself in `_process` (PAUSABLE).
+
+
 
 ### 3.2 The three bosses (`scenes/runner/boss/visuals/`)
 
@@ -174,7 +175,7 @@ core scales 1→1.6. `attack`: 0.12 s recoil + muzzle flash. `hurt`: 0.18 s whit
 `emission_energy_multiplier` + 0.06 m jolt. `phase_change`: 0.9 s rise 0.8 m, strobe, ring expands, HP pips animate.
 `defeated`: instances scatter on a CPU ballistic curve, emissives fade, one burst, toast `BUG FIXED`.
 
-### 3.3 Boss HUD — `scenes/runner/ui/boss_bar.gd`
+### 3.3 Boss HUD — `scenes/runner/ui/boss_hud.tscn/.gd` (contract §11.8 mount)
 
 `CENTER_TOP`, offset `(-380, 92)`, size `760×74`, below the time panel. Name plate `BOSS · MERGE CONFLICT HYDRA` at
 **26** CREAM on a DANGER-border panel; HP bar 720×22 (track NAVY_BG α0.9, DANGER fill, 3-unit CREAM edge, a chip bar
@@ -188,23 +189,25 @@ border pulses below 25 %; slides in on `boss_spawned`, out on `boss_defeated`.
 over `seconds`; a billboarded 1.9 × 5 beam (`hologram`, alpha 0.15 → 0.55); a Label3D at y 2.4 naming the attack
 (`GLOB` / `BEAM` / `SWEEP`), font 44, `pixel_size` 0.006, outline 10. **3 draws per lane.**
 
-**Projectiles** — `scenes/runner/boss/visuals/projectile_visual.gd` mounted on the backend projectile Area3D; bounds
-≤ 110 % of the hitbox:
+**Projectiles** — `scenes/runner/hazards/visuals/projectile_visual.tscn/.gd` (extends `hazards/hazard_visual_base.gd`;
+`kind = projectile`, `variant` selects the look; `closing_speed` is provided); bounds ≤ 110 % of the §11.6 hitbox:
 
-| Kind | Visual | Draws |
+| Variant (§11.6) | Visual | Draws |
 |---|---|---|
-| `glob` | DANGER sphere (r = hitbox r) + `hologram` shell + 12-particle trail | 3 |
-| `beam` | box of the exact hitbox length, `additive(DANGER, 0.6)`, CREAM core at 0.35 × width, grows over 0.1 s | 2 |
-| `sweep` | 6 m × 0.9 m blade at y 0.6, ORANGE additive, 8 glyph tiles riding it | 2 |
+| `orb` (1 lane) | DANGER sphere + `hologram` shell + 12-particle trail | 3 |
+| `low` (full width) | low stack-trace wave: DANGER additive box the exact hitbox size, CREAM core strip | 2 |
+| `high` (full width, chest height) | diff-bar beam: thin box, `additive(DANGER, 0.6)`, CREAM core at 0.35 × height, grows over 0.1 s | 2 |
+| `wide` (2 lanes) | fused-branches blade 3.6 m wide at y 0.5, ORANGE additive, 8 glyph tiles riding it | 2 |
 
-**Tool items** — `scenes/runner/boss/visuals/tool_item_visual.gd` + `tool_art.gd`. Distinct from the six power-ups
+**Tool items** — `scenes/runner/powerups/visuals/<kind>_visual.tscn/.gd` (extend `powerups/power_up_visual_base.gd`,
+mounted by the backend `tool_pickup`) sharing `scenes/runner/boss/tool_art.gd`. Distinct from the six power-ups
 (MINT, spinning, ring + halo + tag): tools are **MATRIX-cored, ORANGE-ringed, non-spinning, pulsing toward the boss**.
 
-| Tool | Silhouette | Colour | Tag |
+| Tool kind (§11.7) | Silhouette | Colour | Tag |
 |---|---|---|---|
 | `review_comment` | speech-bubble prism + tail, CREAM `//` | MATRIX body, ORANGE rim | `REVIEW COMMENT` |
-| `auto_fix` | double chevron `»` (two angled boxes; the power-up wrench is single) | MATRIX + CREAM bolt | `AUTO-FIX ×2` |
-| `lint` | comb: 5 thin bars in one MultiMesh | ORANGE bars, MATRIX base | `LINT` |
+| `auto_fix_patch` | double chevron `»` (two angled boxes; the power-up wrench is single) | MATRIX + CREAM bolt | `AUTO-FIX` |
+| `lint_rule` | comb: 5 thin bars in one MultiMesh | ORANGE bars, MATRIX base | `LINT` |
 | `unit_test` | open CREAM square frame + MATRIX tick | MATRIX tick | `UNIT TEST` |
 
 Each ≤ 7 draws; pickup radius 0.35; bob ±0.06 m; 0.5 Hz scale pulse synced to the boss's vulnerability.
@@ -318,7 +321,7 @@ fight (target-offset variable in the existing `_pitch` smoothing) + pitch `+0.04
 ```
 scenes/runner/ui/hud_style.gd
 scenes/runner/ui/pursuit_alert.gd / .tscn
-scenes/runner/ui/boss_bar.gd / .tscn
+scenes/runner/ui/boss_hud.gd / .tscn
 scenes/runner/ui/stage_banner.gd / .tscn
 scenes/runner/ui/stage_clear.gd / .tscn
 scenes/runner/ui/dev/pursuit_alert_preview.tscn/.gd
@@ -330,8 +333,8 @@ scenes/runner/boss/damage_number.gd
 scenes/runner/boss/visuals/flaky_test_swarm_visual.gd / .tscn
 scenes/runner/boss/visuals/merge_conflict_hydra_visual.gd / .tscn
 scenes/runner/boss/visuals/legacy_monolith_visual.gd / .tscn
-scenes/runner/boss/visuals/projectile_visual.gd / .tscn
-scenes/runner/boss/visuals/tool_item_visual.gd / .tscn
+scenes/runner/hazards/visuals/projectile_visual.gd / .tscn
+scenes/runner/powerups/visuals/{review_comment,lint_rule,unit_test,auto_fix_patch}_visual.gd / .tscn
 scenes/runner/boss/visuals/tool_art.gd
 scenes/runner/boss/dev/boss_gallery.tscn / .gd
 scenes/runner/environment/dev/turn_preview.tscn / .gd
