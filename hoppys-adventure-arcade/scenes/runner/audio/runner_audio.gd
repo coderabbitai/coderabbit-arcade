@@ -13,7 +13,7 @@ var _pending: Dictionary = {}
 const PENDING_TTL := 0.12
 const HIGH_PENDING_TTL := 0.30
 const HIGH_PRIORITY := {
-	&"hit": true, &"caught": true, &"game_over": true, &"shield_block": true,
+	&"alert_sting": true, &"hit": true, &"caught": true, &"game_over": true, &"shield_block": true,
 	&"pursuit_start": true, &"retreat": true, &"recovered_chime": true, &"powerup": true,
 }
 var _voice_kinds: Dictionary = {}
@@ -29,11 +29,18 @@ var _step_time := 0.0
 var _pitch := 1.0
 var _pursued := false
 var _heartbeat_on := false
+var _radar_phase := 0.0
+var _radar_rate := 0.9
+var _radar_age := 0.0
 var _drone_fade: Tween
 @onready var one_shots: AudioStreamPlayer = $OneShots
 @onready var footsteps: AudioStreamPlayer = $Footsteps
 @onready var drone: AudioStreamPlayer = $Drone
 @onready var heartbeat: AudioStreamPlayer = $Heartbeat
+
+func _ready() -> void:
+	# Publish this frame's shared radar phase before HUD processing.
+	process_priority = -10
 
 func bind(game: Node) -> void:
 	_disconnect_game()
@@ -78,6 +85,17 @@ func _process(delta: float) -> void:
 	if not is_instance_valid(_game) or _paused:
 		return
 	_clock += delta
+	if _pursued:
+		var next_phase := _radar_phase + delta * _radar_rate
+		_radar_age += delta
+		if next_phase >= 1.0 and not _heartbeat_on:
+			# One audible blip per visual revolution. The cached loop's other
+			# passes remain silent, preserving the specified sweep and pitch rates.
+			heartbeat.seek(0.0)
+			_radar_age = 0.0
+		_radar_phase = fposmod(next_phase, 1.0)
+		if not _heartbeat_on:
+			heartbeat.volume_db = 0.0 if _radar_age < 0.04 / heartbeat.pitch_scale else -80.0
 	# Important retries get first access to slots released by the mixer.
 	for high_priority in [true, false]:
 		for kind: StringName in _pending.keys():
@@ -217,15 +235,33 @@ func _on_pursuit(_seconds: float) -> void:
 	_pursued = true
 	_heartbeat_on = false
 	_play(&"pursuit_start")
+	_play(&"alert_sting")
+	_radar_phase = 0.0
+	_radar_age = 0.0
+	_radar_rate = 0.9
+	heartbeat.pitch_scale = 0.8
+	heartbeat.volume_db = 0.0
+	_play(&"radar_pulse", heartbeat)
 	drone.volume_db = -36.0
 	_play(&"pursuit_drone", drone)
 	_drone_fade = create_tween()
 	_drone_fade.tween_property(drone, "volume_db", -10.0, 0.4)
 
+func pursuit_radar_phase() -> float:
+	return _radar_phase
+
 func _on_progress(remaining: float, total: float) -> void:
-	if _pursued and not _heartbeat_on and total > 0 and remaining / total < 0.35:
-		_play(&"heartbeat", heartbeat)
-		_heartbeat_on = heartbeat.playing
+	if not _pursued or total <= 0:
+		return
+	var fraction := clampf(remaining / total, 0, 1)
+	_radar_rate = lerpf(0.9, 4.2, 1 - fraction)
+	if not _heartbeat_on:
+		heartbeat.pitch_scale = lerpf(0.8, 1.6, 1 - fraction)
+		if fraction < 0.35:
+			heartbeat.pitch_scale = 0.8
+			heartbeat.volume_db = 0.0
+			_play(&"heartbeat", heartbeat)
+			_heartbeat_on = heartbeat.playing and heartbeat.stream == Synth.sound(&"heartbeat")
 
 func _stop_pursuit() -> void:
 	_pursued = false

@@ -15,7 +15,7 @@ func build(kind: StringName) -> void:
 	_pivot = Node3D.new()
 	_pivot.name = "Pivot"
 	add_child(_pivot)
-	_ring_material = Materials.additive(Palette.MINT, 0.65).duplicate()
+	_ring_material = Materials.additive(Palette.MINT, 0.65).duplicate() as StandardMaterial3D
 	_ring = torus(_pivot, 0.34, 0.38, Vector3.ZERO, _ring_material)
 	_ring.name = "Ring"
 	_halo = Materials.glyph_particles(24, Vector3(0.28, 0.28, 0.08))

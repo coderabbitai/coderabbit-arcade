@@ -1,5 +1,5 @@
 extends CanvasLayer
-const Style = preload("res://scenes/main_menu/menu_style.gd")
+const Style = preload("res://scenes/runner/ui/hud_style.gd")
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 const Glyph = preload("res://scenes/runner/ui/hud_glyph.gd")
 const Vignette = preload("res://scenes/runner/shaders/vignette.gdshader")
@@ -27,7 +27,20 @@ var pursuit_remaining := 0.0
 var displayed_score := 0.0
 var score_tween: Tween
 var flash_tween: Tween
-var toast_queue: Array[String] = []
+var toast_queue: Array[Dictionary] = []
+var toast_priority := -1
+var toast_accent := Palette.MINT
+var toast_sequence := -1
+var _next_toast_sequence := 0
+var toast_age := 0.0
+var ready_age := 0.0
+var _gameplay_visible := true
+var _ready_seen := false
+var pursuit_alert: Control
+var toast_panel: PanelContainer
+var nitro_panel: PanelContainer
+var ready_panel: PanelContainer
+var pursuit_panel: PanelContainer
 var toast_remaining := 0.0
 var pulse_clock := 0.0
 
@@ -48,56 +61,72 @@ func _ready() -> void:
 	screen.add_child(widgets)
 	widgets.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var left := VBoxContainer.new()
-	_place(left, Control.PRESET_TOP_LEFT, Vector2(28, 28), Vector2(240, 100))
-	left.add_child(Style.label("APPROVALS", 14, Palette.MINT))
+	_back(left, Control.PRESET_TOP_LEFT, Vector2(28, 28), Vector2(240, 100), Palette.MINT)
+	left.add_child(Style.label("APPROVALS", 18, Palette.MINT))
 	hp_row = HBoxContainer.new()
 	hp_row.name = "HpRow"
 	left.add_child(hp_row)
 	powerups = VBoxContainer.new()
 	powerups.name = "PowerUps"
 	left.add_child(powerups)
-	var top := VBoxContainer.new()
-	_place(top, Control.PRESET_CENTER_TOP, Vector2(-210, 28), Vector2(420, 120))
-	time_label = Style.label("00:00.0", 24)
+	time_label = Style.label("00:00.0", 30)
 	time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	top.add_child(time_label)
+	_back(time_label, Control.PRESET_CENTER_TOP, Vector2(-100, 28), Vector2(200, 56), Palette.SLATE, 0.70)
 	pursuit_warning = HBoxContainer.new()
 	pursuit_warning.name = "PursuitWarning"
 	pursuit_warning.alignment = BoxContainer.ALIGNMENT_CENTER
-	top.add_child(pursuit_warning)
+	pursuit_panel = _back(pursuit_warning, Control.PRESET_CENTER_TOP, Vector2(-160, 92), Vector2(320, 72), Palette.DANGER)
 	pursuit_ring = Glyph.new()
 	pursuit_ring.ring = true
-	pursuit_ring.custom_minimum_size = Vector2(36, 36)
+	pursuit_ring.custom_minimum_size = Vector2(56, 56)
 	pursuit_warning.add_child(pursuit_ring)
-	pursuit_label = Style.label("", 16, Palette.ROSE)
+	pursuit_label = Style.label("", 22)
 	pursuit_warning.add_child(pursuit_label)
 	pursuit_warning.hide()
+	pursuit_panel.hide()
 	var right := VBoxContainer.new()
-	_place(right, Control.PRESET_TOP_RIGHT, Vector2(-288, 28), Vector2(260, 100))
-	score_label = Style.label("00000000", 32, Palette.MINT)
+	_back(right, Control.PRESET_TOP_RIGHT, Vector2(-328, 28), Vector2(300, 100), Palette.MINT)
+	score_label = Style.label("00000000", 36, Palette.MINT)
 	score_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	right.add_child(score_label)
-	multiplier_label = Style.label("×1.0", 20, Palette.MINT)
+	multiplier_label = Style.label("×1", 24, Palette.MINT)
 	multiplier_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	right.add_child(multiplier_label)
 	var bottom := VBoxContainer.new()
-	_place(bottom, Control.PRESET_BOTTOM_RIGHT, Vector2(-268, -90), Vector2(240, 62))
-	speed_label = Style.label("SPEED 0.0 m/s", 17)
+	_back(bottom, Control.PRESET_BOTTOM_RIGHT, Vector2(-316, -100), Vector2(288, 72), Palette.SLATE, 0.70)
+	speed_label = Style.label("SPEED 0.0 m/s", 20)
 	bottom.add_child(speed_label)
-	speed_bar = _bar(Vector2(240, 8))
+	speed_bar = _bar(Vector2(260, 12))
 	bottom.add_child(speed_bar)
-	toast = Style.label("", 24, Palette.MINT)
-	_place(toast, Control.PRESET_CENTER, Vector2(-350, -80), Vector2(700, 40))
+	var tick := ColorRect.new()
+	tick.color = Palette.CREAM
+	speed_bar.add_child(tick)
+	tick.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	tick.position = Vector2(260.0 * 26.0 / 32.0, 0)
+	tick.size = Vector2(2, 12)
+	toast = Style.label("", 28)
 	toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	nitro_banner = Style.label("NITRO COMMIT!", 30, Palette.ORANGE)
+	toast_panel = _back(toast, Control.PRESET_CENTER_TOP, Vector2(0, 164), Vector2.ZERO, Palette.MINT)
+	toast_panel.hide()
+	nitro_banner = Style.label("NITRO COMMIT!", 34, Palette.ORANGE)
 	nitro_banner.name = "NitroBanner"
-	_place(nitro_banner, Control.PRESET_CENTER_BOTTOM, Vector2(-250, -140), Vector2(500, 50))
+	nitro_panel = _back(nitro_banner, Control.PRESET_CENTER_BOTTOM, Vector2(-160, -100), Vector2(320, 64), Palette.ORANGE)
 	nitro_banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	nitro_banner.hide()
-	get_ready = Style.label("GET READY\nA / D · ← / →  lane    SPACE / A  jump\nS / ↓ / B  roll    ESC / START  pause", 22)
+	nitro_panel.hide()
+	var ready_box := VBoxContainer.new()
+	ready_panel = _back(ready_box, Control.PRESET_CENTER_BOTTOM, Vector2(-390, -180), Vector2(780, 150), Palette.MINT, 0.88)
+	get_ready = Style.label("GET READY", 34)
 	get_ready.name = "GetReady"
-	_place(get_ready, Control.PRESET_CENTER, Vector2(-480, 0), Vector2(960, 120))
 	get_ready.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ready_box.add_child(get_ready)
+	for line in ["A / D · ← / →  lane    SPACE / A  jump", "S / ↓ / B  roll    ESC / START  pause"]:
+		var hint := Style.label(line, 22)
+		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ready_box.add_child(hint)
+	if ResourceLoader.exists("res://scenes/runner/ui/pursuit_alert.tscn"):
+		pursuit_alert = load("res://scenes/runner/ui/pursuit_alert.tscn").instantiate()
+		widgets.add_child(pursuit_alert)
 	hit_flash = ColorRect.new()
 	hit_flash.name = "HitFlash"
 	screen.add_child(hit_flash)
@@ -120,21 +149,22 @@ func _ignore_mouse(node: Node) -> void:
 	for child in node.get_children():
 		_ignore_mouse(child)
 
+func _back(content: Control, preset: int, offset: Vector2, extent: Vector2, accent: Color, alpha: float = 0.82) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", Style.panel(accent, alpha))
+	_place(panel, preset, offset, extent)
+	panel.add_child(content)
+	return panel
+
 func _bar(extent: Vector2) -> ProgressBar:
-	var bar := ProgressBar.new()
-	bar.custom_minimum_size = extent
-	bar.show_percentage = false
-	bar.max_value = 1.0
-	var background := StyleBoxFlat.new()
-	background.bg_color = Palette.SLATE
-	var fill := StyleBoxFlat.new()
-	fill.bg_color = Palette.MINT
-	bar.add_theme_stylebox_override("background", background)
-	bar.add_theme_stylebox_override("fill", fill)
-	return bar
+	return Style.bar(extent, Palette.MINT)
 
 func bind(runner: Node) -> void:
+	if game == runner:
+		return
 	game = runner
+	if pursuit_alert != null:
+		pursuit_alert.bind(game)
 	game.health_changed.connect(_health)
 	game.score_changed.connect(_score)
 	game.speed_changed.connect(_speed)
@@ -160,6 +190,8 @@ func bind(runner: Node) -> void:
 func _process(delta: float) -> void:
 	if game == null or game.paused:
 		return
+	if not _gameplay_visible:
+		return
 	var seconds := float(game.elapsed)
 	time_label.text = "%02d:%04.1f" % [int(seconds) / 60, fmod(seconds, 60)]
 	for kind in chips:
@@ -167,16 +199,28 @@ func _process(delta: float) -> void:
 		if chip.total > 0:
 			chip.remaining = maxf(0, chip.remaining - delta)
 			chip.bar.value = chip.remaining / chip.total
+			chip.label.visible = chip.total - chip.remaining < 0.6
 	if pursuit_warning.visible:
 		pulse_clock += delta * lerpf(3, 12, 1 - pursuit_ring.fraction)
 		pursuit_warning.modulate.a = 0.75 + 0.25 * sin(pulse_clock)
 		vignette_material.set_shader_parameter("pulse", 0.5 + 0.5 * sin(pulse_clock))
+	ready_age += delta
+	ready_panel.modulate.a = clampf(1.0 - (ready_age - 2.5) / 0.25, 0, 1)
+	if ready_age >= 2.75:
+		ready_panel.hide()
+		get_ready.hide()
 	toast_remaining -= delta
+	toast_age += delta
+	toast_panel.modulate.a = minf(1.0, toast_age / 0.12)
 	if toast_remaining <= 0:
 		toast.text = ""
+		toast_priority = -1
+		toast_panel.hide()
 		if not toast_queue.is_empty():
-			toast.text = toast_queue.pop_front()
-			toast_remaining = 1.5
+			_show_toast(toast_queue.pop_front())
+	toast_panel.size = toast_panel.get_combined_minimum_size()
+	toast_panel.position.x = widgets.size.x * 0.5 - toast_panel.size.x * 0.5
+	nitro_panel.visible = nitro_banner.visible and toast.text.is_empty() and not ready_panel.visible
 
 func _health(hp: int, maximum: int) -> void:
 	for child in hp_row.get_children():
@@ -184,7 +228,7 @@ func _health(hp: int, maximum: int) -> void:
 	for i in maximum:
 		var pip := Glyph.new()
 		pip.name = "HpPip%d" % i
-		pip.custom_minimum_size = Vector2(42, 46)
+		pip.custom_minimum_size = Vector2(48, 52)
 		pip.filled = i < hp
 		hp_row.add_child(pip)
 		_ignore_mouse(pip)
@@ -196,19 +240,22 @@ func _score(value: int, multiplier: float) -> void:
 		score_tween.kill()
 	score_tween = create_tween()
 	score_tween.tween_method(_display_score, displayed_score, float(value), 0.16)
-	multiplier_label.text = "×%.1f" % multiplier
+	multiplier_label.text = "×%d" % roundi(multiplier) if is_equal_approx(multiplier, roundf(multiplier)) else "×%s" % str(snappedf(multiplier, 0.01))
 
 func _display_score(value: float) -> void:
 	displayed_score = value
 	score_label.text = "%08d" % roundi(value)
 
-func _speed(value: float, normalized: float) -> void:
+func _speed(value: float, _normalized: float) -> void:
 	speed_label.text = "SPEED %.1f m/s" % value
-	speed_bar.value = clampf(normalized, 0, 1)
+	speed_bar.value = clampf(value / 32.0, 0, 1)
 
 func _pursuit_started(seconds: float) -> void:
 	recovery_seconds = seconds
 	pursuit_warning.show()
+	pursuit_panel.show()
+	ready_panel.hide()
+	get_ready.hide()
 	_pursuit_progress(seconds, seconds)
 
 func _pursuit_progress(remaining: float, total: float) -> void:
@@ -216,25 +263,46 @@ func _pursuit_progress(remaining: float, total: float) -> void:
 	recovery_seconds = total
 	pursuit_ring.fraction = clampf(remaining / maxf(total, 0.001), 0, 1)
 	pursuit_ring.queue_redraw()
-	pursuit_label.text = "UNREVIEWED BACKLOG · %.1f" % remaining
-	vignette_material.set_shader_parameter("strength", 0.85 * (1 - pursuit_ring.fraction))
+	pursuit_ring.seconds = remaining
+	pursuit_label.text = "BACKLOG  %.1fs" % remaining
+	vignette_material.set_shader_parameter("strength", 0.25 + 0.6 * (1 - pursuit_ring.fraction))
+
+	vignette_material.set_shader_parameter("corner_bars", 1 - pursuit_ring.fraction)
 
 func _recovered(_reason: StringName) -> void:
 	pursuit_warning.hide()
+	pursuit_panel.hide()
+	vignette_material.set_shader_parameter("corner_bars", 0.0)
 	vignette_material.set_shader_parameter("strength", 0.0)
 	_toast("RECOVERED +2 APPROVALS")
 
 func _caught() -> void:
-	widgets.hide()
+	_gameplay_visible = false
+	for child in widgets.get_children():
+		if child != pursuit_alert:
+			child.hide()
 	pursuit_warning.hide()
+	pursuit_panel.hide()
+	vignette_material.set_shader_parameter("corner_bars", 0.0)
 	vignette_material.set_shader_parameter("strength", 1.0)
 
 func _state(value: StringName) -> void:
-	get_ready.visible = value == &"ready"
+	var show_ready := value == &"ready" or (value == &"running" and _ready_seen and ready_age < 2.75)
+	get_ready.visible = show_ready
+	ready_panel.visible = show_ready
+	if value == &"ready":
+		_ready_seen = true
+		ready_age = 0.0
+		ready_panel.modulate.a = 1.0
 	if value == &"ready" or value == &"running":
+		_gameplay_visible = true
 		widgets.show()
+		for child in widgets.get_children():
+			if child is PanelContainer and child not in [ready_panel, toast_panel, nitro_panel, pursuit_panel]:
+				child.show()
 		widgets.modulate.a = 1.0
 		vignette_material.set_shader_parameter("strength", 0.0)
+		vignette_material.set_shader_parameter("corner_bars", 0.0)
 		if flash_tween != null:
 			flash_tween.kill()
 			flash_tween = null
@@ -242,6 +310,8 @@ func _state(value: StringName) -> void:
 		toast_queue.clear()
 		toast.text = ""
 		toast_remaining = 0.0
+		toast_priority = -1
+		toast_panel.hide()
 	elif value == &"caught" or value == &"finished":
 		_caught()
 
@@ -262,8 +332,35 @@ func _flash(color: Color) -> void:
 	flash_tween = create_tween()
 	flash_tween.tween_property(hit_flash, "color:a", 0.0, 0.18)
 
-func _toast(message: String) -> void:
-	toast_queue.append(message)
+func _toast(message: String, priority: int = 0, accent: Color = Palette.MINT) -> void:
+	if message.begins_with("STAGE CLEAR") or message.begins_with("INCOMING"):
+		priority = maxi(priority, 100)
+		accent = Palette.DANGER if message.begins_with("INCOMING") else Palette.MATRIX
+	elif message.begins_with("BLOCKED") or message.begins_with("RECOVERED"):
+		priority = maxi(priority, 50)
+		accent = Palette.MATRIX if message.begins_with("RECOVERED") else Palette.MINT
+	var entry := {"text": message.left(26), "priority": priority, "accent": accent, "sequence": _next_toast_sequence}
+	_next_toast_sequence += 1
+	if toast_remaining > 0 and priority > toast_priority:
+		toast_queue.append({"text": toast.text, "priority": toast_priority, "accent": toast_accent, "sequence": toast_sequence})
+		_show_toast(entry)
+	else:
+		toast_queue.append(entry)
+	toast_queue.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return a.sequence < b.sequence if a.priority == b.priority else a.priority > b.priority)
+
+func _show_toast(entry: Dictionary) -> void:
+	toast.text = entry.text
+	toast_priority = entry.priority
+	toast_accent = entry.accent
+	toast_sequence = entry.sequence
+	toast_remaining = 1.5
+	toast_age = 0.0
+	toast_panel.add_theme_stylebox_override("panel", Style.panel(entry.accent))
+	toast_panel.modulate.a = 0.0
+	toast_panel.show()
+	ready_panel.hide()
+	get_ready.hide()
 
 func _powerup(kind: StringName, duration: float) -> void:
 	if kind == &"auto_fix":
@@ -271,16 +368,25 @@ func _powerup(kind: StringName, duration: float) -> void:
 	_expire(kind)
 	var column := VBoxContainer.new()
 	powerups.add_child(column)
-	column.add_child(Style.label(String(kind).replace("_", " ").to_upper(), 14, Palette.MINT))
-	var bar := _bar(Vector2(90, 6))
+	var title := Style.label(String(kind).replace("_", " ").to_upper(), 18, Palette.MINT)
+	column.add_child(title)
+	var row := HBoxContainer.new()
+	column.add_child(row)
+	var symbols := {&"approve_shield": "✓", &"lgtm": "OK", &"nitro": ">>", &"super_jump": "^^", &"code_review": "</>"}
+	var icon := Style.label(symbols.get(kind, "◆"), 18, Palette.MINT)
+	icon.tooltip_text = String(kind).replace("_", " ")
+	row.add_child(icon)
+	var bar := _bar(Vector2(112, 9))
 	bar.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	column.add_child(bar)
+	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(bar)
 	bar.value = 1
 	bar.visible = duration > 0
-	chips[kind] = {"node": column, "bar": bar, "remaining": duration, "total": duration}
+	chips[kind] = {"node": column, "label": title, "bar": bar, "remaining": duration, "total": duration}
 	_ignore_mouse(column)
 	if kind == &"nitro":
 		nitro_banner.show()
+		(speed_bar.get_theme_stylebox("fill") as StyleBoxFlat).bg_color = Palette.ORANGE
 		multiplier_label.add_theme_color_override("font_color", Palette.ORANGE)
 
 func _expire(kind: StringName) -> void:
@@ -289,6 +395,8 @@ func _expire(kind: StringName) -> void:
 		chips.erase(kind)
 	if kind == &"nitro":
 		nitro_banner.hide()
+		nitro_panel.hide()
+		(speed_bar.get_theme_stylebox("fill") as StyleBoxFlat).bg_color = Palette.MINT
 		multiplier_label.add_theme_color_override("font_color", Palette.MINT)
 
 func _shield(active: bool) -> void:

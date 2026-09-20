@@ -3,6 +3,8 @@ extends RefCounted
 const RATE := 22050
 # seconds, start Hz, end Hz, waveform, gain
 const RECIPES := {
+	&"alert_sting": [0.55, 180.0, 180.0, "alert", 0.65],
+	&"radar_pulse": [0.5, 1200.0, 900.0, "radar", 0.55],
 	&"footstep": [0.07, 140.0, 65.0, "noise", 0.35],
 	&"jump": [0.22, 240.0, 880.0, "square", 0.48],
 	&"land": [0.13, 180.0, 45.0, "noise", 0.55],
@@ -34,7 +36,7 @@ static func sound(kind: StringName) -> AudioStreamWAV:
 	var seconds := float(recipe[0])
 	var count := int(seconds * RATE)
 	var stereo := kind == &"lane_left" or kind == &"lane_right"
-	var looping := kind == &"pursuit_drone" or kind == &"heartbeat"
+	var looping := kind == &"pursuit_drone" or kind == &"heartbeat" or kind == &"radar_pulse"
 	var channels := 2 if stereo else 1
 	var data := PackedByteArray()
 	data.resize(count * channels * 2)
@@ -48,6 +50,13 @@ static func sound(kind: StringName) -> AudioStreamWAV:
 		var envelope := minf(t / 0.008, 1.0) * pow(1.0 - progress, 1.6)
 		var sample := sin(phase)
 		match String(recipe[3]):
+			"alert":
+				sample = 1.0 if sin(phase) >= 0 else -1.0
+				var gate := fposmod(t, 1.0 / 9.0)
+				envelope = sin(PI * gate / 0.055) if t < 3.0 / 9.0 and gate < 0.055 else 0.0
+			"radar":
+				frequency = lerpf(1200.0, 900.0, minf(t / 0.04, 1.0))
+				envelope = sin(PI * t / 0.04) if t < 0.04 else 0.0
 			"square": sample = 0.65 * (1.0 if sin(phase) >= 0 else -1.0) + 0.35 * sample
 			"saw": sample = 0.65 * (2.0 * fposmod(phase / TAU, 1.0) - 1.0) + 0.35 * sample
 			"noise": sample = sample * 0.55 + rng.randf_range(-1.0, 1.0) * 0.45

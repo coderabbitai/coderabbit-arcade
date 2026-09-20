@@ -1,5 +1,5 @@
 extends CanvasLayer
-const Style = preload("res://scenes/main_menu/menu_style.gd")
+const Style = preload("res://scenes/runner/ui/hud_style.gd")
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 var game: Node
 var panel: PanelContainer
@@ -29,7 +29,7 @@ func _ready() -> void:
 	screen.add_child(center)
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	panel = PanelContainer.new()
-	panel.custom_minimum_size = Vector2(680, 560)
+	panel.custom_minimum_size = Vector2(760, 620)
 	var box := StyleBoxFlat.new()
 	box.bg_color = Palette.NAVY
 	box.border_color = Palette.ROSE
@@ -43,7 +43,7 @@ func _ready() -> void:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 8)
 	panel.add_child(column)
-	column.add_child(Style.label("CAUGHT BY THE BACKLOG", 30, Palette.ROSE))
+	column.add_child(Style.label("CAUGHT BY THE BACKLOG", 34, Palette.ROSE))
 	stats = GridContainer.new()
 	stats.name = "Stats"
 	stats.columns = 2
@@ -64,10 +64,11 @@ func _ready() -> void:
 	save_button.pressed.connect(_save)
 	name_field.text_submitted.connect(func(_text: String) -> void: _save())
 	name_field.gui_input.connect(_name_input)
-	error_label = Style.label("", 14, Palette.ROSE)
+	error_label = Style.label("", 17, Palette.ROSE)
+	error_label.set_meta("legibility_exemption", "Design section 1: static error text at 17 units")
 	error_label.hide()
 	column.add_child(error_label)
-	column.add_child(Style.label("TOP 10", 16, Palette.MINT))
+	column.add_child(Style.label("TOP 10", 19, Palette.MINT))
 	board = VBoxContainer.new()
 	board.add_theme_constant_override("separation", 1)
 	column.add_child(board)
@@ -108,7 +109,7 @@ func show_result(value: Dictionary, leaderboard: Array) -> void:
 		"DISTANCE %d m" % int(result.get("distance", 0)), "DODGED %d" % int(result.get("hazards_dodged", 0)),
 		"POWER-UPS %d" % int(result.get("power_ups", 0)), "RANK %s" % (str(result.get("rank", 0)) if int(result.get("rank", 0)) > 0 else "UNPLACED")]
 	for i in lines.size():
-		stats.add_child(Style.label(lines[i], 18, Palette.MINT if i == 0 else Palette.CREAM))
+		stats.add_child(Style.label(lines[i], 22, Palette.MINT if i == 0 else Palette.CREAM))
 	_render_board(leaderboard)
 	visible = true
 	dim.modulate.a = 0
@@ -132,11 +133,11 @@ func _render_board(entries: Array) -> void:
 		var entry: Dictionary = entries[i]
 		var seconds := int(entry.get("duration", 0))
 		var current := String(entry.get("run_id", "")) == String(result.get("run_id", ""))
-		var row := Style.label("%2d  %-16s %8d  %02d:%02d" % [i + 1, String(entry.get("name", "Hoppy")), int(entry.get("score", 0)), seconds / 60, seconds % 60], 16, Palette.MINT if current else Palette.CREAM)
+		var row := Style.label("%2d  %-16s %8d  %02d:%02d" % [i + 1, String(entry.get("name", "Hoppy")), int(entry.get("score", 0)), seconds / 60, seconds % 60], 19, Palette.MINT if current else Palette.CREAM)
 		row.set_meta("current_run", current)
 		board.add_child(row)
 	if entries.is_empty():
-		board.add_child(Style.label("No runs on the board yet.", 16))
+		board.add_child(Style.label("No runs on the board yet.", 19))
 
 func _focus_chain() -> void:
 	var controls: Array[Control] = [retry_button, menu_button]

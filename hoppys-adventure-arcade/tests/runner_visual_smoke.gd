@@ -14,6 +14,14 @@ class ErrorCapture extends Logger:
 		mutex.unlock()
 		return result
 
+class LegacyPursuitGame extends Node:
+	signal pursuit_started(seconds: float)
+	signal pursuit_progress(remaining: float, total: float)
+	signal pursuit_recovered(reason: StringName)
+	signal damage_blocked(kind: StringName, reason: StringName)
+	signal caught
+	var paused := false
+
 var failures := 0
 var _logger := ErrorCapture.new()
 
@@ -151,6 +159,8 @@ func run() -> void:
 		await frames()
 	await check_hazards()
 	await check_powerups_and_pursuer()
+	await check_hud_legibility()
+	await check_pursuit_alert()
 	await check_runner_ui()
 	await check_runner_audio()
 	await check_runner_full_loop()
@@ -397,11 +407,11 @@ func hazard_labels(visual: Node3D) -> Array:
 		result.append([label.text, label.modulate, label.visible])
 	return result
 
-func pursuer_bounds(visual: Node3D) -> AABB:
+func pursuer_bounds(visual: Node3D, excluded: GeometryInstance3D = null) -> AABB:
 	var result := AABB()
 	var first := true
 	for node: GeometryInstance3D in visual.find_children("*", "GeometryInstance3D", true, false):
-		if not node.is_visible_in_tree(): continue
+		if not node.is_visible_in_tree() or node == excluded: continue
 		var relative := visual.global_transform.affine_inverse() * node.global_transform
 		if node is MultiMeshInstance3D:
 			var poses: Array[Transform3D] = visual.card_transforms()
@@ -482,14 +492,20 @@ func check_powerups_and_pursuer() -> void:
 		check(is_equal_approx(pursuer.get_node("Wall").scale.y, lerpf(0.35, 1.0, threat)), "pursuer threat height")
 		check(is_equal_approx(pursuer.get_node("RedLight").light_energy, threat * 2.5), "pursuer threat light")
 		check(is_equal_approx(pursuer.get_node("Wall/Glitch").amount_ratio, threat), "pursuer threat particles")
+	var shockwave := pursuer.get_node("Wall/Shockwave") as MeshInstance3D
+	check(is_equal_approx(shockwave.rotation.x, PI / 2), "shockwave ring faces player")
 	var merged := AABB()
 	for sample in 121:
 		pursuer._process(1.0 / 60.0)
-		var box := pursuer_bounds(pursuer)
+		# The expanding F7 ring has its own radius contract, separate from the wall.
+		var ring_box: AABB = shockwave.transform * shockwave.get_aabb()
+		check(ring_box.size.x <= 5.201 and ring_box.size.y <= 5.201, "shockwave maximum radius 2.6 m")
+		check(is_equal_approx(ring_box.get_center().y, 1.2), "shockwave centered at y=1.2")
+		var box := pursuer_bounds(pursuer, shockwave)
 		merged = box if sample == 0 else merged.merge(box)
-		check(box.size.x <= 6.0 and box.size.y <= 2.6 and box.position.y >= -0.001, "pursuer threat 1 visible AABB %s" % box)
-	check(merged.size.x <= 6.0 and merged.size.y <= 2.6, "pursuer merged motion envelope")
-	print("PURSUER THREAT 1 MERGED VISIBLE AABB: ", merged)
+		check(box.size.x <= 6.0 and box.size.y <= 2.6 and box.position.y >= -0.001, "pursuer wall threat 1 visible AABB %s" % box)
+	check(merged.size.x <= 6.0 and merged.size.y <= 2.6, "pursuer wall merged motion envelope")
+	print("PURSUER WALL THREAT 1 MERGED VISIBLE AABB: ", merged)
 	var clock: float = pursuer._t
 	pursuer.set_process(true)
 	paused = true
@@ -512,6 +528,7 @@ func check_powerups_and_pursuer() -> void:
 	var retreat_pose: Transform3D = pursuer.get_node("Wall").transform
 	pursuer.set_threat(0.0)
 	pursuer.play_retreat()
+	check(not pursuer._shockwave.visible, "retreat hides shockwave")
 	check(pursuer.get_node("Wall").transform.is_equal_approx(retreat_pose), "retreat restores last non-zero threat pose")
 	pursuer._process(0.0)
 	check(pursuer.get_node("Wall").transform.is_equal_approx(retreat_pose), "retreat starts without height pop")
@@ -566,9 +583,9 @@ func check_runner_ui() -> void:
 	for i in 100:
 		mock.advance_demo(0.1)
 		saw_shield = saw_shield or mock.hud.chips.has(&"approve_shield")
-		saw_blocked = saw_blocked or "BLOCKED" in hud.toast_queue or hud.toast.text == "BLOCKED"
-		saw_auto_fix = saw_auto_fix or "AUTO-FIX ×3" in hud.toast_queue or hud.toast.text == "AUTO-FIX ×3"
-		saw_bonus = saw_bonus or "+25 BONUS" in hud.toast_queue or hud.toast.text == "+25 BONUS"
+		saw_blocked = saw_blocked or hud.toast_queue.any(func(entry: Dictionary) -> bool: return entry.text == "BLOCKED") or hud.toast.text == "BLOCKED"
+		saw_auto_fix = saw_auto_fix or hud.toast_queue.any(func(entry: Dictionary) -> bool: return entry.text == "AUTO-FIX ×3") or hud.toast.text == "AUTO-FIX ×3"
+		saw_bonus = saw_bonus or hud.toast_queue.any(func(entry: Dictionary) -> bool: return entry.text == "+25 BONUS") or hud.toast.text == "+25 BONUS"
 		hud._process(0.1)
 	check(saw_shield and not hud.chips.has(&"approve_shield"), "demo shield chip appears then clears on blocked hit")
 	check(saw_blocked and saw_auto_fix and saw_bonus, "demo BLOCKED, AUTO-FIX and bonus reach HUD toasts")
@@ -584,12 +601,12 @@ func check_runner_ui() -> void:
 	check(is_zero_approx(mock.camera_rig.last_shake), "HUD leaves backend-owned damage camera shake untouched")
 	mock.pursuit_started.emit(7.5)
 	mock.pursuit_progress.emit(3.25, 7.5)
-	check(hud.pursuit_label.text == "UNREVIEWED BACKLOG · 3.2", "pursuit formats signal value")
+	check(hud.pursuit_label.text == "BACKLOG  3.2s", "pursuit formats signal value")
 	check(is_equal_approx(hud.pursuit_ring.fraction, 3.25 / 7.5), "ring uses supplied total")
 	mock.collect(&"nitro", 8)
 	hud._process(1)
 	await frames()
-	check(hud.chips[&"nitro"].bar.size.is_equal_approx(Vector2(90, 6)), "power-up bar remains 90x6")
+	check(hud.chips[&"nitro"].bar.size.is_equal_approx(Vector2(112, 9)), "power-up bar remains 112x9")
 	for pip in hud.hp_row.get_children():
 		check(pip.mouse_filter == Control.MOUSE_FILTER_IGNORE, "rebuilt HP pip ignores mouse")
 	var pause_event := InputEventAction.new()
@@ -613,7 +630,7 @@ func check_runner_ui() -> void:
 	for i in 125:
 		mock.advance_demo(0.1)
 		hud._process(0.1)
-	check(not hud.widgets.visible and not hud.pursuit_warning.visible, "caught hides gameplay")
+	check(not hud.score_label.is_visible_in_tree() and not hud.pursuit_warning.visible, "caught hides gameplay")
 	check(is_equal_approx(hud.vignette_material.get_shader_parameter("strength"), 1), "caught vignette")
 	for restart_state: StringName in [&"running", &"ready"]:
 		mock.state_changed.emit(&"caught")
@@ -628,7 +645,7 @@ func check_runner_ui() -> void:
 		check(not previous_flash.is_valid() and hud.flash_tween == null and is_zero_approx(hud.hit_flash.color.a), "%s clears hit flash and kills tween" % restart_state)
 		check(hud.toast_queue.is_empty() and hud.toast.text.is_empty() and is_zero_approx(hud.toast_remaining), "%s clears active and queued toasts" % restart_state)
 	await frames()
-	check(over.panel.size.x <= 680 and over.panel.size.y <= 620, "result panel fits 1280x720")
+	check(over.panel.size.x <= 760 and over.panel.size.y <= 620, "result panel fits 1280x720")
 	check(over.panel.get_global_rect().end.y <= 720, "result panel inside viewport")
 	check(over.name_field.focus_next == over.name_field.get_path_to(over.save_button), "name to save focus chain")
 	for viewport_size in [Vector2i(1600, 900), Vector2i(1440, 900), Vector2i(1000, 720)]:
@@ -637,8 +654,8 @@ func check_runner_ui() -> void:
 		# canvas_items/expand uses logical coordinates at the requested window size.
 		var canvas_size := root.get_visible_rect().size
 		check(root.size == viewport_size, "requested window size applied")
-		check(absf(hud.speed_bar.get_global_rect().end.x - (canvas_size.x - 28)) < 0.1, "HUD right anchor at %s" % viewport_size)
-		check(is_equal_approx(hud.hp_row.global_position.x, 28), "HUD left anchor at %s" % viewport_size)
+		check(absf(hud.speed_bar.get_global_rect().end.x - (canvas_size.x - 42)) < 0.1, "HUD right anchor at %s" % viewport_size)
+		check(is_equal_approx(hud.hp_row.global_position.x, 42), "HUD left anchor at %s" % viewport_size)
 		check(over.panel.get_global_rect().position.x >= 0 and over.panel.get_global_rect().end.x <= canvas_size.x and over.panel.get_global_rect().end.y <= canvas_size.y, "result inside %s" % viewport_size)
 		check(is_equal_approx(over.retry_button.size.y, 62) and is_equal_approx(over.menu_button.size.y, 62), "result buttons remain 62px at %s" % viewport_size)
 	root.size = Vector2i(1280, 720)
@@ -784,6 +801,8 @@ func check_runner_audio() -> void:
 	var service := root.get_node("AudioService")
 	check(service.music.stream.resource_path == audio.MUSIC_PATH and service.music.stream.loop, "runner BGM loaded and looping")
 	check(service.music.volume_db == -12.0, "runner BGM level")
+	check(Synth.RECIPES.size() == 21, "F7 has exactly 21 recipes")
+	check(audio.HIGH_PRIORITY.has(&"alert_sting"), "alert sting is high priority")
 	for kind: StringName in Synth.RECIPES:
 		var stream := Synth.sound(kind)
 		check(stream == Synth.sound(kind), "cached PCM: " + kind)
@@ -793,7 +812,7 @@ func check_runner_audio() -> void:
 		for i in range(0, data.size(), 2):
 			maximum = maxi(maximum, absi(data.decode_s16(i)))
 		check(maximum > 0 and maximum <= int(0.8 * 32767), "non-silent bounded PCM: " + kind)
-		if kind in [&"pursuit_drone", &"heartbeat"]:
+		if kind in [&"pursuit_drone", &"heartbeat", &"radar_pulse"]:
 			check(stream.loop_mode == AudioStreamWAV.LOOP_FORWARD and stream.loop_end == data.size() / 2, "complete loop: " + kind)
 		if kind in [&"lane_left", &"lane_right"]:
 			var energy := [0.0, 0.0]
@@ -853,9 +872,13 @@ func check_runner_audio() -> void:
 	await create_timer(0.05).timeout
 	mock.pursuit_started.emit(18.0)
 	mock.pursuit_progress.emit(6.3, 18.0)
-	check(not audio.heartbeat.playing, "heartbeat strict threshold")
+	check(audio.heartbeat.playing and audio.heartbeat.stream == Synth.sound(&"radar_pulse") and not audio._heartbeat_on, "radar remains at strict heartbeat threshold")
+	audio._process(0.1)
+	mock.hud.pursuit_alert._process(0.1)
+	check(is_equal_approx(mock.hud.pursuit_alert.radar_phase, audio.pursuit_radar_phase()), "visual pulse and radar audio share a clock")
 	for i in 20:
 		mock.pursuit_progress.emit(6.0 - i * 0.1, 18.0)
+	check(audio.heartbeat.stream == Synth.sound(&"heartbeat") and is_equal_approx(audio.heartbeat.pitch_scale, 0.8), "same player switches stream with pitch drop")
 	check(counts.get(&"heartbeat", 0) == 2, "new pursuit resets heartbeat latch once")
 	mock.damage_taken.emit(&"bug_swarm", 1)
 	await create_timer(0.10).timeout
@@ -952,7 +975,7 @@ func check_runner_audio() -> void:
 	mock.caught.emit()
 	check(not audio.heartbeat.playing, "caught stops heartbeat")
 	check(service.get_child_count() == 2, "AudioService retains exactly two child players")
-	print("RUNNER AUDIO: 19 recipes/triggers; demo heartbeat starts=1; peak voices=", peak[0], "; AudioService players=", service.get_child_count())
+	print("RUNNER AUDIO: 21 recipes/triggers; demo heartbeat starts=1; peak voices=", peak[0], "; AudioService players=", service.get_child_count())
 	mock.free()
 	await frames()
 	check(is_equal_approx(service.music.pitch_scale, 1.0), "audio teardown resets pitch")
@@ -1067,3 +1090,146 @@ func check_runner_full_loop() -> void:
 	print("RUNNER FULL LOOP: ", "PASS" if before == failures else "FAIL", " (menu, play, hit, pursuit, %ss timer recovery, hit, hit, caught, finished, game over, Codex, retry, menu, hub, default music; isolated board removed)" % recovery_seconds)
 	current_scene.free()
 	await frames()
+
+func check_hud_legibility() -> void:
+	var mock := load("res://scenes/runner/ui/dev/mock_runner_game.gd").new() as Node
+	mock.autoplay = false
+	root.add_child(mock)
+	mock.start_run()
+	mock.collect(&"nitro", 8.0)
+	mock.pursuit_started.emit(18.0)
+	mock.finish_demo()
+	await frames()
+	var count := 0
+	for overlay in [mock.hud, mock.pause_menu, mock.game_over]:
+		for label: Label in overlay.find_children("*", "Label", true, false):
+			count += 1
+			var size_units := label.get_theme_font_size("font_size")
+			check(size_units >= 18 or label.has_meta("legibility_exemption"), "critical label >=18: " + label.text)
+			check(label.get_theme_constant("outline_size") >= 6, "label outline >=6: " + label.text)
+			var parent := label.get_parent()
+			while parent != null and not parent is PanelContainer:
+				parent = parent.get_parent()
+			check(parent != null, "label has backing: " + label.text)
+	var hud: Node = mock.hud
+	hud._score(100, 2.0)
+	check(hud.multiplier_label.text == "×2", "integral multiplier omits decimal")
+	hud._score(100, 1.5)
+	check(hud.multiplier_label.text == "×1.5", "fractional multiplier preserved")
+	hud._state(&"running")
+	hud._toast("+250 BONUS")
+	hud._process(0.01)
+	hud._toast("INCOMING", 100)
+	check(hud.toast.text == "INCOMING", "urgent toast preempts bonus")
+	check(hud.toast_queue.any(func(entry: Dictionary) -> bool: return entry.text == "+250 BONUS"), "preempted toast retained")
+	hud._process(0.12)
+	check(is_equal_approx(hud.toast_panel.modulate.a, 1.0), "toast fades in over 0.12 seconds")
+	hud._state(&"running")
+	hud._toast("FIRST", 0, Color.CORAL)
+	hud._process(0.01)
+	hud._toast("SECOND", 0, Color.CYAN)
+	hud._toast("THIRD", 0, Color.GOLD)
+	hud._toast("INCOMING", 100)
+	check(hud.toast_queue[0].text == "FIRST" and hud.toast_queue[0].accent == Color.CORAL, "preempted toast preserves accent and original FIFO position")
+	hud._process(1.6)
+	check(hud.toast.text == "FIRST" and hud.toast_accent == Color.CORAL, "preempted toast resumes with original accent")
+	hud._process(1.6)
+	check(hud.toast.text == "SECOND", "equal-priority second toast retains FIFO order")
+	hud._process(1.6)
+	check(hud.toast.text == "THIRD", "equal-priority third toast retains FIFO order")
+	hud._state(&"ready")
+	hud._process(2.5)
+	check(hud.ready_panel.visible, "get ready holds 2.5 seconds")
+	hud._process(0.25)
+	check(not hud.ready_panel.visible, "get ready fades after 2.5 seconds")
+	check(not hud.chips[&"nitro"].label.visible, "power-up name cut after 0.6 seconds")
+	check(count >= 30, "legibility census includes dynamic result rows and stats")
+	print("HUD LEGIBILITY: ", count, " labels checked")
+	mock.free()
+	await frames()
+
+func check_pursuit_alert() -> void:
+	var before := failures
+	var mock := load("res://scenes/runner/ui/dev/mock_runner_game.gd").new() as Node
+	mock.autoplay = false
+	root.add_child(mock)
+	mock.start_run()
+	var alert: Control = mock.hud.pursuit_alert
+	alert.set_process(false)
+	var connections: int = mock.pursuit_started.get_connections().size()
+	alert.bind(mock)
+	alert.bind(mock)
+	check(mock.pursuit_started.get_connections().size() == connections, "alert same-game binding is idempotent")
+	check(alert.process_mode == Node.PROCESS_MODE_PAUSABLE, "alert PAUSABLE contract")
+	mock.pursuit_started.emit(18.0)
+	mock.pursuit_alert.emit(&"warn", 18.0)
+	check(alert.visible and alert.position.x == -440, "alert starts offscreen and visible")
+	alert._process(0.28)
+	check(is_equal_approx(alert.position.x, 28), "cubic slide reaches 28 at 0.28s")
+	check(alert.catch_rule.text.replace("\n", " ") == "ONE MORE HIT BEFORE RECOVERY AND IT HAS YOU", "alert states catch rule")
+	var previous_rate := 0.0
+	for remaining in [18.0, 12.0, 6.0, 0.0]:
+		mock.pursuit_progress.emit(remaining, 18.0)
+		check(alert.radar_rate > previous_rate, "radar rate strictly increases")
+		previous_rate = alert.radar_rate
+		check(alert.countdown.text == "CATCHES UP IN %.1f s" % remaining, "live countdown")
+		alert._process(0.1)
+	check(alert.portrait_viewport.size == Vector2i(256, 256) and alert.portrait_viewport.disable_3d, "portrait 256x256 2D viewport")
+	check(alert.portrait_viewport.render_target_update_mode == SubViewport.UPDATE_ALWAYS, "portrait renders deterministically")
+	var back_buffer := alert.portrait_viewport.get_child(1) as BackBufferCopy
+	check(back_buffer != null and back_buffer.copy_mode == BackBufferCopy.COPY_MODE_VIEWPORT, "portrait copies art before scanline screen read")
+	check(alert.portrait.texture == alert.portrait_viewport.get_texture(), "portrait displays viewport texture")
+	await frames()
+	# The dummy headless renderer cannot read pixels; the host capture verifies pixels.
+	if DisplayServer.get_name() != "headless":
+		var rendered: Image = alert.portrait_viewport.get_texture().get_image()
+		check(rendered != null and not rendered.is_empty(), "portrait renders pixels")
+	mock.pause()
+	var saved_clock: float = alert.clock
+	var saved_phase: float = alert.radar_phase
+	var saved_position := alert.position
+	var saved_shader: float = alert.portrait_material.get_shader_parameter("clock")
+	alert._process(1.0)
+	check(alert.clock == saved_clock and alert.radar_phase == saved_phase and alert.position == saved_position, "facade pause freezes all alert animation")
+	check(alert.portrait_material.get_shader_parameter("clock") == saved_shader, "facade pause freezes scanline shader")
+	mock.resume()
+	alert.set_process(true)
+	paused = true
+	await frames()
+	check(alert.clock == saved_clock, "tree pause freezes alert")
+	paused = false
+	alert.set_process(false)
+	mock.damage_blocked.emit(&"bug_swarm", &"shield")
+	alert._process(0.1)
+	check(alert.heading.text == "BLOCKED" and alert.visible, "blocked flash retains alert")
+	alert._process(0.51)
+	check(alert.heading.text == "INCOMING TRANSMISSION", "blocked clears after 0.6s")
+	mock.pursuit_recovered.emit(&"timer")
+	alert._process(1.19)
+	check(alert.visible and alert.heading.text == "RECOVERED" and alert.countdown.text == "+2 APPROVALS", "recovered holds 1.2s")
+	alert._process(0.24)
+	check(not alert.visible, "recovered slides out")
+	mock.pursuit_started.emit(18.0)
+	mock.caught.emit()
+	alert._process(0.45)
+	check(alert.visible and alert.portrait.scale.is_equal_approx(Vector2(1.35, 1.35)), "caught portrait fills and grows")
+	check(not mock.hud.score_label.is_visible_in_tree() and alert.is_visible_in_tree(), "caught hides gameplay but preserves portrait")
+	alert._process(0.23)
+	check(not alert.visible, "caught slides out")
+	mock.free()
+	await frames()
+	var legacy := LegacyPursuitGame.new()
+	root.add_child(legacy)
+	var standalone := load("res://scenes/runner/ui/pursuit_alert.tscn").instantiate() as Control
+	root.add_child(standalone)
+	standalone.bind(legacy)
+	standalone.bind(legacy)
+	check(not legacy.has_signal("pursuit_alert"), "legacy fixture lacks optional v2 signal")
+	legacy.pursuit_started.emit(10.0)
+	legacy.pursuit_progress.emit(4.0, 10.0)
+	check(standalone.visible and standalone.countdown.text == "CATCHES UP IN 4.0 s", "standalone alert works with v1 signals only")
+	legacy.pursuit_recovered.emit(&"timer")
+	check(standalone.heading.text == "RECOVERED", "v1 recovery beat")
+	standalone.free()
+	legacy.free()
+	print("PURSUIT ALERT: ", "PASS" if before == failures else "FAIL")

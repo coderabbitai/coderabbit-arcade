@@ -5,9 +5,17 @@ var _errors := ErrorCapture.new()
 
 class ErrorCapture extends Logger:
 	var count := 0
+	var mutex := Mutex.new()
 	func _log_error(_function: String, _file: String, _line: int, _code: String, _rationale: String, _editor_notify: bool, error_type: int, _script_backtraces: Array[ScriptBacktrace]) -> void:
 		if error_type != 1: # Logger warning, not an engine/script/shader error.
+			mutex.lock()
 			count += 1
+			mutex.unlock()
+	func get_count() -> int:
+		mutex.lock()
+		var result := count
+		mutex.unlock()
+		return result
 
 func _initialize() -> void:
 	OS.add_logger(_errors)
@@ -124,7 +132,8 @@ func run() -> void:
 	root.get_node("AudioService").shutdown()
 	await create_timer(0.3).timeout
 	await frames()
-	failures += _errors.count
-	print("ENV CHECK: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
 	OS.remove_logger(_errors)
+	var error_count := _errors.get_count()
+	failures += error_count
+	print("ENV CHECK: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
 	quit(failures)

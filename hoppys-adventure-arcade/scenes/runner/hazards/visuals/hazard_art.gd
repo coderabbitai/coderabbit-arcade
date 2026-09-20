@@ -243,8 +243,9 @@ func _batch_boxes() -> void:
 		var batch := MultiMeshInstance3D.new()
 		batch.multimesh = MultiMesh.new()
 		batch.multimesh.transform_format = MultiMesh.TRANSFORM_3D
-		batch.multimesh.mesh = BoxMesh.new()
-		batch.multimesh.mesh.size = Vector3.ONE
+		var box := BoxMesh.new()
+		box.size = Vector3.ONE
+		batch.multimesh.mesh = box
 		batch.multimesh.instance_count = groups[material].size()
 		batch.material_override = material
 		batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

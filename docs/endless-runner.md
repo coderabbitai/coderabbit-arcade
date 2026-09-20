@@ -1,6 +1,6 @@
 # Endless Runner frontend
 
-The Codebase Corridor, F0-F6. Godot 4.7.0 results are diagnostic, pending 4.7.1 acceptance.
+The Codebase Corridor, F0-F7. Godot 4.7.0 results are diagnostic, pending 4.7.1 acceptance.
 
 ## Run
 
@@ -41,11 +41,11 @@ Key 6 reaches the F1 26 m/s acceptance limit; key 7 exercises the Nitro cap. The
 
 ## Behavior and ownership
 
-F0-F6 are implemented. This milestone adds the runner menu, routed full-loop integration, capture fixture and final documentation. Work stops at F6.
+F0-F6 introduced the runner menu, routed full-loop integration, capture fixture and documentation. F7 adds the legibility and pursuit presentation described below.
 
 The hub routes to `RunnerMenu`, a Node3D with Backdrop and Interface children. The backdrop mounts the existing corridor at 3.5 m/s and Hoppy in run at normalized speed 0.25. Hoppy stands at (0.7, 0, -0.3), facing -Z with feet at y=0, in the gap between the buttons and controls card. The camera remains at (2.6, 1.9, 3.4), looking at (0, 1, -2), with its existing slow drift. A shaded 1280x720 composition uses the hub Style helpers, mint eyebrow, cream title, numbered buttons, controls card and footer. It centers in larger viewports and scales to fit smaller ones. Play owns initial focus; Up/Down and Tab wrap through the four buttons. Leaderboard reads `runner_leaderboard.gd.load_entries()` without a game instance, shows ten rank/name/score/mm:ss rows with `---` placeholders, disables the other three menu buttons while keeping Leaderboard enabled and focusable, and initially focuses Close. Pressing Leaderboard again closes the panel. Closing restores Leaderboard focus. `ui_cancel` closes the panel first, otherwise returns to the hub.
 
-The menu calls the AppRouter singleton directly: Play -> `go("runner_game")`, Return/cancel -> `go("hub")`, Quit -> `quit_game()`. Local singleton references allow standalone `--check-only`. In gameplay, overlays call only facade `pause()`, `resume()`, `retry()`, `go_to_menu()`, and `submit_name(name)`. Backend owns physics, collisions, recovery, score, persistence, routes and shared audio. No backend files or project settings were changed.
+The menu calls the AppRouter singleton directly: Play -> `go("runner_game")`, Return/cancel -> `go("hub")`, Quit -> `quit_game()`. Local singleton references allow standalone `--check-only`. In gameplay, overlays call only facade `pause()`, `resume()`, `retry()`, `go_to_menu()`, and `submit_name(name)`. Backend owns physics, collisions, recovery, score, persistence, routes and shared audio. The frontend milestones changed no backend files or project settings. The backend contract PR added the runner [input], [layer_names] and physics_interpolation entries to project.godot.
 
 HUD is on layer 10, PauseMenu 21 and GameOver 22. HUD listens to facade signals, uses responsive margins, counts up score, displays effects and pursuit, dims on pause and hides gameplay widgets on caught. Backend owns damage camera shake. Pause has no ui_cancel handler. Game Over appears only on run_finished, shows result stats and the local top ten, and saves qualifying names through the facade. Save success locks the name field and focuses Retry; failure stays editable. Retry creates a fresh scene. The mock scene demonstrates the same signals in 40 seconds with in-memory persistence.
 
@@ -175,3 +175,62 @@ F0-F6 implementation is complete. The Hoppy menu recapture at (0.7, 0, -0.3) is 
 Required: final acceptance on the pinned Godot 4.7.1, which the briefs' acceptance scripts gate on.
 
 Tracked non-blocking baseline: the two documented headless menu_smoke hover failures on Godot 4.7.0 listed above.
+
+## F7: HUD legibility and pursuit transmission
+
+F7 adds runner-owned `ui/hud_style.gd`, applying navy outlines of `max(6, round(size * 0.30))`, a hard two-unit navy shadow, and navy backing panels. The four UI scripts use it without changing the shared menu style. The original 14-unit labels rendered at 10.5 physical pixels at the 960x540 minimum window; the larger type and backing reduce interference from the moving corridor.
+
+All sizes below are base units at 1280x720. Backing colours name the border; panel fill is NAVY_BG.
+
+| Widget | Before | F7 | Backing |
+| --- | --- | --- | --- |
+| Approvals header / pips | 14 / 42x46 | 18 / 48x52, hex stroke 3 | MINT, alpha 0.82, shared cluster |
+| Power-up name / bar | 14 / 90x6 | 18 / 112x9 | Inside approvals panel |
+| Time | 24 | 30, monospace | SLATE, alpha 0.70, width 200 |
+| Score / multiplier | 32 / 20 | 36 / 24 | MINT, alpha 0.82, width 300 |
+| Speed label / bar | 17 / 240x8 | 20 / 260x12, 2-unit tick at 26 m/s | SLATE, alpha 0.70 |
+| Pursuit label / ring | 16 / 36x36, strokes 3-4 | 22 / 56x56, radius 24, strokes 5/6/3, centre number 20 | DANGER panel; navy disc alpha 0.85 |
+| Toast | 24 | 28, maximum 26 characters | Auto-width panel, border by message kind |
+| Nitro | 30 | 34 | ORANGE panel |
+| Get Ready | 22 throughout | Title 34, controls 22 | Centred NAVY_BG alpha 0.88 panel |
+| Pause title / hint | 40 / 16 | 46 / 20; buttons retain theme size | Existing panel |
+| Game over title / stats / rows / error | 30 / 18 / 16 / 14 | 34 / 22 / 19 / 17 | Existing panel, minimum 760x620 |
+
+Integral multipliers omit decimals; fractional multipliers retain their value. Timed power-up names disappear after 0.6 seconds, leaving distinct compact symbols and bars. Get Ready holds for 2.5 seconds then fades over 0.25 seconds. Toasts fade in over 0.12 seconds, preserve preempted entries, and prioritize INCOMING/STAGE CLEAR above recovery/blocked and bonus messages. Nitro and Get Ready yield to an active toast. The toast sits above the lane-reading band. The alert retains the design's explicit bottom-left placement at (28, -236), size 420x196. The catch-rule caption at 17 and static game-over error at 17 are explicit design exemptions from the 18-unit critical-label floor; both retain outlines and backing.
+
+`ui/pursuit_alert.tscn` is PAUSABLE and works standalone or as a child of HUD widgets. Its `bind(game)` returns immediately for the same game and disconnects the previous facade on a different binding. It conditionally connects the optional `pursuit_alert` signal, using the contract's `warn` kind as a hint; v1 pursuit_started/progress/recovered, damage_blocked and caught signals fully drive the presentation. The mock additionally emits `warn`, `critical`, and `clear` without making those events mandatory for the UI.
+
+The panel uses a cubic ease-out slide from x=-440 to 28 over 0.28 seconds, an initial 0.08-second cream flash, a procedural 256x256 2D SubViewport portrait sharing the pursuer's HEADLINES, clock-driven scanlines/chromatic displacement/roll bar, 48 waveform bars, an 88x88 radar and a live countdown. The catch rule reads "ONE MORE HIT BEFORE RECOVERY AND IT HAS YOU". Recovery holds RECOVERED / BACKLOG REVIEWED / +2 APPROVALS for 1.2 seconds with MATRIX accents, then exits over 0.22 seconds. A blocked hit flashes MINT and BLOCKED for 0.6 seconds. Catch hides the gameplay siblings while the portrait fills the panel and grows to 1.35 over 0.45 seconds, then slides out. Both tree pause and the mock's facade pause freeze clocks and motion; no pause-sensitive shader uses TIME.
+
+Accepted layout exception: the alert panel at (28, -236), sized 420×196, intrudes approximately 34 units into the design's no-new-widgets band. The coordinator accepts this because the bottom-left corner is outside the lane reading zone.
+
+The pursuer gains one additive DANGER torus draw, repeating from scale 1 to 3.4 over 1.6 to 0.45 seconds by threat. Its maximum pulse radius is 2.6 m at y=1.2, retreat hides it, and catch runs three pulses in 0.35 seconds. The vignette now uses strength `0.25 + 0.6 * (1 - fraction)` and top/bottom danger bars advancing by `(1 - fraction) * 0.06` of viewport height; recovery/reset clears them.
+
+Audio now has 21 deterministic cached PCM recipes. `alert_sting` is a high-priority 0.55-second 180 Hz square cue gated three times at 9 Hz. `radar_pulse` is a 0.5-second loop with a 40 ms 1200-to-900 Hz sine blip. It uses Heartbeat, with pitch 0.8 to 1.6 by threat, and switches that same player to heartbeat at fraction strictly below 0.35 with a pitch drop to 0.8. The alert samples RunnerAudio's sweep clock in either the direct mock mount or the backend Audio mount. The audio loop seeks at each visual revolution and silences the remainder after the blip so the specified sweep-rate and pitch curves do not create unsynchronized extra pulses. Without audio, the alert uses its own pause-frozen clock. Recovery retains the existing recovered_chime. Seven polyphonic one-shots plus three dedicated players still cap runner voices at ten; AudioService retains two players.
+
+`ui/dev/pursuit_alert_preview.tscn` repeats a 28-second start/progress/blocked/recovered/caught sequence with audio. Space or the pause action pauses the running preview. It is included in automatic dev-scene discovery. No graphical scenes were launched or previews captured during this implementation.
+
+### F7 verification
+
+The installed engine is `4.7.stable.official.5b4e0cb0f`, so these are diagnostic results, not pinned 4.7.1 acceptance. The smoke adds a dynamic 39-label census including result rows, outline/backing checks, priority/toast/fade checks, an idempotent alert binding check, v1-only standalone fallback, radar-rate/countdown/pause checks, resolution beats, and audio stream handover/shared-phase/voice checks. The headless renderer verifies viewport size, 2D mode and texture wiring; actual portrait pixels, 960x540 legibility and draw batching require the coordinator's host capture.
+
+Coordinator-supplied host results, verbatim (Godot 4.7.0, diagnostic):
+
+```text
+RUNNER DEV SCENES: PASS (6 scenes)
+HUD LEGIBILITY: 39 labels checked
+PURSUIT ALERT: PASS
+RUNNER UI MOCK: HUD, pursuit, pause, results, focus and save PASS
+RUNNER AUDIO: 21 recipes/triggers; demo heartbeat starts=1; peak voices=10; AudioService players=2
+RUNNER FULL LOOP: PASS (...)
+RUNNER VISUAL SMOKE: PASS (0 failures)
+RUNNER SMOKE: PASS (0 failures / 74 checks)
+```
+
+These host results supersede the earlier sandbox persistence failures. They are supplied verification evidence, not a new run from this worktree. The portrait now uses UPDATE_ALWAYS and a viewport-wide BackBufferCopy between the art and scanline overlay; the smoke asserts the update mode and copy wiring. Its shader clock remains GDScript-driven and frozen on pause.
+
+### F7 requests to backend and coordinator
+
+No backend code change is required for F7. The optional future standalone alert mount may call bind(game) repeatedly. Keep emitting the existing v1 pursuit signals; the frontend guards the optional v2 signal. All changes remain within frontend-owned paths.
+
+Coordinator: run final acceptance on Godot 4.7.1 and capture the pursuit alert plus refreshed HUD/gameplay at 960x540. The headless sandbox cannot provide that visual acceptance evidence.

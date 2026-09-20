@@ -3,6 +3,9 @@ const Materials = preload("res://scenes/runner/environment/runner_materials.gd")
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 const FarGlow = preload("res://scenes/runner/shaders/far_glow.gdshader")
 const HEADLINES := ["PR #3312 UNREVIEWED", "CHANGES REQUESTED", "STALE", "NEEDS REBASE", "DO NOT MERGE", "0 approvals"]
+var _shockwave: MeshInstance3D
+var _shockwave_material: StandardMaterial3D
+var _shockwave_time := 0.0
 var _wall: MultiMeshInstance3D
 var _cards: Array[Transform3D] = []
 var _labels: Array[Label3D] = []
@@ -45,6 +48,20 @@ func _build() -> void:
 			cards.set_instance_transform(row * 5 + column, pose)
 	_wall.multimesh = cards
 	add_child(_wall)
+	_shockwave = MeshInstance3D.new()
+	_shockwave.name = "Shockwave"
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.72
+	torus.outer_radius = 2.6 / 3.4
+	torus.rings = 32
+	torus.ring_segments = 8
+	_shockwave.mesh = torus
+	_shockwave.position.y = 1.2
+	_shockwave.rotation.x = PI / 2
+	_shockwave_material = Materials.additive(Palette.DANGER, 0.5).duplicate() as StandardMaterial3D
+	_shockwave.material_override = _shockwave_material
+	_shockwave.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_wall.add_child(_shockwave)
 	for i in HEADLINES.size():
 		var label := Materials.label(_wall, HEADLINES[i], 28, Palette.CREAM)
 		label.name = "Headline%d" % i
@@ -114,6 +131,9 @@ func play_catch() -> void:
 	_build()
 	if _reaction == &"catch": return
 	show()
+	_shockwave_time = 0.0
+	_retreated = false
+	_shockwave.show()
 	_reaction = &"catch"
 	_reaction_time = 0.0
 	_start_pose = _wall.transform
@@ -124,6 +144,7 @@ func play_retreat() -> void:
 	_build()
 	if _reaction == &"retreat": return
 	show()
+	_shockwave.hide()
 	_reaction = &"retreat"
 	_reaction_time = 0.0
 	_start_pose = _last_threat_pose
@@ -133,6 +154,14 @@ func play_retreat() -> void:
 func _process(delta: float) -> void:
 	_t += delta
 	if _wall == null: return
+	_shockwave_time += delta
+	var pulse_duration := lerpf(1.6, 0.45, _threat)
+	if _reaction == &"catch":
+		pulse_duration = 0.35 / 3.0
+	_shockwave.visible = _reaction != &"retreat" and not _retreated and (_reaction != &"catch" or _shockwave_time < 0.35)
+	var pulse := fposmod(_shockwave_time, pulse_duration) / pulse_duration
+	_shockwave.scale = Vector3.ONE * lerpf(1.0, 3.4, pulse)
+	_shockwave_material.albedo_color.a = 0.5 * (1 - pulse)
 	if _reaction == &"idle":
 		_apply()
 		return
@@ -143,6 +172,8 @@ func _process(delta: float) -> void:
 		_wall.transform = _start_pose
 		_wall.scale = _start_pose.basis.get_scale() * lerpf(1.0, 2.6, eased)
 		_wall.position.z = _start_pose.origin.z + 2.3 * eased
+		# Preserve the 2.6 m pulse radius while its parent lunges and grows.
+		_shockwave.scale /= _wall.scale
 		_light.light_energy = 6.0
 	else:
 		var u := clampf(_reaction_time / 0.7, 0.0, 1.0)

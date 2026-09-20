@@ -11,6 +11,7 @@ signal health_changed(hp: int, max_hp: int)
 signal damage_taken(kind: StringName, hp: int)
 signal damage_blocked(kind: StringName, reason: StringName)
 signal shield_changed(active: bool)
+signal pursuit_alert(kind: StringName, seconds: float)
 signal pursuit_started(recovery_seconds: float)
 signal pursuit_progress(remaining: float, total: float)
 signal pursuit_recovered(reason: StringName)
@@ -65,6 +66,7 @@ var menu_calls := 0
 var demo_time := 0.0
 var pursued := false
 var remaining := 0.0
+var critical_alert_sent := false
 var effects := {}
 var shield := false
 var _action_tick := 0
@@ -152,11 +154,15 @@ func advance_demo(delta: float) -> void:
 		if pursued:
 			remaining = maxf(0, remaining - delta)
 			pursuit_progress.emit(remaining, float(config.recovery_seconds))
+			if remaining <= float(config.recovery_seconds) * 0.35 and not critical_alert_sent:
+				critical_alert_sent = true
+				pursuit_alert.emit(&"critical", remaining)
 			if remaining <= 0:
 				pursued = false
 				hp = int(config.max_hp)
 				health_changed.emit(hp, hp)
 				pursuit_recovered.emit(&"timer")
+				pursuit_alert.emit(&"clear", 0.0)
 	for at in [3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 14.0, 30.0, 34.0, 38.4, 40.0]:
 		if demo_time >= at and not _events.has(at):
 			_events[at] = true
@@ -213,10 +219,13 @@ func hit() -> void:
 		state = &"caught"
 		state_changed.emit(state)
 		caught.emit()
+		pursuit_alert.emit(&"clear", 0.0)
 	elif not pursued:
 		pursued = true
+		critical_alert_sent = false
 		remaining = float(config.recovery_seconds)
 		pursuit_started.emit(remaining)
+		pursuit_alert.emit(&"warn", remaining)
 
 func finish_demo() -> void:
 	if not _result.is_empty():

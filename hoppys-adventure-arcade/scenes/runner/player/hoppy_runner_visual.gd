@@ -238,7 +238,7 @@ func set_anim_state(state: StringName) -> void:
 	if state not in STATES or state == anim_state:
 		return
 	if state == &"hurt":
-		_return_state = &"idle" if anim_state == &"idle" else &"run"
+		_return_state = anim_state if anim_state in [&"idle", &"run", &"jump", &"fall", &"roll"] else &"run"
 	anim_state = state
 	if animation_player != null:
 		# Roll must enter its compact pose immediately to match the active hurtbox.
