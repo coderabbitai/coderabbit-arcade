@@ -54,24 +54,16 @@ with `v_eff = max(game.speed, base_speed)` (never plan tighter than the base spe
 deceleration cannot pack chunks together), `gap_safety` 1.02 and `t_spacing_pursued_bonus` 0.15 s by
 default. Equivalently: `prev.exit_clear + gap + next.entry_clear ≥ v_eff × gap_safety × t_total`.
 
-### 1.2 Speed and difficulty curve
+### 1.2 Speed and difficulty curve (v2, see §10.2)
 
-`RunConfig.time_to_max_speed` (default 165 s) is the single timing source; no other value may restate it.
-`difficulty = clamp(elapsed / time_to_max_speed, 0, 1)`;
-`speed = lerp(base_speed, max_speed, smoothstep(0, 1, difficulty))` (12 → 24 by default). Past
-`time_to_max_speed` a tail adds `tail_speed_per_minute` (default 1.0 m/s per 60 s) **measured from the
-moment max is reached**, i.e. `(elapsed - time_to_max_speed) / 60 × tail_speed_per_minute`, clamped to
-`hard_cap_speed` (default 26, reached 120 s into the tail). Difficulty stays 1.0 in the tail. Nitro
-multiplies the current speed by 1.25 (capped at 32) and does not advance `elapsed`.
-
-`difficulty_changed` is emitted when the value has moved by ≥ 0.01 since the last emission, **plus** the
-step onto exactly 1.0, which always goes out even though it falls inside that window — otherwise the
-frontend would never hear the terminal difficulty. Once 1.0 has been emitted it is never re-emitted.
-
-| t (s) | 0 | 33 | 50 | 83 | 116 | 140 | 165 | 285 |
-|---|---|---|---|---|---|---|---|---|
-| d | 0 | 0.20 | 0.30 | 0.50 | 0.70 | 0.85 | 1.0 | 1.0 |
-| speed | 12.0 | 13.2 | 14.6 | 18.0 | 21.5 | 23.3 | 24.0 | 26.0 |
+`difficulty = max(clamp(run_clock / time_to_max_speed, 0, 1), stage_difficulty_floor)` and
+`speed = lerp(base_speed + b, max_speed + b, smoothstep(0, 1, clamp(run_clock / time_to_max_speed, 0, 1)))` with
+`time_to_max_speed 100` (v1 used `elapsed / 165`), the per-stage bonus `b = min(stage_speed_step × (stage_index − 1),
+stage_speed_bonus_max)`, then `+ tail_speed_per_minute` per 60 s of run_clock past the ramp, capped at
+`hard_cap_speed + b`. `run_clock` counts RUN-phase seconds only and is frozen during `turn`, `boss` and
+`stage_clear`, so a fight never advances the ramp or the chunk tier; the speed reached holds through those phases.
+Difficulty stays 1.0 in the tail. Nitro multiplies the current speed by `nitro_speed_multiplier` (capped at
+`nitro_speed_cap` 38) and does not advance `run_clock`.
 
 ### 1.3 Camera
 
@@ -495,8 +487,8 @@ Per physics tick (only while `game.state == &"running"` and not paused), in this
    outro) enter `stage_clear`.
 4. `stage_clear`: `_phase_timer += delta`; at `stage_clear_seconds` → `stage_index += 1`, `_enter_run()`.
 
-`_enter_run()`: `stage_distance = 0`, `spawner.set_spawning(true)`, `speed_controller.set_stage_bonus(b)` (see
-10.2), emit `stage_started(stage_index, StageDefs.boss_name(stage_index), speed_controller.base_for_stage())`.
+`_enter_run()`: `stage_distance = 0`, `spawner.set_spawning(true)`, `speed_controller.set_stage_bonus(b)` and
+`speed_controller.set_difficulty_floor(StageDefs.difficulty_floor(stage_index, config))` (see 10.2), emit `stage_started(stage_index, StageDefs.boss_name(stage_index), speed_controller.base_for_stage())`.
 Enter/exit helpers emit `phase_changed(phase)` on change only, and forward `set_phase` / `set_boss_arena` to the
 corridor when present (`has_method`). `turn_started(dir, turn_seconds)` is emitted on entering `turn` with
 `dir = stage_rng.randi_range(0, 1) * 2 − 1`. `stage_cleared(stage_index, bonus)` is emitted on entering

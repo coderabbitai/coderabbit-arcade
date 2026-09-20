@@ -110,7 +110,7 @@ New `scenes/runner/ui/pursuit_alert.gd` + `.tscn`, a `Control` child of the HUD'
   cards matching `pursuer_visual.gd`'s wall, two DANGER eye slits, three CREAM headlines from the same `HEADLINES`
   constant. A `ColorRect` carries `shaders/scanline_portrait.gdshader` (≤ 18 lines: scanlines driven by a `clock`
   uniform set from GDScript, chromatic x-offset scaled by `threat`, edge roll-bar). **Never `TIME`** (pause freezes it).
-- **Waveform bar.** 380×26 `Control` `_draw_multiline()`: 48 bars, heights from a deterministic
+- **Waveform bar.** 380×26 `Control` whose `_draw()` calls `draw_multiline()`: 48 bars, heights from a deterministic
   `sin(i*0.7 + clock*6) * sin(i*0.31 + clock*2.3)` mix, amplitude by `1 - fraction`; MATRIX → DANGER with threat.
 - **Copy** (CREAM 20, outline 6):
   ```
