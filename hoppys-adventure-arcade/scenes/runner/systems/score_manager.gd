@@ -5,6 +5,19 @@ extends Node
 const RunnerGame = preload("res://scenes/runner/runner_game.gd")
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
 
+## Reasons add_bonus() carries out through bonus_awarded (contract §4.1). A power-up pays under its
+## own kind (`approve_shield`, `code_review`, `super_jump`, `nitro`, `auto_fix`, `lgtm`); the four
+## below are the v2 stage and boss payouts (contract §11.4, systems spec §10.7). The reason is a
+## label for the HUD and the audio bank, so an unlisted one is still awarded, just unrecognised.
+const REASON_TOOL: StringName = &"tool"
+const REASON_BOSS_KILL: StringName = &"boss_kill"
+const REASON_BOSS_RETREAT: StringName = &"boss_retreat"
+const REASON_STAGE_CLEAR: StringName = &"stage_clear"
+## The v2 reasons, in the order a stage pays them out.
+const V2_BONUS_REASONS: Array[StringName] = [
+	REASON_TOOL, REASON_BOSS_KILL, REASON_BOSS_RETREAT, REASON_STAGE_CLEAR
+]
+
 var game: RunnerGame
 var config: RunConfig
 ## Fractional accumulator; the displayed score is floori(exact).
@@ -64,6 +77,8 @@ func current_multiplier() -> float:
 		value *= float(config.code_review_score_multiplier)
 	return value
 
+## A one-off award on top of the running score. `reason` is one of the pickup kinds or of the
+## REASON_* constants above; 0 points is not an award and stays silent.
 func add_bonus(points: int, reason: StringName) -> void:
 	if points == 0:
 		return

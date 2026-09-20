@@ -8,19 +8,29 @@ const RunConfig = preload("res://scenes/runner/data/run_config.gd")
 const CONFIG_PATH := "res://scenes/runner/data/run_config.tres"
 ## Seconds the corridor takes to decelerate to a stop once the pursuer catches Hoppy.
 const CAUGHT_STOP_SECONDS := 0.4
-## Camera shake strengths for the two events the backend owns.
+## Camera shake strengths for the three events the backend owns (contract §4.2, §11.4).
 const SHAKE_ON_HIT := 0.5
 const SHAKE_ON_CAUGHT := 1.0
+const SHAKE_ON_TOOL_HIT := 0.35
 ## A hazard counts as dodged once its origin is this far behind the player (who stands at z = 0).
 const DODGE_LINE_Z := 1.0
 ## Rebuild the dodge bookkeeping once it grows past this many entries.
 const DODGE_IDS_LIMIT := 1024
+## Contract §11.3: the boss encounter, when one is mounted. Until the boss scene lands this is a
+## bare Node3D placeholder, and every call into it is has_method-guarded.
+const BOSS_ARENA_PATH := "World/TurnRig/BossArena"
 
-## Contract §3 MOUNT points: mount node path -> optional frontend scenes. Each is instantiated only
-## if it exists, and receives bind(self) before run_started is emitted.
+## Contract §3 and §11.3 MOUNT points: mount node path -> optional frontend scenes. Each is
+## instantiated only if it exists, and receives bind(self) before run_started is emitted.
 const FRONTEND_MOUNTS := {
-	"World/Environment": ["res://scenes/runner/environment/corridor.tscn"],
-	"HUD": ["res://scenes/runner/ui/runner_hud.tscn"],
+	"World/TurnRig/Environment": ["res://scenes/runner/environment/corridor.tscn"],
+	"HUD": [
+		"res://scenes/runner/ui/runner_hud.tscn",
+		"res://scenes/runner/ui/pursuit_alert.tscn",
+		"res://scenes/runner/ui/boss_hud.tscn",
+		"res://scenes/runner/ui/stage_banner.tscn",
+		"res://scenes/runner/ui/stage_clear.tscn"
+	],
 	"Overlays": [
 		"res://scenes/runner/ui/pause_menu.tscn",
 		"res://scenes/runner/ui/game_over.tscn"
@@ -61,6 +71,23 @@ signal player_action(action: StringName)
 signal chunk_spawned(chunk: Node3D)
 signal paused_changed(paused: bool)
 
+# --- contract §11.4 additions ---
+signal phase_changed(phase: StringName)
+signal stage_started(index: int, name: StringName, speed: float)
+signal stage_cleared(index: int, bonus: int)
+signal turn_started(direction: int, seconds: float)
+signal turn_finished
+signal boss_spawned(kind: StringName, hp: int)
+signal boss_health_changed(hp: int, max_hp: int)
+signal boss_phase_changed(phase: int)
+signal boss_attack_telegraph(lane_mask: int, kind: StringName, seconds: float)
+signal boss_projectile_fired(projectile: Area3D, lane_mask: int, kind: StringName, speed: float)
+signal boss_defeated(kind: StringName, bonus: int)
+signal boss_retreated(kind: StringName, bonus: int)
+signal tool_collected(kind: StringName, damage: int)
+signal pursuit_alert(kind: StringName, seconds_to_catch: float)
+signal pursuer_distance_changed(normalized: float)
+
 @export var config: RunConfig = preload(CONFIG_PATH)
 ## Tests instantiate the scene with autostart off and call start_run() themselves.
 @export var autostart := true
@@ -91,17 +118,42 @@ var hazards_blasted_total := 0
 ## Seeded per run; the frontend may use it for deterministic cosmetics.
 var cosmetic_rng := RandomNumberGenerator.new()
 
+# Read-only v2 properties (contract §11.4). The StageManager writes the stage block every tick and
+# the boss block is mirrored off the boss signals, so both survive the encounter being freed.
+## idle / run / turn / boss / stage_clear, orthogonal to `state`.
+var phase: StringName = &"idle"
+## 1-based, never resets between stages; 0 before the first stage starts.
+var stage_index := 0
+## The display name of this stage's boss.
+var stage_name: StringName = &""
+var stage_distance := 0.0
+var stage_distance_target := 0.0
+## RUN-phase seconds only; drives speed and difficulty (contract §11.1).
+var run_clock := 0.0
+## The live boss node, or null outside a fight.
+var boss: Node3D = null
+var boss_kind: StringName = &""
+var boss_hp := 0
+var boss_max_hp := 0
+## 1-based; 0 outside a fight.
+var boss_phase := 0
+
 @onready var systems: Node = $Systems
 @onready var speed_controller: Node = $Systems/SpeedController
 @onready var hit_manager: Node = $Systems/HitManager
 @onready var score_manager: Node = $Systems/ScoreManager
 @onready var effect_manager: Node = $Systems/EffectManager
 @onready var spawner: Node = $Systems/Spawner
+@onready var stage_manager: Node = $Systems/StageManager
 @onready var autopilot: Node = $Systems/Autopilot
 @onready var world: Node3D = $World
 @onready var chunks: Node3D = $World/Chunks
-@onready var graybox_environment: Node3D = $World/GrayboxEnvironment
-@onready var environment_mount: Node3D = $World/Environment
+@onready var turn_rig: Node3D = $World/TurnRig
+@onready var graybox_environment: Node3D = $World/TurnRig/GrayboxEnvironment
+@onready var environment_mount: Node3D = $World/TurnRig/Environment
+## Resolved by path rather than $: the arena is a placeholder until the boss scene lands, and a
+## project without it at all must still load (contract §11.3).
+@onready var boss_encounter: Node = get_node_or_null(NodePath(BOSS_ARENA_PATH))
 @onready var player: CharacterBody3D = $Player
 @onready var pursuer: Node3D = $Pursuer
 @onready var camera_rig: Node3D = $CameraRig
@@ -130,8 +182,11 @@ func _ready() -> void:
 		config = load(CONFIG_PATH) as RunConfig
 	hp = int(config.max_hp)
 	speed = float(config.base_speed)
-	for node in [speed_controller, hit_manager, score_manager, effect_manager, spawner, autopilot,
-			player, pursuer, camera_rig, debug_overlay]:
+	# The TurnRig and the boss arena are set up before the StageManager, so the machine finds a
+	# square rig and a live encounter; the frontend mounts come last, because a corridor is handed
+	# to the rig only once it exists.
+	for node in [speed_controller, hit_manager, score_manager, effect_manager, spawner, turn_rig,
+			boss_encounter, stage_manager, autopilot, player, pursuer, camera_rig, debug_overlay]:
 		if node != null and node.has_method("setup"):
 			node.setup(self)
 	_connect_signals()
@@ -163,12 +218,18 @@ func start_run(run_seed := 0) -> void:
 	hp = int(config.max_hp)
 	hazards_dodged = 0
 	hazards_blasted_total = 0
+	run_clock = 0.0
+	stage_distance = 0.0
+	stage_distance_target = 0.0
+	_clear_boss_state()
 	for node in [speed_controller, hit_manager, score_manager, effect_manager, autopilot,
-			player, pursuer, camera_rig]:
+			player, pursuer, camera_rig, turn_rig]:
 		if node != null and node.has_method("reset"):
 			node.reset()
 	if spawner != null and spawner.has_method("reset"):
 		spawner.reset(seed)
+	if stage_manager != null and stage_manager.has_method("reset"):
+		stage_manager.reset(seed)
 	if player != null and player.has_method("set_controls_enabled"):
 		player.set_controls_enabled(true)
 	_set_state(&"running")
@@ -176,6 +237,10 @@ func start_run(run_seed := 0) -> void:
 	health_changed.emit(hp, int(config.max_hp))
 	score_changed.emit(score, multiplier)
 	speed_changed.emit(speed, normalized_speed)
+	# Stage 1 opens only once every system is back at zero and the run is live, so the first
+	# stage_started lands after run_started and the spawner fills against a running phase.
+	if stage_manager != null and stage_manager.has_method("begin"):
+		stage_manager.begin()
 
 # --- contract §4.3 ---
 
@@ -259,6 +324,81 @@ func get_active_effects() -> Dictionary:
 		return effect_manager.get_active_effects()
 	return {}
 
+## Contract §11.4: index, name, phase, distance, target, speed_bonus, difficulty_floor. Neutral
+## values before the first stage opens, so a HUD can read every key without a null check.
+func get_stage_info() -> Dictionary:
+	if stage_manager != null and is_instance_valid(stage_manager) and stage_manager.has_method("get_stage_info"):
+		return stage_manager.get_stage_info()
+	return {
+		"index": stage_index,
+		"name": stage_name,
+		"phase": phase,
+		"distance": stage_distance,
+		"target": stage_distance_target,
+		"speed_bonus": 0.0,
+		"difficulty_floor": 0.0
+	}
+
+## Contract §11.4: kind, name, hp, max_hp, phase, accepted_tools, pending_attacks. Outside a fight
+## (or before the boss encounter is mounted) every key is present and empty — the same shape the
+## encounter's own get_boss_info() returns between fights, so a HUD reading either one agrees.
+func get_boss_info() -> Dictionary:
+	if boss_encounter != null and is_instance_valid(boss_encounter) and boss_encounter.has_method("get_boss_info"):
+		return boss_encounter.get_boss_info()
+	# No arena mounted: the mirrored boss block is all there is, and _clear_boss_state() has already
+	# emptied it outside the boss phase.
+	var info := _empty_boss_info()
+	if boss_kind == &"":
+		return info
+	info["kind"] = boss_kind
+	info["name"] = stage_name
+	info["hp"] = boss_hp
+	info["max_hp"] = boss_max_hp
+	info["phase"] = boss_phase
+	return info
+
+## The contract §11.4 boss block with every field empty (boss_encounter.gd's empty_info(), built
+## here rather than preloaded, because that script already preloads this one).
+func _empty_boss_info() -> Dictionary:
+	var empty_tools: Array[StringName] = []
+	var empty_attacks: Array[Dictionary] = []
+	return {
+		"kind": &"",
+		"name": "",
+		"hp": 0,
+		"max_hp": 0,
+		"phase": 0,
+		"accepted_tools": empty_tools,
+		"pending_attacks": empty_attacks
+	}
+
+## Rig-local z for anything on the track (systems spec §10.5). Gameplay never rotates, so this is
+## the identity today; it exists so a bent corridor can never skew a z test.
+func track_z(node: Node3D) -> float:
+	if node == null or not is_instance_valid(node):
+		return 0.0
+	if turn_rig == null or not is_instance_valid(turn_rig):
+		return node.global_position.z
+	return turn_rig.to_local(node.global_position).z
+
+## The rig-local bounds of a hazard-shaped node: its own get_world_aabb() when it has one, else a
+## degenerate box at its origin.
+func track_aabb(node: Node3D) -> AABB:
+	if node == null or not is_instance_valid(node):
+		return AABB()
+	var bounds := AABB(node.global_position, Vector3.ZERO)
+	if node.has_method("get_world_aabb"):
+		bounds = node.get_world_aabb()
+	if turn_rig == null or not is_instance_valid(turn_rig):
+		return bounds
+	return turn_rig.global_transform.affine_inverse() * bounds
+
+## A damaging tool landed on the boss. The shake is backend-owned (contract §11.4); the boss
+## encounter calls this instead of reaching for the camera itself.
+func on_tool_hit() -> void:
+	if camera_rig != null and is_instance_valid(camera_rig) and camera_rig.has_method("shake"):
+		camera_rig.shake(SHAKE_ON_TOOL_HIT)
+
 ## Tests and the F7 debug key drive the bot through here. The bot owns the player while it is on,
 ## so manual input is disabled for as long as it runs and comes back when it is switched off.
 func set_autopilot(enabled: bool) -> void:
@@ -299,7 +439,7 @@ func _track_dodges() -> void:
 		if hazard == null or not is_instance_valid(hazard):
 			continue
 		var id := hazard.get_instance_id()
-		if hazard.global_position.z <= DODGE_LINE_Z:
+		if track_z(hazard) <= DODGE_LINE_Z:
 			_dodged_ids.erase(id)
 			continue
 		if _dodged_ids.has(id):
@@ -348,6 +488,12 @@ func _connect_signals() -> void:
 	# The HitManager calls _on_caught(); a manager that emits `caught` instead still starts the
 	# cinematic, because the sequence is guarded and the signal it emits re-enters as a no-op.
 	caught.connect(_on_caught)
+	# The v2 boss block mirrors the encounter's own signals, so `boss_hp` and friends keep reading
+	# correctly after the encounter frees the boss at the end of its outro.
+	phase_changed.connect(_on_phase_changed)
+	boss_spawned.connect(_on_boss_spawned)
+	boss_health_changed.connect(_on_boss_health_changed)
+	boss_phase_changed.connect(_on_boss_phase_changed)
 
 func _on_health_changed(value: int, _max_hp: int) -> void:
 	hp = value
@@ -378,6 +524,45 @@ func _set_aura(kind: StringName, on: bool) -> void:
 
 func _on_hazards_blasted(count: int) -> void:
 	hazards_blasted_total += count
+
+## Leaving the boss phase ends the fight as far as the facade is concerned, whatever the encounter
+## does with its own nodes afterwards.
+func _on_phase_changed(value: StringName) -> void:
+	phase = value
+	if value != &"boss":
+		_clear_boss_state()
+
+func _on_boss_spawned(kind: StringName, hp: int) -> void:
+	boss_kind = kind
+	boss_hp = hp
+	boss_max_hp = maxi(boss_max_hp, hp)
+	boss_phase = 1
+	boss = _find_boss_node()
+
+func _on_boss_health_changed(value: int, max_value: int) -> void:
+	boss_hp = value
+	boss_max_hp = max_value
+
+func _on_boss_phase_changed(value: int) -> void:
+	boss_phase = value
+
+func _clear_boss_state() -> void:
+	boss = null
+	boss_kind = &""
+	boss_hp = 0
+	boss_max_hp = 0
+	boss_phase = 0
+
+## The encounter may expose the boss as a property or as a child named Boss; either is accepted and
+## a missing one just leaves `boss` null.
+func _find_boss_node() -> Node3D:
+	if boss_encounter == null or not is_instance_valid(boss_encounter):
+		return null
+	if &"boss" in boss_encounter:
+		var referenced := boss_encounter.get(&"boss") as Node3D
+		if referenced != null and is_instance_valid(referenced):
+			return referenced
+	return boss_encounter.get_node_or_null(^"Boss") as Node3D
 
 func _set_state(value: StringName) -> void:
 	if state == value:
@@ -433,6 +618,15 @@ func _finish_run(outcome: StringName) -> void:
 		"max_speed_reached": _system_float(speed_controller, &"max_speed_reached", speed),
 		"best_multiplier": _system_float(score_manager, &"best_multiplier", multiplier),
 		"chunks_spawned": _system_int(spawner, &"chunks_spawned", 0),
+		# Contract §11.4. The StageManager tallies all seven off the facade signals, so they are
+		# right whether or not a boss encounter was ever mounted.
+		"stages_cleared": _system_int(stage_manager, &"stages_cleared", 0),
+		"stage_reached": _system_int(stage_manager, &"stage_index", stage_index),
+		"bosses_defeated": _system_int(stage_manager, &"bosses_defeated", 0),
+		"bosses_escaped": _system_int(stage_manager, &"bosses_escaped", 0),
+		"tools_used": _system_int(stage_manager, &"tools_used", 0),
+		"boss_damage_dealt": _system_int(stage_manager, &"boss_damage_dealt", 0),
+		"turns_taken": _system_int(stage_manager, &"turns_taken", 0),
 		"score_rule_revision": int(config.score_rule_revision),
 		"submitted_at": now,
 		"rank": 0,
@@ -499,9 +693,12 @@ func _mount_frontend() -> void:
 			mount.add_child(instance)
 			if instance.has_method("bind"):
 				instance.bind(self)
-			# A real corridor replaces the backend graybox lighting and grid (contract §3).
+			# A real corridor replaces the backend graybox lighting and grid (contract §3), and the
+			# TurnRig hands it the bend instead of yawing the graybox itself (contract §11.9).
 			if mount == environment_mount:
 				_corridor = instance
+				if turn_rig != null and is_instance_valid(turn_rig) and turn_rig.has_method("set_corridor"):
+					turn_rig.set_corridor(instance)
 				if graybox_environment != null:
 					graybox_environment.queue_free()
 					graybox_environment = null

@@ -6,7 +6,7 @@ extends SceneTree
 const HazardDefs = preload("res://scenes/runner/hazards/hazard_defs.gd")
 const PowerUpDefs = preload("res://scenes/runner/powerups/power_up_defs.gd")
 
-## Contract §3, node path -> expected class.
+## Contract §3 and the §11.3 delta, node path -> expected class.
 const TREE := {
 	"Systems": "Node",
 	"Systems/SpeedController": "Node",
@@ -14,11 +14,14 @@ const TREE := {
 	"Systems/ScoreManager": "Node",
 	"Systems/EffectManager": "Node",
 	"Systems/Spawner": "Node",
+	"Systems/StageManager": "Node",
 	"Systems/Autopilot": "Node",
 	"World": "Node3D",
 	"World/Floor": "StaticBody3D",
 	"World/Chunks": "Node3D",
-	"World/Environment": "Node3D",
+	"World/TurnRig": "Node3D",
+	"World/TurnRig/Environment": "Node3D",
+	"World/TurnRig/BossArena": "Node3D",
 	"Player": "CharacterBody3D",
 	"Player/BodyShape": "CollisionShape3D",
 	"Player/Hurtbox": "Area3D",
@@ -35,26 +38,42 @@ const TREE := {
 	"DebugOverlay": "CanvasLayer"
 }
 
-## Contract §4.1.
+## Contract §4.1 and the §11.4 additions.
 const SIGNALS := [
 	"run_started", "state_changed", "health_changed", "damage_taken", "damage_blocked",
 	"shield_changed", "pursuit_started", "pursuit_progress", "pursuit_recovered", "caught",
 	"run_finished", "leaderboard_saved", "score_changed", "bonus_awarded", "speed_changed",
 	"difficulty_changed", "power_up_collected", "power_up_expired", "hazard_cleared",
-	"hazards_blasted", "player_action", "chunk_spawned", "paused_changed"
+	"hazards_blasted", "player_action", "chunk_spawned", "paused_changed",
+	"phase_changed", "stage_started", "stage_cleared", "turn_started", "turn_finished",
+	"boss_spawned", "boss_health_changed", "boss_phase_changed", "boss_attack_telegraph",
+	"boss_projectile_fired", "boss_defeated", "boss_retreated", "tool_collected",
+	"pursuit_alert", "pursuer_distance_changed"
 ]
 
-## Contract §4.3.
+## Contract §4.3 and the §11.4 additions.
 const METHODS := [
 	"pause", "resume", "toggle_pause", "retry", "go_to_menu", "hit_stop", "submit_name",
-	"get_leaderboard", "get_result", "get_active_effects", "start_run", "set_autopilot"
+	"get_leaderboard", "get_result", "get_active_effects", "start_run", "set_autopilot",
+	"get_stage_info", "get_boss_info", "track_z", "track_aabb", "on_tool_hit"
 ]
 
-## Contract §4.2.
+## Contract §4.2 and the §11.4 additions.
 const PROPERTIES := [
 	"config", "state", "paused", "seed", "run_id", "elapsed", "distance", "speed",
 	"normalized_speed", "difficulty", "hp", "score", "multiplier", "player", "camera_rig",
-	"cosmetic_rng"
+	"cosmetic_rng",
+	"phase", "stage_index", "stage_name", "stage_distance", "stage_distance_target", "run_clock",
+	"boss", "boss_kind", "boss_hp", "boss_max_hp", "boss_phase",
+	"stage_manager", "turn_rig", "boss_encounter"
+]
+
+## Contract §11.8: optional, never grayboxed, tolerated when absent.
+const OPTIONAL_HUD_MOUNTS := [
+	"res://scenes/runner/ui/pursuit_alert.tscn",
+	"res://scenes/runner/ui/boss_hud.tscn",
+	"res://scenes/runner/ui/stage_banner.tscn",
+	"res://scenes/runner/ui/stage_clear.tscn"
 ]
 
 ## Contract §6.
@@ -195,7 +214,8 @@ func run() -> void:
 
 	# The graybox overlays mounted under Overlays and bound themselves.
 	check(game.get_node("Overlays").get_child_count() == 2, "expected the pause and game over overlays")
-	check(game.get_node("HUD").get_child_count() == 1, "expected the graybox HUD")
+	_check_hud_mounts(game)
+	_check_stage_scaffold(game)
 
 	game.free()
 	await process_frame
@@ -253,20 +273,65 @@ func _wait_router_idle(router: Node, timeout_seconds := 3.0) -> bool:
 		await process_frame
 	return true
 
-## Contract §3: World carries the backend graybox environment, and a mounted frontend corridor
-## frees it. Either shape is valid, so accept the graybox or a populated World/Environment.
+## Contract §3 and §11.3: the TurnRig carries the backend graybox environment, and a mounted
+## frontend corridor frees it. Either shape is valid, so accept the graybox or a populated mount.
 func _check_environment(game: Node) -> void:
-	var graybox := game.get_node_or_null("World/GrayboxEnvironment")
+	var graybox := game.get_node_or_null("World/TurnRig/GrayboxEnvironment")
 	if graybox != null and graybox.is_queued_for_deletion():
 		graybox = null
 	if graybox != null:
-		check(graybox is Node3D, "World/GrayboxEnvironment is a %s, expected Node3D" % graybox.get_class())
-	var mount := game.get_node_or_null("World/Environment")
+		check(graybox is Node3D, "World/TurnRig/GrayboxEnvironment is a %s, expected Node3D" % graybox.get_class())
+	var mount := game.get_node_or_null("World/TurnRig/Environment")
 	var mounted := mount != null and mount.get_child_count() > 0
 	check(graybox != null or mounted,
-		"World needs the graybox environment, or a corridor mounted under World/Environment")
+		"World/TurnRig needs the graybox environment, or a corridor mounted under Environment")
 	if mounted:
-		check(graybox == null, "a mounted corridor must free World/GrayboxEnvironment")
+		check(graybox == null, "a mounted corridor must free World/TurnRig/GrayboxEnvironment")
+
+## Contract §11.8: the graybox HUD is always there; the four v2 panels mount only when the frontend
+## has authored them, so the count is a range and every extra child has to be one of those scenes.
+func _check_hud_mounts(game: Node) -> void:
+	var hud := game.get_node("HUD") as CanvasLayer
+	var expected := 1
+	for path in OPTIONAL_HUD_MOUNTS:
+		if ResourceLoader.exists(path):
+			expected += 1
+	check(hud.get_child_count() == expected,
+		"HUD holds %d children, expected %d (graybox HUD plus the optional v2 panels that exist)"
+			% [hud.get_child_count(), expected])
+
+## Contract §11.1-§11.4: the stage machine is live, the phases line up with the state, the rig
+## accessors resolve and the boss block reads empty outside a fight.
+func _check_stage_scaffold(game: Node) -> void:
+	check(game.stage_manager != null and is_instance_valid(game.stage_manager),
+		"Systems/StageManager is missing from the facade")
+	check(game.turn_rig != null and is_instance_valid(game.turn_rig), "World/TurnRig is missing from the facade")
+	check(game.phase == &"run", "a running game should be in the run phase, not %s" % game.phase)
+	check(game.stage_index == 1, "the first stage should be index 1, got %d" % game.stage_index)
+	check(game.stage_name == &"Flaky Test Swarm",
+		"stage 1 should name the Flaky Test Swarm, got %s" % game.stage_name)
+	check(game.stage_distance_target > 0.0, "stage 1 has no distance target")
+	check(game.run_clock >= 0.0, "run_clock must never be negative")
+	check(game.boss == null and game.boss_kind == &"" and game.boss_phase == 0,
+		"the boss block must read empty outside a fight")
+
+	var info: Dictionary = game.get_stage_info()
+	for key in ["index", "name", "phase", "distance", "target", "speed_bonus", "difficulty_floor"]:
+		check(info.has(key), "get_stage_info() is missing the %s key" % key)
+	var boss_info: Dictionary = game.get_boss_info()
+	for key in ["kind", "name", "hp", "max_hp", "phase", "accepted_tools", "pending_attacks"]:
+		check(boss_info.has(key), "get_boss_info() is missing the %s key" % key)
+
+	# track_z is the identity while the rig is square, which is every frame outside a turn.
+	check(is_equal_approx(game.track_z(game.player), game.player.global_position.z),
+		"track_z should equal global z while the TurnRig is unrotated")
+	check(game.track_aabb(game.player) is AABB, "track_aabb must return an AABB")
+	# The shake hook is backend-owned and must survive being called outside a fight.
+	game.on_tool_hit()
+
+	# Contract §11.3: a bare arena is a valid placeholder, but it must never be missing.
+	check(game.boss_encounter != null and is_instance_valid(game.boss_encounter),
+		"World/TurnRig/BossArena did not resolve into boss_encounter")
 
 ## Every row of the contract §8 hazard table survives a round trip through hazard.tscn.
 func _check_hazards() -> void:

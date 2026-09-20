@@ -12,6 +12,9 @@ var hitbox_offset := Vector3.ZERO
 ## Bit 0 = lane x -2, bit 1 = lane x 0, bit 2 = lane x +2.
 var lanes_mask := 0
 var dodge_hint: StringName = &""
+## Boss projectiles only (contract §11.6): metres per second the hazard closes on the player at,
+## set before on_spawned(). 0.0 for every hazard that is carried by a chunk instead.
+var closing_speed := 0.0
 
 ## After the vars above are set; reset every tween and particle (hazards may be reused).
 func on_spawned() -> void:

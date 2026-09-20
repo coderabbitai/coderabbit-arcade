@@ -9,11 +9,29 @@ extends SceneTree
 ## compiled before the autoloads exist (see tests/runner_logic.gd).
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
 const HazardDefs = preload("res://scenes/runner/hazards/hazard_defs.gd")
+const ToolDefs = preload("res://scenes/runner/powerups/tool_defs.gd")
 const CONFIG_PATH := "res://scenes/runner/data/run_config.tres"
 const LIBRARY_PATH := "res://scenes/runner/data/chunk_library.tres"
+const GAME_SCENE := "res://scenes/runner/runner_game.tscn"
+const ARENA_SCENE := "res://scenes/runner/boss/boss_arena.tscn"
+const PROJECTILE_SCENE := "res://scenes/runner/hazards/projectile.tscn"
 const CHUNK_DIR := "res://scenes/runner/chunks/"
 const TICK := 1.0 / 60.0
 const LANE_COUNT := 3
+## Seed for the placement checks; any fixed value makes the run reproducible.
+const SPAWN_SEED := 4242
+## Phases the spawner must stay quiet in (contract §11.1, systems spec §10.6).
+const IDLE_PHASES: Array[StringName] = [&"turn", &"boss", &"stage_clear", &"idle"]
+## Tool draws the no-repeat / height rules are sampled over.
+const TOOL_DRAWS := 40
+## Where the lane checks park a live projectile: well down the corridor, between the boss and the
+## player, which is exactly where one rules its lane out for a tool.
+const MID_CORRIDOR_Z := -20.0
+## Every lane at once (contract §11.7 lane_mask).
+const ALL_LANES := 0b111
+## Board every facade here points at. Nothing in this validator finishes a run, so the file is
+## never created; the override exists so no code path can ever reach the real board.
+const SCRATCH_BOARD := "user://chunk_validator_leaderboard.cfg"
 ## Systems spec §5.1 authoring rules.
 const BAND := 6.0
 const MIN_CLEAR := 6.0
@@ -59,6 +77,9 @@ func run() -> void:
 		return
 	game = game_script.new()
 	game.config = config
+	# Nothing here ever calls start_run(), but the facade keeps the board rule anyway: a throwaway
+	# path means no code path in this validator can reach the player's user://leaderboard.cfg.
+	game.leaderboard_path = SCRATCH_BOARD
 	game.state = &"running"
 	junk.append(game)
 	bot = bot_script.new()
@@ -83,7 +104,237 @@ func run() -> void:
 		if bool(meta["mirror_x"]):
 			_validate(path, true)
 	_check_difficulty_coverage(metas)
+	_check_phase_gate()
+	_check_arena_is_chunk_free()
+	_check_tool_placement()
 	_report()
+
+# --- V11: the spawner only places inside the RUN phase (systems spec §10.6) ---
+
+## Chunks belong to the corridor, not to the bend or the arena: `_fill()` returns early outside
+## `run`, while movement and despawn carry on in every phase so the corridor still drains.
+func _check_phase_gate() -> void:
+	var rig := _spawner_rig()
+	if rig.is_empty():
+		return
+	var facade: Node3D = rig["game"]
+	var spawner: Node = rig["spawner"]
+	facade.phase = &"idle"
+	spawner.reset(SPAWN_SEED)
+	check(spawner.get_active_chunks().is_empty(),
+		"the spawner placed %d chunks while the phase was idle" % spawner.get_active_chunks().size())
+	check(int(spawner.chunks_spawned) == 0,
+		"reset() spawned %d chunks outside the run phase" % int(spawner.chunks_spawned))
+
+	facade.phase = &"run"
+	spawner.set_spawning(true)
+	var placed: int = int(spawner.chunks_spawned)
+	check(placed > 0, "the spawner placed nothing once the run phase opened")
+	check(not spawner.get_active_chunks().is_empty(), "the run phase left the corridor empty")
+
+	for phase in IDLE_PHASES:
+		facade.phase = phase
+		var before := int(spawner.chunks_spawned)
+		var tracked: Node3D = _first_chunk(spawner)
+		var from_z := tracked.position.z if tracked != null else 0.0
+		for i in 120:
+			spawner._physics_process(TICK)
+		check(int(spawner.chunks_spawned) == before,
+			"the spawner placed %d chunks during the %s phase" % [int(spawner.chunks_spawned) - before, phase])
+		if tracked != null and is_instance_valid(tracked):
+			check(tracked.position.z > from_z + 1.0,
+				"chunks stopped moving during the %s phase (z %.1f -> %.1f)" % [phase, from_z, tracked.position.z])
+		elif tracked != null:
+			check(true, "the tracked chunk despawned during the %s phase, which is the other half of the rule" % phase)
+
+	# Back in the run phase the corridor tops up again, and the drain gate still closes it by hand.
+	facade.phase = &"run"
+	spawner.set_spawning(true)
+	check(int(spawner.chunks_spawned) > placed, "the run phase did not top the corridor back up")
+	spawner.set_spawning(false)
+	var drained := int(spawner.chunks_spawned)
+	for i in 120:
+		spawner._physics_process(TICK)
+	check(int(spawner.chunks_spawned) == drained,
+		"set_spawning(false) still placed %d chunks inside the run phase" % [int(spawner.chunks_spawned) - drained])
+	_free_rig(rig)
+
+# --- V12: the boss arena carries no chunk (contract §11.3) ---
+
+## Gameplay never rotates, so `World/Chunks` stays outside the TurnRig and the arena holds only the
+## boss, its projectiles and its tools. A chunk parked under the arena would be yawed by the bend
+## and every z test in the backend would drift with it.
+func _check_arena_is_chunk_free() -> void:
+	var packed := load(ARENA_SCENE) as PackedScene
+	check(packed != null, "boss_arena.tscn failed to load")
+	if packed == null:
+		return
+	var arena := packed.instantiate() as Node3D
+	check(arena != null, "boss_arena.tscn root is not a Node3D")
+	if arena == null:
+		return
+	root.add_child(arena)
+	for name in ["Boss", "Projectiles", "Tools"]:
+		check(arena.get_node_or_null(NodePath(name)) != null,
+			"the boss arena has no %s mount (contract §11.3)" % name)
+	for child in _descendants(arena):
+		check(not child.has_method("get_hazards"),
+			"the boss arena holds a chunk at %s" % arena.get_path_to(child))
+		check(not child.is_in_group(&"runner_hazards"),
+			"the boss arena ships a live hazard at %s" % arena.get_path_to(child))
+		check(not child.is_in_group(&"pickup_slot"),
+			"the boss arena ships a chunk power-up slot at %s" % arena.get_path_to(child))
+	for name in ["Projectiles", "Tools"]:
+		var mount := arena.get_node_or_null(NodePath(name))
+		if mount != null:
+			check(mount.get_child_count() == 0,
+				"the boss arena ships %d node(s) under %s" % [mount.get_child_count(), name])
+	arena.free()
+
+	# The other half of the rule, read off runner_game.tscn without instantiating it: Chunks hangs
+	# under World, never under the rig the turn rotates.
+	var game_packed := load(GAME_SCENE) as PackedScene
+	check(game_packed != null, "runner_game.tscn failed to load")
+	if game_packed == null:
+		return
+	# SceneState reports every path relative to the scene root, as "./World/Chunks".
+	var state := game_packed.get_state()
+	var paths := PackedStringArray()
+	for index in state.get_node_count():
+		paths.append(String(state.get_node_path(index)).trim_prefix("./"))
+	check(paths.has("World/Chunks"), "runner_game.tscn has no World/Chunks")
+	check(paths.has("World/TurnRig/BossArena"), "runner_game.tscn has no World/TurnRig/BossArena")
+	for path in paths:
+		if not path.begins_with("World/TurnRig"):
+			continue
+		check(not path.ends_with("/Chunks"), "runner_game.tscn parks %s under the turn rig" % path)
+
+# --- V13: tool spawns (contract §11.7, systems spec §10.3) ---
+
+## Tools drop on a run row or a jump row, never twice into the same lane, and never into a lane a
+## live projectile is still sweeping or a queued telegraph is about to. A full-width attack is
+## answered with the body, so it rules out no lane; when every lane the no-repeat rule leaves is
+## blocked the draw takes the one whose shot is furthest along.
+func _check_tool_placement() -> void:
+	var rig := _arena_rig()
+	if rig.is_empty():
+		return
+	var facade: Node3D = rig["game"]
+	var arena: Node3D = rig["arena"]
+	arena.start(1)
+	var heights := [float(config.pickup_height_run), float(config.pickup_height_jump)]
+	var previous := -1
+	for draw in TOOL_DRAWS:
+		var before: int = arena.tool_count()
+		arena._spawn_tool()
+		var tools: Array[Node] = _live_tools(arena)
+		check(tools.size() == before + 1, "draw %d spawned %d tools" % [draw, tools.size() - before])
+		if tools.size() != before + 1:
+			break
+		var pickup := tools[tools.size() - 1] as Node3D
+		var lane := _lane_from_x(pickup.position.x)
+		check(is_equal_approx(pickup.position.x, _lane_x(lane)),
+			"a tool sits at x %.2f, off every lane centre" % pickup.position.x)
+		check(lane != previous, "two tools in a row landed in lane %d" % lane)
+		previous = lane
+		var kind: StringName = pickup.kind
+		check(ToolDefs.has_kind(kind), "a tool spawned as the unknown kind %s" % kind)
+		var expected := float(config.pickup_height_jump) if ToolDefs.uses_jump_height(kind) \
+			else float(config.pickup_height_run)
+		check(is_equal_approx(pickup.position.y, expected),
+			"the %s tool spawned at y %.2f, expected %.2f" % [kind, pickup.position.y, expected])
+		check(heights.any(func(value: float) -> bool: return is_equal_approx(pickup.position.y, value)),
+			"the %s tool spawned at y %.2f, outside the contract §11.7 rows" % [kind, pickup.position.y])
+		check(is_equal_approx(pickup.position.z, float(config.boss_tool_spawn_z)),
+			"the %s tool spawned at z %.2f, expected boss_tool_spawn_z %.2f"
+				% [kind, pickup.position.z, float(config.boss_tool_spawn_z)])
+		check(pickup.is_in_group(&"runner_tools") and not pickup.is_in_group(&"runner_pickups"),
+			"the %s tool is not in runner_tools alone" % kind)
+
+	# Clearance: block one lane with a live projectile mid-corridor and rule the previous lane out by
+	# the no-repeat rule, and the one lane left is the only one the draw may return. The same goes
+	# for a telegraph that has not fired yet — the lane is spoken for before the shot exists.
+	var clearance := absf(float(config.boss_tool_lane_clearance))
+	for blocked in LANE_COUNT:
+		for repeated in LANE_COUNT:
+			if repeated == blocked:
+				continue
+			var expected := 3 - blocked - repeated
+			arena._clear_projectiles()
+			arena._pending.clear()
+			var shot := _spawn_test_projectile(facade, arena, blocked, MID_CORRIDOR_Z)
+			if shot == null:
+				return
+			arena._last_tool_lane = repeated
+			var picked: int = arena._pick_tool_lane()
+			check(picked == expected,
+				"a tool drew lane %d with lane %d swept and lane %d just used; only lane %d is legal"
+					% [picked, blocked, repeated, expected])
+			# Past the player by the clearance and the swept lane opens back up: the player can cross
+			# in behind the shot, so the rule is a clearance and not a ban.
+			shot.position.z = clearance + 1.0
+			var reopened: int = arena._pick_tool_lane()
+			check(reopened != repeated,
+				"a tool drew the lane it had just used (%d)" % reopened)
+			arena._clear_projectiles()
+
+			arena._pending.append({"mask": 1 << blocked, "variant": &"orb", "remaining": 0.5})
+			arena._last_tool_lane = repeated
+			var telegraphed: int = arena._pick_tool_lane()
+			check(telegraphed == expected,
+				"a tool drew lane %d with lane %d telegraphed and lane %d just used; only lane %d is legal"
+					% [telegraphed, blocked, repeated, expected])
+			arena._pending.clear()
+
+	# A full-width attack is jumped or rolled rather than dodged sideways, so it rules out no lane at
+	# all: both lanes the no-repeat rule leaves are still fair game.
+	arena._pending.append({"mask": ALL_LANES, "variant": &"low", "remaining": 0.5})
+	arena._last_tool_lane = 1
+	var wide_draws := {}
+	for draw in TOOL_DRAWS:
+		wide_draws[arena._pick_tool_lane()] = true
+	check(wide_draws.size() == 2 and not wide_draws.has(1),
+		"a full-width telegraph left the draw with lanes %s, expected 0 and 2" % [wide_draws.keys()])
+	arena._pending.clear()
+
+	# Every lane swept at once: the draw takes the lane whose shot is furthest along, which is the
+	# first lane to free up again.
+	var progress := [MID_CORRIDOR_Z - 10.0, MID_CORRIDOR_Z + 8.0, MID_CORRIDOR_Z - 1.0]
+	for lane in LANE_COUNT:
+		if _spawn_test_projectile(facade, arena, lane, float(progress[lane])) == null:
+			return
+	arena._last_tool_lane = -1
+	var crowded: int = arena._pick_tool_lane()
+	check(crowded == 1,
+		"with every lane swept the draw took lane %d, expected the furthest-along lane 1" % crowded)
+	arena._clear_projectiles()
+	_free_rig(rig)
+
+func _spawn_test_projectile(facade: Node3D, arena: Node3D, lane: int, at_z: float) -> Node3D:
+	var packed := load(PROJECTILE_SCENE) as PackedScene
+	check(packed != null, "projectile.tscn failed to load")
+	if packed == null:
+		return null
+	var shot := packed.instantiate() as Node3D
+	check(shot != null, "projectile.tscn root is not a Node3D")
+	if shot == null:
+		return null
+	shot.kind = HazardDefs.PROJECTILE_KIND
+	shot.variant = &"orb"
+	shot.closing_speed = 0.0
+	shot.position = Vector3(_lane_x(lane), 0.0, at_z)
+	arena.get_node(^"Projectiles").add_child(shot)
+	shot.setup(facade)
+	# The validator owns the clock here; a projectile that moved itself would drift off the line.
+	shot.set_physics_process(false)
+	return shot
+
+func _live_tools(arena: Node3D) -> Array[Node]:
+	var live: Array[Node] = []
+	for child in arena.get_node(^"Tools").get_children():
+		if is_instance_valid(child) and not child.is_queued_for_deletion():
+			live.append(child)
+	return live
 
 ## Every authored chunk has to be in the library, or the spawner will never draw it.
 func _check_library(paths: Array[String]) -> void:
@@ -466,6 +717,10 @@ func _plan(player: Dictionary, hazards: Array, slots: Array, resolved: Dictionar
 	var plan := {}
 	var front_z := 0.0
 	var key := 0
+	# The trigger distance is read off the slice's own closing speed (systems spec §10.6). Every
+	# hazard in a chunk rides the corridor, so it is `v` here; a boss shot is what makes the two
+	# differ, and runner_boss_validator.gd is where that case is driven.
+	var closing := v
 	if target.is_empty():
 		if policy != 2:
 			return
@@ -477,14 +732,15 @@ func _plan(player: Dictionary, hazards: Array, slots: Array, resolved: Dictionar
 		plan = bot.plan_for(target, int(player["target_lane"]))
 		front_z = float(target["front_z"])
 		key = int(target["key"])
+		closing = float(target.get("closing_v", v))
 	var action := StringName(plan.get("action", &"none"))
 	if action == &"none":
 		return
-	var trigger := float(bot.plan_trigger_z(v))
+	var trigger := float(bot.plan_trigger_z(closing))
 	if action == &"jump":
-		trigger = float(bot.jump_trigger_z(v))
+		trigger = float(bot.jump_trigger_z(closing))
 	elif action == &"roll":
-		trigger = float(bot.roll_trigger_z(v))
+		trigger = float(bot.roll_trigger_z(closing))
 	if front_z < trigger:
 		return
 	match action:
@@ -676,6 +932,94 @@ func _make_wall() -> Node3D:
 	if wall.has_method("setup"):
 		wall.setup(game)
 	return wall
+
+# --- rigs for the placement checks ---
+
+## A facade inside the tree with just the nodes the spawner and the arena reach for. The script is
+## set *after* add_child on purpose: runner_game.gd's _ready() would go looking for the scene's own
+## children, and skipping it leaves get_tree() answering, which is all these checks need.
+## A non-null `stage_manager` is what arms the phase gate — a hand-built v1 rig has no phases.
+func _tree_facade() -> Node3D:
+	var facade := Node3D.new()
+	root.add_child(facade)
+	facade.set_script(load("res://scenes/runner/runner_game.gd") as GDScript)
+	# Straight after set_script rather than before add_child: the script is what carries the
+	# property, and skipping _ready() is also what keeps `autostart` from ever opening a run.
+	facade.leaderboard_path = SCRATCH_BOARD
+	facade.config = config
+	facade.state = &"running"
+	facade.speed = float(config.base_speed)
+	facade.difficulty = 0.0
+	facade.phase = &"idle"
+	var world := Node3D.new()
+	world.name = "World"
+	facade.add_child(world)
+	var chunks := Node3D.new()
+	chunks.name = "Chunks"
+	world.add_child(chunks)
+	facade.chunks = chunks
+	facade.world = world
+	facade.stage_manager = Node.new()
+	facade.add_child(facade.stage_manager)
+	return facade
+
+## The facade plus a live chunk_spawner.gd. The spawner never ticks itself: the engine runs no
+## frames inside run(), and every advance below is a hand-driven _physics_process.
+func _spawner_rig() -> Dictionary:
+	var facade := _tree_facade()
+	var spawner_script := load("res://scenes/runner/systems/chunk_spawner.gd") as GDScript
+	check(spawner_script != null, "chunk_spawner.gd could not be loaded")
+	if spawner_script == null:
+		facade.free()
+		return {}
+	var spawner: Node = spawner_script.new()
+	facade.add_child(spawner)
+	spawner.set_physics_process(false)
+	spawner.setup(facade)
+	facade.spawner = spawner
+	return {"game": facade, "spawner": spawner}
+
+## The facade plus a real boss_arena.tscn, mounted where runner_game.tscn mounts it so the tools it
+## spawns resolve their encounter through the contract §11.3 path.
+func _arena_rig() -> Dictionary:
+	var facade := _tree_facade()
+	var packed := load(ARENA_SCENE) as PackedScene
+	check(packed != null, "boss_arena.tscn failed to load for the tool checks")
+	if packed == null:
+		facade.free()
+		return {}
+	var rig := Node3D.new()
+	rig.name = "TurnRig"
+	facade.get_node(^"World").add_child(rig)
+	var arena := packed.instantiate() as Node3D
+	check(arena != null, "boss_arena.tscn root is not a Node3D")
+	if arena == null:
+		facade.free()
+		return {}
+	arena.name = "BossArena"
+	rig.add_child(arena)
+	facade.boss_encounter = arena
+	arena.setup(facade)
+	return {"game": facade, "arena": arena}
+
+func _free_rig(rig: Dictionary) -> void:
+	var facade: Node3D = rig.get("game", null)
+	if facade != null and is_instance_valid(facade):
+		root.remove_child(facade)
+		facade.free()
+
+func _first_chunk(spawner: Node) -> Node3D:
+	for chunk in spawner.get_active_chunks():
+		if is_instance_valid(chunk):
+			return chunk
+	return null
+
+func _descendants(node: Node) -> Array[Node]:
+	var found: Array[Node] = []
+	for child in node.get_children():
+		found.append(child)
+		found.append_array(_descendants(child))
+	return found
 
 # --- helpers ---
 

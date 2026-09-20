@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3]
+[gd_scene load_steps=19 format=3]
 
 [ext_resource type="Script" path="res://scenes/runner/runner_game.gd" id="1"]
 [ext_resource type="Script" path="res://scenes/runner/systems/speed_controller.gd" id="2"]
@@ -11,6 +11,9 @@
 [ext_resource type="Script" path="res://scenes/runner/pursuer/pursuer.gd" id="9"]
 [ext_resource type="Script" path="res://scenes/runner/systems/debug_overlay.gd" id="10"]
 [ext_resource type="PackedScene" path="res://scenes/runner/player/runner_player.tscn" id="11"]
+[ext_resource type="Script" path="res://scenes/runner/systems/stage_manager.gd" id="12"]
+[ext_resource type="Script" path="res://scenes/runner/systems/turn_rig.gd" id="13"]
+[ext_resource type="PackedScene" path="res://scenes/runner/boss/boss_arena.tscn" id="14"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
 size = Vector3(12, 1, 400)
@@ -51,6 +54,9 @@ script = ExtResource("5")
 [node name="Spawner" type="Node" parent="Systems"]
 script = ExtResource("6")
 
+[node name="StageManager" type="Node" parent="Systems"]
+script = ExtResource("12")
+
 [node name="Autopilot" type="Node" parent="Systems"]
 script = ExtResource("7")
 
@@ -67,20 +73,25 @@ shape = SubResource("BoxShape3D_floor")
 
 [node name="Chunks" type="Node3D" parent="World"]
 
-[node name="GrayboxEnvironment" type="Node3D" parent="World"]
+[node name="TurnRig" type="Node3D" parent="World"]
+script = ExtResource("13")
 
-[node name="Sun" type="DirectionalLight3D" parent="World/GrayboxEnvironment"]
+[node name="GrayboxEnvironment" type="Node3D" parent="World/TurnRig"]
+
+[node name="Sun" type="DirectionalLight3D" parent="World/TurnRig/GrayboxEnvironment"]
 transform = Transform3D(0.866025, 0, -0.5, -0.383022, 0.642788, -0.663414, 0.321394, 0.766044, 0.55667, 0, 12, 0)
 light_energy = 0.9
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="World/GrayboxEnvironment"]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="World/TurnRig/GrayboxEnvironment"]
 environment = SubResource("Environment_graybox")
 
-[node name="GrayboxFloor" type="MeshInstance3D" parent="World/GrayboxEnvironment"]
+[node name="GrayboxFloor" type="MeshInstance3D" parent="World/TurnRig/GrayboxEnvironment"]
 mesh = SubResource("PlaneMesh_floor")
 material_override = SubResource("StandardMaterial3D_floor")
 
-[node name="Environment" type="Node3D" parent="World"]
+[node name="Environment" type="Node3D" parent="World/TurnRig"]
+
+[node name="BossArena" parent="World/TurnRig" instance=ExtResource("14")]
 
 [node name="Player" parent="." instance=ExtResource("11")]
 process_mode = 1

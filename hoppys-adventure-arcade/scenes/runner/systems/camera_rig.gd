@@ -10,6 +10,9 @@ extends Node3D
 
 const RunnerGame = preload("res://scenes/runner/runner_game.gd")
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
+## Contract §11.10 fallbacks, used only when no config has been supplied yet.
+const DEFAULT_TURN_CAMERA_YAW := 18.0
+const DEFAULT_TURN_CAMERA_BANK := 6.0
 
 @onready var camera: Camera3D = $Camera
 
@@ -30,13 +33,23 @@ var trauma_decay := 0.0
 var fov_punch := 0.0
 var fov_punch_decay := 0.0
 var rng := RandomNumberGenerator.new()
+## 0..1 through the cinematic turn; 0 outside one (contract §11.9).
+var turn_progress := 0.0
+## -1 left, +1 right, 0 outside a turn.
+var turn_direction := 0
 
 ## Where the rig wants the camera before shake, refreshed in _physics_process.
 var _rest_position := Vector3(0, 4, 8)
+## The pose _aim() left behind, so the turn swing is applied on top of it and never accumulates.
+var _base_rotation := Vector3.ZERO
 
 func setup(runner: RunnerGame) -> void:
 	game = runner
 	config = runner.config
+	# The authored pose is the fallback resting rotation, so a rig without a config still keeps the
+	# scene's pitch instead of snapping to zero the first time the turn swing resolves.
+	if camera != null:
+		_base_rotation = camera.rotation
 	if config != null:
 		base_position = config.camera_position
 		base_fov = float(config.camera_fov)
@@ -50,9 +63,12 @@ func reset() -> void:
 	trauma_decay = 0.0
 	fov_punch = 0.0
 	fov_punch_decay = 0.0
+	turn_progress = 0.0
+	turn_direction = 0
 	_rest_position = base_position
 	if camera != null:
 		camera.position = base_position
+		camera.rotation = _base_rotation
 		camera.fov = base_fov
 		# Teleport, not a move: drop the interpolated previous pose so the first frame after a
 		# restart renders at base_position/base_fov instead of easing over from the last run.
@@ -67,8 +83,22 @@ func _aim(target: Vector3) -> void:
 		return
 	var pitch := atan2(dir.y, sqrt(dir.x * dir.x + dir.z * dir.z))
 	var yaw := atan2(-dir.x, -dir.z)
-	camera.rotation = Vector3(pitch, yaw, 0.0)
+	_base_rotation = Vector3(pitch, yaw, 0.0)
+	camera.rotation = _base_rotation
 	camera.reset_physics_interpolation()
+
+## The cinematic turn swing (contract §11.9). The StageManager calls this every physics tick of the
+## `turn` phase and once with (0, 0) at each end of it; the swing is a sine over the bend, so at
+## p = 0 and p = 1 the camera sits exactly where the follow left it.
+func set_turn(progress: float, direction: int) -> void:
+	turn_progress = clampf(progress, 0.0, 1.0)
+	turn_direction = signi(direction)
+
+func turn_camera_yaw_degrees() -> float:
+	return float(config.turn_camera_yaw_degrees) if config != null else DEFAULT_TURN_CAMERA_YAW
+
+func turn_camera_bank_degrees() -> float:
+	return float(config.turn_camera_bank_degrees) if config != null else DEFAULT_TURN_CAMERA_BANK
 
 func shake(strength: float, duration := 0.35) -> void:
 	if duration <= 0.0 or strength <= 0.0:
@@ -104,9 +134,25 @@ func _physics_process(delta: float) -> void:
 		var amount := trauma * trauma * shake_amplitude
 		offset = Vector3(rng.randf_range(-amount, amount), rng.randf_range(-amount, amount), 0.0)
 	camera.position = _rest_position + offset
+	_apply_turn_swing()
 	if fov_punch > 0.0:
 		fov_punch = maxf(fov_punch - fov_punch_decay * delta, 0.0)
 	var speed_boost := 0.0
 	if game != null:
 		speed_boost = speed_fov_boost * clampf(float(game.normalized_speed), 0.0, 1.2)
 	camera.fov = base_fov + fov_punch + speed_boost
+
+## Swing the camera around the player and bank it, on top of the follow and shake result. Both
+## angles ride sin(PI * progress), so the bend starts and ends at the resting pose exactly.
+func _apply_turn_swing() -> void:
+	var swing := float(turn_direction) * sin(PI * turn_progress)
+	if is_zero_approx(swing):
+		camera.rotation = _base_rotation
+		return
+	var yaw := deg_to_rad(turn_camera_yaw_degrees()) * swing
+	var bank := deg_to_rad(turn_camera_bank_degrees()) * swing
+	var pivot := Vector3.ZERO
+	if game != null and is_instance_valid(game.player):
+		pivot = game.player.position
+	camera.position = pivot + (camera.position - pivot).rotated(Vector3.UP, yaw)
+	camera.rotation = _base_rotation + Vector3(0.0, yaw, bank)

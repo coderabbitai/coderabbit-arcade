@@ -13,6 +13,10 @@ const THREAT_RECOVERY_WEIGHT := 0.3
 const THREAT_SMOOTHING := 4.0
 ## How far past the player the catch lunge reaches, in metres.
 const CATCH_OVERSHOOT := 1.0
+## Contract §11.10 fallback, used only when no config has been supplied yet.
+const DEFAULT_DISTANCE_EPSILON := 0.01
+## Floor under the configured epsilon, so an authored 0 cannot turn the gate off entirely.
+const MIN_DISTANCE_EPSILON := 0.0001
 
 @onready var mount: Node3D = $Visual
 
@@ -26,6 +30,9 @@ var pursued := false
 var catching := false
 var catch_elapsed := 0.0
 var catch_from_z := 12.0
+
+## Normalized distance last pushed through pursuer_distance_changed (contract §11.4).
+var _emitted_distance := 0.0
 
 func setup(runner: RunnerGame) -> void:
 	game = runner
@@ -51,6 +58,8 @@ func reset() -> void:
 	catch_elapsed = 0.0
 	catch_from_z = retreat_z()
 	visible = false
+	# A fresh run starts at 0, so the reset itself is not an announcement.
+	_emitted_distance = 0.0
 	_apply(0.0)
 
 func retreat_z() -> float:
@@ -79,6 +88,7 @@ func catch() -> void:
 		visual.set_threat(1.0)
 	if is_instance_valid(visual) and visual.has_method("play_catch"):
 		visual.play_catch()
+	_publish_distance()
 
 ## Recovered: glide back to retreat_z.
 func retreat() -> void:
@@ -132,12 +142,31 @@ func _advance_catch(delta: float) -> void:
 	position = Vector3(0.0, 0.0, lerpf(catch_from_z, target_z, smoothstep(0.0, 1.0, t)))
 	if is_instance_valid(visual) and visual.has_method("set_threat"):
 		visual.set_threat(1.0)
+	_publish_distance()
 
 func _apply(value: float) -> void:
 	threat = clampf(value, 0.0, 1.0)
 	position = Vector3(0.0, 0.0, lerpf(retreat_z(), approach_z(), threat))
 	if is_instance_valid(visual) and visual.has_method("set_threat"):
 		visual.set_threat(threat)
+	_publish_distance()
+
+## contract §11.4: 0 retreated .. 1 catching, epsilon-gated so a glide does not spam the frontend.
+## The terminal 1.0 always goes out, so a UI that keys its catch state off it never misses it.
+func _publish_distance() -> void:
+	if game == null or not is_instance_valid(game) or not game.has_signal(&"pursuer_distance_changed"):
+		return
+	var reached_max := threat >= 1.0 and _emitted_distance < 1.0
+	if not reached_max and absf(threat - _emitted_distance) < distance_epsilon():
+		return
+	_emitted_distance = threat
+	game.pursuer_distance_changed.emit(threat)
+
+## Never zero: a zero epsilon would re-emit an unchanged value on every physics tick.
+func distance_epsilon() -> float:
+	if config == null or not (&"pursuer_distance_epsilon" in config):
+		return DEFAULT_DISTANCE_EPSILON
+	return maxf(float(config.pursuer_distance_epsilon), MIN_DISTANCE_EPSILON)
 
 func _mount_visual() -> void:
 	if mount == null:

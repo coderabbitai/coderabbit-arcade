@@ -19,10 +19,10 @@ result against it line by line. Paths are relative to `hoppys-adventure-arcade/`
   lane k ∈ {−1, 0, +1} names the same three lanes by their world offset; index = k + 1. The player's
   capsule radius is 0.4, so a hazard whose x-extent is ±0.8 around a lane centre (per-lane width 1.6)
   cannot touch a player in an adjacent lane.
-- Physics 60 Hz. Jump apex 1.715 m, airtime 0.70 s. Per-tick travel at the Nitro cap (32 m/s) is
-  0.53 m; the minimum hazard depth of 1.2 m plus the 0.8 m capsule footprint gives ≥ 3 overlapping
+- Physics 60 Hz. Jump apex 1.715 m, airtime 0.70 s. Per-tick travel at the v2 Nitro cap (38 m/s) is
+  0.63 m; the minimum hazard depth of 1.2 m plus the 0.8 m capsule footprint (2.0 m) gives ≥ 3 overlapping
   ticks at any legal speed, so `Area3D` overlap detection cannot tunnel. `runner_logic.gd` asserts
-  `(min_hazard_depth + 0.8) / (hard_cap × nitro_multiplier / 60) ≥ 2.0`.
+  `(min_hazard_depth + 0.8) / (nitro_speed_cap / 60) ≥ 2.0` against the stage-adjusted caps.
 
 ### 1.1 Physics derivations (feet height y(t) = 9.8 t − 14 t²)
 
@@ -37,7 +37,7 @@ result against it line by line. Paths are relative to `hoppys-adventure-arcade/`
 
 Pass time over a hazard of depth d is (d + 0.8) / v. Slack = window − pass time grows with speed, so
 reaction time, not timing precision, is the limiter at high speed. A jump covers 8.4 m at 12 m/s,
-16.8 m at 24 m/s, 22.4 m at 32 m/s; this drives spacing.
+16.8 m at 24 m/s, 22.4 m at 32 m/s (26.6 m at the 38 m/s Nitro cap); this drives spacing.
 
 Reaction budget: 0.35 s choice reaction + 0.05 s input/render latency + 0.30 s worst-case manoeuvre
 (two lane changes) = 0.70 s minimum. Heavy actions (jump, roll) occupy 0.70 s. Hence
@@ -45,7 +45,7 @@ Reaction budget: 0.35 s choice reaction + 0.05 s input/render latency + 0.30 s w
 part of that **time** term, not a distance added afterwards, so the seam rule is exactly as
 `chunk_spawner.gd::_gap_for()` implements it:
 
-```
+```text
 gap = max(0, v_eff × gap_safety × (t_spacing(d) + (t_spacing_pursued_bonus if PURSUED else 0))
            − prev.exit_clear − next.entry_clear)
 ```
@@ -54,24 +54,16 @@ with `v_eff = max(game.speed, base_speed)` (never plan tighter than the base spe
 deceleration cannot pack chunks together), `gap_safety` 1.02 and `t_spacing_pursued_bonus` 0.15 s by
 default. Equivalently: `prev.exit_clear + gap + next.entry_clear ≥ v_eff × gap_safety × t_total`.
 
-### 1.2 Speed and difficulty curve
+### 1.2 Speed and difficulty curve (v2, see §10.2)
 
-`RunConfig.time_to_max_speed` (default 165 s) is the single timing source; no other value may restate it.
-`difficulty = clamp(elapsed / time_to_max_speed, 0, 1)`;
-`speed = lerp(base_speed, max_speed, smoothstep(0, 1, difficulty))` (12 → 24 by default). Past
-`time_to_max_speed` a tail adds `tail_speed_per_minute` (default 1.0 m/s per 60 s) **measured from the
-moment max is reached**, i.e. `(elapsed - time_to_max_speed) / 60 × tail_speed_per_minute`, clamped to
-`hard_cap_speed` (default 26, reached 120 s into the tail). Difficulty stays 1.0 in the tail. Nitro
-multiplies the current speed by 1.25 (capped at 32) and does not advance `elapsed`.
-
-`difficulty_changed` is emitted when the value has moved by ≥ 0.01 since the last emission, **plus** the
-step onto exactly 1.0, which always goes out even though it falls inside that window — otherwise the
-frontend would never hear the terminal difficulty. Once 1.0 has been emitted it is never re-emitted.
-
-| t (s) | 0 | 33 | 50 | 83 | 116 | 140 | 165 | 285 |
-|---|---|---|---|---|---|---|---|---|
-| d | 0 | 0.20 | 0.30 | 0.50 | 0.70 | 0.85 | 1.0 | 1.0 |
-| speed | 12.0 | 13.2 | 14.6 | 18.0 | 21.5 | 23.3 | 24.0 | 26.0 |
+`difficulty = max(clamp(run_clock / time_to_max_speed, 0, 1), stage_difficulty_floor)` and
+`speed = lerp(base_speed + b, max_speed + b, smoothstep(0, 1, clamp(run_clock / time_to_max_speed, 0, 1)))` with
+`time_to_max_speed 100` (v1 used `elapsed / 165`), the per-stage bonus `b = min(stage_speed_step × (stage_index − 1),
+stage_speed_bonus_max)`, then `+ tail_speed_per_minute` per 60 s of run_clock past the ramp, capped at
+`hard_cap_speed + b`. `run_clock` counts RUN-phase seconds only and is frozen during `turn`, `boss` and
+`stage_clear`, so a fight never advances the ramp or the chunk tier; the speed reached holds through those phases.
+Difficulty stays 1.0 in the tail. Nitro multiplies the current speed by `nitro_speed_multiplier` (capped at
+`nitro_speed_cap` 38) and does not advance `run_clock`.
 
 ### 1.3 Camera
 
@@ -351,7 +343,7 @@ Graybox: coloured `SphereMesh` per kind.
 `load_entries(path)`, `save_entries(entries, path)`, `submit(entry, path) -> {rank, entries, error}`,
 `rename(run_id, name, path) -> Error`, `sanitize_name(raw)`, `sort_entries(entries)`.
 Storage: section `meta/version`; section `leaderboard/entries` (Array of Dictionary). Any version that is
-not `SCHEMA_VERSION` reads as an empty board. `read_board(path) -> {entries, version, error}` is the
+not in `SUPPORTED_VERSIONS` ([1, 2]) reads as an empty board with `ERR_FILE_UNRECOGNIZED`; a version-1 board is the exception — its rows are read normally and the next successful save rewrites the file as version 2 (in-place migration). `read_board(path) -> {entries, version, error}` is the
 internal reader that also reports which case it hit (`OK`, `ERR_FILE_NOT_FOUND`, `ERR_FILE_CORRUPT`, or
 `ERR_FILE_UNRECOGNIZED` for a version mismatch); `load_entries` is `read_board(...)["entries"]`.
 **Forward compatibility:** when the file declares a version *newer* than `SCHEMA_VERSION`, `submit` and
@@ -458,6 +450,9 @@ active → roll, off → nothing. Jump trigger `front_z ≥ −(v × 0.22 + 0.4)
 
 - Never mutate the shared `run_config.tres`; tests `duplicate()` it.
 - `set_deferred` for `monitoring`/`monitorable`/`disabled` when inside physics callbacks.
+- A CollisionObject may not leave the tree inside a physics callback either ("Removing a CollisionObject node
+  during a physics callback is not allowed"): `queue_free()` (already end-of-frame) or
+  `remove_child.call_deferred()`, never a synchronous `remove_child`.
 - `Engine.time_scale` multiplies the physics delta (it does not add ticks); to accelerate a simulation without
   coarsening physics, raise `Engine.physics_ticks_per_second` by the same factor and `max_physics_steps_per_frame`.
 - Injected key events must set `physical_keycode`; bindings are physical.
@@ -495,8 +490,8 @@ Per physics tick (only while `game.state == &"running"` and not paused), in this
    outro) enter `stage_clear`.
 4. `stage_clear`: `_phase_timer += delta`; at `stage_clear_seconds` → `stage_index += 1`, `_enter_run()`.
 
-`_enter_run()`: `stage_distance = 0`, `spawner.set_spawning(true)`, `speed_controller.set_stage_bonus(b)` (see
-10.2), emit `stage_started(stage_index, StageDefs.boss_name(stage_index), speed_controller.base_for_stage())`.
+`_enter_run()`: `stage_distance = 0`, `spawner.set_spawning(true)`, `speed_controller.set_stage_bonus(b)` and
+`speed_controller.set_difficulty_floor(StageDefs.difficulty_floor(stage_index, config))` (see 10.2), emit `stage_started(stage_index, StageDefs.boss_name(stage_index), speed_controller.base_for_stage())`.
 Enter/exit helpers emit `phase_changed(phase)` on change only, and forward `set_phase` / `set_boss_arena` to the
 corridor when present (`has_method`). `turn_started(dir, turn_seconds)` is emitted on entering `turn` with
 `dir = stage_rng.randi_range(0, 1) * 2 − 1`. `stage_cleared(stage_index, bonus)` is emitted on entering
@@ -523,7 +518,8 @@ stage bonus cases (b = 0, 3, 6 → caps 26/29/32; Nitro ≤ 38) and the floor ru
 
 `BossArena` root (Node3D, `boss_encounter.gd`) children `Boss` (Node3D) → `Visual` mount, `Projectiles`, `Tools`.
 `start(stage_index)`: read defs (kind, name, base HP, speeds, telegraphs, intervals, patterns, accepted tools per
-phase) scaled by the cycle escalation (contract §11.10); `hp = max_hp`; `phase = 1`; mount the visual
+phase) scaled by the cycle escalation (contract §11.10), with `boss_hp_scale` multiplying the base HP before that
+growth so a test config can shorten a fight without bending the curve; `hp = max_hp`; `phase = 1`; mount the visual
 (`ResourceLoader.exists` → `load as PackedScene` → set base vars → `add_child` → `on_spawned()`; graybox fallback: a
 DANGER box 4×2.4×1.5 with a Label3D name); position `Boss` at `(0, 2.6, boss_z)`; `_intro = boss_intro_seconds`;
 emit `boss_spawned(kind, hp)` and `boss_health_changed(hp, max_hp)`; `_attack_timer = attack_interval(phase)`;
@@ -538,10 +534,19 @@ projectile per contiguous lane group: `orb` → one lane, `wide` → 2 adjacent,
 `kind = &"projectile"`, `variant`, `closing_speed`, `setup(game)`, emit `boss_projectile_fired(...)`, call
 `visual.play_attack(variant)`; `_attack_timer = attack_interval(phase)`. Tool spawning: `_tool_timer -= delta`; when
 ≤ 0, or when `boss_tool_guarantee_seconds` passed with no tool alive, spawn `powerups/tool_pickup.tscn` under `Tools`
-at `(lane_x, y, boss_tool_spawn_z)` with a lane that has no live projectile within `boss_tool_lane_clearance` and
-differs from the last tool lane; kind rolled by weight, biased to the accepted set with `boss_shield_tool_bias`
-during a resisting phase; `_tool_timer = tool_interval`. Timeout: `_fight_timer ≥ boss_timeout_seconds` →
+at `(lane_x, y, boss_tool_spawn_z)`; kind rolled by weight, biased to the accepted set with `boss_shield_tool_bias`
+during a resisting phase; `_tool_timer = tool_interval` and `_since_tool = 0` on **every** attempt, so a draw that
+cannot place anything does not come back on the next tick. Timeout: `_fight_timer ≥ boss_timeout_seconds` →
 `_retreat()`.
+
+Tool lane (contract §11.7): a lane is **blocked** when a live projectile covers it (lane-mask intersection, the
+projectile still short of `boss_tool_lane_clearance` metres past the player — past that the player can cross in
+behind it) **or** a queued telegraph's mask covers it; a full-width mask blocks nothing, because that attack is
+answered with a jump or a roll rather than with a lane change (the same rule `autopilot.pending_lane_mask()`
+applies). The draw takes a random unblocked lane that differs from the last tool lane; when the no-repeat rule
+leaves only blocked lanes it takes the one whose blocking projectile is furthest along (highest track z, so the
+first lane to free up), and a lane held by a telegraph alone — nothing in flight yet — sorts last. The no-repeat
+rule is never broken, so a tool is always placed and the guarantee holds.
 
 Damage: `apply_tool(kind)` (called by `tool_pickup.collect`): `damage = ToolDefs.damage(kind) if accepted else 0`;
 `hp = max(hp − damage, 0)`; `boss_damage_dealt += damage`; `tools_used += 1`; emit `tool_collected(kind, damage)`;
@@ -554,6 +559,16 @@ credit), free live tools, `_outro = boss_outro_seconds`; `_retreat()`: bonus `= 
 (1 − hp / max_hp)`, emit `boss_retreated`, `visual.play_retreat()`, same cleanup. After the outro `finished` is
 set (a plain bool the StageManager polls), the boss node is freed. `abort()` (on caught) frees everything without
 signals or bonuses.
+
+Both endings can be reached from inside a physics callback — the killing blow is a tool auto-firing in
+`area_entered`, and a catch aborts the fight the same way — so the arena **never** takes a projectile or a tool out
+of the tree by hand (§9): each one is marked `consumed`, has `monitoring` disabled with `set_deferred` and is
+`queue_free()`d, which is already end-of-frame. `clear()` has removed the projectile from `runner_hazards`
+synchronously, so nothing on the way out can score a dodge (tools are in `runner_tools`, which `_track_dodges`
+never scans) or damage anything after the fight. `projectile_count()` / `tool_count()` skip queued nodes, so both
+still read 0 on the tick the fight ends. `get_info()` returns the empty contract §11.4 block (`kind &""`, `name ""`,
+`hp`/`max_hp`/`phase` 0, empty arrays) whenever no fight is active — before the first one and from the end of the
+outro — which is the same shape `RunnerGame.get_boss_info()` returns with no arena mounted.
 
 Patterns (beat lists; `L` = random single lane, `Ladj` = two adjacent lanes leaving one free, `alt` = alternate):
 Swarm P1 `orb L`; P2 `orb Ladj` (two orbs); P3 `high, low` alt. Hydra P1 `wide (one lane free)`; P2 `orb lane0 +
@@ -617,12 +632,15 @@ transitions and one `boss_phase_changed` per crossing; tool damage incl. resiste
 boss timeout → `boss_retreated` with the partial bonus and never `boss_defeated`; turn state (signals once, rig and
 camera back at zero, no spawn during the bend); `pursuit_alert` ordering and the epsilon gate; caught mid-boss aborts
 to `idle` with `run_finished` once and boss stats in the result; speed with stage bonus and difficulty floor.
-`runner_smoke.gd`: duplicated config `stage_base_distance 260`, `time_to_max_speed 20`, boss HP scaled to ~40, at the
+`runner_smoke.gd`: duplicated config `stage_base_distance 260`, `time_to_max_speed 20`, `boss_hp_scale 0.4` (so the
+stage-1 boss opens on 40 hp rather than its authored 100), at the
 existing acceleration: stage 1 → `turn_started`/`turn_finished` → `boss_spawned` → tools damage → `boss_defeated` →
 `stage_cleared` → `stage_started(2, …)` within a bounded wall clock with zero projectile hits; a second probe forcing
-PURSUED plus a projectile mid-fight ends the run once with the boss stats present. `runner_chunk_validator.gd`: the
-spawner places nothing outside `run`; `BossArena` holds no chunk; tool spawns respect clearance/no-repeat/y ∈ {1.0,
-2.2}. New `runner_boss_validator.gd`: every boss × phase × pattern × entry lane × cycle 0–4 through the virtual
+PURSUED plus a projectile mid-fight ends the run once with the boss stats present; the kill leaves the arena empty
+(no `runner_tools` node and no blocking projectile two frames later) and raises no engine error.
+`runner_chunk_validator.gd`: the spawner places nothing outside `run`; `BossArena` holds no chunk; tool spawns
+respect the lane rule above (live projectile, queued telegraph, full-width exemption, furthest-along fallback),
+no-repeat and y ∈ {1.0, 2.2}. New `runner_boss_validator.gd`: every boss × phase × pattern × entry lane × cycle 0–4 through the virtual
 runner (gravity 28, jump 9.8/0.70 s, roll 0.70 s, lane tween 0.13 s) driven by the real autopilot planner from the
 telegraph: zero hits; `telegraph + travel ≥ 0.98 s`; jump launch window leaves ≥ 0.35 s; every pattern leaves a free
 lane or is jumpable/rollable; an accepted tool is reachable at least once per `boss_tool_guarantee_seconds`.

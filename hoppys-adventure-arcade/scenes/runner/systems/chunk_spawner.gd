@@ -40,6 +40,9 @@ var last_powerup_time := -999.0
 var last_powerup_kind: StringName = &""
 var chunks_since_powerup := 0
 var chunks_spawned := 0
+## False while the stage drains, and through turn, boss and stage_clear (systems spec §10.6).
+## Movement and despawn carry on regardless; only new placements stop.
+var spawning := true
 
 var _chunk_log := PackedStringArray()
 var _power_up_scene: PackedScene
@@ -77,6 +80,7 @@ func reset(run_seed: int) -> void:
 			root.remove_child(child)
 			child.queue_free()
 	_chunk_log.clear()
+	spawning = true
 	spawn_rng.seed = run_seed
 	powerup_rng.seed = run_seed ^ 0x9E3779B9
 	last_index = -1
@@ -91,12 +95,23 @@ func reset(run_seed: int) -> void:
 func get_active_chunks() -> Array[Node3D]:
 	return active
 
+## The StageManager gates placement: off a drain's worth of metres before the stage target, back on
+## when the next stage begins. Switching it on tops the corridor straight back up, so the first
+## chunks of a stage are in place on the same tick the stage starts.
+func set_spawning(on: bool) -> void:
+	spawning = on
+	if not spawning:
+		return
+	_fill()
+
 ## Newest-last log of every placement: "%.1fs d=%.2f <name>[ mirrored] gap=%.1f".
 func get_chunk_log() -> PackedStringArray:
 	return _chunk_log
 
 ## Auto-Fix: clear every blocking hazard within blast_range_z ahead of the player. Emits
 ## hazard_cleared per hazard; the caller emits hazards_blasted with the returned count.
+## Boss projectiles are in runner_hazards too, so Auto-Fix clears them as well (contract §11.6);
+## the z test goes through the rig-local accessor so a bent corridor cannot skew it.
 func clear_hazards_in_range() -> int:
 	var tree := get_tree()
 	if tree == null or config == null:
@@ -109,7 +124,7 @@ func clear_hazards_in_range() -> int:
 			continue
 		if not hazard.has_method("is_blocking") or not hazard.is_blocking():
 			continue
-		var z := hazard.global_position.z
+		var z := game.track_z(hazard) if game != null else hazard.global_position.z
 		if z < far_z or z > BLAST_NEAR_Z:
 			continue
 		hazard.clear()
@@ -137,6 +152,8 @@ func _physics_process(delta: float) -> void:
 ## moved since the previous call.
 func _fill() -> void:
 	if game == null or config == null or metas.is_empty():
+		return
+	if not spawning or not _phase_allows_placement():
 		return
 	var root := _chunks_root()
 	if root == null:
@@ -357,6 +374,16 @@ func _chunks_root() -> Node3D:
 	if root != null and is_instance_valid(root):
 		return root
 	return game.get_node_or_null(NodePath(CHUNKS_PATH)) as Node3D
+
+## Chunks are only ever placed inside the RUN phase (systems spec §10.6). A facade with no
+## StageManager has no phases to gate on — a hand-built unit-test rig keeps the v1 behaviour.
+func _phase_allows_placement() -> bool:
+	if game == null:
+		return false
+	var manager: Node = game.stage_manager
+	if manager == null or not is_instance_valid(manager):
+		return true
+	return game.phase == &"run"
 
 func _is_pursued() -> bool:
 	if game == null:
