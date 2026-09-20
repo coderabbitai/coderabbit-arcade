@@ -1,7 +1,11 @@
 extends Node
-## Single owner of the authoritative corridor speed and difficulty (systems spec §1.2).
-## speed = lerp(base, max, smoothstep(0, 1, elapsed / time_to_max_speed)), then +1 m/s per 60 s of
-## tail up to hard_cap, then the Nitro multiplier clamped to nitro_speed_cap.
+## Single owner of the authoritative corridor speed and difficulty (systems spec §1.2, §10.2).
+## speed = lerp(base + b, max + b, smoothstep(0, 1, run_clock / time_to_max_speed)), then
+## +1 m/s per 60 s of tail up to hard_cap + b, then the Nitro multiplier clamped to nitro_speed_cap.
+##
+## v2: the curve is read at `run_clock` (RUN-phase seconds), not `elapsed`, so speed holds at the
+## value it reached through a turn, a boss fight and the stage-clear card. The stage bonus b and the
+## difficulty floor are pushed in by the StageManager on every _enter_run().
 
 const RunnerGame = preload("res://scenes/runner/runner_game.gd")
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
@@ -12,12 +16,16 @@ var game: RunnerGame
 var config: RunConfig
 ## Metres per second the chunks travel toward +Z.
 var speed := 0.0
-## 0..1, clamp(elapsed / time_to_max_speed, 0, 1).
+## 0..1, max(clamp(run_clock / time_to_max_speed, 0, 1), difficulty_floor).
 var difficulty := 0.0
 ## Nitro multiplier applied on top of the curve.
 var multiplier := 1.0
-## Unpaused running seconds; Nitro does not advance it.
-var elapsed := 0.0
+## RUN-phase seconds; Nitro does not advance it and neither do the turn, boss or stage-clear phases.
+var run_clock := 0.0
+## Metres per second added to base, max and hard cap for the current stage (contract §11.2).
+var stage_bonus := 0.0
+## Lower bound on `difficulty` for the current stage (contract §11.2).
+var difficulty_floor := 0.0
 var max_speed_reached := 0.0
 var stopping := false
 var stop_seconds := 0.0
@@ -33,44 +41,62 @@ func setup(runner: RunnerGame) -> void:
 	reset()
 
 func reset() -> void:
-	elapsed = 0.0
+	run_clock = 0.0
 	difficulty = 0.0
 	multiplier = 1.0
+	stage_bonus = 0.0
+	difficulty_floor = 0.0
 	stopping = false
 	stop_seconds = 0.0
 	_stop_from_speed = 0.0
 	_emitted_difficulty = 0.0
-	speed = float(config.base_speed) if config != null else 0.0
+	speed = base_for_stage()
 	max_speed_reached = speed
 
-## Base corridor speed at the given unpaused run time, before the Nitro multiplier.
+## Stage bonus b: added to base, max and hard cap inside speed_at() (contract §11.2).
+func set_stage_bonus(bonus: float) -> void:
+	stage_bonus = maxf(bonus, 0.0)
+
+## The floor the difficulty curve can never fall below on this stage (contract §11.2).
+func set_difficulty_floor(value: float) -> void:
+	difficulty_floor = clampf(value, 0.0, 1.0)
+
+## Base corridor speed for the current stage: what stage_started reports (systems spec §10.1).
+func base_for_stage() -> float:
+	if config == null:
+		return 0.0
+	return float(config.base_speed) + stage_bonus
+
+## Base corridor speed at the given RUN-phase time, before the Nitro multiplier.
 func speed_at(time: float) -> float:
 	if config == null:
 		return 0.0
 	var ramp := float(config.time_to_max_speed)
 	var d := clampf(time / ramp, 0.0, 1.0) if ramp > 0.0 else 1.0
-	var value := lerpf(float(config.base_speed), float(config.max_speed), smoothstep(0.0, 1.0, d))
+	var value := lerpf(float(config.base_speed) + stage_bonus, float(config.max_speed) + stage_bonus,
+		smoothstep(0.0, 1.0, d))
 	if time > ramp:
 		value += (time - ramp) / 60.0 * float(config.tail_speed_per_minute)
-	return minf(value, float(config.hard_cap_speed))
+	return minf(value, float(config.hard_cap_speed) + stage_bonus)
 
-## Difficulty at the given unpaused run time (contract §7).
+## Difficulty at the given RUN-phase time (contract §7, §11.2).
 func difficulty_at(time: float) -> float:
 	if config == null:
 		return 0.0
 	var ramp := float(config.time_to_max_speed)
 	if ramp <= 0.0:
 		return 1.0
-	return clampf(time / ramp, 0.0, 1.0)
+	return maxf(clampf(time / ramp, 0.0, 1.0), difficulty_floor)
 
-## (speed - base) / (max - base); may exceed 1.0 during Nitro.
+## (speed - base_eff) / (max_eff - base_eff), both ends carrying the stage bonus; may exceed 1.0
+## during Nitro.
 func normalized() -> float:
 	if config == null:
 		return 0.0
 	var span := float(config.max_speed) - float(config.base_speed)
 	if absf(span) < 0.0001:
 		return 0.0
-	return (speed - float(config.base_speed)) / span
+	return (speed - base_for_stage()) / span
 
 ## Decelerate to a stop over `seconds` for the catch cinematic.
 func begin_stop(seconds: float) -> void:
@@ -83,9 +109,9 @@ func _physics_process(delta: float) -> void:
 		return
 	var state: StringName = game.state if game != null else &"running"
 	if state == &"running":
-		# RunnerGame owns the clock (it is the node that survives pause); mirror it so a standalone
-		# controller in a unit test still advances on its own.
-		elapsed = float(game.elapsed) if game != null else elapsed + delta
+		# The StageManager owns the RUN-phase clock; mirror it so a standalone controller in a unit
+		# test still advances on its own. A frozen run_clock holds the speed where it was.
+		run_clock = float(game.run_clock) if game != null else run_clock + delta
 		_advance()
 	elif stopping and state == &"caught":
 		_decelerate(delta)
@@ -94,11 +120,11 @@ func _physics_process(delta: float) -> void:
 	max_speed_reached = maxf(max_speed_reached, speed)
 	_publish()
 
-## The difficulty curve, the tail and the Nitro clamp (contract §7 Speed row).
+## The difficulty curve, the tail and the Nitro clamp (contract §7 Speed row, §11.2).
 func _advance() -> void:
-	var curve := speed_at(elapsed)
+	var curve := speed_at(run_clock)
 	speed = curve if is_equal_approx(multiplier, 1.0) else minf(curve * multiplier, float(config.nitro_speed_cap))
-	difficulty = difficulty_at(elapsed)
+	difficulty = difficulty_at(run_clock)
 
 func _decelerate(delta: float) -> void:
 	if stop_seconds <= 0.0:

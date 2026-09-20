@@ -22,11 +22,15 @@ extends Resource
 @export_group("Speed")
 @export var base_speed := 12.0
 @export var max_speed := 24.0
-@export var time_to_max_speed := 165.0
+## Contract §11.2 lowered this from 165 s so the v2 ramp reaches the cap inside a first stage.
+@export var time_to_max_speed := 100.0
 @export var hard_cap_speed := 26.0
 @export var tail_speed_per_minute := 1.0
 @export var nitro_speed_multiplier := 1.25
-@export var nitro_speed_cap := 32.0
+@export var nitro_speed_cap := 38.0
+## Metres per second added to base/max/hard cap per stage beyond the first (contract §11.2).
+@export var stage_speed_step := 1.0
+@export var stage_speed_bonus_max := 6.0
 
 @export_group("Health")
 @export var max_hp := 2
@@ -89,10 +93,79 @@ extends Resource
 @export var approach_z := 4.5
 @export var threat_ramp_seconds := 1.5
 
+@export_group("Stages")
+## Metres of RUN phase in stage 1; every later stage adds the step, capped at the max (§11.10).
+@export var stage_base_distance := 900.0
+@export var stage_distance_step := 250.0
+@export var stage_distance_max := 2000.0
+## Difficulty floor added per stage beyond the first, clamped to 1.0 (contract §11.2).
+@export var stage_difficulty_step := 0.25
+## Metres before the target where the spawner stops placing new chunks and the corridor drains.
+@export var stage_drain_distance := 120.0
+## Hard stop on the drain: remaining blocking hazards are cleared silently, with no dodge or bonus.
+@export var stage_drain_timeout := 6.0
+## A blocking hazard nearer than this (track z) still holds the drain open.
+@export var stage_clear_line_z := 8.0
+@export var stage_clear_seconds := 3.0
+@export var stage_clear_bonus_base := 400
+@export var stage_clear_bonus_per_stage := 150
+
+@export_group("Turn")
+@export var turn_seconds := 2.5
+## Graybox fallback only: the yaw the TurnRig sweeps when the corridor has no set_turn (§11.9).
+@export var turn_yaw_degrees := 90.0
+@export var turn_camera_yaw_degrees := 18.0
+@export var turn_camera_bank_degrees := 6.0
+
+@export_group("Boss")
+@export var boss_z := -14.0
+@export var boss_sway_amplitude := 2.4
+@export var boss_sway_period := 3.2
+@export var boss_intro_seconds := 1.2
+@export var boss_outro_seconds := 1.0
+@export var boss_timeout_seconds := 55.0
+## HP fractions that open phases 1, 2 and 3 (contract §11.10).
+@export var boss_phase_thresholds: Array[float] = [1.0, 0.66, 0.33]
+## Per-cycle escalation, where cycle c = (stage_index - 1) / 3 (contract §11.10).
+@export var boss_hp_growth := 1.35
+## Test/tuning multiplier applied to every boss's base HP before the cycle growth; 1.0 in play.
+@export var boss_hp_scale := 1.0
+@export var boss_projectile_speed_growth := 1.08
+@export var boss_projectile_speed_max := 34.0
+@export var boss_telegraph_growth := 0.88
+@export var boss_telegraph_min := 0.60
+@export var boss_attack_interval_growth := 0.90
+@export var boss_attack_interval_min := 0.55
+@export var boss_kill_bonus_base := 600
+@export var boss_kill_bonus_per_stage := 200
+## A timed-out boss pays the kill bonus times this ratio, scaled by the damage it took.
+@export var boss_retreat_bonus_ratio := 0.35
+
+@export_group("Tools")
+@export var boss_tool_spawn_z := -55.0
+@export var boss_tool_interval_growth := 0.93
+@export var boss_tool_interval_min := 1.4
+## A fight never goes longer than this without a tool in flight.
+@export var boss_tool_guarantee_seconds := 4.0
+## A tool lane needs this much clear z to the nearest live projectile.
+@export var boss_tool_lane_clearance := 3.0
+## Share of the tool roll pushed onto the kinds the current boss phase accepts.
+@export var boss_shield_tool_bias := 0.7
+@export var tool_bonus := 20
+
+@export_group("Pursuit")
+## pursuit_alert switches to &"critical" once the recovery timer drops below this (contract §11.4).
+@export var pursuit_critical_seconds := 5.0
+@export var pursuer_distance_epsilon := 0.01
+
 @export_group("Autopilot")
 @export var autopilot_jump_lead := 0.22
 @export var autopilot_roll_lead := 0.15
 @export var autopilot_plan_lead := 0.6
+## Extra seconds the bot acts ahead of a telegraphed projectile arrival (contract §11.10).
+@export var autopilot_telegraph_lead := 0.12
+## 0 ignores tools, 1 takes every safe tool (contract §11.10).
+@export var autopilot_tool_greed := 1.0
 
 ## Seconds between forced actions at the given difficulty (contract §7).
 func t_spacing(difficulty: float) -> float:

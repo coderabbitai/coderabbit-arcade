@@ -376,7 +376,7 @@ with `stage_difficulty_step 0.25`; chunk tiers, weights and the §8 hazard table
 
 ### 11.3 `runner_game.tscn` delta (extends §3)
 
-```
+```text
 World
 ├─ Floor, Chunks                       unchanged, never rotated
 └─ TurnRig (Node3D, systems/turn_rig.gd)
@@ -505,7 +505,7 @@ backend `TurnRig` yaws the graybox environment instead (fallback only). The came
 
 ### 11.10 RunConfig additions (all defaults in `run_config.gd`; the `.tres` stays empty)
 
-```
+```text
 Speed:     time_to_max_speed 100.0 (was 165), stage_speed_step 1.0, stage_speed_bonus_max 6.0, nitro_speed_cap 38.0
 Stages:    stage_base_distance 900.0, stage_distance_step 250.0, stage_distance_max 2000.0, stage_difficulty_step 0.25
            stage_drain_distance 120.0, stage_drain_timeout 6.0, stage_clear_line_z 8.0, stage_clear_seconds 3.0
@@ -513,7 +513,7 @@ Stages:    stage_base_distance 900.0, stage_distance_step 250.0, stage_distance_
 Turn:      turn_seconds 2.5, turn_yaw_degrees 90.0 (graybox fallback), turn_camera_yaw_degrees 18.0, turn_camera_bank_degrees 6.0
 Boss:      boss_z -14.0, boss_sway_amplitude 2.4, boss_sway_period 3.2, boss_intro_seconds 1.2, boss_outro_seconds 1.0
            boss_timeout_seconds 55.0, boss_phase_thresholds [1.0, 0.66, 0.33]
-           boss_hp_growth 1.35, boss_projectile_speed_growth 1.08, boss_projectile_speed_max 34.0
+           boss_hp_growth 1.35, boss_hp_scale 1.0 (test/tuning multiplier on the base HP), boss_projectile_speed_growth 1.08, boss_projectile_speed_max 34.0
            boss_telegraph_growth 0.88, boss_telegraph_min 0.60, boss_attack_interval_growth 0.90, boss_attack_interval_min 0.55
            boss_kill_bonus_base 600, boss_kill_bonus_per_stage 200, boss_retreat_bonus_ratio 0.35
 Tools:     boss_tool_spawn_z -55.0, boss_tool_interval_growth 0.93, boss_tool_interval_min 1.4

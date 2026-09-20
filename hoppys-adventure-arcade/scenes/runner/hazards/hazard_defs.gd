@@ -96,8 +96,44 @@ const DEFS := {
 		"y_max": 0.5,
 		"lanes_wide": 3,
 		"dodge_hint": &"JUMP"
+	},
+	## Boss projectiles (contract §11.6). One kind, four variants; hazards/projectile.gd adds the
+	## +Z motion and the `closing_speed` the visual reads. The base entry is the `orb` shape, so a
+	## projectile spawned without a variant is still a legal single-lane hazard.
+	&"projectile": {
+		"size": Vector3(1.6, 0.9, 1.2),
+		"y_min": 0.0,
+		"y_max": 0.9,
+		"lanes_wide": 1,
+		"dodge_hint": &"JUMP_OR_LANE",
+		"variants": {
+			&"orb": {},
+			&"low": {
+				"size": Vector3(5.6, 0.9, 1.2),
+				"lanes_wide": 3,
+				"dodge_hint": &"JUMP"
+			},
+			&"high": {
+				"size": Vector3(5.6, 0.4, 1.2),
+				"y_min": 1.1,
+				"y_max": 1.5,
+				"lanes_wide": 3,
+				"dodge_hint": &"ROLL"
+			},
+			&"wide": {
+				"size": Vector3(3.6, 1.0, 1.2),
+				"y_min": 0.0,
+				"y_max": 1.0,
+				"lanes_wide": 2,
+				"dodge_hint": &"LANE"
+			}
+		}
 	}
 }
+
+## The boss projectile kind and its variants (contract §11.6), in table order.
+const PROJECTILE_KIND: StringName = &"projectile"
+const PROJECTILE_VARIANTS: Array[StringName] = [&"orb", &"low", &"high", &"wide"]
 
 ## Dodge hints whose only safe answer is rolling (used for standing clearance and the bot).
 const ROLL_HINTS := [&"ROLL", &"ROLL_OR_JUMP"]
@@ -125,6 +161,15 @@ static func center_y(def: Dictionary) -> float:
 
 static func is_timed(def: Dictionary) -> bool:
 	return bool(def.get("timed", false))
+
+## True for the boss projectile kind, whatever its variant.
+static func is_projectile(kind: StringName) -> bool:
+	return kind == PROJECTILE_KIND
+
+## How many lanes one hitbox of this def covers (1, 2 or 3); the boss encounter groups a lane mask
+## into that many lanes per projectile.
+static func lanes_wide(def: Dictionary) -> int:
+	return maxi(int(def.get("lanes_wide", 1)), 1)
 
 static func kinds() -> Array:
 	return DEFS.keys()

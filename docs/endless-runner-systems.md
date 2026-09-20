@@ -45,7 +45,7 @@ Reaction budget: 0.35 s choice reaction + 0.05 s input/render latency + 0.30 s w
 part of that **time** term, not a distance added afterwards, so the seam rule is exactly as
 `chunk_spawner.gd::_gap_for()` implements it:
 
-```
+```text
 gap = max(0, v_eff × gap_safety × (t_spacing(d) + (t_spacing_pursued_bonus if PURSUED else 0))
            − prev.exit_clear − next.entry_clear)
 ```
@@ -343,7 +343,7 @@ Graybox: coloured `SphereMesh` per kind.
 `load_entries(path)`, `save_entries(entries, path)`, `submit(entry, path) -> {rank, entries, error}`,
 `rename(run_id, name, path) -> Error`, `sanitize_name(raw)`, `sort_entries(entries)`.
 Storage: section `meta/version`; section `leaderboard/entries` (Array of Dictionary). Any version that is
-not `SCHEMA_VERSION` reads as an empty board. `read_board(path) -> {entries, version, error}` is the
+not in `SUPPORTED_VERSIONS` ([1, 2]) reads as an empty board with `ERR_FILE_UNRECOGNIZED`; a version-1 board is the exception — its rows are read normally and the next successful save rewrites the file as version 2 (in-place migration). `read_board(path) -> {entries, version, error}` is the
 internal reader that also reports which case it hit (`OK`, `ERR_FILE_NOT_FOUND`, `ERR_FILE_CORRUPT`, or
 `ERR_FILE_UNRECOGNIZED` for a version mismatch); `load_entries` is `read_board(...)["entries"]`.
 **Forward compatibility:** when the file declares a version *newer* than `SCHEMA_VERSION`, `submit` and
@@ -450,6 +450,9 @@ active → roll, off → nothing. Jump trigger `front_z ≥ −(v × 0.22 + 0.4)
 
 - Never mutate the shared `run_config.tres`; tests `duplicate()` it.
 - `set_deferred` for `monitoring`/`monitorable`/`disabled` when inside physics callbacks.
+- A CollisionObject may not leave the tree inside a physics callback either ("Removing a CollisionObject node
+  during a physics callback is not allowed"): `queue_free()` (already end-of-frame) or
+  `remove_child.call_deferred()`, never a synchronous `remove_child`.
 - `Engine.time_scale` multiplies the physics delta (it does not add ticks); to accelerate a simulation without
   coarsening physics, raise `Engine.physics_ticks_per_second` by the same factor and `max_physics_steps_per_frame`.
 - Injected key events must set `physical_keycode`; bindings are physical.
@@ -515,7 +518,8 @@ stage bonus cases (b = 0, 3, 6 → caps 26/29/32; Nitro ≤ 38) and the floor ru
 
 `BossArena` root (Node3D, `boss_encounter.gd`) children `Boss` (Node3D) → `Visual` mount, `Projectiles`, `Tools`.
 `start(stage_index)`: read defs (kind, name, base HP, speeds, telegraphs, intervals, patterns, accepted tools per
-phase) scaled by the cycle escalation (contract §11.10); `hp = max_hp`; `phase = 1`; mount the visual
+phase) scaled by the cycle escalation (contract §11.10), with `boss_hp_scale` multiplying the base HP before that
+growth so a test config can shorten a fight without bending the curve; `hp = max_hp`; `phase = 1`; mount the visual
 (`ResourceLoader.exists` → `load as PackedScene` → set base vars → `add_child` → `on_spawned()`; graybox fallback: a
 DANGER box 4×2.4×1.5 with a Label3D name); position `Boss` at `(0, 2.6, boss_z)`; `_intro = boss_intro_seconds`;
 emit `boss_spawned(kind, hp)` and `boss_health_changed(hp, max_hp)`; `_attack_timer = attack_interval(phase)`;
@@ -530,10 +534,19 @@ projectile per contiguous lane group: `orb` → one lane, `wide` → 2 adjacent,
 `kind = &"projectile"`, `variant`, `closing_speed`, `setup(game)`, emit `boss_projectile_fired(...)`, call
 `visual.play_attack(variant)`; `_attack_timer = attack_interval(phase)`. Tool spawning: `_tool_timer -= delta`; when
 ≤ 0, or when `boss_tool_guarantee_seconds` passed with no tool alive, spawn `powerups/tool_pickup.tscn` under `Tools`
-at `(lane_x, y, boss_tool_spawn_z)` with a lane that has no live projectile within `boss_tool_lane_clearance` and
-differs from the last tool lane; kind rolled by weight, biased to the accepted set with `boss_shield_tool_bias`
-during a resisting phase; `_tool_timer = tool_interval`. Timeout: `_fight_timer ≥ boss_timeout_seconds` →
+at `(lane_x, y, boss_tool_spawn_z)`; kind rolled by weight, biased to the accepted set with `boss_shield_tool_bias`
+during a resisting phase; `_tool_timer = tool_interval` and `_since_tool = 0` on **every** attempt, so a draw that
+cannot place anything does not come back on the next tick. Timeout: `_fight_timer ≥ boss_timeout_seconds` →
 `_retreat()`.
+
+Tool lane (contract §11.7): a lane is **blocked** when a live projectile covers it (lane-mask intersection, the
+projectile still short of `boss_tool_lane_clearance` metres past the player — past that the player can cross in
+behind it) **or** a queued telegraph's mask covers it; a full-width mask blocks nothing, because that attack is
+answered with a jump or a roll rather than with a lane change (the same rule `autopilot.pending_lane_mask()`
+applies). The draw takes a random unblocked lane that differs from the last tool lane; when the no-repeat rule
+leaves only blocked lanes it takes the one whose blocking projectile is furthest along (highest track z, so the
+first lane to free up), and a lane held by a telegraph alone — nothing in flight yet — sorts last. The no-repeat
+rule is never broken, so a tool is always placed and the guarantee holds.
 
 Damage: `apply_tool(kind)` (called by `tool_pickup.collect`): `damage = ToolDefs.damage(kind) if accepted else 0`;
 `hp = max(hp − damage, 0)`; `boss_damage_dealt += damage`; `tools_used += 1`; emit `tool_collected(kind, damage)`;
@@ -546,6 +559,16 @@ credit), free live tools, `_outro = boss_outro_seconds`; `_retreat()`: bonus `= 
 (1 − hp / max_hp)`, emit `boss_retreated`, `visual.play_retreat()`, same cleanup. After the outro `finished` is
 set (a plain bool the StageManager polls), the boss node is freed. `abort()` (on caught) frees everything without
 signals or bonuses.
+
+Both endings can be reached from inside a physics callback — the killing blow is a tool auto-firing in
+`area_entered`, and a catch aborts the fight the same way — so the arena **never** takes a projectile or a tool out
+of the tree by hand (§9): each one is marked `consumed`, has `monitoring` disabled with `set_deferred` and is
+`queue_free()`d, which is already end-of-frame. `clear()` has removed the projectile from `runner_hazards`
+synchronously, so nothing on the way out can score a dodge (tools are in `runner_tools`, which `_track_dodges`
+never scans) or damage anything after the fight. `projectile_count()` / `tool_count()` skip queued nodes, so both
+still read 0 on the tick the fight ends. `get_info()` returns the empty contract §11.4 block (`kind &""`, `name ""`,
+`hp`/`max_hp`/`phase` 0, empty arrays) whenever no fight is active — before the first one and from the end of the
+outro — which is the same shape `RunnerGame.get_boss_info()` returns with no arena mounted.
 
 Patterns (beat lists; `L` = random single lane, `Ladj` = two adjacent lanes leaving one free, `alt` = alternate):
 Swarm P1 `orb L`; P2 `orb Ladj` (two orbs); P3 `high, low` alt. Hydra P1 `wide (one lane free)`; P2 `orb lane0 +
@@ -609,12 +632,15 @@ transitions and one `boss_phase_changed` per crossing; tool damage incl. resiste
 boss timeout → `boss_retreated` with the partial bonus and never `boss_defeated`; turn state (signals once, rig and
 camera back at zero, no spawn during the bend); `pursuit_alert` ordering and the epsilon gate; caught mid-boss aborts
 to `idle` with `run_finished` once and boss stats in the result; speed with stage bonus and difficulty floor.
-`runner_smoke.gd`: duplicated config `stage_base_distance 260`, `time_to_max_speed 20`, boss HP scaled to ~40, at the
+`runner_smoke.gd`: duplicated config `stage_base_distance 260`, `time_to_max_speed 20`, `boss_hp_scale 0.4` (so the
+stage-1 boss opens on 40 hp rather than its authored 100), at the
 existing acceleration: stage 1 → `turn_started`/`turn_finished` → `boss_spawned` → tools damage → `boss_defeated` →
 `stage_cleared` → `stage_started(2, …)` within a bounded wall clock with zero projectile hits; a second probe forcing
-PURSUED plus a projectile mid-fight ends the run once with the boss stats present. `runner_chunk_validator.gd`: the
-spawner places nothing outside `run`; `BossArena` holds no chunk; tool spawns respect clearance/no-repeat/y ∈ {1.0,
-2.2}. New `runner_boss_validator.gd`: every boss × phase × pattern × entry lane × cycle 0–4 through the virtual
+PURSUED plus a projectile mid-fight ends the run once with the boss stats present; the kill leaves the arena empty
+(no `runner_tools` node and no blocking projectile two frames later) and raises no engine error.
+`runner_chunk_validator.gd`: the spawner places nothing outside `run`; `BossArena` holds no chunk; tool spawns
+respect the lane rule above (live projectile, queued telegraph, full-width exemption, furthest-along fallback),
+no-repeat and y ∈ {1.0, 2.2}. New `runner_boss_validator.gd`: every boss × phase × pattern × entry lane × cycle 0–4 through the virtual
 runner (gravity 28, jump 9.8/0.70 s, roll 0.70 s, lane tween 0.13 s) driven by the real autopilot planner from the
 telegraph: zero hits; `telegraph + travel ≥ 0.98 s`; jump launch window leaves ≥ 0.35 s; every pattern leaves a free
 lane or is jumpable/rollable; an accepted tool is reachable at least once per `boss_tool_guarantee_seconds`.

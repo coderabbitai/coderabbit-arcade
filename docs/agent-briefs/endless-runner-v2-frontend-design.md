@@ -44,7 +44,7 @@ No `Label` sets `outline_size`, `outline_color` or shadow. `Style.theme()` sets 
 
 ### `scenes/runner/ui/hud_style.gd`
 
-```
+```text
 const Style   = preload("res://scenes/main_menu/menu_style.gd")
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 static func label(text, size, color, weight := &"body") -> Label
@@ -225,7 +225,7 @@ Each ≤ 7 draws; pickup radius 0.35; bob ±0.06 m; 0.5 Hz scale pulse synced to
 outward 0.35 s; hold 1.6 s, fade 0.4 s; deferred until `turn_finished` during a turn; suppressed if a boss is on screen.
 
 **Stage clear card** — `scenes/runner/ui/stage_clear.gd`, on `stage_cleared(index, bonus)`:
-```
+```text
 STAGE 2 CLEAR
 MERGE CONFLICT HYDRA — FIXED
   TIME          00:48.2
@@ -318,7 +318,7 @@ fight (target-offset variable in the existing `_pitch` smoothing) + pitch `+0.04
 
 ### New frontend files
 
-```
+```text
 scenes/runner/ui/hud_style.gd
 scenes/runner/ui/pursuit_alert.gd / .tscn
 scenes/runner/ui/boss_hud.gd / .tscn

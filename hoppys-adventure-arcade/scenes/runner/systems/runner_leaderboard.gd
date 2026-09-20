@@ -3,7 +3,14 @@ extends RefCounted
 ## reads the board without a game instance.
 
 const DEFAULT_PATH := "user://leaderboard.cfg"
-const SCHEMA_VERSION := 1
+## v2 scores carry the stage and boss bonuses, so they sit higher than v1 scores on the same board
+## (contract §11.11). The entry fields never changed, so a v1 file is read in place and migrated:
+## `read_board` accepts every version in SUPPORTED_VERSIONS, `load_entries` hands its rows back
+## unchanged, and the next successful write stamps the file as SCHEMA_VERSION. Only a version
+## greater than SCHEMA_VERSION is refused.
+const SCHEMA_VERSION := 2
+## Schema versions whose rows this build can parse, oldest first.
+const SUPPORTED_VERSIONS := [1, 2]
 const MAX_ENTRIES := 10
 const MAX_NAME := 16
 const FALLBACK_NAME := "Hoppy"
@@ -44,7 +51,9 @@ static func sort_entries(entries: Array) -> Array[Dictionary]:
 ## The board on disk plus the schema it declares: `{entries: Array[Dictionary], version: int,
 ## error: Error}`. `entries` is empty unless `error` is OK, so a caller that only wants rows can
 ## ignore the rest; the writers use `version`/`error` to tell "nothing readable here, go ahead and
-## write" apart from "a newer build owns this file, do not touch it".
+## write" apart from "a newer build owns this file, do not touch it". `version` is the version the
+## file declared, not SCHEMA_VERSION: an older supported board reads OK and is migrated on the next
+## write.
 static func read_board(path := DEFAULT_PATH) -> Dictionary:
 	var empty: Array[Dictionary] = []
 	var source := path
@@ -57,7 +66,7 @@ static func read_board(path := DEFAULT_PATH) -> Dictionary:
 	if config.load(source) != OK:
 		return {"entries": empty, "version": 0, "error": ERR_FILE_CORRUPT}
 	var version := int(config.get_value("meta", "version", 0))
-	if version != SCHEMA_VERSION:
+	if not SUPPORTED_VERSIONS.has(version):
 		return {"entries": empty, "version": version, "error": ERR_FILE_UNRECOGNIZED}
 	var raw: Variant = config.get_value("leaderboard", "entries", [])
 	if not (raw is Array):
@@ -74,8 +83,9 @@ static func load_entries(path := DEFAULT_PATH) -> Array[Dictionary]:
 	return entries
 
 ## True when the file was written by a build with a newer schema. Its rows cannot be parsed, so the
-## writers must leave it alone: overwriting would silently replace a real board with one run. An
-## older or unrecognised-but-not-newer version keeps the old behaviour (read empty, overwrite).
+## writers must leave it alone: overwriting would silently replace a real board with one run. A
+## supported older version is read in place and migrated on the next write; an unrecognised but not
+## newer version keeps the old behaviour (read empty, overwrite).
 static func _is_newer_schema(board: Dictionary, path: String) -> bool:
 	var version := int(board["version"])
 	if int(board["error"]) != ERR_FILE_UNRECOGNIZED or version <= SCHEMA_VERSION:

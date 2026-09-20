@@ -59,15 +59,34 @@ func _process(_delta: float) -> void:
 		return
 	readout.text = "\n".join(PackedStringArray([
 		"fps %d  state %s  paused %s" % [Engine.get_frames_per_second(), game.state, game.paused],
-		"t %.1fs  d %.2f  dist %.0fm" % [game.elapsed, game.difficulty, game.distance],
+		"t %.1fs  run %.1fs  d %.2f  dist %.0fm" % [game.elapsed, game.run_clock, game.difficulty, game.distance],
 		"speed %.1f (n %.2f)" % [game.speed, game.normalized_speed],
+		_stage_line(),
+		_boss_line(),
 		_health_line(),
 		"score %d  x%.2f" % [game.score, game.multiplier],
 		"effects %s" % _effects_line(),
-		"chunks %s  hazards %d  pickups %d" % [_chunk_count(), _group_count(&"runner_hazards"), _group_count(&"runner_pickups")],
+		"chunks %s  hazards %d  pickups %d  tools %d" % [_chunk_count(),
+			_group_count(&"runner_hazards"), _group_count(&"runner_pickups"), _group_count(&"runner_tools")],
 		"seed %d  run %s  autopilot %s" % [game.seed, game.run_id, _autopilot_line()],
 		"recent %s" % _recent_chunks()
 	]))
+
+## Phase, stage index and the distance the stage still owes (contract §11.1, systems spec §10.7).
+func _stage_line() -> String:
+	return "phase %s  stage %d %s  %.0f/%.0fm" % [game.phase, game.stage_index, game.stage_name,
+		game.stage_distance, game.stage_distance_target]
+
+## Boss kind, HP, phase and the telegraphs still in the air. "none" outside a fight, so the line
+## keeps its place in the readout and never jumps the rest of the block around.
+func _boss_line() -> String:
+	if game.phase != &"boss" or game.boss_kind == &"":
+		return "boss none"
+	var info := game.get_boss_info()
+	var pending: Variant = info.get("pending_attacks", 0)
+	var pending_count := (pending as Array).size() if pending is Array else int(pending)
+	return "boss %s  hp %d/%d  phase %d  pending %d" % [game.boss_kind, game.boss_hp,
+		game.boss_max_hp, game.boss_phase, pending_count]
 
 ## hp, the HitManager state, i-frames and the recovery countdown (systems spec §2).
 func _health_line() -> String:

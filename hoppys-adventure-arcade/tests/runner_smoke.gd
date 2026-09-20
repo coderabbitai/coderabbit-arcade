@@ -10,11 +10,13 @@ const GAME_PATH := "res://scenes/runner/runner_game.tscn"
 const CONFIG_PATH := "res://scenes/runner/data/run_config.tres"
 const SEED := 12345
 const TIME_SCALE := 6.0
+const PROJECTILE_SCENE := "res://scenes/runner/hazards/projectile.tscn"
+const ARENA_PATH := "World/TurnRig/BossArena"
 ## Autopilot policies (systems spec §8).
 const PREFER_LANE := 0
 const GREEDY_PICKUP := 2
 ## Run phases, in game seconds.
-const CLEAN_SECONDS := 45.0
+const CLEAN_SECONDS := 50.0
 const RAMP_SECONDS := 20.0
 const DAMAGE_WINDOW := 14.0
 ## Long enough for an ignored slice to travel from the scan horizon into the player.
@@ -23,6 +25,17 @@ const BLAST_QUIET_SECONDS := 2.0
 const PAUSE_SECONDS := 1.0
 ## Wall-clock ceiling for any wait, so a stuck run fails instead of hanging.
 const WALL_TIMEOUT := 40.0
+## Systems spec §10.8 shortened stage: 260 m of RUN phase instead of the authored 900, so a whole
+## seam (run -> turn -> boss -> stage clear -> run) fits inside the smoke run.
+const STAGE_DISTANCE := 260.0
+## The stage-1 boss the shortened config opens on: its authored 100 hp times boss_hp_scale, which
+## the smoke config drops to BOSS_HP_SCALE so the fight fits inside the wall clock.
+const BOSS_HP_SCALE := 0.4
+const SMOKE_BOSS_HP := 40
+## Wall-clock ceilings for the two v2 phases. The stage seam is the long one: a 260 m run, the
+## drain, the bend, the fight and the card.
+const STAGE_WALL_TIMEOUT := 40.0
+const BOSS_WALL_TIMEOUT := 20.0
 
 ## Godot 4.7 runs the same 60 physics ticks per second under a raised time_scale and simply makes
 ## each delta 6x longer, which would break the 0.10 s jump buffer and let hazards tunnel. Raising
@@ -71,10 +84,7 @@ func run() -> void:
 		return
 	game = packed.instantiate() as Node3D
 	game.autostart = false
-	var config := (load(CONFIG_PATH) as RunConfig).duplicate()
-	# Reach the top speed inside the smoke run instead of the full 165 s ramp.
-	config.time_to_max_speed = RAMP_SECONDS
-	game.config = config
+	game.config = _smoke_config()
 	game.leaderboard_path = leaderboard_path
 	root.add_child(game)
 	await process_frame
@@ -86,6 +96,9 @@ func run() -> void:
 	# The key test runs first, while the run-in ahead of the first chunk is still empty: a real
 	# jump takes 0.70 s with the bot switched off, and that is not a safe thing to do mid-corridor.
 	await _input_phase()
+	# Then the v2 seam, from the top of stage 1 (systems spec §10.8): every later phase runs on
+	# whatever the stage machine happens to be doing, so this is the one that gets a clean stage 1.
+	await _stage_phase()
 	await _clean_phase()
 	await _auto_fix_phase()
 	await _pause_phase()
@@ -95,19 +108,107 @@ func run() -> void:
 	game.free()
 	game = null
 	await process_frame
-	# After the main game is freed and before routing builds another one: the probe below needs to be
+	# After the main game is freed and before routing builds another one: the probes below need to be
 	# the only RunnerGame in the tree, because Area3D overlaps are resolved in one shared physics
 	# world and a second game's chunks sit on the same coordinates.
 	await _same_tick_phase()
+	await _boss_catch_phase()
 	await _routing_phase()
 	await _report()
 
-## 45 s of ramped, autopiloted running with no damage at all.
+## The systems spec §10.8 smoke config: the same acceleration the v1 run used, on a stage short
+## enough that the whole seam fits in the wall clock. Never the shared .tres — always a duplicate.
+func _smoke_config() -> RunConfig:
+	var config := (load(CONFIG_PATH) as RunConfig).duplicate()
+	# Reach the top speed inside the smoke run instead of the full 100 s ramp.
+	config.time_to_max_speed = RAMP_SECONDS
+	config.stage_base_distance = STAGE_DISTANCE
+	# Stage 1 is cycle 0, so the scale alone decides the fight: 100 hp x 0.4 = SMOKE_BOSS_HP.
+	config.boss_hp_scale = BOSS_HP_SCALE
+	return config
+
+## Systems spec §10.8: one whole stage seam under the shortened config. Stage 1 runs its 260 m,
+## drains, bends into the turn, spawns its boss, is brought down by tools, clears and hands over to
+## stage 2 — all inside a bounded wall clock, with the fair bot taking no hit at all on the way.
+func _stage_phase() -> void:
+	game.set_autopilot(true)
+	if game.autopilot != null and game.autopilot.has_method("set_mode"):
+		game.autopilot.set_mode(GREEDY_PICKUP)
+	check(game.phase == &"run", "stage 1 did not open in the run phase (phase %s)" % game.phase)
+	check(game.stage_index == 1, "the run opened on stage %d" % game.stage_index)
+	check(events["stage_started"].size() == 1 and int(events["stage_started"][0][0]) == 1,
+		"stage_started did not announce stage 1, got %s" % [events["stage_started"]])
+	check(is_equal_approx(float(game.stage_distance_target), STAGE_DISTANCE),
+		"stage 1 asks for %.0f m, expected %.0f" % [float(game.stage_distance_target), STAGE_DISTANCE])
+
+	check(await _wait_until(func() -> bool: return not events["turn_started"].is_empty(), STAGE_WALL_TIMEOUT),
+		"stage 1 never drained into the turn (%.0f/%.0f m, phase %s)"
+			% [float(game.stage_distance), float(game.stage_distance_target), game.phase])
+	if events["turn_started"].is_empty():
+		return
+	var direction := int(events["turn_started"][0][0])
+	check(direction == -1 or direction == 1, "the turn went in direction %d" % direction)
+	check(await _wait_until(func() -> bool: return events["turn_finished"] > 0, STAGE_WALL_TIMEOUT),
+		"the turn never finished")
+	check(events["turn_started"].size() == 1 and events["turn_finished"] == 1,
+		"the seam turned %d / %d times" % [events["turn_started"].size(), events["turn_finished"]])
+
+	check(await _wait_until(func() -> bool: return not events["boss_spawned"].is_empty(), STAGE_WALL_TIMEOUT),
+		"the turn did not hand over to a boss (phase %s)" % game.phase)
+	if events["boss_spawned"].is_empty():
+		return
+	check(game.phase == &"boss", "the boss spawned outside the boss phase (phase %s)" % game.phase)
+	check(StringName(events["boss_spawned"][0][0]) == &"flaky_test_swarm",
+		"stage 1 fights %s" % events["boss_spawned"][0][0])
+	check(game.boss_max_hp == SMOKE_BOSS_HP,
+		"the smoke fight opened on %d hp, expected the scaled %d" % [game.boss_max_hp, SMOKE_BOSS_HP])
+	check(game.boss != null, "the fight has no boss node")
+
+	check(await _wait_until(func() -> bool: return _damaging_tools() > 0, STAGE_WALL_TIMEOUT),
+		"the greedy bot never landed a tool on the boss (hp %d/%d)" % [game.boss_hp, game.boss_max_hp])
+	check(await _wait_until(func() -> bool: return not events["boss_defeated"].is_empty(), STAGE_WALL_TIMEOUT),
+		"the boss was never defeated (hp %d/%d, %d tools)"
+			% [game.boss_hp, game.boss_max_hp, events["tool_collected"].size()])
+	if events["boss_defeated"].is_empty():
+		return
+	check(events["boss_retreated"].is_empty(), "the boss both died and ran away")
+	check(int(events["boss_defeated"][0][1]) > 0, "the kill paid %d" % int(events["boss_defeated"][0][1]))
+	check(_damaging_tools() >= 2, "only %d tools actually damaged the boss" % _damaging_tools())
+	await _boss_cleanup()
+
+	check(await _wait_until(func() -> bool: return not events["stage_cleared"].is_empty(), STAGE_WALL_TIMEOUT),
+		"the stage never cleared after the kill")
+	check(await _wait_until(func() -> bool: return events["stage_started"].size() >= 2, STAGE_WALL_TIMEOUT),
+		"stage 2 never opened (phase %s, stage %d)" % [game.phase, game.stage_index])
+	if events["stage_started"].size() < 2:
+		return
+	check(int(events["stage_started"][1][0]) == 2 and game.stage_index == 2,
+		"the seam handed over to stage %d" % game.stage_index)
+	check(StringName(events["stage_started"][1][1]) == &"Merge Conflict Hydra",
+		"stage 2 announced %s" % events["stage_started"][1][1])
+	check(game.phase == &"run", "stage 2 did not open in the run phase (phase %s)" % game.phase)
+	check(int(events["stage_cleared"][0][1]) > 0,
+		"the stage-clear bonus was %d" % int(events["stage_cleared"][0][1]))
+
+	# The whole point of the fair bot: the shots are telegraphed and it answers every one of them.
+	check(events["damage_taken"].is_empty(),
+		"the fair bot took %d hit(s) crossing the seam: %s" % [events["damage_taken"].size(), events["hit_log"]])
+	check(game.hp == 2, "the seam cost health (hp %d)" % game.hp)
+	check(int(game.hit_manager.hits_taken) == 0,
+		"the seam took %d hits" % int(game.hit_manager.hits_taken))
+
+## Ramped, autopiloted running with no damage at all. The run clock only ticks inside the RUN
+## phase now (contract §11.1), so the ramp is waited out on `run_clock` rather than on `elapsed`.
 func _clean_phase() -> void:
 	game.set_autopilot(true)
 	if game.autopilot != null and game.autopilot.has_method("set_mode"):
 		game.autopilot.set_mode(GREEDY_PICKUP)
-	await _wait_run_seconds(CLEAN_SECONDS)
+	var ramped := func() -> bool:
+		return game.run_clock >= RAMP_SECONDS + 2.0 and game.elapsed >= CLEAN_SECONDS \
+			and game.phase == &"run"
+	check(await _wait_until(ramped, WALL_TIMEOUT),
+		"the ramp never topped out (run_clock %.1f, elapsed %.1f, phase %s)"
+			% [game.run_clock, game.elapsed, game.phase])
 	check(game.hp == 2, "the clean run lost health (hp %d)" % game.hp)
 	check(int(game.hit_manager.hits_taken) == 0,
 		"the clean run took %d hits" % int(game.hit_manager.hits_taken))
@@ -119,13 +220,19 @@ func _clean_phase() -> void:
 	check(active.size() <= int(game.config.max_active_chunks),
 		"%d chunks are active, the cap is %d" % [active.size(), int(game.config.max_active_chunks)])
 	check(int(game.spawner.chunks_spawned) > 0, "no chunk was ever spawned")
-	check(game.score > 0, "the score is still 0 after 45 s")
+	check(game.score > 0, "the score is still 0 after %.0f s" % CLEAN_SECONDS)
 	check(int(game.effect_manager.power_ups_collected) >= 1,
-		"the greedy bot collected no power-up in 45 s")
+		"the greedy bot collected no power-up in %.0f s" % CLEAN_SECONDS)
 	check(int(game.hazards_dodged) > 0, "no hazard was counted as dodged")
 
-## Auto-Fix clears the corridor ahead and the run stays clean right after it.
+## Auto-Fix clears the corridor ahead and the run stays clean right after it. The blast only has
+## something to clear inside a RUN phase with chunks still in front of the player, so the phase is
+## waited for rather than assumed: a stage that happens to be draining has an empty corridor.
 func _auto_fix_phase() -> void:
+	var loaded := func() -> bool:
+		return game.phase == &"run" and _blocking_ahead() >= 2
+	check(await _wait_until(loaded, WALL_TIMEOUT),
+		"no loaded run phase to blast (phase %s, %d hazards ahead)" % [game.phase, _blocking_ahead()])
 	var before: int = events["hazards_blasted"].size()
 	game.effect_manager.apply(&"auto_fix")
 	await _wait_frames(4)
@@ -188,10 +295,13 @@ func _pursuit_phase() -> void:
 	# One ignored slice at a time, and never two in flight: arm the bot, wait until it has burned
 	# the slice, then give that slice time to reach the player before arming again. Two overlapping
 	# reckless slices would land two hits and end the run before the pursuit could be watched.
+	# Reckless mode burns *slices*, so it only bites in a RUN phase that still has chunks in it.
 	var hit := false
 	var attempts := 0
 	while not hit and attempts < 10 and game.state == &"running":
 		attempts += 1
+		await _wait_until(func() -> bool: return game.phase == &"run" and _blocking_ahead() > 0,
+			WALL_TIMEOUT / TIME_SCALE)
 		if game.autopilot.has_method("set_reckless"):
 			game.autopilot.set_reckless(1)
 		var burned := func() -> bool:
@@ -227,9 +337,13 @@ func _pursuit_phase() -> void:
 	check(game.hp == 2, "the recovery left hp %d" % game.hp)
 	check(bool(game.hit_manager.is_safe()), "the recovery did not restore the SAFE state")
 
-## Two more hits end the run: caught, then run_finished exactly once about 1.6 s later.
+## Two more hits end the run: caught, then run_finished exactly once about 1.6 s later. The
+## unguided runner needs something to run into, so the phase opens on a loaded corridor or a fight.
 func _catch_phase() -> void:
 	game.set_autopilot(false)
+	await _wait_until(func() -> bool:
+		return game.phase == &"boss" or (game.phase == &"run" and _blocking_ahead() > 0),
+		WALL_TIMEOUT / TIME_SCALE)
 	var hits_before: int = events["damage_taken"].size()
 	var caught := await _wait_until(func() -> bool: return events["caught"] > 0, WALL_TIMEOUT / TIME_SCALE)
 	check(caught, "the unguided runner was never caught")
@@ -363,6 +477,112 @@ func _same_tick_case(packed: PackedScene, lethal: bool) -> void:
 	probe.free()
 	await process_frame
 
+## Systems spec §10.8, the second probe: a run that is already PURSUED takes a projectile in the
+## middle of a boss fight. The fight aborts back to `idle`, the run ends exactly once, and the boss
+## block of the result survives the arena being torn down.
+func _boss_catch_phase() -> void:
+	var packed := load(GAME_PATH) as PackedScene
+	check(packed != null, "boss catch: runner_game.tscn failed to load")
+	if packed == null:
+		return
+	var probe := packed.instantiate() as Node3D
+	probe.autostart = false
+	# The stage is trimmed to nothing so the probe is in the fight within a second of game time; the
+	# leaderboard override goes on before add_child, like every other RunnerGame in the suite.
+	var config := _smoke_config()
+	config.stage_base_distance = 1.0
+	config.stage_drain_distance = 1.0
+	config.stage_drain_timeout = 0.4
+	config.turn_seconds = 0.2
+	config.boss_intro_seconds = 0.2
+	probe.config = config
+	probe.leaderboard_path = leaderboard_path
+	root.add_child(probe)
+	await process_frame
+	var seen := {"caught": 0, "finished": 0, "result": {}, "spawned": 0}
+	probe.caught.connect(func() -> void: seen["caught"] += 1)
+	probe.run_finished.connect(func(value: Dictionary) -> void:
+		seen["finished"] += 1
+		seen["result"] = value)
+	probe.boss_spawned.connect(func(_kind: StringName, _hp: int) -> void: seen["spawned"] += 1)
+	probe.start_run(SEED + 1)
+	var spawned := await _wait_until(func() -> bool: return int(seen["spawned"]) > 0, BOSS_WALL_TIMEOUT)
+	check(spawned, "boss catch: the probe never reached a fight (phase %s, stage %d)"
+		% [probe.phase, probe.stage_index])
+	if not spawned:
+		probe.free()
+		await process_frame
+		return
+	check(probe.phase == &"boss", "boss catch: the probe is in phase %s" % probe.phase)
+	check(int(probe.stage_manager.turns_taken) == 1,
+		"boss catch: %d turns were taken on the way in" % int(probe.stage_manager.turns_taken))
+	# A tool lands by hand, so the boss block of the result is populated whatever the bot does.
+	var arena: Node = probe.get_node_or_null(NodePath(ARENA_PATH))
+	check(arena != null and arena.has_method("apply_tool"), "boss catch: the arena has no apply_tool")
+	if arena != null and arena.has_method("apply_tool"):
+		arena.apply_tool(&"unit_test")
+	check(int(probe.stage_manager.tools_used) == 1,
+		"boss catch: %d tools were tallied" % int(probe.stage_manager.tools_used))
+
+	# One hit from the catch, and then a real projectile dropped onto the hurtbox to land it.
+	var hits: Node = probe.hit_manager
+	hits.state = hits.HitState.PURSUED
+	hits.hp = 1
+	hits.iframe_remaining = 0.0
+	hits.recovery_remaining = 999.0
+	var shot := _drop_projectile(probe, arena)
+	check(shot != null, "boss catch: the projectile fixture could not be placed")
+	var caught := await _wait_until(func() -> bool: return int(seen["caught"]) > 0, BOSS_WALL_TIMEOUT)
+	check(caught, "boss catch: the pursued runner was never caught")
+	if caught:
+		check(probe.phase == &"idle", "boss catch: the fight did not abort to idle, phase %s" % probe.phase)
+		check(probe.boss == null, "boss catch: the boss survived the abort")
+	var finished := await _wait_until(func() -> bool: return int(seen["finished"]) > 0, BOSS_WALL_TIMEOUT)
+	check(finished, "boss catch: run_finished never arrived")
+	await _wait_frames(30)
+	check(int(seen["finished"]) == 1, "boss catch: run_finished fired %d times" % int(seen["finished"]))
+	check(int(seen["caught"]) == 1, "boss catch: caught fired %d times" % int(seen["caught"]))
+	var result: Dictionary = seen["result"]
+	check(String(result.get("outcome", "")) == "caught",
+		"boss catch: the outcome is %s" % result.get("outcome", "<missing>"))
+	check(int(result.get("stage_reached", 0)) == 1,
+		"boss catch: the result reached stage %s" % result.get("stage_reached", "<missing>"))
+	check(int(result.get("turns_taken", 0)) == 1,
+		"boss catch: the result counted %s turns" % result.get("turns_taken", "<missing>"))
+	check(int(result.get("tools_used", 0)) >= 1,
+		"boss catch: the result counted %s tools" % result.get("tools_used", "<missing>"))
+	check(int(result.get("boss_damage_dealt", 0)) >= 15,
+		"boss catch: the result carries %s boss damage" % result.get("boss_damage_dealt", "<missing>"))
+	check(int(result.get("bosses_defeated", -1)) == 0 and int(result.get("bosses_escaped", -1)) == 0,
+		"boss catch: an aborted fight counts as neither a kill nor an escape (%s / %s)"
+			% [result.get("bosses_defeated", "<missing>"), result.get("bosses_escaped", "<missing>")])
+	check(int(result.get("stages_cleared", -1)) == 0,
+		"boss catch: %s stages were cleared before the catch" % result.get("stages_cleared", "<missing>"))
+	probe.free()
+	await process_frame
+
+## A real projectile.tscn, parked on the hurtbox with no closing speed of its own: the only thing
+## in the arena that is certain to land the second hit on the frame after next.
+func _drop_projectile(probe: Node3D, arena: Node) -> Area3D:
+	if arena == null or not is_instance_valid(arena):
+		return null
+	var mount := arena.get_node_or_null(^"Projectiles")
+	if mount == null:
+		return null
+	var packed := load(PROJECTILE_SCENE) as PackedScene
+	if packed == null:
+		return null
+	var shot := packed.instantiate() as Area3D
+	if shot == null:
+		return null
+	shot.kind = &"projectile"
+	shot.variant = &"orb"
+	shot.closing_speed = 0.0
+	mount.add_child(shot)
+	shot.setup(probe)
+	shot.global_position = probe.player.global_position
+	return shot
+
 func _routing_phase() -> void:
 	var router := root.get_node_or_null("AppRouter")
 	check(router != null, "AppRouter is missing")
@@ -402,10 +622,34 @@ func _watch() -> void:
 		"hazards_blasted": [],
 		"hazard_cleared": [],
 		"power_up_collected": [],
+		"stage_started": [],
+		"stage_cleared": [],
+		"turn_started": [],
+		"turn_finished": 0,
+		"boss_spawned": [],
+		"boss_defeated": [],
+		"boss_retreated": [],
+		"tool_collected": [],
 		"caught": 0,
 		"run_finished": 0,
 		"leaderboard_saved": 0
 	}
+	game.stage_started.connect(func(index: int, name: StringName, speed: float) -> void:
+		events["stage_started"].append([index, name, speed]))
+	game.stage_cleared.connect(func(index: int, bonus: int) -> void:
+		events["stage_cleared"].append([index, bonus]))
+	game.turn_started.connect(func(direction: int, seconds: float) -> void:
+		events["turn_started"].append([direction, seconds]))
+	game.turn_finished.connect(func() -> void:
+		events["turn_finished"] += 1)
+	game.boss_spawned.connect(func(kind: StringName, hp: int) -> void:
+		events["boss_spawned"].append([kind, hp]))
+	game.boss_defeated.connect(func(kind: StringName, bonus: int) -> void:
+		events["boss_defeated"].append([kind, bonus]))
+	game.boss_retreated.connect(func(kind: StringName, bonus: int) -> void:
+		events["boss_retreated"].append([kind, bonus]))
+	game.tool_collected.connect(func(kind: StringName, damage: int) -> void:
+		events["tool_collected"].append([kind, damage]))
 	game.damage_taken.connect(func(kind: StringName, hp: int) -> void:
 		events["damage_taken"].append(kind)
 		events["hit_log"].append(_hit_context(kind, hp)))
@@ -433,6 +677,53 @@ func _watch() -> void:
 		events["run_finished"] += 1)
 	game.leaderboard_saved.connect(func(_entries: Array, _rank: int) -> void:
 		events["leaderboard_saved"] += 1)
+
+## Tools whose damage actually landed on the boss (a resisting phase reports 0).
+func _damaging_tools() -> int:
+	var landed := 0
+	for item in events["tool_collected"]:
+		if int((item as Array)[1]) > 0:
+			landed += 1
+	return landed
+
+## The end of a fight takes the arena with it (systems spec §10.3). The kill itself lands inside an
+## area_entered callback — the tool that fires it is a pickup touching the player — so the arena may
+## not take a CollisionObject out of the tree there; everything goes the deferred way instead. The
+## counts are read on the spot, because a freed node stops counting the moment it is queued, and the
+## groups are read two frames later, once the frees have actually landed. A tool that outlived its
+## fight would auto-fire into a boss that is gone; a projectile would still be blocking.
+func _boss_cleanup() -> void:
+	var arena := game.get_node_or_null(NodePath(ARENA_PATH))
+	if arena != null and is_instance_valid(arena):
+		check(int(arena.tool_count()) == 0 and int(arena.projectile_count()) == 0,
+			"the kill left %d tool(s) and %d projectile(s) in the arena"
+				% [int(arena.tool_count()), int(arena.projectile_count())])
+	await _wait_frames(2)
+	var tools := get_nodes_in_group(&"runner_tools")
+	check(tools.is_empty(), "%d tool(s) outlived the fight" % tools.size())
+	var blocking := 0
+	for node in get_nodes_in_group(&"runner_hazards"):
+		var hazard := node as Node3D
+		if hazard == null or not is_instance_valid(hazard) or not (&"closing_speed" in hazard):
+			continue
+		if hazard.has_method("is_blocking") and hazard.is_blocking():
+			blocking += 1
+	check(blocking == 0, "%d projectile(s) were still blocking two frames after the kill" % blocking)
+
+## Blocking hazards between the player and the Auto-Fix blast range.
+func _blocking_ahead() -> int:
+	var far_z := -absf(float(game.config.blast_range_z))
+	var count := 0
+	for node in get_nodes_in_group(&"runner_hazards"):
+		var hazard := node as Node3D
+		if hazard == null or not is_instance_valid(hazard):
+			continue
+		if hazard.has_method("is_blocking") and not hazard.is_blocking():
+			continue
+		var z := hazard.global_position.z
+		if z >= far_z and z <= 1.0:
+			count += 1
+	return count
 
 ## True when no blocking hazard can reach the player inside `seconds`.
 func _corridor_clear(seconds: float) -> bool:

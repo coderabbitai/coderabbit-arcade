@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/runner/hazards/projectile.gd" id="1"]
+
+[node name="Projectile" type="Area3D"]
+collision_layer = 4
+collision_mask = 8
+monitorable = false
+script = ExtResource("1")
+kind = &"projectile"
+variant = &"orb"

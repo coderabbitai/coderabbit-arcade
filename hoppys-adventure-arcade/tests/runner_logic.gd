@@ -13,17 +13,32 @@ extends SceneTree
 ## every system script is loaded inside run() instead.
 const RunnerLeaderboard = preload("res://scenes/runner/systems/runner_leaderboard.gd")
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
+const StageDefs = preload("res://scenes/runner/data/stage_defs.gd")
+const BossDefs = preload("res://scenes/runner/boss/boss_defs.gd")
+const ToolDefs = preload("res://scenes/runner/powerups/tool_defs.gd")
 const CONFIG_PATH := "res://scenes/runner/data/run_config.tres"
+const ARENA_SCENE := "res://scenes/runner/boss/boss_arena.tscn"
 const TICK := 1.0 / 60.0
 ## The timed laser slot with the hitbox off (hazard.gd OFF_STATE).
 const OFF_STATE: StringName = &"off"
+## Contract §11.1 phases, in the order one stage runs through them.
+const STAGE_PHASES: Array[StringName] = [&"run", &"turn", &"boss", &"stage_clear"]
 
 ## RunnerGame with a countable catch hook: HitManager calls _on_caught(), the facade emits `caught`.
 const FAKE_GAME_SOURCE := "extends \"res://scenes/runner/runner_game.gd\"\nvar caught_calls := 0\nfunc _on_caught() -> void:\n\tcaught_calls += 1\n\tcaught.emit()\n"
-## The hazard surface HitManager and Autopilot actually use (systems spec §5.3).
-const FAKE_HAZARD_SOURCE := "extends Node3D\nvar kind: StringName = &\"pr_backlog_low\"\nvar dodge_hint: StringName = &\"JUMP\"\nvar box := Vector3(5.6, 1.0, 1.2)\nvar center_y := 0.5\nvar blocking := true\nfunc is_blocking() -> bool:\n\treturn blocking\nfunc occupies_lane(index: int) -> bool:\n\treturn absf((float(index) - 1.0) * 2.0 - global_position.x) < box.x * 0.5 + 0.39\nfunc get_world_aabb() -> AABB:\n\treturn AABB(global_position + Vector3(0.0, center_y, 0.0) - box * 0.5, box)\n"
-## Spawner stand-in for Auto-Fix (systems spec §5.2 clear_hazards_in_range).
-const FAKE_SPAWNER_SOURCE := "extends Node\nvar cleared := 0\nvar calls := 0\nfunc clear_hazards_in_range() -> int:\n\tcalls += 1\n\treturn cleared\n"
+## The same hook, but running the real catch cinematic underneath it: section 22 needs the facade to
+## move to `caught` and time itself out to _finish_run().
+const FAKE_CAUGHT_GAME_SOURCE := "extends \"res://scenes/runner/runner_game.gd\"\nvar caught_calls := 0\nfunc _on_caught() -> void:\n\tcaught_calls += 1\n\tsuper()\n"
+## The hazard surface HitManager, the StageManager drain and Autopilot actually use (systems §5.3).
+const FAKE_HAZARD_SOURCE := "extends Node3D\nvar kind: StringName = &\"pr_backlog_low\"\nvar dodge_hint: StringName = &\"JUMP\"\nvar box := Vector3(5.6, 1.0, 1.2)\nvar center_y := 0.5\nvar blocking := true\nvar cleared := 0\nfunc is_blocking() -> bool:\n\treturn blocking\nfunc clear() -> void:\n\tcleared += 1\n\tblocking = false\n\tremove_from_group(&\"runner_hazards\")\nfunc occupies_lane(index: int) -> bool:\n\treturn absf((float(index) - 1.0) * 2.0 - global_position.x) < box.x * 0.5 + 0.39\nfunc get_world_aabb() -> AABB:\n\treturn AABB(global_position + Vector3(0.0, center_y, 0.0) - box * 0.5, box)\n"
+## A boss shot: the same surface as the hazard stand-in plus the `closing_speed` that makes the bot
+## read it as a projectile and plan its trigger from its own speed (systems spec §10.6).
+const FAKE_PROJECTILE_SOURCE := "extends Node3D\nvar kind: StringName = &\"projectile\"\nvar variant: StringName = &\"orb\"\nvar dodge_hint: StringName = &\"JUMP_OR_LANE\"\nvar closing_speed := 26.0\nvar box := Vector3(1.6, 0.9, 1.2)\nvar center_y := 0.45\nvar blocking := true\nfunc is_blocking() -> bool:\n\treturn blocking\nfunc occupies_lane(index: int) -> bool:\n\treturn absf((float(index) - 1.0) * 2.0 - global_position.x) < box.x * 0.5 + 0.39\nfunc get_world_aabb() -> AABB:\n\treturn AABB(global_position + Vector3(0.0, center_y, 0.0) - box * 0.5, box)\n"
+## Spawner stand-in for Auto-Fix (systems spec §5.2) and for the stage drain gate (§10.6).
+const FAKE_SPAWNER_SOURCE := "extends Node\nvar cleared := 0\nvar calls := 0\nvar spawning := true\nvar spawn_calls: Array = []\nfunc clear_hazards_in_range() -> int:\n\tcalls += 1\n\treturn cleared\nfunc set_spawning(on: bool) -> void:\n\tspawning = on\n\tspawn_calls.append(on)\n"
+## TurnRig / CameraRig stand-in: set_turn is the only hook the StageManager drives (systems §10.5),
+## and shake() is what the catch cinematic reaches for on the camera.
+const FAKE_RIG_SOURCE := "extends Node3D\nvar turns: Array = []\nvar turn_progress := 0.0\nvar turn_direction := 0\nvar shakes: Array = []\nfunc set_turn(progress: float, direction: int) -> void:\n\tturn_progress = progress\n\tturn_direction = direction\n\tturns.append([progress, direction])\nfunc shake(strength: float, _duration := 0.35) -> void:\n\tshakes.append(strength)\n"
 ## The contract §5.1 visual hooks reset() has to clear, recorded instead of drawn.
 const FAKE_VISUAL_SOURCE := "extends Node3D\nvar auras: Array = []\nvar shields: Array = []\nfunc show_aura(kind: StringName, on: bool) -> void:\n\tauras.append([kind, on])\nfunc show_shield(on: bool) -> void:\n\tshields.append(on)\n"
 ## The contract §5.2 hazard visual hooks, recorded. It extends the real hazard_visual_base.gd, so a
@@ -44,14 +59,23 @@ var real_hazard_script: GDScript
 var real_player_script: GDScript
 var spawner_script: GDScript
 var player_script: GDScript
+var projectile_script: GDScript
+var rig_script: GDScript
+var caught_game_script: GDScript
 var hit_manager_script: GDScript
 var score_manager_script: GDScript
 var effect_manager_script: GDScript
 var speed_controller_script: GDScript
+var stage_manager_script: GDScript
+var pursuer_script: GDScript
 var autopilot_script: GDScript
 ## Everything this test built, freed in _report().
 var junk: Array[Node] = []
 var temp_paths: Array[String] = []
+## Every facade this test builds points here, so a run that reaches _finish_run() can never touch
+## the player's real user://leaderboard.cfg — including one that was never meant to finish. The
+## sections that assert on a board override it with a path of their own.
+var scratch_leaderboard := "user://test_leaderboard_scratch_%d.cfg" % (randi() % 1000000)
 
 func _initialize() -> void:
 	call_deferred("run")
@@ -63,20 +87,28 @@ func check(condition: bool, message: String) -> void:
 		push_error("RUNNER LOGIC: " + message)
 
 func run() -> void:
+	temp_paths.append(scratch_leaderboard)
 	base_config = (load(CONFIG_PATH) as RunConfig).duplicate()
 	hit_manager_script = load("res://scenes/runner/systems/hit_manager.gd") as GDScript
 	score_manager_script = load("res://scenes/runner/systems/score_manager.gd") as GDScript
 	effect_manager_script = load("res://scenes/runner/systems/effect_manager.gd") as GDScript
 	speed_controller_script = load("res://scenes/runner/systems/speed_controller.gd") as GDScript
+	stage_manager_script = load("res://scenes/runner/systems/stage_manager.gd") as GDScript
+	pursuer_script = load("res://scenes/runner/pursuer/pursuer.gd") as GDScript
 	autopilot_script = load("res://scenes/runner/systems/autopilot.gd") as GDScript
 	real_hazard_script = load("res://scenes/runner/hazards/hazard.gd") as GDScript
 	real_player_script = load("res://scenes/runner/player/runner_player.gd") as GDScript
 	game_script = _compile(FAKE_GAME_SOURCE)
+	caught_game_script = _compile(FAKE_CAUGHT_GAME_SOURCE)
 	hazard_script = _compile(FAKE_HAZARD_SOURCE)
 	spawner_script = _compile(FAKE_SPAWNER_SOURCE)
 	player_script = _compile(FAKE_PLAYER_SOURCE)
+	projectile_script = _compile(FAKE_PROJECTILE_SOURCE)
+	rig_script = _compile(FAKE_RIG_SOURCE)
 	if game_script == null or hazard_script == null or spawner_script == null \
-			or player_script == null or real_hazard_script == null or real_player_script == null:
+			or player_script == null or real_hazard_script == null or real_player_script == null \
+			or rig_script == null or caught_game_script == null or stage_manager_script == null \
+			or pursuer_script == null or projectile_script == null:
 		check(false, "the test harness scripts failed to compile")
 		_report()
 		return
@@ -91,12 +123,22 @@ func run() -> void:
 	_test_finish_write_failure()
 	_test_config_sanity()
 	_test_autopilot()
+	_test_autopilot_boss()
 	_test_timed_laser_shutdown()
 	_test_super_jump_invuln()
 	_test_dodge_tracking()
 	_test_difficulty_emission()
 	_test_hazard_visual_mount_order()
 	_test_player_reset_clears_visual_state()
+	_test_stage_machine()
+	_test_escalation()
+	_test_boss_fight()
+	_test_boss_timeout()
+	_test_pursuit_alert()
+	_test_pursuer_distance()
+	_test_caught_mid_boss()
+	_test_stage_speed_and_floor()
+	_test_leaderboard_migration()
 	_report()
 
 # --- 1. HitManager: SAFE -> PURSUED -> DEAD ---
@@ -623,11 +665,14 @@ func _test_config_sanity() -> void:
 		"9: health tuning matches contract §7")
 	check(is_equal_approx(float(c.hit_iframes), 0.8)
 		and is_equal_approx(float(c.caught_sequence_seconds), 1.6), "9: hit tuning matches contract §7")
+	# Contract §11.2 lowered the ramp from 165 s to 100 s and raised the Nitro cap to 38 m/s, so the
+	# v2 curve reaches the top inside a first stage and Nitro still bites at the stage bonus cap.
 	check(is_equal_approx(float(c.base_speed), 12.0) and is_equal_approx(float(c.max_speed), 24.0)
-		and is_equal_approx(float(c.time_to_max_speed), 165.0), "9: speed tuning matches contract §7")
+		and is_equal_approx(float(c.time_to_max_speed), 100.0), "9: speed tuning matches contract §11.2")
 	check(float(c.hard_cap_speed) >= float(c.max_speed)
 		and float(c.nitro_speed_cap) >= float(c.hard_cap_speed) * float(c.nitro_speed_multiplier) - 0.5,
 		"9: the speed caps are ordered")
+	check(is_equal_approx(float(c.nitro_speed_cap), 38.0), "9: the Nitro cap matches contract §11.2")
 	check(is_equal_approx(float(c.base_score_rate), 10.0) and int(c.pickup_bonus) == 25
 		and int(c.blast_bonus_per_hazard) == 10, "9: score tuning matches contract §7")
 	check(is_equal_approx(float(c.nitro_score_multiplier), 2.0)
@@ -780,6 +825,124 @@ func _test_autopilot() -> void:
 	check(bot.reckless_slices == 1, "10: reckless mode is armed by slice count")
 	bot.reset()
 	check(not bot.enabled and bot.reckless_slices == 0, "10: reset disables the bot")
+
+# --- 10b. Autopilot in a boss fight: closing speeds and telegraph planning (systems spec §10.6) ---
+
+## The half runner_boss_validator.gd drives offline, pinned here as a unit: a slice carries the
+## speed it closes at, a shot never shares a manoeuvre with a chunk hazard, and a telegraph turns
+## into an action and a moment to take it without a single node in the tree.
+func _test_autopilot_boss() -> void:
+	var game := _make_game()
+	game.speed = 24.0
+	var bot: Node = autopilot_script.new()
+	junk.append(bot)
+	bot.setup(game)
+
+	# A chunk hazard closes at the corridor speed; a shot closes at its own.
+	var wall := _hazard(&"pr_backlog_low")
+	wall.position = Vector3(0.0, 0.0, -20.0)
+	var wall_slices: Array = bot.slices_for([wall], 24.0, 0.0)
+	check(is_equal_approx(float(wall_slices[0]["closing_v"]), 24.0)
+		and not bool(wall_slices[0]["projectile"]),
+		"10b: a chunk hazard closes at the corridor speed, got %.1f" % float(wall_slices[0]["closing_v"]))
+	var shot := _projectile(Vector3(0.0, 0.0, -20.0), 34.0)
+	var shot_slices: Array = bot.slices_for([shot], 24.0, 0.0)
+	check(shot_slices.size() == 1 and bool(shot_slices[0]["projectile"]),
+		"10b: a projectile is read as one, got %s" % [shot_slices])
+	check(is_equal_approx(float(shot_slices[0]["closing_v"]), 34.0),
+		"10b: a shot closes at its own speed, got %.1f" % float(shot_slices[0]["closing_v"]))
+	check(int(shot_slices[0]["blocked"]) == 0b010, "10b: a centre orb blocks the middle lane only")
+
+	# Systems spec §10.6: a shot and a chunk hazard at the same z stay two slices, because one
+	# trigger distance cannot answer two different closing speeds.
+	var mixed: Array = bot.slices_for([wall, shot], 24.0, 0.0)
+	check(mixed.size() == 2, "10b: a projectile never merges with a chunk hazard, got %d slice(s)"
+		% mixed.size())
+	var second := _projectile(Vector3(2.0, 0.0, -20.3), 30.0)
+	var both: Array = bot.slices_for([shot, second], 24.0, 0.0)
+	check(both.size() == 1 and int(both[0]["blocked"]) == 0b110,
+		"10b: two shots in the same slot are one manoeuvre, got %s" % [both])
+	check(is_equal_approx(float(both[0]["closing_v"]), 34.0),
+		"10b: a merged slice takes the fastest member, got %.1f" % float(both[0]["closing_v"]))
+	check(is_equal_approx(bot.plan_trigger_z(34.0), -(34.0 * 0.6 + 0.4)),
+		"10b: the trigger distance follows the closing speed")
+
+	# A telegraph, straight off the contract §11.6 table and with no node anywhere.
+	var low: Dictionary = bot.attack_slice(0b111, &"low", 26.0)
+	check(int(low["blocked"]) == 0b111 and bool(low["jumpable"]) and not bool(low["rollable"]),
+		"10b: a low wall of shots is jumped, got %s" % [low])
+	var high: Dictionary = bot.attack_slice(0b111, &"high", 26.0)
+	check(bool(high["rollable"]) and not bool(high["jumpable"]),
+		"10b: a high wall of shots is rolled under, got %s" % [high])
+	var wide: Dictionary = bot.attack_slice(0b011, &"wide", 26.0)
+	check(not bool(wide["jumpable"]) and not bool(wide["rollable"]),
+		"10b: a wide shot has to be side-stepped, got %s" % [wide])
+	var side: Dictionary = bot.plan_for(wide, 0)
+	check(StringName(side["action"]) == bot.ACTION_LANE and int(side["lane"]) == 2
+		and int(side["steps"]) == 2, "10b: lane 0 answers a left-pair wide with two steps, got %s" % [side])
+	check(StringName(bot.plan_for(low, 1)["action"]) == bot.ACTION_JUMP, "10b: a full-width low is jumped")
+	check(StringName(bot.plan_for(high, 1)["action"]) == bot.ACTION_ROLL, "10b: a full-width high is rolled")
+
+	# Arrival = telegraph + the travel from the boss to the hurtbox; the shot is 1.2 m deep and the
+	# capsule 0.4 m, so 14 m of boss_z is 13 m of travel.
+	var travel: float = bot.projectile_travel_seconds(26.0, &"orb")
+	check(is_equal_approx(travel, 13.0 / 26.0), "10b: an orb at 26 m/s travels for %.4f s" % travel)
+	check(is_equal_approx(bot.telegraph_arrival(0.9, 26.0, &"orb"), 0.9 + 13.0 / 26.0),
+		"10b: the arrival is the telegraph plus the travel, got %.4f"
+			% bot.telegraph_arrival(0.9, 26.0, &"orb"))
+	check(is_equal_approx(bot.jump_peak_time(), 0.35),
+		"10b: the jump apex is at %.4f s, expected 0.35 (half the 0.70 s airtime)" % bot.jump_peak_time())
+	check(is_equal_approx(bot.manoeuvre_cost(bot.ACTION_JUMP, 0), 0.35)
+		and is_equal_approx(bot.manoeuvre_cost(bot.ACTION_ROLL, 0), 0.35),
+		"10b: both body manoeuvres cost half their window")
+	check(is_equal_approx(bot.manoeuvre_cost(bot.ACTION_LANE, 2), 0.26),
+		"10b: a two-step lane plan costs two tweens, got %.4f" % bot.manoeuvre_cost(bot.ACTION_LANE, 2))
+	var arrival := 0.9 + 13.0 / 26.0
+	check(is_equal_approx(bot.telegraph_act_at(arrival, bot.ACTION_JUMP, 0),
+		arrival - 0.35 - float(game.config.autopilot_telegraph_lead)),
+		"10b: the jump is taken a manoeuvre and a lead before impact, got %.4f"
+			% bot.telegraph_act_at(arrival, bot.ACTION_JUMP, 0))
+
+	# The telegraph signal itself: the bot picks it up off the facade and keeps it until it lands.
+	game.boss_attack_telegraph.emit(0b001, &"orb", 0.9)
+	var pending: Array = bot.pending_attacks()
+	check(pending.size() == 1 and int(pending[0]["mask"]) == 0b001,
+		"10b: the bot heard the telegraph, got %s" % [pending])
+	check(is_equal_approx(float(pending[0]["closing_v"]), 26.0),
+		"10b: the shot speed comes from this stage's boss def, got %.2f" % float(pending[0]["closing_v"]))
+	check(is_equal_approx(float(pending[0]["arrival"]), arrival),
+		"10b: the queued arrival is %.4f" % float(pending[0]["arrival"]))
+	bot._age_attacks(arrival + 1.0)
+	check(bot.pending_attacks().is_empty(), "10b: a landed shot is forgotten, got %s" % [bot.pending_attacks()])
+
+	# Lanes a pending attack rules out: a partial mask does, a full-width one never does — it is
+	# answered with the body, so it says nothing about which lane a tool may sit in.
+	check(bot.pending_lane_mask([{"mask": 0b011}, {"mask": 0b111}]) == 0b011,
+		"10b: only a partial attack blocks tool lanes, got %d"
+			% bot.pending_lane_mask([{"mask": 0b011}, {"mask": 0b111}]))
+	check(bot.pending_lane_mask([{"lane_mask": 0b100}]) == 0b100,
+		"10b: the facade's own pending_attacks rows are read too")
+
+	# Tool greed scales the lane reach: 0 ignores tools, 1 crosses the corridor.
+	check(bot.tool_reach() == 2, "10b: greed 1 reaches both lanes, got %d" % bot.tool_reach())
+	game.config.autopilot_tool_greed = 0.0
+	check(bot.tool_reach() == 0, "10b: greed 0 ignores tools, got %d" % bot.tool_reach())
+	var far_tool := _pickup(Vector3(2.0, 1.0, -20.0))
+	var targets: Array = bot.pickup_targets([far_tool], 24.0)
+	check(targets.size() == 1 and int(targets[0]["lane"]) == 2, "10b: the tool is read in lane 2")
+	check(StringName(bot.plan_tool(targets, [], 0, 0, 24.0)["action"]) == bot.ACTION_NONE,
+		"10b: greed 0 leaves every tool alone")
+	game.config.autopilot_tool_greed = 0.4
+	check(bot.tool_reach() == 1, "10b: greed 0.4 reaches one lane, got %d" % bot.tool_reach())
+	check(StringName(bot.plan_tool(targets, [], 0, 0, 24.0)["action"]) == bot.ACTION_NONE,
+		"10b: a two-lane detour is past a one-lane reach")
+	check(StringName(bot.plan_tool(targets, [], 0, 1, 24.0)["action"]) == bot.ACTION_LANE,
+		"10b: the same tool is taken from the lane next door")
+	game.config.autopilot_tool_greed = 1.0
+	check(StringName(bot.plan_tool(targets, [], 0, 0, 24.0)["action"]) == bot.ACTION_LANE,
+		"10b: greed 1 crosses the corridor for a tool")
+	check(StringName(bot.plan_tool(targets, [], 0b100, 0, 24.0)["action"]) == bot.ACTION_NONE,
+		"10b: a tool a pending attack will shoot at is left where it is")
 
 # --- 11. The real hazard: a finished timed laser shuts down (systems spec §5.3, contract §8) ---
 
@@ -965,6 +1128,11 @@ func _test_dodge_tracking() -> void:
 ## difficulty_changed is suppressed while the value moves less than DIFFICULTY_EPSILON, which would
 ## otherwise swallow the last step onto exactly 1.0: the frontend keys its top-difficulty state off
 ## that emission, so it has to arrive, and it must not repeat once the curve is pinned at 1.0.
+##
+## v2 (contract §11.1, systems spec §10.2): the curve is read at `run_clock`, the RUN-phase clock the
+## StageManager owns, not at `elapsed`. `elapsed` still counts every unpaused second — it is what the
+## result duration and the timed laser ride on — so driving it here would leave the controller at
+## run_clock 0 and never emit anything at all.
 func _test_difficulty_emission() -> void:
 	var game := _make_game()
 	var speed: Node = _systems(game)["speed"]
@@ -975,20 +1143,22 @@ func _test_difficulty_emission() -> void:
 		emitted.append(value))
 
 	# Just under the top: inside the epsilon of 1.0, but not yet 1.0.
-	game.elapsed = ramp * (1.0 - epsilon * 0.5)
+	_set_run_clock(game, ramp * (1.0 - epsilon * 0.5))
 	speed._physics_process(TICK)
 	check(emitted.size() == 1, "14: the ramp announces difficulty on the way up, got %d" % emitted.size())
+	if emitted.is_empty():
+		return
 	var last := emitted[emitted.size() - 1]
 	check(last < 1.0 and 1.0 - last < epsilon,
 		"14: the last pre-max emission is %.4f, expected inside the epsilon below 1.0" % last)
 
 	# Intermediate moves smaller than the epsilon stay suppressed.
-	game.elapsed += ramp * epsilon * 0.1
+	_set_run_clock(game, float(game.run_clock) + ramp * epsilon * 0.1)
 	speed._physics_process(TICK)
 	check(emitted.size() == 1, "14: a sub-epsilon step is still suppressed, got %d" % emitted.size())
 
 	# Past time_to_max_speed the curve clamps to exactly 1.0, which always goes out.
-	game.elapsed = ramp + 5.0
+	_set_run_clock(game, ramp + 5.0)
 	speed._physics_process(TICK)
 	check(emitted.size() == 2, "14: the terminal 1.0 is emitted, got %d emissions" % emitted.size())
 	check(is_equal_approx(emitted[emitted.size() - 1], 1.0),
@@ -996,10 +1166,40 @@ func _test_difficulty_emission() -> void:
 
 	# Every later tick is still pinned at 1.0 and has to stay quiet.
 	for i in 10:
-		game.elapsed += 1.0
+		_set_run_clock(game, float(game.run_clock) + 1.0)
 		speed._physics_process(TICK)
 	check(emitted.size() == 2, "14: difficulty 1.0 is never re-emitted, got %d emissions" % emitted.size())
 	check(is_equal_approx(float(speed.difficulty), 1.0), "14: the curve stays at 1.0")
+
+	# The other half of the v2 rule: `elapsed` alone moves nothing. A run parked in the boss phase
+	# keeps counting seconds, and the speed and the difficulty have to hold where run_clock left them.
+	var held := _make_game()
+	var held_speed: Node = _systems(held)["speed"]
+	var held_emissions: Array[float] = []
+	held.difficulty_changed.connect(func(value: float) -> void:
+		held_emissions.append(value))
+	_set_run_clock(held, ramp * 0.5)
+	held_speed._physics_process(TICK)
+	var frozen_speed := float(held_speed.speed)
+	var frozen_difficulty := float(held_speed.difficulty)
+	var frozen_emissions := held_emissions.size()
+	for i in _ticks(30.0):
+		held.elapsed += TICK
+		held_speed._physics_process(TICK)
+	check(is_equal_approx(float(held_speed.speed), frozen_speed),
+		"14: a frozen run_clock holds the speed at %.3f, got %.3f" % [frozen_speed, held_speed.speed])
+	check(is_equal_approx(float(held_speed.difficulty), frozen_difficulty),
+		"14: a frozen run_clock holds the difficulty at %.3f" % frozen_difficulty)
+	check(held_emissions.size() == frozen_emissions,
+		"14: a frozen run_clock announces nothing, got %d extra emissions"
+			% (held_emissions.size() - frozen_emissions))
+
+## Move the RUN-phase clock the SpeedController reads, keeping `elapsed` in step with it: outside a
+## turn, a boss or a stage-clear card the two advance together (contract §11.1).
+func _set_run_clock(game: Node3D, seconds: float) -> void:
+	var step := seconds - float(game.run_clock)
+	game.run_clock = seconds
+	game.elapsed += maxf(step, 0.0)
 
 # --- 15. A hazard is configured before it mounts its visual (contract §5.2) ---
 
@@ -1087,6 +1287,646 @@ func _test_player_reset_clears_visual_state() -> void:
 	player.reset()
 	check(true, "16: reset() survives a player with no visual")
 
+# --- 17. The stage machine: run -> turn -> boss -> stage_clear -> run (systems spec §10.1) ---
+
+## One whole lap of the phase machine on a shortened stage, driven tick by tick: the distance target
+## and the drain gate, the silent timeout clear, the turn signals and the rigs coming back to zero,
+## `run_clock` freezing everywhere but `run`, and stage 2 opening with the next boss's name.
+func _test_stage_machine() -> void:
+	var rig := _stage_rig({
+		"stage_base_distance": 60.0,
+		"stage_distance_step": 20.0,
+		"stage_drain_distance": 20.0,
+		"stage_drain_timeout": 0.5,
+		"stage_clear_seconds": 0.5,
+		"turn_seconds": 0.4
+	})
+	var game: Node3D = rig["game"]
+	var stage: Node = rig["stage"]
+	var spawner: Node = rig["spawner"]
+	var turn_rig: Node3D = rig["turn_rig"]
+	var camera: Node3D = rig["camera_rig"]
+	var events: Dictionary = rig["events"]
+	var drivers: Array = [rig["speed"], stage]
+
+	check(stage.phase == &"idle" and int(stage.stage_index) == 0,
+		"17: a reset StageManager is idle on stage 0, got %s / %d" % [stage.phase, int(stage.stage_index)])
+	stage.begin()
+	check(stage.phase == &"run" and int(stage.stage_index) == 1,
+		"17: begin() opens stage 1 in the run phase, got %s / %d" % [stage.phase, int(stage.stage_index)])
+	check(events["stage_started"].size() == 1, "17: stage 1 announces itself exactly once")
+	check(int(events["stage_started"][0][0]) == 1
+		and StringName(events["stage_started"][0][1]) == &"Flaky Test Swarm",
+		"17: stage_started carries the index and the boss name, got %s" % [events["stage_started"][0]])
+	check(is_equal_approx(float(events["stage_started"][0][2]), float(game.config.base_speed)),
+		"17: stage 1 opens at the base speed, got %.2f" % float(events["stage_started"][0][2]))
+	check(is_equal_approx(float(stage.stage_distance_target), 60.0),
+		"17: stage 1 asks for 60 m, got %.1f" % float(stage.stage_distance_target))
+	check(events["phase_changed"] == [&"run"], "17: idle -> run is the only phase change so far, got %s"
+		% [events["phase_changed"]])
+	check(spawner.spawn_calls == [true], "17: opening a stage turns the spawner on, got %s" % [spawner.spawn_calls])
+
+	# The drain gate: the spawner stops a drain's worth of metres before the target.
+	_tick(drivers, _ticks(1.0))
+	check(float(game.run_clock) > 0.9, "17: run_clock advances in the run phase, got %.2f" % float(game.run_clock))
+	check(bool(spawner.spawning), "17: the spawner is still placing a second into the stage")
+	var clock_before_drain := float(game.run_clock)
+	while float(stage.stage_distance) < 45.0 and float(game.elapsed) < 30.0:
+		_tick_stage(drivers, game, 1)
+	check(not bool(spawner.spawning), "17: the spawner is switched off %.1f m into a 60 m stage"
+		% float(stage.stage_distance))
+	check(spawner.spawn_calls == [true, false], "17: the drain gate fires once, got %s" % [spawner.spawn_calls])
+	check(float(game.run_clock) > clock_before_drain, "17: the drain is still part of the run clock")
+
+	# A blocking hazard short of the clear line holds the stage open until the drain times out, and
+	# then it is taken out silently: no dodge, no bonus, no hazard_cleared.
+	var straggler := _hazard(&"pr_backlog_low")
+	straggler.add_to_group(&"runner_hazards")
+	straggler.position = Vector3(0.0, 0.0, 4.0)
+	while float(stage.stage_distance) < 60.0 and float(game.elapsed) < 40.0:
+		_tick_stage(drivers, game, 1)
+	_tick_stage(drivers, game, _ticks(0.2))
+	check(stage.phase == &"run", "17: a blocking hazard inside the clear line holds the run open")
+	check(int(straggler.cleared) == 0, "17: the straggler is left alone while the drain still has time")
+	_tick_stage(drivers, game, _ticks(0.45))
+	check(int(straggler.cleared) == 1, "17: the drain timeout clears the straggler exactly once, got %d"
+		% int(straggler.cleared))
+	check(stage.phase == &"turn", "17: the drain timeout moves the stage on, got %s" % stage.phase)
+	check(events["bonus_awarded"].is_empty(), "17: a silent drain clear pays no bonus")
+
+	# The turn: one signal each way, both rigs swept and both back at square.
+	check(events["turn_started"].size() == 1, "17: turn_started fires once, got %d"
+		% events["turn_started"].size())
+	var direction := int(events["turn_started"][0][0])
+	check(direction == -1 or direction == 1, "17: the turn direction is -1 or +1, got %d" % direction)
+	check(is_equal_approx(float(events["turn_started"][0][1]), 0.4),
+		"17: turn_started carries turn_seconds, got %.2f" % float(events["turn_started"][0][1]))
+	var clock_at_turn := float(game.run_clock)
+	var turns_before: int = turn_rig.turns.size()
+	_tick_stage(drivers, game, _ticks(0.2))
+	check(turn_rig.turns.size() > turns_before and camera.turns.size() > turns_before,
+		"17: both rigs are driven every tick of the bend")
+	check(float(turn_rig.turn_progress) > 0.0 and int(turn_rig.turn_direction) == direction,
+		"17: the rig sweeps in the direction the turn announced")
+	check(is_equal_approx(float(game.run_clock), clock_at_turn),
+		"17: run_clock is frozen through the turn, %.3f -> %.3f" % [clock_at_turn, float(game.run_clock)])
+	check(bool(spawner.spawning) == false, "17: nothing is placed during the bend")
+	_tick_stage(drivers, game, _ticks(0.3))
+	check(events["turn_finished"] == 1, "17: turn_finished fires once, got %d" % events["turn_finished"])
+	check(is_zero_approx(float(turn_rig.turn_progress)) and int(turn_rig.turn_direction) == 0,
+		"17: the turn rig ends square, got %.3f / %d" % [float(turn_rig.turn_progress), int(turn_rig.turn_direction)])
+	check(is_zero_approx(float(camera.turn_progress)) and int(camera.turn_direction) == 0,
+		"17: the camera ends square, got %.3f / %d" % [float(camera.turn_progress), int(camera.turn_direction)])
+	check(int(stage.turns_taken) == 1, "17: the turn is counted for the result, got %d" % int(stage.turns_taken))
+
+	# No arena is mounted here, so the boss phase is the documented fallback: it ends on the tick it
+	# starts, no boss_retreated goes out, and the stage clears anyway.
+	check(stage.phase == &"stage_clear", "17: a missing arena clears the stage straight away, got %s" % stage.phase)
+	check(events["phase_changed"] == [&"run", &"turn", &"boss", &"stage_clear"],
+		"17: the phases go round in order, got %s" % [events["phase_changed"]])
+	check(events["boss_retreated"].is_empty() and events["boss_defeated"].is_empty(),
+		"17: a fallback boss phase resolves no fight")
+	check(events["stage_cleared"].size() == 1 and int(events["stage_cleared"][0][0]) == 1,
+		"17: stage_cleared names stage 1, got %s" % [events["stage_cleared"]])
+	check(int(events["stage_cleared"][0][1]) == 400,
+		"17: the stage 1 bonus is stage_clear_bonus_base, got %d" % int(events["stage_cleared"][0][1]))
+	check(events["bonus_awarded"].size() == 1 and events["bonus_awarded"][0][1] == &"stage_clear",
+		"17: the stage bonus reaches the score as a stage_clear bonus, got %s" % [events["bonus_awarded"]])
+	check(int(stage.stages_cleared) == 1, "17: the cleared-stage counter moved, got %d" % int(stage.stages_cleared))
+
+	# ...and on to stage 2, which is a longer run behind the next boss in the roster. The card is
+	# ticked to its own end rather than for a guessed span, so the freeze is asserted over exactly
+	# the phase it belongs to however much of stage_clear_seconds the boss fallback already used.
+	var clock_at_clear := float(game.run_clock)
+	var drifted := false
+	var card_ticks := 0
+	while stage.phase == &"stage_clear" and card_ticks < _ticks(2.0):
+		_tick_stage(drivers, game, 1)
+		card_ticks += 1
+		if not is_equal_approx(float(game.run_clock), clock_at_clear):
+			drifted = true
+	check(not drifted, "17: run_clock is frozen through the stage-clear card, %.4f -> %.4f"
+		% [clock_at_clear, float(game.run_clock)])
+	check(card_ticks > 0 and card_ticks <= _ticks(0.5) + 1,
+		"17: the stage-clear card ran %d ticks, expected at most %d" % [card_ticks, _ticks(0.5) + 1])
+	check(stage.phase == &"run" and int(stage.stage_index) == 2,
+		"17: the card hands over to stage 2, got %s / %d" % [stage.phase, int(stage.stage_index)])
+	check(events["stage_started"].size() == 2
+		and StringName(events["stage_started"][1][1]) == &"Merge Conflict Hydra",
+		"17: stage 2 announces the next boss, got %s" % [events["stage_started"]])
+	check(is_equal_approx(float(stage.stage_distance_target), 80.0),
+		"17: stage 2 asks for 80 m, got %.1f" % float(stage.stage_distance_target))
+	check(is_equal_approx(float(events["stage_started"][1][2]),
+		float(game.config.base_speed) + float(game.config.stage_speed_step)),
+		"17: stage 2 opens a step faster, got %.2f" % float(events["stage_started"][1][2]))
+	check(spawner.spawn_calls == [true, false, true], "17: stage 2 turns the spawner back on, got %s"
+		% [spawner.spawn_calls])
+	check(events["stage_started"].size() == int(stage.stage_index),
+		"17: exactly one stage_started per stage, %d for %d stages"
+			% [events["stage_started"].size(), int(stage.stage_index)])
+
+# --- 18. The escalation formula at cycles 0-4 (contract §11.10) ---
+
+func _test_escalation() -> void:
+	var c := base_config
+	check(StageDefs.boss_slot(1) == 0 and StageDefs.boss_slot(3) == 2 and StageDefs.boss_slot(4) == 0,
+		"18: the boss slot is (index - 1) %% 3")
+	check(StageDefs.cycle(1) == 0 and StageDefs.cycle(3) == 0 and StageDefs.cycle(4) == 1
+		and StageDefs.cycle(13) == 4, "18: the cycle is (index - 1) / 3")
+	check(StageDefs.boss_name(2) == &"Merge Conflict Hydra" and StageDefs.boss_name(6) == &"Legacy Monolith",
+		"18: the roster repeats every three stages")
+	check(is_equal_approx(StageDefs.speed_bonus(1, c), 0.0)
+		and is_equal_approx(StageDefs.speed_bonus(4, c), 3.0)
+		and is_equal_approx(StageDefs.speed_bonus(20, c), float(c.stage_speed_bonus_max)),
+		"18: the stage speed bonus steps up and stops at the cap")
+	check(is_equal_approx(StageDefs.difficulty_floor(1, c), 0.0)
+		and is_equal_approx(StageDefs.difficulty_floor(3, c), 0.5)
+		and is_equal_approx(StageDefs.difficulty_floor(9, c), 1.0),
+		"18: the difficulty floor steps up and stops at 1.0")
+	check(is_equal_approx(StageDefs.distance_target(1, c), float(c.stage_base_distance))
+		and is_equal_approx(StageDefs.distance_target(40, c), float(c.stage_distance_max)),
+		"18: the stage distance steps up and stops at the cap")
+
+	for slot in BossDefs.SLOTS.size():
+		var base: Dictionary = BossDefs.SLOTS[slot]
+		for cycle in 5:
+			var stage_index := cycle * BossDefs.SLOTS.size() + slot + 1
+			var def := BossDefs.fight_def(stage_index, c)
+			var tag := "18: %s c%d" % [base["kind"], cycle]
+			check(int(def["cycle"]) == cycle and int(def["slot"]) == slot,
+				"%s: stage %d landed on slot %d cycle %d" % [tag, stage_index, int(def["slot"]), int(def["cycle"])])
+			check(int(def["hp"]) == int(round(float(base["hp"]) * pow(float(c.boss_hp_growth), cycle))),
+				"%s: hp is %d" % [tag, int(def["hp"])])
+			check(is_equal_approx(float(def["projectile_speed"]),
+				minf(float(base["projectile_speed"]) * pow(float(c.boss_projectile_speed_growth), cycle),
+					float(c.boss_projectile_speed_max))),
+				"%s: the projectile speed is %.3f" % [tag, float(def["projectile_speed"])])
+			check(is_equal_approx(float(def["tool_interval"]),
+				maxf(float(base["tool_interval"]) * pow(float(c.boss_tool_interval_growth), cycle),
+					float(c.boss_tool_interval_min))),
+				"%s: the tool interval is %.3f" % [tag, float(def["tool_interval"])])
+			for phase in range(1, BossDefs.PHASE_COUNT + 1):
+				var row: Array = base["telegraph"]
+				var intervals: Array = base["attack_interval"]
+				check(is_equal_approx(BossDefs.telegraph_for(def, phase),
+					maxf(float(row[phase - 1]) * pow(float(c.boss_telegraph_growth), cycle),
+						float(c.boss_telegraph_min))),
+					"%s p%d: the telegraph is %.4f" % [tag, phase, BossDefs.telegraph_for(def, phase)])
+				check(is_equal_approx(BossDefs.attack_interval_for(def, phase),
+					maxf(float(intervals[phase - 1]) * pow(float(c.boss_attack_interval_growth), cycle),
+						float(c.boss_attack_interval_min))),
+					"%s p%d: the attack interval is %.4f" % [tag, phase, BossDefs.attack_interval_for(def, phase)])
+
+	# Cycle 4 is the window the boss validator sweeps: the projectile speed and every telegraph are
+	# already pinned there, which is what makes cycle 4 the worst case for the reaction budget. The
+	# two interval curves are shallower and only bottom out later, so they are pinned at cycle 10.
+	for slot in BossDefs.SLOTS.size():
+		var late := BossDefs.fight_def(4 * BossDefs.SLOTS.size() + slot + 1, c)
+		check(is_equal_approx(float(late["projectile_speed"]), float(c.boss_projectile_speed_max)),
+			"18: %s hits the projectile speed cap by cycle 4, got %.3f"
+				% [late["kind"], float(late["projectile_speed"])])
+		for phase in range(1, BossDefs.PHASE_COUNT + 1):
+			check(is_equal_approx(BossDefs.telegraph_for(late, phase), float(c.boss_telegraph_min)),
+				"18: %s p%d hits the telegraph floor by cycle 4, got %.4f"
+					% [late["kind"], phase, BossDefs.telegraph_for(late, phase)])
+		check(float(late["tool_interval"]) > float(c.boss_tool_interval_min),
+			"18: %s still has tool interval headroom at cycle 4, got %.3f"
+				% [late["kind"], float(late["tool_interval"])])
+		var deep := BossDefs.fight_def(10 * BossDefs.SLOTS.size() + slot + 1, c)
+		check(is_equal_approx(float(deep["tool_interval"]), float(c.boss_tool_interval_min)),
+			"18: %s hits the tool interval floor by cycle 10, got %.3f"
+				% [deep["kind"], float(deep["tool_interval"])])
+		check(is_equal_approx(BossDefs.attack_interval_for(deep, 3), float(c.boss_attack_interval_min)),
+			"18: %s hits the attack interval floor by cycle 10, got %.3f"
+				% [deep["kind"], BossDefs.attack_interval_for(deep, 3)])
+		check(int(deep["hp"]) > int(late["hp"]),
+			"18: %s keeps gaining hp past cycle 4 (%d -> %d)" % [deep["kind"], int(late["hp"]), int(deep["hp"])])
+
+	# boss_hp_scale multiplies the base HP before the cycle growth, so a scaled config shortens every
+	# fight without touching the curve: 100 x 0.4 at cycle 0, and 100 x 1.35 x 0.4 at cycle 1.
+	var scaled := base_config.duplicate() as RunConfig
+	scaled.boss_hp_scale = 0.4
+	check(int(BossDefs.fight_def(1, scaled)["hp"]) == 40
+		and int(BossDefs.fight_def(4, scaled)["hp"]) == 54,
+		"18: boss_hp_scale 0.4 gives flaky_test_swarm %d hp at c0 and %d at c1"
+			% [int(BossDefs.fight_def(1, scaled)["hp"]), int(BossDefs.fight_def(4, scaled)["hp"])])
+
+	# Accepted tools: every phase takes all four except the three the contract §11.7 names.
+	var hydra := BossDefs.fight_def(2, c)
+	check(BossDefs.accepted_tools(hydra, 1).size() == ToolDefs.kinds().size(),
+		"18: an unrestricted phase accepts every tool")
+	check(BossDefs.accepted_tools(hydra, 2) == [&"unit_test", &"lint_rule"],
+		"18: Hydra phase 2 accepts unit_test and lint_rule, got %s" % [BossDefs.accepted_tools(hydra, 2)])
+	var monolith := BossDefs.fight_def(3, c)
+	check(BossDefs.accepted_tools(monolith, 2) == [&"auto_fix_patch", &"review_comment"],
+		"18: Monolith phase 2 accepts auto_fix_patch and review_comment")
+	check(BossDefs.accepted_tools(monolith, 3) == [&"unit_test"],
+		"18: Monolith phase 3 accepts unit_test alone")
+
+# --- 19 / 20. Boss HP, phases and tool damage (systems spec §10.3) ---
+
+func _test_boss_fight() -> void:
+	var rig := _boss_rig({"boss_intro_seconds": 0.0, "boss_outro_seconds": 0.2})
+	var game: Node3D = rig["game"]
+	var arena: Node3D = rig["arena"]
+	var score: Node = rig["score"]
+	var events: Dictionary = rig["events"]
+	# Contract §11.4: before the first fight the facade and the arena agree on an empty boss block.
+	check(_boss_info_is_empty(game.get_boss_info()) and _boss_info_is_empty(arena.get_boss_info()),
+		"19: get_boss_info is empty before the first fight, got %s / %s"
+			% [game.get_boss_info(), arena.get_boss_info()])
+	arena.start(1)
+	check(events["boss_spawned"].size() == 1 and StringName(events["boss_spawned"][0][0]) == &"flaky_test_swarm",
+		"19: boss_spawned names the stage's boss, got %s" % [events["boss_spawned"]])
+	check(int(events["boss_spawned"][0][1]) == 100, "19: stage 1 opens on 100 hp, got %d"
+		% int(events["boss_spawned"][0][1]))
+	check(int(arena.hp) == 100 and int(arena.max_hp) == 100 and int(arena.phase) == 1,
+		"19: the fight starts full and in phase 1")
+	check(arena.boss != null and not bool(arena.finished), "19: the fight is live with a boss node")
+	check(events["boss_health_changed"].size() == 1, "19: the opening health is announced once")
+	var info: Dictionary = arena.get_boss_info()
+	check(StringName(info["kind"]) == &"flaky_test_swarm" and int(info["hp"]) == 100
+		and int(info["phase"]) == 1 and (info["pending_attacks"] as Array).is_empty(),
+		"19: get_boss_info reports the fresh fight, got %s" % [info])
+
+	# Five Auto-Fix patches at 20 damage: the 66 % and the 33 % thresholds are crossed once each.
+	var expected_hp := 100
+	for i in 5:
+		arena.apply_tool(&"auto_fix_patch")
+		expected_hp -= 20
+		check(int(arena.hp) == expected_hp, "19: tool %d left %d hp, expected %d" % [i, int(arena.hp), expected_hp])
+		check(events["tool_collected"].size() == i + 1
+			and int(events["tool_collected"][i][1]) == 20,
+			"20: tool %d reported damage %s" % [i, events["tool_collected"][i]])
+	check(events["boss_phase_changed"] == [2, 3],
+		"19: the phase rises once per threshold, got %s" % [events["boss_phase_changed"]])
+	check(int(arena.phase) == 3, "19: a boss on 0 hp is in its last phase, got %d" % int(arena.phase))
+	check(int(arena.tools_used) == 5 and int(arena.boss_damage_dealt) == 100,
+		"20: the fight counted %d tools for %d damage" % [int(arena.tools_used), int(arena.boss_damage_dealt)])
+	check(events["boss_defeated"].size() == 1 and StringName(events["boss_defeated"][0][0]) == &"flaky_test_swarm",
+		"19: boss_defeated fires once, got %s" % [events["boss_defeated"]])
+	check(int(events["boss_defeated"][0][1]) == int(game.config.boss_kill_bonus_base),
+		"19: the stage 1 kill bonus is boss_kill_bonus_base, got %d" % int(events["boss_defeated"][0][1]))
+	check(events["boss_retreated"].is_empty(), "19: a defeated boss never also retreats")
+	check(int(arena.bosses_defeated) == 1 and int(arena.bosses_escaped) == 0,
+		"19: the defeat is the only ending counted")
+	var tool_bonus := int(game.config.tool_bonus)
+	check(int(score.bonus_total) == tool_bonus * 5 + int(game.config.boss_kill_bonus_base),
+		"19: the fight paid %d in bonuses" % int(score.bonus_total))
+	check(_bonus_reasons(events) == [&"tool", &"tool", &"tool", &"tool", &"tool", &"boss_kill"],
+		"19: the bonus reasons are five tools and a kill, got %s" % [_bonus_reasons(events)])
+
+	# The outro holds the fight open so the visual gets its play_defeat time.
+	check(not bool(arena.finished), "19: the fight is not finished until the outro is over")
+	arena.tick(0.1)
+	check(not bool(arena.finished), "19: the outro is still running at 0.1 s")
+	arena.tick(0.15)
+	check(bool(arena.finished) and arena.boss == null, "19: the outro ends the fight and frees the boss")
+	check(int(arena.hp) == 0, "19: a defeated boss stays on 0 hp")
+	# And once the fight is over both readers go back to the empty block, so a stage-clear HUD never
+	# shows the boss it just killed.
+	check(_boss_info_is_empty(game.get_boss_info()) and _boss_info_is_empty(arena.get_boss_info()),
+		"19: get_boss_info is empty after the fight finishes, got %s / %s"
+			% [game.get_boss_info(), arena.get_boss_info()])
+	_free_rig(rig)
+
+	# Resisted phases: the tool is still collected and still paid for, it just deals nothing.
+	var hydra_rig := _boss_rig({"boss_intro_seconds": 0.0, "boss_outro_seconds": 0.0})
+	var hydra: Node3D = hydra_rig["arena"]
+	var hydra_events: Dictionary = hydra_rig["events"]
+	var hydra_score: Node = hydra_rig["score"]
+	hydra.start(2)
+	check(int(hydra.hp) == 140, "20: stage 2 opens on 140 hp, got %d" % int(hydra.hp))
+	for i in 3:
+		hydra.apply_tool(&"auto_fix_patch")
+	check(int(hydra.hp) == 80 and int(hydra.phase) == 2,
+		"20: the Hydra is in phase 2 on %d hp" % int(hydra.hp))
+	var resisted_before: int = hydra_events["tool_collected"].size()
+	var score_before: int = hydra_score.bonus_total
+	hydra.apply_tool(&"review_comment")
+	check(int(hydra.hp) == 80, "20: a resisted tool costs the boss nothing, hp %d" % int(hydra.hp))
+	check(hydra_events["tool_collected"].size() == resisted_before + 1
+		and int(hydra_events["tool_collected"][resisted_before][1]) == 0,
+		"20: a resisted tool reports tool_collected(kind, 0), got %s"
+			% [hydra_events["tool_collected"][resisted_before]])
+	check(int(hydra.tools_used) == 4, "20: a resisted tool is still a tool used, got %d" % int(hydra.tools_used))
+	check(int(hydra.boss_damage_dealt) == 60, "20: a resisted tool adds no damage, got %d"
+		% int(hydra.boss_damage_dealt))
+	check(int(hydra_score.bonus_total) == score_before + int(hydra.config.tool_bonus),
+		"20: a resisted tool still pays the tool bonus")
+	hydra.apply_tool(&"unit_test")
+	check(int(hydra.hp) == 65, "20: an accepted tool damages the same phase, hp %d" % int(hydra.hp))
+	_free_rig(hydra_rig)
+
+# --- 21. The boss timeout retreats, it never dies (systems spec §10.3) ---
+
+func _test_boss_timeout() -> void:
+	var rig := _boss_rig({
+		"boss_intro_seconds": 0.0,
+		"boss_outro_seconds": 0.0,
+		"boss_timeout_seconds": 1.0
+	})
+	var game: Node3D = rig["game"]
+	var arena: Node3D = rig["arena"]
+	var events: Dictionary = rig["events"]
+	arena.start(3)
+	check(int(arena.hp) == 180, "21: stage 3 opens on 180 hp, got %d" % int(arena.hp))
+	arena.apply_tool(&"unit_test")
+	check(int(arena.hp) == 165, "21: the one tool that landed took it to %d hp" % int(arena.hp))
+	for i in _ticks(1.05):
+		arena.tick(TICK)
+	check(events["boss_retreated"].size() == 1, "21: the timeout retreats the boss once, got %d"
+		% events["boss_retreated"].size())
+	check(events["boss_defeated"].is_empty(), "21: a boss that timed out was never defeated")
+	check(StringName(events["boss_retreated"][0][0]) == &"legacy_monolith",
+		"21: boss_retreated names the boss, got %s" % events["boss_retreated"][0][0])
+	# The partial bonus: the kill bonus scaled by boss_retreat_bonus_ratio and by the damage that landed.
+	var kill := int(game.config.boss_kill_bonus_base) + int(game.config.boss_kill_bonus_per_stage) * 2
+	var expected := int(round(float(kill) * float(game.config.boss_retreat_bonus_ratio) * (15.0 / 180.0)))
+	check(int(events["boss_retreated"][0][1]) == expected,
+		"21: the retreat bonus is %d, expected %d" % [int(events["boss_retreated"][0][1]), expected])
+	check(int(arena.bosses_escaped) == 1 and int(arena.bosses_defeated) == 0,
+		"21: the escape is the only ending counted")
+	check(bool(arena.finished) and arena.boss == null,
+		"21: a zero-length outro finishes the fight on the spot")
+	check(arena.projectile_count() == 0 and arena.tool_count() == 0,
+		"21: the retreat clears the arena")
+	_free_rig(rig)
+
+# --- 22. pursuit_alert ordering and the pursuer epsilon (contract §11.4, systems spec §10.7) ---
+
+func _test_pursuit_alert() -> void:
+	var game := _make_game()
+	var hits: Node = _systems(game)["hits"]
+	var alerts: Array = []
+	game.pursuit_alert.connect(func(kind: StringName, seconds: float) -> void:
+		alerts.append([kind, seconds]))
+	var started: Array = []
+	game.pursuit_started.connect(func(seconds: float) -> void:
+		started.append(seconds))
+
+	hits.report_hit(_hazard(&"bug_swarm"))
+	check(alerts.size() == 1 and StringName(alerts[0][0]) == &"warn",
+		"22: the first hit opens the alert with warn, got %s" % [alerts])
+	check(started.size() == 1 and is_equal_approx(float(alerts[0][1]), float(started[0])),
+		"22: the warn alert carries the same countdown pursuit_started does")
+	var critical := float(game.config.pursuit_critical_seconds)
+	_tick([hits], _ticks(float(game.config.recovery_seconds) - critical - 0.5))
+	check(alerts.size() == 1, "22: nothing is announced above the critical line, got %s" % [alerts])
+	_tick([hits], _ticks(1.0))
+	check(alerts.size() == 2 and StringName(alerts[1][0]) == &"critical",
+		"22: the critical alert fires as the timer drops under %.1f s, got %s" % [critical, alerts])
+	check(float(alerts[1][1]) <= critical + 0.05 and float(alerts[1][1]) > 0.0,
+		"22: the critical alert carries the seconds left, got %.3f" % float(alerts[1][1]))
+	_tick([hits], _ticks(2.0))
+	check(alerts.size() == 2, "22: critical fires once per pursuit, got %d alerts" % alerts.size())
+	_tick([hits], _ticks(critical + 0.5))
+	check(alerts.size() == 3 and StringName(alerts[2][0]) == &"clear"
+		and is_zero_approx(float(alerts[2][1])),
+		"22: recovery clears the alert, got %s" % [alerts])
+	check(hits.is_safe(), "22: the alert cleared because the pursuit did")
+
+	# A second cycle re-arms the critical alert, and the catch clears it before the cinematic.
+	hits.report_hit(_hazard(&"merge_conflict"))
+	check(alerts.size() == 4 and StringName(alerts[3][0]) == &"warn", "22: a new pursuit warns again")
+	hits.iframe_remaining = 0.0
+	hits.report_hit(_hazard(&"comment_flood"))
+	check(alerts.size() == 5 and StringName(alerts[4][0]) == &"clear",
+		"22: the catch stands the alert down, got %s" % [alerts])
+	check(not hits.is_alive(), "22: that last hit really was the catch")
+
+## The epsilon gate on pursuer_distance_changed (contract §11.4): a glide must not spam the frontend,
+## and the terminal 1.0 always goes out.
+func _test_pursuer_distance() -> void:
+	var game := _make_game()
+	var pursuer := Node3D.new()
+	pursuer.set_script(pursuer_script)
+	junk.append(pursuer)
+	var seen: Array[float] = []
+	game.pursuer_distance_changed.connect(func(value: float) -> void:
+		seen.append(value))
+	pursuer.setup(game)
+	check(seen.is_empty(), "23: a reset pursuer announces nothing, got %s" % [seen])
+	var epsilon := float(game.config.pursuer_distance_epsilon)
+	pursuer.set_threat(epsilon * 0.4)
+	check(seen.is_empty(), "23: a sub-epsilon step stays quiet, got %s" % [seen])
+	pursuer.set_threat(epsilon * 3.0)
+	check(seen.size() == 1 and is_equal_approx(seen[0], epsilon * 3.0),
+		"23: a step past the epsilon is announced, got %s" % [seen])
+	pursuer.set_threat(epsilon * 3.0 + epsilon * 0.4)
+	check(seen.size() == 1, "23: a sub-epsilon step on top of that stays quiet, got %s" % [seen])
+	pursuer.set_threat(1.0)
+	check(seen.size() == 2 and is_equal_approx(seen[1], 1.0), "23: the terminal 1.0 is announced")
+	pursuer.set_threat(1.0)
+	check(seen.size() == 2, "23: the terminal 1.0 is never re-announced, got %d" % seen.size())
+	check(is_equal_approx(pursuer.distance_epsilon(), epsilon),
+		"23: the gate reads config.pursuer_distance_epsilon")
+	var zero_config: RunConfig = game.config.duplicate()
+	zero_config.pursuer_distance_epsilon = 0.0
+	pursuer.config = zero_config
+	check(pursuer.distance_epsilon() > 0.0,
+		"23: an authored 0 epsilon still keeps a floor, got %.6f" % pursuer.distance_epsilon())
+
+# --- 24. A catch mid-fight aborts to idle and ends the run once (systems spec §10.1) ---
+
+func _test_caught_mid_boss() -> void:
+	var path := "user://test_leaderboard_boss_%d.cfg" % (randi() % 1000000)
+	temp_paths.append(path)
+	var rig := _stage_rig({
+		"stage_base_distance": 12.0,
+		"stage_drain_distance": 6.0,
+		"stage_drain_timeout": 0.2,
+		"turn_seconds": 0.2,
+		"boss_intro_seconds": 0.0,
+		"boss_outro_seconds": 0.0,
+		"stage_clear_seconds": 0.5
+	}, true, true)
+	var game: Node3D = rig["game"]
+	var stage: Node = rig["stage"]
+	var arena: Node3D = rig["arena"]
+	var hits: Node = rig["hits"]
+	var events: Dictionary = rig["events"]
+	# The facade is hand-built, so it has no run_id from start_run(); the board write needs one, and
+	# it goes to the throwaway path above and nowhere near user://leaderboard.cfg.
+	game.leaderboard_path = path
+	game.run_id = "boss-catch-%d" % (randi() % 1000000)
+	var drivers: Array = [rig["speed"], stage]
+	stage.begin()
+	var guard := 0
+	while stage.phase != &"boss" and guard < _ticks(20.0):
+		_tick_stage(drivers, game, 1)
+		guard += 1
+	check(stage.phase == &"boss", "24: the run reached the boss phase, got %s" % stage.phase)
+	check(events["boss_spawned"].size() == 1, "24: the mounted arena really started a fight")
+	arena.apply_tool(&"review_comment")
+	check(int(stage.tools_used) == 1 and int(stage.boss_damage_dealt) == 10,
+		"24: the StageManager tallied the tool off the facade signal")
+	check(int(arena.projectile_count()) >= 0, "24: the arena is live")
+
+	hits.report_hit(_hazard(&"bug_swarm"))
+	hits.iframe_remaining = 0.0
+	hits.report_hit(_hazard(&"comment_flood"))
+	check(int(game.caught_calls) == 1, "24: the catch ran once, got %d" % int(game.caught_calls))
+	check(game.state == &"caught", "24: the facade moved to the caught state, got %s" % game.state)
+	check(stage.phase == &"idle", "24: the catch aborts the fight back to idle, got %s" % stage.phase)
+	check(events["phase_changed"][events["phase_changed"].size() - 1] == &"idle",
+		"24: the last phase change is to idle, got %s" % [events["phase_changed"]])
+	check(arena.projectile_count() == 0 and arena.tool_count() == 0,
+		"24: abort() empties the arena")
+	check(events["boss_defeated"].is_empty() and events["boss_retreated"].is_empty(),
+		"24: an aborted fight resolves neither way")
+	check(events["stage_cleared"].is_empty(), "24: an aborted fight clears no stage")
+
+	# A Dictionary, not two locals: a GDScript lambda captures locals by value, so a counter kept in
+	# a plain int would be incremented on the lambda's own copy and read back as 0 here.
+	var seen := {"finished": 0, "result": {}}
+	game.run_finished.connect(func(value: Dictionary) -> void:
+		seen["finished"] += 1
+		seen["result"] = value)
+	_tick_stage([game], game, _ticks(float(game.config.caught_sequence_seconds) + 0.5))
+	var finished := int(seen["finished"])
+	var result: Dictionary = seen["result"]
+	check(finished == 1, "24: run_finished fires exactly once, got %d" % finished)
+	check(game.state == &"finished", "24: the run ends finished, got %s" % game.state)
+	check(int(result.get("stage_reached", 0)) == 1, "24: the result reached stage %s"
+		% result.get("stage_reached", "<missing>"))
+	check(int(result.get("turns_taken", 0)) == 1, "24: the result counted %s turns"
+		% result.get("turns_taken", "<missing>"))
+	check(int(result.get("tools_used", 0)) == 1, "24: the result counted %s tools"
+		% result.get("tools_used", "<missing>"))
+	check(int(result.get("boss_damage_dealt", 0)) == 10, "24: the result carries %s boss damage"
+		% result.get("boss_damage_dealt", "<missing>"))
+	check(int(result.get("bosses_defeated", -1)) == 0 and int(result.get("bosses_escaped", -1)) == 0,
+		"24: an aborted fight counts as neither a kill nor an escape")
+	check(int(result.get("stages_cleared", -1)) == 0, "24: no stage was cleared before the catch")
+	_free_rig(rig)
+
+# --- 25. Speed with the stage bonus and the difficulty floor (systems spec §10.2) ---
+
+func _test_stage_speed_and_floor() -> void:
+	var game := _make_game()
+	var speed: Node = _systems(game)["speed"]
+	var c: RunConfig = game.config
+	var ramp := float(c.time_to_max_speed)
+	for bonus in [0.0, 3.0, 6.0]:
+		speed.set_stage_bonus(bonus)
+		check(is_equal_approx(speed.speed_at(0.0), float(c.base_speed) + bonus),
+			"25: bonus %.0f opens at %.2f" % [bonus, speed.speed_at(0.0)])
+		check(is_equal_approx(speed.speed_at(ramp), float(c.max_speed) + bonus),
+			"25: bonus %.0f tops out at %.2f" % [bonus, speed.speed_at(ramp)])
+		check(is_equal_approx(speed.speed_at(ramp + 6000.0), float(c.hard_cap_speed) + bonus),
+			"25: bonus %.0f caps the tail at %.2f, expected %.2f"
+				% [bonus, speed.speed_at(ramp + 6000.0), float(c.hard_cap_speed) + bonus])
+		check(is_equal_approx(speed.base_for_stage(), float(c.base_speed) + bonus),
+			"25: base_for_stage carries the bonus")
+	check(is_equal_approx(speed.speed_at(ramp + 6000.0), 32.0),
+		"25: the top stage bonus reaches the contract §11.2 hard cap of 32 m/s")
+
+	# Nitro multiplies the curve and is still clamped to nitro_speed_cap at the top stage bonus.
+	speed.set_stage_bonus(float(c.stage_speed_bonus_max))
+	speed.multiplier = float(c.nitro_speed_multiplier)
+	_set_run_clock(game, ramp + 6000.0)
+	speed._physics_process(TICK)
+	check(is_equal_approx(float(speed.speed), float(c.nitro_speed_cap)),
+		"25: Nitro at the top stage is clamped to %.1f, got %.2f" % [float(c.nitro_speed_cap), float(speed.speed)])
+	check(float(speed.speed) <= 38.0 + 0.0001, "25: Nitro never passes 38 m/s")
+
+	# normalized() cancels the bonus at both ends, so the frontend's 0..1 never shifts per stage.
+	speed.multiplier = 1.0
+	speed.speed = speed.base_for_stage()
+	check(is_zero_approx(speed.normalized()), "25: the stage base normalizes to 0, got %.3f" % speed.normalized())
+	speed.speed = float(c.max_speed) + float(c.stage_speed_bonus_max)
+	check(is_equal_approx(speed.normalized(), 1.0), "25: the stage top normalizes to 1, got %.3f" % speed.normalized())
+
+	# The floor: difficulty can never fall below the stage's own minimum.
+	var floored := _make_game()
+	var floored_speed: Node = _systems(floored)["speed"]
+	floored_speed.set_difficulty_floor(0.5)
+	check(is_equal_approx(floored_speed.difficulty_at(0.0), 0.5),
+		"25: a stage floor of 0.5 holds the opening difficulty, got %.3f" % floored_speed.difficulty_at(0.0))
+	check(is_equal_approx(floored_speed.difficulty_at(ramp * 0.25), 0.5),
+		"25: the curve stays on the floor until it climbs past it")
+	check(is_equal_approx(floored_speed.difficulty_at(ramp * 0.75), 0.75),
+		"25: the curve wins again above the floor, got %.3f" % floored_speed.difficulty_at(ramp * 0.75))
+	check(is_equal_approx(floored_speed.difficulty_at(ramp), 1.0), "25: the floor never caps the top")
+	floored_speed.set_difficulty_floor(2.0)
+	check(is_equal_approx(floored_speed.difficulty_at(0.0), 1.0),
+		"25: a floor above 1 is clamped to 1, got %.3f" % floored_speed.difficulty_at(0.0))
+
+# --- 26. Leaderboard schema 2 migrates a v1 board in place (contract §11.11) ---
+
+func _test_leaderboard_migration() -> void:
+	check(RunnerLeaderboard.SCHEMA_VERSION == 2, "26: the schema version is 2, got %d"
+		% RunnerLeaderboard.SCHEMA_VERSION)
+	var path := "user://test_leaderboard_v1_%d.cfg" % (randi() % 1000000)
+	temp_paths.append(path)
+	var legacy := ConfigFile.new()
+	legacy.set_value("meta", "version", 1)
+	legacy.set_value("leaderboard", "entries", [_entry("v1-a", 300), _entry("v1-b", 100)])
+	check(legacy.save(path) == OK, "26: the version 1 fixture board was written")
+
+	var board := RunnerLeaderboard.read_board(path)
+	check(int(board["version"]) == 1, "26: read_board reports the on-disk version 1, got %s" % board["version"])
+	check(int(board["error"]) == OK, "26: a version 1 board reads normally, got error %s" % board["error"])
+	var loaded := RunnerLeaderboard.load_entries(path)
+	check(loaded.size() == 2 and int(loaded[0]["score"]) == 300,
+		"26: a version 1 board keeps its rows, got %d" % loaded.size())
+
+	# The next successful save rewrites the file as version 2, without losing the v1 runs.
+	var result := RunnerLeaderboard.submit(_entry("v2-new", 200), path)
+	check(int(result["error"]) == OK, "26: a version 1 board accepts the next run, got error %s" % result["error"])
+	check(int(result["rank"]) == 2, "26: the new run placed at rank %d, expected 2" % int(result["rank"]))
+	var migrated := ConfigFile.new()
+	check(migrated.load(path) == OK, "26: the migrated board parses")
+	check(int(migrated.get_value("meta", "version", 0)) == RunnerLeaderboard.SCHEMA_VERSION,
+		"26: the board was rewritten as version %d, got %s"
+			% [RunnerLeaderboard.SCHEMA_VERSION, migrated.get_value("meta", "version", 0)])
+	var after := RunnerLeaderboard.load_entries(path)
+	check(after.size() == 3, "26: the migration kept every run, got %d" % after.size())
+	check(_has_run(after, "v1-a") and _has_run(after, "v1-b") and _has_run(after, "v2-new"),
+		"26: the v1 runs survived the migration alongside the v2 one")
+	check(not FileAccess.file_exists(path + ".tmp") and not FileAccess.file_exists(path + ".bak"),
+		"26: the migration leaves no .tmp or .bak behind")
+
+	# Only a version *newer* than 2 is refused; that half is section 8's, this is the boundary.
+	var future := "user://test_leaderboard_v3_%d.cfg" % (randi() % 1000000)
+	temp_paths.append(future)
+	var newer := ConfigFile.new()
+	newer.set_value("meta", "version", RunnerLeaderboard.SCHEMA_VERSION + 1)
+	newer.set_value("leaderboard", "entries", [])
+	check(newer.save(future) == OK, "26: the version 3 fixture board was written")
+	var refused := RunnerLeaderboard.submit(_entry("v3-run", 10), future)
+	check(int(refused["error"]) == ERR_FILE_UNRECOGNIZED,
+		"26: a version 3 board is refused, got error %s" % refused["error"])
+	check(int(refused["rank"]) == 0, "26: a refused submit reports no rank")
+	check(RunnerLeaderboard.rename("v3-run", "X", future) == ERR_FILE_UNRECOGNIZED,
+		"26: rename refuses a version 3 board too")
+	check(RunnerLeaderboard.SUPPORTED_VERSIONS == [1, 2],
+		"26: exactly versions 1 and 2 are readable, got %s" % [RunnerLeaderboard.SUPPORTED_VERSIONS])
+
+func _has_run(entries: Array, run_id: String) -> bool:
+	for item in entries:
+		if String((item as Dictionary).get("run_id", "")) == run_id:
+			return true
+	return false
+
+func _bonus_reasons(events: Dictionary) -> Array[StringName]:
+	var reasons: Array[StringName] = []
+	for item in events["bonus_awarded"]:
+		reasons.append(StringName((item as Array)[1]))
+	return reasons
+
+## The contract §11.4 boss block outside a fight: every key present, every value empty.
+func _boss_info_is_empty(info: Dictionary) -> bool:
+	for key in ["kind", "name", "hp", "max_hp", "phase", "accepted_tools", "pending_attacks"]:
+		if not info.has(key):
+			return false
+	var tools: Array = info["accepted_tools"]
+	var attacks: Array = info["pending_attacks"]
+	return StringName(info["kind"]) == &"" and String(info["name"]) == "" and int(info["hp"]) == 0 \
+		and int(info["max_hp"]) == 0 and int(info["phase"]) == 0 \
+		and tools.is_empty() and attacks.is_empty()
+
 # --- harness ---
 
 func _compile(source: String) -> GDScript:
@@ -1102,6 +1942,7 @@ func _make_game() -> Node3D:
 	var game := Node3D.new()
 	game.set_script(game_script)
 	game.config = base_config.duplicate()
+	game.leaderboard_path = scratch_leaderboard
 	game.state = &"running"
 	junk.append(game)
 	return game
@@ -1136,6 +1977,16 @@ func _hazard(kind: StringName) -> Node3D:
 	root.add_child(hazard)
 	junk.append(hazard)
 	return hazard
+
+## A boss shot in the tree, with the closing speed the bot plans its trigger distance from.
+func _projectile(at: Vector3, closing_speed: float) -> Node3D:
+	var shot := Node3D.new()
+	shot.set_script(projectile_script)
+	shot.closing_speed = closing_speed
+	root.add_child(shot)
+	shot.position = at
+	junk.append(shot)
+	return shot
 
 ## A power-up stand-in for the autopilot's greedy planner: pickup_targets only reads
 ## global_position, so a bare Node3D in the tree is the whole surface.
@@ -1218,13 +2069,161 @@ func _tick_invuln(player: CharacterBody3D, seconds: float) -> void:
 
 ## A facade inside the tree, for the run-loop helpers that call get_tree(). Scripted only after
 ## add_child for the reason spelled out in _finish_caught_run().
-func _tree_game() -> Node3D:
+## The leaderboard override comes straight after set_script rather than before add_child: the script
+## is what carries the property, and skipping _ready() is also what keeps `autostart` from ever
+## opening a run, so there is no live run for it to race.
+func _tree_game(script: GDScript = null) -> Node3D:
 	var game := Node3D.new()
 	root.add_child(game)
-	game.set_script(game_script)
+	game.set_script(script if script != null else game_script)
+	game.leaderboard_path = scratch_leaderboard
 	game.config = base_config.duplicate()
 	junk.append(game)
 	return game
+
+## A live StageManager with the collaborators it drives: the v1 systems, a spawner that records the
+## drain gate, and TurnRig / CameraRig stand-ins that record every set_turn. `with_arena` mounts a
+## real boss_arena.tscn where contract §11.3 puts it; `real_catch` swaps in the facade that runs the
+## catch cinematic instead of only counting it.
+## The StageManager sits in the tree (its drain scans runner_hazards through get_tree()) with its
+## own physics processing off, so every tick below is the test's, never the engine's.
+func _stage_rig(overrides: Dictionary, with_arena := false, real_catch := false) -> Dictionary:
+	var game := _tree_game(caught_game_script if real_catch else null)
+	for key in overrides:
+		game.config.set(key, overrides[key])
+	game.state = &"running"
+	game.speed = float(game.config.base_speed)
+	var systems := _systems(game)
+	var turn_rig := _fake_rig()
+	var camera := _fake_rig()
+	game.turn_rig = turn_rig
+	game.camera_rig = camera
+	var arena: Node3D = null
+	if with_arena:
+		arena = _mount_arena(game)
+	var stage: Node = stage_manager_script.new()
+	root.add_child(stage)
+	stage.set_physics_process(false)
+	junk.append(stage)
+	game.stage_manager = stage
+	var events := _watch_stage(game)
+	stage.setup(game)
+	var rig := {"game": game, "stage": stage, "arena": arena, "turn_rig": turn_rig,
+		"camera_rig": camera, "events": events}
+	rig.merge(systems)
+	return rig
+
+## A boss_arena.tscn on its own facade, for the fight rules that need no stage machine.
+func _boss_rig(overrides: Dictionary) -> Dictionary:
+	var game := _tree_game()
+	for key in overrides:
+		game.config.set(key, overrides[key])
+	game.state = &"running"
+	var systems := _systems(game)
+	var camera := _fake_rig()
+	game.camera_rig = camera
+	var events := _watch_stage(game)
+	var arena := _mount_arena(game)
+	var rig := {"game": game, "arena": arena, "camera_rig": camera, "events": events}
+	rig.merge(systems)
+	return rig
+
+## Mount the real arena where runner_game.tscn mounts it (World/TurnRig/BossArena), so a tool that
+## resolves its encounter by path finds it. `setup()` runs from the arena's own _ready() through
+## _find_facade(); calling it again is idempotent and makes the wiring explicit.
+func _mount_arena(game: Node3D) -> Node3D:
+	var packed := load(ARENA_SCENE) as PackedScene
+	check(packed != null, "the boss arena scene failed to load")
+	if packed == null:
+		return null
+	var world := Node3D.new()
+	world.name = "World"
+	game.add_child(world)
+	var rig := Node3D.new()
+	rig.name = "TurnRig"
+	world.add_child(rig)
+	var arena := packed.instantiate() as Node3D
+	if arena == null:
+		check(false, "the boss arena root is not a Node3D")
+		return null
+	arena.name = "BossArena"
+	rig.add_child(arena)
+	arena.setup(game)
+	game.boss_encounter = arena
+	return arena
+
+func _fake_rig() -> Node3D:
+	var rig := Node3D.new()
+	rig.set_script(rig_script)
+	root.add_child(rig)
+	junk.append(rig)
+	return rig
+
+## Free a rig's facade (and everything mounted under it) before the next one is built, so two live
+## arenas never share the runner_hazards / runner_tools groups.
+func _free_rig(rig: Dictionary) -> void:
+	var game: Node3D = rig.get("game", null)
+	if game == null or not is_instance_valid(game):
+		return
+	junk.erase(game)
+	if game.get_parent() != null:
+		game.get_parent().remove_child(game)
+	game.free()
+
+## Drive the systems one tick at a time, advancing the facade's own clock the way its
+## _physics_process would. The StageManager owns run_clock, so only `elapsed` is moved here.
+func _tick_stage(nodes: Array, game: Node3D, count: int) -> void:
+	for i in count:
+		if game.state == &"running" or game.state == &"caught":
+			game.elapsed += TICK
+			game.distance += float(game.speed) * TICK
+		for node in nodes:
+			node._physics_process(TICK)
+
+## Record every contract §11.4 signal the stage machine and the boss encounter emit.
+func _watch_stage(game: Node) -> Dictionary:
+	var events := {
+		"phase_changed": [],
+		"stage_started": [],
+		"stage_cleared": [],
+		"turn_started": [],
+		"turn_finished": 0,
+		"boss_spawned": [],
+		"boss_health_changed": [],
+		"boss_phase_changed": [],
+		"boss_attack_telegraph": [],
+		"boss_defeated": [],
+		"boss_retreated": [],
+		"tool_collected": [],
+		"bonus_awarded": []
+	}
+	game.phase_changed.connect(func(phase: StringName) -> void:
+		events["phase_changed"].append(phase))
+	game.stage_started.connect(func(index: int, name: StringName, speed: float) -> void:
+		events["stage_started"].append([index, name, speed]))
+	game.stage_cleared.connect(func(index: int, bonus: int) -> void:
+		events["stage_cleared"].append([index, bonus]))
+	game.turn_started.connect(func(direction: int, seconds: float) -> void:
+		events["turn_started"].append([direction, seconds]))
+	game.turn_finished.connect(func() -> void:
+		events["turn_finished"] += 1)
+	game.boss_spawned.connect(func(kind: StringName, hp: int) -> void:
+		events["boss_spawned"].append([kind, hp]))
+	game.boss_health_changed.connect(func(hp: int, max_hp: int) -> void:
+		events["boss_health_changed"].append([hp, max_hp]))
+	game.boss_phase_changed.connect(func(phase: int) -> void:
+		events["boss_phase_changed"].append(phase))
+	game.boss_attack_telegraph.connect(func(mask: int, kind: StringName, seconds: float) -> void:
+		events["boss_attack_telegraph"].append([mask, kind, seconds]))
+	game.boss_defeated.connect(func(kind: StringName, bonus: int) -> void:
+		events["boss_defeated"].append([kind, bonus]))
+	game.boss_retreated.connect(func(kind: StringName, bonus: int) -> void:
+		events["boss_retreated"].append([kind, bonus]))
+	game.tool_collected.connect(func(kind: StringName, damage: int) -> void:
+		events["tool_collected"].append([kind, damage]))
+	game.bonus_awarded.connect(func(points: int, reason: StringName) -> void:
+		events["bonus_awarded"].append([points, reason]))
+	return events
 
 ## A real hazard.gd timed laser, in the tree (its hitbox and group need it) and on its own facade
 ## with a real HitManager behind it. kind/variant are set before the hazard enters the tree so

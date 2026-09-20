@@ -19,6 +19,12 @@ const REASON_SHIELD: StringName = &"shield"
 ## pursuit_recovered reasons (contract §4.1).
 const RECOVERED_TIMER: StringName = &"timer"
 const RECOVERED_SHIELD: StringName = &"shield"
+## pursuit_alert kinds (contract §11.4): warn at pursuit start, critical once the recovery timer
+## drops under pursuit_critical_seconds, clear on recovery or catch.
+const ALERT_WARN: StringName = &"warn"
+const ALERT_CRITICAL: StringName = &"critical"
+const ALERT_CLEAR: StringName = &"clear"
+const DEFAULT_PURSUIT_CRITICAL_SECONDS := 5.0
 ## Reported as the hazard kind when a caller passes something without one.
 const UNKNOWN_KIND: StringName = &"unknown"
 ## Contract §7 fallbacks, used only when no config has been supplied yet. Zero would read as
@@ -43,6 +49,9 @@ var hits_taken := 0
 var blocked_hits := 0
 var recoveries := 0
 
+## The critical alert fires once per pursuit, not once per tick.
+var _critical_alerted := false
+
 func setup(runner: RunnerGame) -> void:
 	game = runner
 	config = runner.config
@@ -63,6 +72,7 @@ func reset(new_config: RunConfig = null) -> void:
 	hits_taken = 0
 	blocked_hits = 0
 	recoveries = 0
+	_critical_alerted = false
 
 ## Resolve a hazard overlap synchronously, in the systems spec §4 order:
 ## dead -> already consumed -> i-frames or invulnerability -> shield -> damage.
@@ -105,6 +115,7 @@ func report_hit(hazard: Node) -> StringName:
 			if game != null:
 				game.health_changed.emit(hp, max_hp())
 				game.pursuit_recovered.emit(RECOVERED_SHIELD)
+			_emit_alert(ALERT_CLEAR, 0.0)
 		return BLOCKED_SHIELD
 	# 5. Damage.
 	hits_taken += 1
@@ -124,8 +135,12 @@ func report_hit(hazard: Node) -> StringName:
 		state = HitState.PURSUED
 		recovery_total = recovery_seconds()
 		recovery_remaining = recovery_total
+		_critical_alerted = false
 		if game != null:
 			game.pursuit_started.emit(recovery_total)
+		# The alert rides alongside pursuit_started so the incoming-transmission panel can open on
+		# the same frame the pursuer does (contract §11.4).
+		_emit_alert(ALERT_WARN, recovery_total)
 	return DAMAGED
 
 func set_shield(active: bool) -> void:
@@ -183,6 +198,11 @@ func recovery_seconds() -> float:
 func iframe_seconds() -> float:
 	return float(config.hit_iframes) if config != null else DEFAULT_HIT_IFRAMES
 
+func pursuit_critical_seconds() -> float:
+	if config == null or not (&"pursuit_critical_seconds" in config):
+		return DEFAULT_PURSUIT_CRITICAL_SECONDS
+	return float(config.pursuit_critical_seconds)
+
 ## Ordering guarantee (systems spec §4): Area3D overlaps are delivered at the start of a physics
 ## tick, before any _physics_process, and report_hit never grants recovery. A hit on the tick the
 ## recovery timer would expire therefore kills.
@@ -197,6 +217,9 @@ func _physics_process(delta: float) -> void:
 	if game != null:
 		game.pursuit_progress.emit(maxf(recovery_remaining, 0.0), recovery_total)
 	if recovery_remaining > 0.0:
+		if not _critical_alerted and recovery_remaining <= pursuit_critical_seconds():
+			_critical_alerted = true
+			_emit_alert(ALERT_CRITICAL, recovery_remaining)
 		return
 	state = HitState.SAFE
 	hp = max_hp()
@@ -205,10 +228,17 @@ func _physics_process(delta: float) -> void:
 	if game != null:
 		game.health_changed.emit(hp, max_hp())
 		game.pursuit_recovered.emit(RECOVERED_TIMER)
+	_emit_alert(ALERT_CLEAR, 0.0)
 
 func _emit_blocked(kind: StringName, reason: StringName) -> void:
 	if game != null:
 		game.damage_blocked.emit(kind, reason)
+
+## contract §11.4. The facade may predate v2, so the signal is looked up before it is used.
+func _emit_alert(kind: StringName, seconds_to_catch: float) -> void:
+	if game == null or not game.has_signal(&"pursuit_alert"):
+		return
+	game.pursuit_alert.emit(kind, maxf(seconds_to_catch, 0.0))
 
 ## An unblocked hit drops the Code Review Bonus (systems spec §6).
 func _notify_damage_applied() -> void:
@@ -223,6 +253,8 @@ func _notify_damage_applied() -> void:
 func _announce_caught() -> void:
 	if game == null:
 		return
+	# The pursuit is over either way: the panel is told to stand down before the catch cinematic.
+	_emit_alert(ALERT_CLEAR, 0.0)
 	if game.has_method("_on_caught"):
 		game._on_caught()
 	else:
