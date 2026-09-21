@@ -25,6 +25,7 @@ var rest_poses: Dictionary = {}
 
 static func shape(parent: Node3D, mesh: Mesh, pos: Vector3, material: Material) -> MeshInstance3D:
 	var node := MeshInstance3D.new()
+	node.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	node.mesh = mesh
 	node.position = pos
 	node.material_override = material
@@ -57,6 +58,7 @@ static func torus(parent: Node3D, radius: float, color: Color) -> MeshInstance3D
 
 static func label(parent: Node3D, words: String, pos: Vector3, pixels: float = 0.006) -> Label3D:
 	var node := Materials.label(parent, words, 44, Palette.CREAM)
+	node.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	node.pixel_size = pixels
 	node.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 	node.outline_size = 10
@@ -64,8 +66,13 @@ static func label(parent: Node3D, words: String, pos: Vector3, pixels: float = 0
 	node.position = pos
 	return node
 
+func _init() -> void:
+	# Cosmetic transforms are animated on render frames, not physics ticks.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+
 func batch(poses: Array[Transform3D], color: Color) -> MultiMeshInstance3D:
 	var node := MultiMeshInstance3D.new()
+	node.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	var multi := MultiMesh.new()
 	multi.transform_format = MultiMesh.TRANSFORM_3D
 	multi.use_colors = true

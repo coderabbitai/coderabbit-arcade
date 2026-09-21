@@ -7,6 +7,10 @@ var tag: Label3D
 var sparks: Art
 var amount := 0
 
+func _init() -> void:
+	# Cosmetic transforms are animated on render frames, not physics ticks.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
 	tag = Art.label(self, "", Vector3.ZERO, 0.008)

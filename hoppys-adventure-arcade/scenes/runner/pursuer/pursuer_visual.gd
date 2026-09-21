@@ -20,6 +20,10 @@ var _retreated := true
 var _start_pose := Transform3D.IDENTITY
 var _last_threat_pose := Transform3D.IDENTITY
 
+func _init() -> void:
+	# Cosmetic transforms are animated on render frames, not physics ticks.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+
 func _ready() -> void:
 	_build()
 	_apply()
@@ -28,6 +32,7 @@ func _build() -> void:
 	if _wall != null: return
 	process_mode = Node.PROCESS_MODE_PAUSABLE
 	_wall = MultiMeshInstance3D.new()
+	_wall.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_wall.name = "Wall"
 	_wall.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var cards := MultiMesh.new()

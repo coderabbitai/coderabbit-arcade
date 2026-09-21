@@ -10,6 +10,10 @@ var inset: MeshInstance3D
 var beam_material: ShaderMaterial
 var tag: Label3D
 
+func _init() -> void:
+	# Cosmetic transforms are animated on render frames, not physics ticks.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
 	var floor_mesh := QuadMesh.new()

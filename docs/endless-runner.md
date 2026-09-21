@@ -128,6 +128,8 @@ Pitch approaches `1.0 + 0.10 * normalized + (0.05 while Nitro)` with exponential
 
 ## Renderer notes: gl_compatibility
 
+Cosmetic MultiMeshes and visual transforms update in `_process`, so their frontend nodes opt out with `PHYSICS_INTERPOLATION_MODE_OFF` (including explicit modes on each MultiMesh instance); physics interpolation stays enabled for backend-owned gameplay nodes.
+
 The following gl_compatibility findings come from the coordinator's graphical capture and visual inspection on the installed Godot 4.7.0 stable (`4.7.stable.official.5b4e0cb0f`). They supersede the earlier headless-only findings. The project pins 4.7.1, where final acceptance must be re-run under the contract's engine version policy.
 
 | Feature | Configuration | Observed result |

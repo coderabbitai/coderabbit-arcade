@@ -30,6 +30,10 @@ var _rain: GPUParticles3D
 var _speed_lines: GPUParticles3D
 var _far_material: ShaderMaterial
 
+func _init() -> void:
+	# Cosmetic transforms are animated on render frames, not physics ticks.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
 	_viewport = get_viewport()
@@ -139,6 +143,7 @@ func _build_pillars() -> void:
 	_pillars.mesh = mesh
 	_pillars.instance_count = 24
 	var instance := MultiMeshInstance3D.new()
+	instance.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	instance.name = "Pillars"
 	instance.multimesh = _pillars
 	instance.extra_cull_margin = 40.0

@@ -5,6 +5,10 @@ var clock := 0.0
 var collected := false
 var pivot: Node3D
 
+func _init() -> void:
+	# Cosmetic transforms are animated on render frames, not physics ticks.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+
 func build(kind: StringName) -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
 	pivot = Node3D.new()

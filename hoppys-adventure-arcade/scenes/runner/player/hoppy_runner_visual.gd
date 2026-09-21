@@ -20,6 +20,10 @@ var _sparkles: GPUParticles3D
 var _flash_remaining := 0.0
 var _clock := 0.0
 
+func _init() -> void:
+	# Cosmetic transforms are animated on render frames, not physics ticks.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
 	_build_model()

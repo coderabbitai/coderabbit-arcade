@@ -48,6 +48,7 @@ func bounds(node: Node3D) -> AABB:
 	return result
 
 func run() -> void:
+	await check_interpolation_opt_out()
 	await check_dev_scenes()
 	var hoppy_scene := load("res://scenes/runner/player/hoppy_runner_visual.tscn") as PackedScene
 	var corridor_scene := load("res://scenes/runner/environment/corridor.tscn") as PackedScene
@@ -1649,3 +1650,47 @@ func check_stage_seam() -> void:
 		if FileAccess.file_exists(seam_board + suffix): DirAccess.remove_absolute(seam_board + suffix)
 	print("STAGE SEAM: ", "PASS" if before == failures else "FAIL")
 	await frames()
+
+func check_multimesh_interpolation(node: Node) -> int:
+	var count := 0
+	if node is MultiMeshInstance3D:
+		count = 1
+		check(node.physics_interpolation_mode == Node.PHYSICS_INTERPOLATION_MODE_OFF, "cosmetic MultiMesh interpolation disabled: %s" % node.get_path())
+	for child in node.get_children():
+		count += check_multimesh_interpolation(child)
+	return count
+
+func check_interpolation_opt_out() -> void:
+	var before := failures
+	var count := 0
+	var scenes: Array[String] = [
+		"res://scenes/runner/environment/corridor.tscn",
+		"res://scenes/runner/hazards/visuals/dev/hazard_gallery.tscn",
+		"res://scenes/runner/boss/dev/boss_gallery.tscn",
+	]
+	# Discover every pickup, including tools that use the shared boss batch builder.
+	var directory := DirAccess.open("res://scenes/runner/powerups/visuals")
+	check(directory != null, "power-up visual directory exists")
+	if directory != null:
+		for file in directory.get_files():
+			if file.ends_with("_visual.tscn"):
+				scenes.append("res://scenes/runner/powerups/visuals/" + file)
+	for path in scenes:
+		var scene := load(path) as PackedScene
+		check(scene != null, "interpolation fixture loads: " + path)
+		if scene == null: continue
+		var fixture := scene.instantiate()
+		root.add_child(fixture)
+		if fixture.has_method("on_spawned"): fixture.on_spawned()
+		await frames()
+		count += check_multimesh_interpolation(fixture)
+		if fixture.has_method("capture_boss"):
+			fixture.set_process(false)
+			for index in [1, 2]:
+				fixture.capture_boss(index)
+				await frames()
+				count += check_multimesh_interpolation(fixture.encounter)
+		fixture.free()
+		await frames()
+	check(count > 0, "interpolation census is nonempty")
+	print("INTERPOLATION OPT-OUT: ", "PASS" if failures == before else "FAIL", " (", count, " nodes)")

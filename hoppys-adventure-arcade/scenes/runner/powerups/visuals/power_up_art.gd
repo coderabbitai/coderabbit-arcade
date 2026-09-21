@@ -10,6 +10,10 @@ var _ring_material: StandardMaterial3D
 var _t := 0.0
 var _collect_time := -1.0
 
+func _init() -> void:
+	# Cosmetic transforms are animated on render frames, not physics ticks.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+
 func build(kind: StringName) -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
 	_pivot = Node3D.new()

@@ -28,6 +28,10 @@ var _fades: Array[StandardMaterial3D] = []
 var _seams: Array[StandardMaterial3D] = []
 var _state: StringName = &"ground"
 
+func _init() -> void:
+	# Cosmetic transforms are animated on render frames, not physics ticks.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+
 func build(kind: StringName, variant: StringName, size: Vector3, offset: Vector3) -> void:
 	name = "Artwork"
 	_kind = kind
@@ -241,6 +245,7 @@ func _batch_boxes() -> void:
 		mesh.free()
 	for material: Material in groups:
 		var batch := MultiMeshInstance3D.new()
+		batch.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 		batch.multimesh = MultiMesh.new()
 		batch.multimesh.transform_format = MultiMesh.TRANSFORM_3D
 		var box := BoxMesh.new()

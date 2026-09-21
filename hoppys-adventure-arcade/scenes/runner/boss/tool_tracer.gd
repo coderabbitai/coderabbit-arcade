@@ -11,6 +11,10 @@ var origin := Vector3.ZERO
 var target := Vector3.ZERO
 var strip: MeshInstance3D
 
+func _init() -> void:
+	# Cosmetic transforms are animated on render frames, not physics ticks.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
 	strip = Art.box(self, Vector3.ZERO, Vector3(0.04, 0.04, 1), Palette.MATRIX)
