@@ -198,7 +198,7 @@ All sizes below are base units at 1280x720. Backing colours name the border; pan
 
 Integral multipliers omit decimals; fractional multipliers retain their value. Timed power-up names disappear after 0.6 seconds, leaving distinct compact symbols and bars. Get Ready holds for 2.5 seconds then fades over 0.25 seconds. Toasts fade in over 0.12 seconds, preserve preempted entries, and prioritize INCOMING/STAGE CLEAR above recovery/blocked and bonus messages. Nitro and Get Ready yield to an active toast. The toast sits above the lane-reading band. The alert retains the design's explicit bottom-left placement at (28, -236), size 420x196. The catch-rule caption at 17 and static game-over error at 17 are explicit design exemptions from the 18-unit critical-label floor; both retain outlines and backing.
 
-`ui/pursuit_alert.tscn` is PAUSABLE and works standalone or as a child of HUD widgets. Its `bind(game)` returns immediately for the same game and disconnects the previous facade on a different binding. It conditionally connects the optional `pursuit_alert` signal, using the contract's `warn` kind as a hint; v1 pursuit_started/progress/recovered, damage_blocked and caught signals fully drive the presentation. The mock additionally emits `warn`, `critical`, and `clear` without making those events mandatory for the UI.
+`ui/pursuit_alert.tscn` is PAUSABLE. In v2, `RunnerGame._mount_frontend()` alone instantiates and binds it at `HUD/PursuitAlert`. The HUD resolves that sibling with a guarded deferred lookup because the backend mounts it after binding the HUD; pause dimming includes the sibling, and caught hides gameplay widgets while preserving the alert portrait. Only facades without `_mount_frontend` (v1 and the standalone HUD preview) get a HUD-owned alert under `widgets` at bind time. The visual smoke counts alert scripts across each game subtree and requires exactly one in both paths. Its `bind(game)` returns immediately for the same game and disconnects the previous facade on a different binding. It conditionally connects the optional `pursuit_alert` signal, using the contract's `warn` kind as a hint; v1 pursuit_started/progress/recovered, damage_blocked and caught signals fully drive the presentation. The mock additionally emits `warn`, `critical`, and `clear` without making those events mandatory for the UI.
 
 The panel uses a cubic ease-out slide from x=-440 to 28 over 0.28 seconds, an initial 0.08-second cream flash, a procedural 256x256 2D SubViewport portrait sharing the pursuer's HEADLINES, clock-driven scanlines/chromatic displacement/roll bar, 48 waveform bars, an 88x88 radar and a live countdown. The catch rule reads "ONE MORE HIT BEFORE RECOVERY AND IT HAS YOU". Recovery holds RECOVERED / BACKLOG REVIEWED / +2 APPROVALS for 1.2 seconds with MATRIX accents, then exits over 0.22 seconds. A blocked hit flashes MINT and BLOCKED for 0.6 seconds. Catch hides the gameplay siblings while the portrait fills the panel and grows to 1.35 over 0.45 seconds, then slides out. Both tree pause and the mock's facade pause freeze clocks and motion; no pause-sensitive shader uses TIME.
 
@@ -231,7 +231,7 @@ These host results supersede the earlier sandbox persistence failures. They are 
 
 ### F7 requests to backend and coordinator
 
-No backend code change is required for F7. The optional future standalone alert mount may call bind(game) repeatedly. Keep emitting the existing v1 pursuit signals; the frontend guards the optional v2 signal. All changes remain within frontend-owned paths.
+No backend code change is required for F7. The merged v2 backend owns the standalone alert mount and may call bind(game) repeatedly. Keep emitting the existing v1 pursuit signals; the frontend guards the optional v2 signal. All changes remain within frontend-owned paths.
 
 Coordinator: run final acceptance on Godot 4.7.1 and capture the pursuit alert plus refreshed HUD/gameplay at 960x540. The headless sandbox cannot provide that visual acceptance evidence.
 
@@ -326,7 +326,9 @@ Commands, from the repository root (`GODOT=/Applications/Godot.app/Contents/MacO
 
 ```sh
 "$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8.log --import
-"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8.log --check-only --script res://<each-new-or-changed-script.gd>
+for script in $(find hoppys-adventure-arcade/scenes/runner -name '*.gd' -print) hoppys-adventure-arcade/tests/runner_visual_smoke.gd; do
+  /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8.log --check-only --script "res://${script#hoppys-adventure-arcade/}" || exit 1
+done
 "$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8.log --script res://tests/runner_visual_smoke.gd
 "$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8-backend.log --script res://tests/runner_smoke.gd
 git diff --check
@@ -471,13 +473,15 @@ project's 4.7.1 pin. Host recapture and listening remain outstanding.
 Exact final commands (repository root):
 
 ```sh
-/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8-check.log --check-only --script res://<each-changed-gd>
+for script in $(find hoppys-adventure-arcade/scenes/runner -name '*.gd' -print) hoppys-adventure-arcade/tests/runner_visual_smoke.gd; do
+  /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8-check.log --check-only --script "res://${script#hoppys-adventure-arcade/}" || exit 1
+done
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8-fix.log --script res://tests/runner_visual_smoke.gd
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8-backend.log --script res://tests/runner_smoke.gd
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8-writable-visual.log --script /tmp/f8_visual_writable.gd
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8-writable-backend.log --script /tmp/f8_backend_writable.gd
-grep -c "Removing a CollisionObject" /tmp/f8-backend.txt
-grep -c "Removing a CollisionObject" /tmp/f8-backend-writable-final.txt
+grep -c "Removing a CollisionObject" /tmp/runner-f8-backend.log
+grep -c "Removing a CollisionObject" /tmp/runner-f8-writable-backend.log
 git diff --check
 ```
 

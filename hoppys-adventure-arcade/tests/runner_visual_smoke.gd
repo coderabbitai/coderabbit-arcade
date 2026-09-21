@@ -772,11 +772,21 @@ func check_runner_ui() -> void:
 	await create_timer(3.0).timeout
 	var real_hud: CanvasLayer = game.get_node("HUD/RunnerHud")
 	check(real_hud.game == game and not real_hud.get_ready.visible, "real facade binds HUD")
+	check(count_pursuit_alerts(game) == 1, "real RunnerGame mounts exactly one pursuit alert")
+	var mounted_alert := game.get_node_or_null("HUD/PursuitAlert") as Control
+	check(mounted_alert != null and real_hud.pursuit_alert == mounted_alert, "HUD resolves backend-owned sibling alert")
 	check(game.elapsed > 2.0 and game.score > 0, "real facade autopilot runs for three seconds")
 	check(real_hud.hp_row.get_child_count() == game.config.max_hp, "real facade HP")
 	game.pause()
 	check(game.get_node("Overlays/PauseMenu").visible, "real pause signal")
+	if mounted_alert != null:
+		check(is_equal_approx(mounted_alert.modulate.a, 0.35), "pause dims sibling alert")
 	game.resume()
+	if mounted_alert != null:
+		check(is_equal_approx(mounted_alert.modulate.a, 1.0), "resume restores sibling alert")
+		game.pursuit_started.emit(18.0)
+		game.caught.emit()
+		check(not real_hud.score_label.is_visible_in_tree() and mounted_alert.is_visible_in_tree(), "caught hides real HUD gameplay but preserves sibling portrait")
 	var temporary_path: String = game.leaderboard_path
 	game.free()
 	for suffix in ["", ".tmp", ".bak"]:
@@ -1207,12 +1217,21 @@ func check_hud_legibility() -> void:
 	mock.free()
 	await frames()
 
+func count_pursuit_alerts(node: Node) -> int:
+	var count := 1 if node.get_script() == preload("res://scenes/runner/ui/pursuit_alert.gd") else 0
+	for child in node.get_children():
+		count += count_pursuit_alerts(child)
+	return count
+
 func check_pursuit_alert() -> void:
 	var before := failures
 	var mock := load("res://scenes/runner/ui/dev/mock_runner_game.gd").new() as Node
 	mock.autoplay = false
 	root.add_child(mock)
 	mock.start_run()
+	check(count_pursuit_alerts(mock) == 1, "standalone HUD mounts exactly one pursuit alert")
+	mock.hud.bind(mock)
+	check(count_pursuit_alerts(mock) == 1, "same-game HUD bind preserves exactly one fallback alert")
 	var alert: Control = mock.hud.pursuit_alert
 	alert.set_process(false)
 	var connections: int = mock.pursuit_started.get_connections().size()

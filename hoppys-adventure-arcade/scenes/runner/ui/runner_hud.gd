@@ -125,9 +125,6 @@ func _ready() -> void:
 		var hint := Style.label(line, 22)
 		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		ready_box.add_child(hint)
-	if ResourceLoader.exists("res://scenes/runner/ui/pursuit_alert.tscn"):
-		pursuit_alert = load("res://scenes/runner/ui/pursuit_alert.tscn").instantiate()
-		widgets.add_child(pursuit_alert)
 	hit_flash = ColorRect.new()
 	hit_flash.name = "HitFlash"
 	screen.add_child(hit_flash)
@@ -167,8 +164,16 @@ func bind(runner: Node) -> void:
 	if game.has_signal("turn_started"): game.turn_started.connect(_turn_started)
 	if game.has_signal("turn_finished"): game.turn_finished.connect(_turn_finished)
 	if game.has_signal("phase_changed"): game.phase_changed.connect(_turn_phase)
-	if pursuit_alert != null:
-		pursuit_alert.bind(game)
+	if game.has_method("_mount_frontend"):
+		# RunnerGame mounts the sibling alert after binding this HUD.
+		_find_mounted_alert.call_deferred()
+	else:
+		# v1 facades and the standalone preview have no backend mount owner.
+		var alert_scene := load("res://scenes/runner/ui/pursuit_alert.tscn") as PackedScene
+		if alert_scene != null:
+			pursuit_alert = alert_scene.instantiate() as Control
+			widgets.add_child(pursuit_alert)
+			pursuit_alert.bind(game)
 	game.health_changed.connect(_health)
 	game.score_changed.connect(_score)
 	game.speed_changed.connect(_speed)
@@ -189,6 +194,12 @@ func bind(runner: Node) -> void:
 	_score(game.score, game.multiplier)
 	_speed(game.speed, game.normalized_speed)
 	_state(game.state)
+	_paused(game.paused)
+
+func _find_mounted_alert() -> void:
+	if not is_instance_valid(game):
+		return
+	pursuit_alert = game.get_node_or_null("HUD/PursuitAlert") as Control
 	_paused(game.paused)
 
 func _process(delta: float) -> void:
@@ -321,6 +332,8 @@ func _state(value: StringName) -> void:
 
 func _paused(value: bool) -> void:
 	widgets.modulate.a = 0.35 if value else 1.0
+	if is_instance_valid(pursuit_alert) and pursuit_alert.get_parent() != widgets:
+		pursuit_alert.modulate.a = widgets.modulate.a
 
 func _damage(_kind: StringName, _hp: int) -> void:
 	_flash(Color(1, 1, 1, 0.55))
