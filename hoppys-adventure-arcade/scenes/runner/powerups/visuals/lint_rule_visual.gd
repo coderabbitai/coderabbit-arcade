@@ -4,6 +4,7 @@ var _art: Art
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 
 func on_spawned() -> void:
 	super()
