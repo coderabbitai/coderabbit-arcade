@@ -276,7 +276,7 @@ Actions: `move_left` (A, ←, D-pad ←, left stick −X), `move_right` (D, →,
 `roll` (Ctrl, S, ↓, gamepad B/1), `pause` (Esc, P, gamepad Start/6). Keys are bound by
 `physical_keycode`. Stick deadzone 0.5 on the four `move_*` actions.
 
-## 7. Authoritative tuning (`scenes/runner/data/run_config.tres`)
+## 7. Authoritative tuning (`scenes/runner/data/run_config.gd` defaults; `run_config.tres` is the empty override resource)
 
 | Group | Values |
 |---|---|
@@ -504,12 +504,14 @@ them for legibility (font ≥ 18 units, outline ≥ 6, panel-backed; see the v2 
 
 Optional methods, all `has_method`-guarded by the backend: `set_turn(progress: float, direction: int)` (called every
 physics tick during `turn`, `progress` 0→1; the frontend owns the visual bend and must make p = 1 visually identical
-to p = 0), `set_phase(phase: StringName)`, `set_boss_arena(active: bool)`. When the corridor lacks `set_turn`, the
-backend `TurnRig` yaws the graybox environment instead (fallback only). The camera swing
+to p = 0), `set_phase(phase: StringName)`, `set_boss_arena(active: bool)`. When the mounted corridor lacks `set_turn`,
+the backend `TurnRig` rotates **itself** by `turn_yaw_degrees × smoothstep(progress)` (fallback only), so whatever
+environment is mounted under it turns with it — the frontend corridor when present, otherwise the graybox
+environment. Mounting a corridor still frees `GrayboxEnvironment` (§3); nothing is retained for the fallback. The camera swing
 (`turn_camera_yaw_degrees` 18, `turn_camera_bank_degrees` 6, returning to zero at p = 1) is backend-owned in
 `camera_rig.gd` and always applies.
 
-### 11.10 RunConfig additions (all defaults in `run_config.gd`; the `.tres` stays empty)
+### 11.10 RunConfig additions (single tuning source: the `@export` defaults in `run_config.gd`; `run_config.tres` stays an empty resource that may override them and is never mutated at runtime — this supersedes the §7 heading's wording)
 
 ```text
 Speed:     time_to_max_speed 100.0 (was 165), stage_speed_step 1.0, stage_speed_bonus_max 6.0, nitro_speed_cap 38.0

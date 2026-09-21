@@ -22,7 +22,7 @@ a backend-owned file.
 
 <completeness_contract>
 Work milestone by milestone (F0 → F6). Do not stop after the first scene works. Each milestone has a
-definition of done; verify it before moving on. Finish all seven (F0 through F6).
+definition of done; verify it before moving on. Finish all ten milestones (F0 through F6 here, F7 through F9 in `docs/agent-briefs/endless-runner-v2-frontend.md`, whose markers the acceptance gate greps for).
 </completeness_contract>
 
 <verification_loop>
