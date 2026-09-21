@@ -343,14 +343,24 @@ Graybox: coloured `SphereMesh` per kind.
 `load_entries(path)`, `save_entries(entries, path)`, `submit(entry, path) -> {rank, entries, error}`,
 `rename(run_id, name, path) -> Error`, `sanitize_name(raw)`, `sort_entries(entries)`.
 Storage: section `meta/version`; section `leaderboard/entries` (Array of Dictionary). Any version that is
-not in `SUPPORTED_VERSIONS` ([1, 2]) reads as an empty board with `ERR_FILE_UNRECOGNIZED`; a version-1 board is the exception — its rows are read normally and the next successful save rewrites the file as version 2 (in-place migration). `read_board(path) -> {entries, version, error}` is the
+not in `SUPPORTED_VERSIONS` ([1, 2]) reads as an empty board with `ERR_FILE_UNRECOGNIZED`; a version-1 board is the exception — its rows are read normally and the next successful save rewrites the file as version 2 (in-place migration). `read_board(path) -> {entries, version, error, used_backup}` is the
 internal reader that also reports which case it hit (`OK`, `ERR_FILE_NOT_FOUND`, `ERR_FILE_CORRUPT`, or
 `ERR_FILE_UNRECOGNIZED` for a version mismatch); `load_entries` is `read_board(...)["entries"]`.
+**Backup fallback:** the reader tries `path`, and falls back to `path + ".bak"` in both directions of the
+same crash window — when the primary is missing (the crash landed between the two renames of step 3/4
+below) and when the primary exists but does not parse, since a crash can equally leave a half-written
+primary beside an intact backup. A backup that parses is returned with `error = OK` and
+`used_backup = true` (plus a `push_warning` when it stood in for a corrupt primary); the board is
+otherwise handled normally, so the next successful save rewrites it into place through the steps below.
+Only a corrupt primary with no readable backup is `ERR_FILE_CORRUPT`, and a path with neither file still
+returns `ERR_FILE_NOT_FOUND`. Each parse attempt uses its own `ConfigFile`, so a failed one cannot leave
+half a board behind for the next.
 **Forward compatibility:** when the file declares a version *newer* than `SCHEMA_VERSION`, `submit` and
 `rename` refuse to write — `push_warning` naming the file and both versions, `submit` returns
 `error = ERR_FILE_UNRECOGNIZED` with `rank` 0, `rename` returns the same Error — because its rows cannot
-be parsed and overwriting would replace a real board with a single run. A missing file, a corrupt file or
-an *older*/unrecognised-but-not-newer version keeps the old behaviour: read empty, then write normally.
+be parsed and overwriting would replace a real board with a single run. A missing file, a corrupt file
+with no readable backup, or an *older*/unrecognised-but-not-newer version keeps the old behaviour: read
+empty, then write normally.
 Validate each entry on load (types, finite, non-negative). Sort: score desc,
 duration desc, insertion `order` asc (Godot's `sort_custom` is not stable). Dedupe by `run_id`
 (replace). Sanitize: trim → drop controls (< 32, 127, and C1 controls 0x80–0x9F) → truncate to 16 → trim again → blank → `"Hoppy"`.
