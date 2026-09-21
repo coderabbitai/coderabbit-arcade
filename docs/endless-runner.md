@@ -1,6 +1,6 @@
 # Endless Runner frontend
 
-The Codebase Corridor, F0-F7. Godot 4.7.0 results are diagnostic, pending 4.7.1 acceptance.
+The Codebase Corridor, F0-F9. Godot 4.7.0 results are diagnostic, pending 4.7.1 acceptance.
 
 ## Run
 
@@ -37,11 +37,11 @@ Development cameras use (0,4,8), looking at (0,1,-8), FOV 60. The menu camera us
 | Corridor preview | Space | Toggle pause |
 | Renderer spike | G / F / R | Toggle glow / fog / 50% or 100% 3D resolution |
 
-Key 6 reaches the F1 26 m/s acceptance limit; key 7 exercises the Nitro cap. The capture script saves PNGs after `RenderingServer.frame_post_draw`, measures the corridor at 26 m/s with preview UI hidden, and reports failure above 15 draw calls. The capture script also saves the Hoppy fixture after 1.5 s to `docs/previews/endless-runner-hoppy.png`. The coordinator produced the 1280x720 environment previews: [renderer spike](previews/endless-runner-spike.png) and [corridor](previews/endless-runner-corridor.png).
+Key 6 reaches the F1 26 m/s acceptance limit; key 7 exercises the Nitro cap. The capture script saves PNGs after `RenderingServer.frame_post_draw`, measures the corridor at 26 m/s with preview UI hidden, and reports failure above 14 rest draw calls or 18 turn draw calls. The capture script also saves the Hoppy fixture after 1.5 s to `docs/previews/endless-runner-hoppy.png`. The coordinator produced the 1280x720 environment previews: [renderer spike](previews/endless-runner-spike.png) and [corridor](previews/endless-runner-corridor.png).
 
 ## Behavior and ownership
 
-F0-F6 introduced the runner menu, routed full-loop integration, capture fixture and documentation. F7 adds the legibility and pursuit presentation described below.
+F0-F6 introduced the runner menu, routed full-loop integration, capture fixture and documentation. F7 adds legibility and pursuit presentation, F8 adds boss fights, and F9 adds cinematic turns and stage transitions. The milestone sections retain their original verification history; the final v2 table records current acceptance.
 
 The hub routes to `RunnerMenu`, a Node3D with Backdrop and Interface children. The backdrop mounts the existing corridor at 3.5 m/s and Hoppy in run at normalized speed 0.25. Hoppy stands at (0.7, 0, -0.3), facing -Z with feet at y=0, in the gap between the buttons and controls card. The camera remains at (2.6, 1.9, 3.4), looking at (0, 1, -2), with its existing slow drift. A shaded 1280x720 composition uses the hub Style helpers, mint eyebrow, cream title, numbered buttons, controls card and footer. It centers in larger viewports and scales to fit smaller ones. Play owns initial focus; Up/Down and Tab wrap through the four buttons. Leaderboard reads `runner_leaderboard.gd.load_entries()` without a game instance, shows ten rank/name/score/mm:ss rows with `---` placeholders, disables the other three menu buttons while keeping Leaderboard enabled and focusable, and initially focuses Close. Pressing Leaderboard again closes the panel. Closing restores Leaderboard focus. `ui_cancel` closes the panel first, otherwise returns to the hub.
 
@@ -280,7 +280,7 @@ projectile whooshes are stereo-panned from the lane mask. Pickup fires after 100
 sounds after 140 ms. The per-kind `GATE` uses 90 ms for boss hits; phase, defeat and tool-fire cues gain
 priority. Boss music ducks by 4 dB with a +0.04 pitch offset, deepens to 8 dB for phase changes and releases
 on fight end. No AudioService change or additional player is needed: seven polyphonic slots plus three
-existing dedicated voices still cap playback at ten. The recipe census is 28; the two F9 recipes remain
+existing dedicated voices still cap playback at ten. At F8 the recipe census was 28; the two F9 recipes were
 outside this milestone.
 
 The existing mock's 40-second timeline includes a boss spawn, warnings, shots, damaging/resisted tools,
@@ -523,3 +523,205 @@ RUNNER SMOKE: PASS (0 failures / 126 checks)
 Both collision-removal grep commands printed `0` (grep exit 1 means no matching lines).
 `git diff --check` produced no output and exited 0. Both runs also emit the pre-existing macOS
 `get_system_ca_certificates` diagnostic before the test logger starts.
+
+## F9: cinematic turns and stage transitions
+
+F0 through F9 are implemented. F9 follows contract §11: the backend owns phases, collision,
+turn progress, camera yaw/bank and boss lifetime. The frontend corridor never rotates gameplay.
+`set_turn(progress, direction)` derives signed curvature `0.0042 * sin(PI * progress)` and an
+11-degree root yaw from its arguments. Both endpoints and `(0, 0)` are straight. The shader
+converts the displacement through the corridor frame so rotated wall planes and CPU pillars bend
+in the same direction. Each of the four planes has `subdivide_depth = 72`. Post-bend grid
+coordinates drive derivative filtering (minimum 0.004); lane smoothing widens during the bend.
+No turn shader uses `TIME`.
+
+FarGlow and CornerWall have complementary opacity. The corner carries a directional TURN
+chevron, the code glyphs sweep laterally, and rain/dust reduce their amount ratio to 0.35 through
+the turn. Shader-deformed meshes have expanded culling margins. `set_phase` resets the turn on
+exit, including catch; `set_boss_arena` reduces the distant glow during fights. All visual clocks
+are PAUSABLE. The camera swing remains entirely backend-owned.
+
+The new `environment/dev/turn_preview.tscn` runs at 20 m/s. Left/Right play a 2.5-second turn,
+`[` and `]` scrub, Space pauses, and the readout reports progress, direction, bend, yaw and GPU
+draw calls. The headless geometry census is 10 at rest and 13 during the turn, including the
+outlined chevron's text surfaces. Budgets are 14 at rest and 18 in a turn. These are geometry
+counts, not a graphical renderer measurement; the host capture prints the actual GPU count.
+
+The optional `HUD/StageBanner` and `HUD/StageClear` mounts use `hud_style.gd` and idempotent
+`bind(game)`. The banner announces the stage and boss name, defers announcements received during
+a turn until `turn_finished`, and closes when a boss spawns. Stage 1 and subsequent RUN entries
+announce immediately because the backend emits `stage_started` at RUN entry. The card reads
+`get_stage_info()` and `get_boss_info()`, tracks elapsed stage time and tool events, and distinguishes
+FIXED from ESCAPED. Its bonus row counts the already-awarded `stage_cleared` bonus without changing
+score. The card fades/scales in for 0.25 s, holds for 2.2 s, and exits over 0.35 s. Pausing freezes
+both card timing and the bonus count. During a turn, non-essential HUD widgets dim to alpha 0.55;
+approvals and pursuit warnings retain their normal contrast.
+
+The deterministic audio census is now 30 recipes. `turn_whoosh` sweeps 300→2400→300 Hz and pans
+left/right from the turn signal. `stage_clear` plays an ascending major arpeggio. Both use the
+existing seven-voice OneShots pool, with three dedicated players and a total cap of ten voices.
+AudioService still owns exactly two players.
+
+| Music event | Held level relative to running music | Pitch / release |
+|---|---|---|
+| `turn_started` | -5 dB | Existing speed pitch; restore on `turn_finished` |
+| `boss_spawned` | -4 dB | Speed pitch +0.04; restore on defeat or retreat |
+| `boss_phase_changed` | -8 dB transient, 0.35 s | Returns to the held fight level |
+| `stage_cleared` | -10 dB through the 2.8 s card | Exactly 1.0; pause freezes the hold |
+| Catch, next RUN or teardown | Restore baseline | Remove stage/turn/fight offsets |
+
+F8 capture polish is included: mounted boss HUDs suppress the 3D name plate, gallery plates sit
+above the body, and shared boss/tool labels use LINEAR filtering and outlines. The swarm cloud
+and tiles are larger, hydra necks are 0.5 m thick with 1.2 m heads, and the monolith slab fills
+approximately 6 × 4 m with an enlarged glyph face. The oversized deprecated label was removed.
+Phase/retreat lifts stay inside the vertical envelope. Smoke now checks the upper bound as well
+as width, depth, height and bottom, retaining the 40-draw per-boss gate.
+
+`capture_previews.gd` adds `endless-runner-turn.png` at progress 0.5 with the 18-draw gate, and
+`endless-runner-stage-clear.png` with settled bonus/time/tool rows. The existing three boss
+fixtures receive the polish. No graphical scenes or captures were run for this change.
+
+### Final v2 milestone coverage
+
+| Milestone | Delivered surface |
+|---|---|
+| F0 | Renderer and primitive/material foundations |
+| F1 | Corridor, fog, glyph walls, particles and environment preview |
+| F2 | Hoppy visual and animation preview |
+| F3 | Hazards, power-ups, pursuer and gallery |
+| F4 | HUD, pause, game-over and facade fixture |
+| F5 | Procedural SFX and shared music integration |
+| F6 | Menu, routing, full-loop smoke and previews |
+| F7 | HUD legibility and pursuit alert |
+| F8 | Bosses, tools, projectiles, fight HUD/FX and audio |
+| F9 | Turn presentation, stage UI/audio, seam test and final capture fixtures |
+
+### F9 verification
+
+The installed engine is Godot `4.7.stable.official.5b4e0cb0f`. The project's pinned 4.7.1 host
+acceptance remains pending. Run from repository root with `GODOT` set to
+`/Applications/Godot.app/Contents/MacOS/Godot`:
+
+```sh
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f9.log --import
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f9.log --check-only --script res://<changed-script.gd>
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f9.log --script res://tests/runner_visual_smoke.gd
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f9-backend.log --script res://tests/runner_smoke.gd
+git diff --check
+```
+
+The new `check_stage_seam()` uses the real facade and the backend smoke settings:
+`stage_base_distance = 260`, `time_to_max_speed = 20`, `boss_hp_scale = 0.4`. It preserves 1/60 s
+physics steps while accelerating time, drives the greedy autopilot, checks both turn signals,
+observes corridor progress reaching 1.0 followed by `(0, 0)`, and observes both stage panels
+opening and closing. Its board is isolated from the player's leaderboard even on failure.
+`check_turn()` covers both directions, monotonic bend to/from the peak, idempotence, subdivision,
+complementary opacity, reset, draw budgets, ten paused frames, banner deferral/suppression,
+HUD dim/restore and card timing. Existing legibility and boss sections now print explicit PASS
+or FAIL status with their counts.
+
+| Gate | Local headless result | Coordinator host result to paste |
+|---|---|---|
+| Import and changed-script check-only | Import exits 0; editor-settings write blocked by sandbox. 17 scripts (15 changed/new plus 2 other shader consumers), 0 check-only failures | Pending |
+| TURN / STAGE SEAM | PASS / PASS | Pending |
+| HUD / pursuit / boss / tool gates | PASS; 51 labels, 3 bosses, peak boss census 18 | Pending |
+| Audio census / peak voices | 30 recipes; peak 10; AudioService players 2 | Pending |
+| Full loop / visual smoke | Default sandbox: only two persistence checks fail. `/tmp` board control: both PASS, 0 failures | Pending |
+| Backend smoke / collision-removal warnings | Default sandbox: 3 persistence failures / 123 checks. `/tmp` board control: PASS / 126 checks. Collision-removal warnings: 0 | Pending |
+| GPU rest / mid-turn draw counts | Not measured headless; census 10 / 13 | Pending |
+| Turn / card / polished boss PNGs | Fixtures implemented; not captured | Pending |
+| `git diff --check` | PASS (no output) | Pending |
+
+### F9 requests to backend and known gaps
+
+No backend changes requested. The merged TurnRig, StageManager, UI mounts and boss_fx mount supply
+the required hooks. No backend files, base visual scripts, project settings or shared menu style
+were edited. No commits or pushes were made.
+
+Outstanding acceptance is the coordinator's graphical Compatibility-renderer inspection, new PNGs,
+actual draw-call measurement and pinned-engine run. In particular, inspect bent lane readability,
+transparent CornerWall ordering and the enlarged boss silhouettes at gameplay distance. Historical
+F0-F8 host results above are retained as history, not evidence for the new F9 code.
+
+Verbatim repository-test results in the restricted sandbox:
+
+```text
+RUNNER DEV SCENES: PASS (11 scenes)
+CORRIDOR DRAW CENSUS: rest=10; mid-turn=13 (headless geometry census; host GPU measurement pending)
+TURN: PASS
+STAGE SEAM: PASS
+BOSS VISUALS: PASS (3 checked; peak draw census=18)
+TOOLS AND PROJECTILES: PASS
+HUD LEGIBILITY: PASS (51 labels checked)
+PURSUIT ALERT: PASS
+RUNNER AUDIO: 30 recipes/triggers; demo heartbeat starts=1; peak voices=10; AudioService players=2
+VISUAL CHECK FAILED: Codex name persists
+VISUAL CHECK FAILED: temporary board contains saved run
+RUNNER FULL LOOP: FAIL (menu, play, hit, pursuit, 18.0s timer recovery, hit, hit, caught, finished, game over, Codex, retry, menu, hub, default music; isolated board removed)
+RUNNER VISUAL SMOKE: FAIL (2 failures)
+RUNNER SMOKE: FAIL (3 failures / 123 checks)
+Removing a CollisionObject = 0
+```
+
+The full loop fails only on the two sandbox user:// persistence checks:
+`Codex name persists` and `temporary board contains saved run`. Backend smoke fails only on
+`the board write reported error 12`, `leaderboard_saved was never emitted`, and
+`this run is not on the leaderboard`. Import exits 0 but cannot save the user editor-settings
+file in the restricted sandbox. These are not claimed as clean default-path passes.
+
+The supplemental storage control uses `/tmp/f9-writable-visual.gd` and
+`/tmp/f9-writable-backend.gd`. Each extends the corresponding repository smoke script and overrides
+only `_initialize()` to set its existing leaderboard-path variable to a per-process `/tmp` path,
+then calls `super._initialize()`. No repository test logic or backend source was changed for this
+control. Both suites exit 0, and the tests remove their temporary boards. The default-path sandbox
+failures above remain recorded separately.
+
+```sh
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/f9-writable-visual.log --script /tmp/f9-writable-visual.gd
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/f9-writable-backend.log --script /tmp/f9-writable-backend.gd
+```
+
+Verbatim writable-storage control results and final script check:
+
+```text
+RUNNER FULL LOOP: PASS (menu, play, hit, pursuit, 18.0s timer recovery, hit, hit, caught, finished, game over, Codex, retry, menu, hub, default music; isolated board removed)
+RUNNER VISUAL SMOKE: PASS (0 failures)
+RUNNER SMOKE: PASS (0 failures / 126 checks)
+Removing a CollisionObject = 0
+F9 CHECK-ONLY: 17 scripts; 0 failures
+```
+
+`git diff --check` produced no output. Ownership audit: 25 frontend-owned files, including three
+new script UIDs. The 17 script checks cover 15 changed/new GDScripts and the two other existing
+consumers of the modified shaders. Shader loading and headless state checks do not substitute
+for the pending host GPU render.
+
+### F9 touched files
+
+The worktree was clean at task start. Task-touched files:
+
+- `docs/endless-runner.md`
+- `hoppys-adventure-arcade/scenes/runner/audio/runner_audio.gd`
+- `hoppys-adventure-arcade/scenes/runner/audio/sfx_synth.gd`
+- `hoppys-adventure-arcade/scenes/runner/boss/boss_art.gd`
+- `hoppys-adventure-arcade/scenes/runner/boss/dev/boss_gallery.gd`
+- `hoppys-adventure-arcade/scenes/runner/boss/visuals/flaky_test_swarm_visual.gd`
+- `hoppys-adventure-arcade/scenes/runner/boss/visuals/legacy_monolith_visual.gd`
+- `hoppys-adventure-arcade/scenes/runner/boss/visuals/merge_conflict_hydra_visual.gd`
+- `hoppys-adventure-arcade/scenes/runner/environment/corridor.gd`
+- `hoppys-adventure-arcade/scenes/runner/environment/dev/capture_previews.gd`
+- `hoppys-adventure-arcade/scenes/runner/environment/dev/turn_preview.gd`
+- `hoppys-adventure-arcade/scenes/runner/environment/dev/turn_preview.gd.uid`
+- `hoppys-adventure-arcade/scenes/runner/environment/dev/turn_preview.tscn`
+- `hoppys-adventure-arcade/scenes/runner/shaders/code_wall.gdshader`
+- `hoppys-adventure-arcade/scenes/runner/shaders/far_glow.gdshader`
+- `hoppys-adventure-arcade/scenes/runner/shaders/floor_grid.gdshader`
+- `hoppys-adventure-arcade/scenes/runner/ui/dev/mock_runner_game.gd`
+- `hoppys-adventure-arcade/scenes/runner/ui/runner_hud.gd`
+- `hoppys-adventure-arcade/scenes/runner/ui/stage_banner.gd`
+- `hoppys-adventure-arcade/scenes/runner/ui/stage_banner.gd.uid`
+- `hoppys-adventure-arcade/scenes/runner/ui/stage_banner.tscn`
+- `hoppys-adventure-arcade/scenes/runner/ui/stage_clear.gd`
+- `hoppys-adventure-arcade/scenes/runner/ui/stage_clear.gd.uid`
+- `hoppys-adventure-arcade/scenes/runner/ui/stage_clear.tscn`
+- `hoppys-adventure-arcade/tests/runner_visual_smoke.gd`

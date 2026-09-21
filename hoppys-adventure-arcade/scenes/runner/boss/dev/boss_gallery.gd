@@ -55,6 +55,7 @@ func capture_boss(index: int) -> void:
 	visual.hover_z = -14
 	visual.sway_amplitude = 0.0
 	visual.sway_period = 3.2
+	visual.show_name_plate = false
 	visual.on_spawned()
 	visual.set_health(60, 100)
 	visual.set_phase(2)

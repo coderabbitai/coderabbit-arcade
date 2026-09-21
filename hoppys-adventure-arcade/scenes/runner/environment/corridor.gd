@@ -4,6 +4,16 @@ const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 const Materials = preload("res://scenes/runner/environment/runner_materials.gd")
 const Atlas = preload("res://scenes/runner/shaders/glyph_atlas.gd")
 @export_range(0.25, 1.0, 0.05) var retro_scale := 0.5
+var turn_progress := 0.0
+var turn_direction := 0
+var bend := 0.0
+var phase: StringName = &"idle"
+var boss_arena := false
+signal turn_applied(progress: float, direction: int)
+var _corner: MeshInstance3D
+var _turn_chevron: Label3D
+var _corner_material: ShaderMaterial
+var _dust: GPUParticles3D
 var _speed := 0.0
 var _offset := 0.0
 var _clock := 0.0
@@ -61,6 +71,18 @@ func _ready() -> void:
 	_quad("LaneGlow", Vector2(6, 8), Vector3(0, 0.012, 0), Vector3(-PI / 2, 0, 0), lane)
 	_far_material = _shader(preload("res://scenes/runner/shaders/far_glow.gdshader"))
 	_quad("FarGlow", Vector2(8, 8), Vector3(0, 3, -88), Vector3.ZERO, _far_material)
+	_corner_material = _shader(preload("res://scenes/runner/shaders/code_wall_fade.gdshader"))
+	_corner_material.set_shader_parameter("atlas", Atlas.texture())
+	_corner_material.set_shader_parameter("horizontal_axis", Vector3.RIGHT)
+	_corner_material.set_shader_parameter("intensity", 0.4)
+	_quad("CornerWall", Vector2(12, 7), Vector3(0, 3, -52), Vector3.ZERO, _corner_material)
+	_corner = get_node("CornerWall") as MeshInstance3D
+	var sign := Materials.label(self, "TURN  >>>", 64, Palette.MINT)
+	_turn_chevron = sign
+	sign.name = "TurnChevron"
+	sign.position = Vector3(0, 3.5, -51.8)
+	sign.pixel_size = 0.02
+	sign.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 	_build_pillars()
 	_rain = Materials.glyph_particles(320, Vector3(3.9, 0.2, 45))
 	_rain.name = "Rain"
@@ -71,12 +93,14 @@ func _ready() -> void:
 	_speed_lines = _simple_particles("SpeedLines", 80, Vector2(0.018, 0.75), 0.18)
 	_speed_lines.emitting = false
 	var dust := _simple_particles("Dust", 60, Vector2(0.035, 0.035), 0.15)
+	_dust = dust
 	var dust_process := dust.process_material as ParticleProcessMaterial
 	dust_process.direction = Vector3.UP
 	dust_process.initial_velocity_min = 0.1
 	dust_process.initial_velocity_max = 0.3
 	set_scroll_speed(_speed)
 	set_pursuit(_pursuit)
+	_apply_turn()
 	_update_pillars()
 
 func _shader(shader: Shader) -> ShaderMaterial:
@@ -91,12 +115,14 @@ func _mesh(node_name: String, mesh: Mesh, position_: Vector3, rotation_: Vector3
 	instance.material_override = material
 	instance.position = position_
 	instance.rotation = rotation_
+	instance.extra_cull_margin = 40.0
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(instance)
 
 func _plane(node_name: String, size_: Vector2, position_: Vector3, rotation_: Vector3, material: Material) -> void:
 	var plane := PlaneMesh.new()
 	plane.size = size_
+	plane.subdivide_depth = 72
 	_mesh(node_name, plane, position_, rotation_, material)
 
 func _quad(node_name: String, size_: Vector2, position_: Vector3, rotation_: Vector3, material: Material) -> void:
@@ -115,6 +141,7 @@ func _build_pillars() -> void:
 	var instance := MultiMeshInstance3D.new()
 	instance.name = "Pillars"
 	instance.multimesh = _pillars
+	instance.extra_cull_margin = 40.0
 	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(instance)
 
@@ -127,7 +154,7 @@ func _update_pillars() -> void:
 		var z := 8.0 - fposmod(float(i % 12) * 8.0 - _offset, 96.0)
 		_pillar_z[i] = z
 		var x := -3.92 if i < 12 else 3.92
-		_pillars.set_instance_transform(i, Transform3D(Basis.IDENTITY, Vector3(x, 3, z)))
+		_pillars.set_instance_transform(i, Transform3D(Basis(Vector3.UP, -atan(2.0 * bend * maxf(0.0, -z - 6.0))), Vector3(x + bend * pow(maxf(0.0, -z - 6.0), 2), 3, z)))
 
 func _simple_particles(node_name: String, count: int, size_: Vector2, alpha: float) -> GPUParticles3D:
 	var particles := Materials.glyph_particles(count, Vector3(3.8, 2.5, 45))
@@ -168,6 +195,7 @@ func set_pursuit(t: float) -> void:
 	_far_material.set_shader_parameter("color", Color(Palette.MATRIX.lerp(Palette.DANGER, _pursuit), 0.3))
 
 func _process(delta: float) -> void:
+	_apply_turn()
 	# 96 is a common period of the 2 m grid, wall glyph seed, and 8 m pillars.
 	_offset = fposmod(_offset + _speed * delta, 96.0)
 	_clock += delta
@@ -215,3 +243,42 @@ func _exit_tree() -> void:
 	if owners.is_empty():
 		_scaling_owners.erase(viewport_id)
 	_scaling_registered = false
+
+func set_turn(progress: float, direction: int) -> void:
+	turn_progress = clampf(progress, 0.0, 1.0)
+	turn_direction = signi(direction)
+	turn_applied.emit(turn_progress, turn_direction)
+
+func _apply_turn() -> void:
+	var wave := sin(turn_progress * PI) if turn_progress > 0.0 and turn_progress < 1.0 else 0.0
+	bend = float(turn_direction) * 0.0042 * wave
+	rotation.y = float(turn_direction) * deg_to_rad(11.0) * wave
+	if _far_material == null: return
+	for material in _scroll_materials + [_far_material]:
+		material.set_shader_parameter("bend", bend)
+		material.set_shader_parameter("bend_frame", global_transform)
+	var sweep := float(turn_direction) * turn_progress * 14.0 if wave > 0.0 else 0.0
+	_scroll_materials[2].set_shader_parameter("lateral_scroll", sweep)
+	var blend := minf(smoothstep(0.0, 0.3, turn_progress), 1.0 - smoothstep(0.7, 1.0, turn_progress)) if turn_direction != 0 else 0.0
+	_far_material.set_shader_parameter("opacity", 1.0 - blend)
+	_corner_material.set_shader_parameter("opacity", blend)
+	_corner_material.set_shader_parameter("lateral_scroll", sweep)
+	_corner.visible = blend > 0.0
+	_corner.position.x = bend * 46.0 * 46.0
+	_corner.rotation.y = float(turn_direction) * deg_to_rad(55.0) * wave
+	_turn_chevron.visible = blend > 0.0
+	_turn_chevron.modulate.a = blend
+	_turn_chevron.text = "<<<  TURN" if turn_direction < 0 else "TURN  >>>"
+	_turn_chevron.position.x = _corner.position.x
+	_turn_chevron.rotation.y = _corner.rotation.y
+	for particles in [_rain, _dust]:
+		particles.amount_ratio = 0.35 if wave > 0.0 else 1.0
+
+func set_phase(value: StringName) -> void:
+	phase = value
+	if value != &"turn": set_turn(0.0, 0)
+
+func set_boss_arena(active: bool) -> void:
+	boss_arena = active
+	if _far_material != null:
+		_far_material.set_shader_parameter("arena", 0.45 if active else 1.0)

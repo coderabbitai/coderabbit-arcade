@@ -58,6 +58,7 @@ static func torus(parent: Node3D, radius: float, color: Color) -> MeshInstance3D
 static func label(parent: Node3D, words: String, pos: Vector3, pixels: float = 0.006) -> Label3D:
 	var node := Materials.label(parent, words, 44, Palette.CREAM)
 	node.pixel_size = pixels
+	node.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 	node.outline_size = 10
 	node.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	node.position = pos
@@ -97,7 +98,7 @@ func build(value: StringName) -> void:
 		&"flaky_test_swarm":
 			for i in 24:
 				var angle := TAU * float(i) / 24.0
-				poses.append(pose(Vector3(cos(angle) * 1.65, 0.6 + sin(angle) * 0.85, sin(angle * 3) * 0.5), Vector3.ONE * 0.27))
+				poses.append(pose(Vector3(cos(angle) * 2.5, 0.7 + sin(angle) * 1.15, sin(angle * 3) * 0.5), Vector3.ONE * 0.48))
 			batch(poses, Palette.MATRIX)
 			core = sphere(self, Vector3(0, 0.6, 0), 0.75, Palette.DANGER)
 			var shell := sphere(self, Vector3(0, 0.6, 0), 1.0, Palette.DANGER)
@@ -115,15 +116,15 @@ func build(value: StringName) -> void:
 		&"merge_conflict_hydra":
 			for head in 4:
 				for segment in 5:
-					poses.append(pose(Vector3((head - 1.5) * 1.15, -0.45 + segment * 0.32, 0), Vector3(0.3, 0.34, 0.3)))
+					poses.append(pose(Vector3((head - 1.5) * 1.4, -0.65 + segment * 0.49, 0), Vector3(0.5, 0.51, 0.5)))
 			batch(poses, Palette.DANGER)
 			var eye_poses: Array[Transform3D] = []
 			for i in 4:
 				var pivot := Node3D.new()
 				add_child(pivot)
-				pivot.position = Vector3((i - 1.5) * 1.15, 1.2, 0)
+				pivot.position = Vector3((i - 1.5) * 1.4, 1.75, 0)
 				heads.append(pivot)
-				var head := box(pivot, Vector3.ZERO, Vector3(1, 0.5, 0.65), Palette.NAVY_2)
+				var head := box(pivot, Vector3.ZERO, Vector3(1.2, 0.7, 0.8), Palette.NAVY_2)
 				head.rotation.z = 0.1 * (i - 1.5)
 				eye_poses.append(pose(pivot.position + Vector3(0, 0.03, 0.35), Vector3(0.65, 0.07, 0.04)))
 				label(pivot, ["<<<<<<< HEAD", "=======", ">>>>>>> theirs", "CONFLICT"][i], Vector3(0, 0.48, 0), 0.004)
@@ -132,29 +133,26 @@ func build(value: StringName) -> void:
 		&"legacy_monolith":
 			for row in 3:
 				for col in 3:
-					poses.append(pose(Vector3((col - 1) * 1.92, (row - 1) * 0.86 + 0.55, 0), Vector3(1.86, 0.8, 2.0)))
+					poses.append(pose(Vector3((col - 1) * 2.0, (row - 1) * 1.34 + 1.02, 0), Vector3(1.96, 1.3, 2.0)))
 			batch(poses, Palette.SLATE)
 			var cracks: Array[Transform3D] = []
 			for i in 6:
-				cracks.append(Transform3D(Basis(Vector3.BACK, 0.22 if i % 2 else -0.22).scaled_local(Vector3(0.035, 0.65, 0.02)), Vector3((i % 3 - 1) * 1.85, 0.12 + (i / 3) * 0.9, 1.04)))
+				cracks.append(Transform3D(Basis(Vector3.BACK, 0.22 if i % 2 else -0.22).scaled_local(Vector3(0.035, 0.65, 0.02)), Vector3((i % 3 - 1) * 1.85, 0.1 + (i / 3) * 1.4, 1.04)))
 			batch(cracks, Palette.ORANGE)
 			var face := QuadMesh.new()
-			face.size = Vector2(5.5, 2.3)
+			face.size = Vector2(5.9, 3.9)
 			var wall := ShaderMaterial.new()
 			wall.shader = CodeWall
 			wall.set_shader_parameter("atlas", Atlas.texture())
 			wall.set_shader_parameter("horizontal_axis", Vector3.RIGHT)
-			shape(self, face, Vector3(0, 0.55, 1.02), wall)
+			shape(self, face, Vector3(0, 1.02, 1.02), wall)
 			shader_materials.append(wall)
 			for side in [-1, 1]:
 				box(self, Vector3(side * 2.1, -0.45, 1.08), Vector3(0.65, 0.16, 0.06), Palette.DANGER)
-			var deprecated := label(self, "@deprecated\nsince 2011", Vector3(0, 0.5, 1.12), 0.021)
-			deprecated.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-			deprecated.font_size = 48
 			core = box(self, Vector3(0, 0.6, 1.1), Vector3(0.3, 0.3, 0.1), Palette.MATRIX)
 	ring = torus(self, 0.8, Palette.ORANGE)
-	tag = label(self, "", Vector3(0, 1.85, 0), 0.021)
-	tag.font_size = 48
+	tag = label(self, "", Vector3(0, 3.15, 0), 0.005)
+	tag.font_size = 40
 	tag.billboard = BaseMaterial3D.BILLBOARD_DISABLED
 	for node: Node3D in find_children("*", "MeshInstance3D", true, false):
 		var mesh := node as MeshInstance3D
@@ -221,7 +219,7 @@ func advance(delta: float) -> void:
 				current.origin.y += sin(clock * 3 + i * 0.7) * 0.08
 				if phase >= 2 and b == 0:
 					var angle: float = clock * 1.4 + (i / 8) * TAU / 3
-					current.origin = Vector3(cos(angle) * 1.2 + sin(float(i)) * 0.4, 0.65 + sin(angle) * 0.65 + cos(float(i)) * 0.2, sin(float(i)) * 0.4)
+					current.origin = Vector3(cos(angle) * 2.1 + sin(float(i)) * 0.4, 0.7 + sin(angle) * 0.95 + cos(float(i)) * 0.2, sin(float(i)) * 0.4)
 				color = Palette.MATRIX if sin(clock * 11 + i * 7.1) > 0 else Palette.DANGER
 			if boss_kind == &"merge_conflict_hydra":
 				current.origin.x += sin(clock * 2 + i * 0.2) * 0.07 + aim * charge * 0.06

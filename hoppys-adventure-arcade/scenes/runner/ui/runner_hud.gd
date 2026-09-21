@@ -42,6 +42,7 @@ var nitro_panel: PanelContainer
 var ready_panel: PanelContainer
 var pursuit_panel: PanelContainer
 var toast_remaining := 0.0
+var turn_alpha := 1.0
 var pulse_clock := 0.0
 
 func _ready() -> void:
@@ -163,6 +164,9 @@ func bind(runner: Node) -> void:
 	if game == runner:
 		return
 	game = runner
+	if game.has_signal("turn_started"): game.turn_started.connect(_turn_started)
+	if game.has_signal("turn_finished"): game.turn_finished.connect(_turn_finished)
+	if game.has_signal("phase_changed"): game.phase_changed.connect(_turn_phase)
 	if pursuit_alert != null:
 		pursuit_alert.bind(game)
 	game.health_changed.connect(_health)
@@ -211,7 +215,7 @@ func _process(delta: float) -> void:
 		get_ready.hide()
 	toast_remaining -= delta
 	toast_age += delta
-	toast_panel.modulate.a = minf(1.0, toast_age / 0.12)
+	toast_panel.modulate.a = minf(1.0, toast_age / 0.12) * turn_alpha
 	if toast_remaining <= 0:
 		toast.text = ""
 		toast_priority = -1
@@ -405,3 +409,17 @@ func _shield(active: bool) -> void:
 		_toast("SHIELD READY")
 	else:
 		_expire(&"approve_shield")
+
+func _turn_started(_direction: int, _seconds: float) -> void:
+	_dim_turn(0.55)
+
+func _turn_finished() -> void:
+	_dim_turn(1.0)
+
+func _turn_phase(value: StringName) -> void:
+	if value != &"turn": _dim_turn(1.0)
+
+func _dim_turn(alpha: float) -> void:
+	turn_alpha = alpha
+	for widget in [time_label.get_parent(), score_label.get_parent().get_parent(), speed_label.get_parent().get_parent(), powerups, toast_panel, nitro_panel]:
+		widget.modulate.a = alpha

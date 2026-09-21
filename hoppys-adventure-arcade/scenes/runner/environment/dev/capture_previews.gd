@@ -1,5 +1,5 @@
 extends SceneTree
-## Run non-headless from the repository root. Captures F0-F6 visual fixtures.
+## Run non-headless from the repository root. Captures F0-F9 visual fixtures.
 const Gallery = preload("res://scenes/runner/hazards/visuals/dev/hazard_gallery.gd")
 var failures := 0
 
@@ -46,8 +46,8 @@ func run() -> void:
 					child.hide()
 			await RenderingServer.frame_post_draw
 			var calls := root.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
-			print("CORRIDOR DRAW BUDGET: ", calls, " / 15 (preview UI hidden)")
-			if calls > 15:
+			print("CORRIDOR DRAW BUDGET: ", calls, " / 14 (preview UI hidden)")
+			if calls > 14:
 				failures += 1
 		instance.free()
 		await process_frame
@@ -89,6 +89,40 @@ func run() -> void:
 		print("BOSS GALLERY DRAW BUDGET: ", calls, " / 184")
 		if error != OK or calls > 184: failures += 1
 	bosses.free()
+	await process_frame
+	var turn := preload("res://scenes/runner/environment/dev/turn_preview.tscn").instantiate()
+	root.add_child(turn)
+	turn.progress = 0.5
+	turn.corridor.set_turn(0.5, 1)
+	for child in turn.get_children():
+		if child is CanvasLayer: child.hide()
+	await create_timer(0.3).timeout
+	await RenderingServer.frame_post_draw
+	var turn_calls := root.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
+	var turn_error := root.get_texture().get_image().save_png(ProjectSettings.globalize_path("res://../docs/previews/endless-runner-turn.png"))
+	print("CAPTURE: turn error=", turn_error, " draw_calls=", turn_calls)
+	print("TURN DRAW BUDGET: ", turn_calls, " / 18 (preview UI hidden)")
+	if turn_error != OK or turn_calls > 18: failures += 1
+	turn.free()
+	await process_frame
+	var clear := (load("res://scenes/runner/ui/dev/hud_preview.tscn") as PackedScene).instantiate()
+	clear.autoplay = false
+	root.add_child(clear)
+	clear.start_run()
+	clear.stage_banner.hide()
+	clear.hud.ready_panel.hide()
+	clear.set_demo_phase(&"stage_clear")
+	clear.elapsed = 48.2
+	clear.stage_index = 2
+	clear.stage_clear.tools = 14
+	clear.stage_cleared.emit(2, 2500)
+	clear.stage_clear._process(0.5)
+	await create_timer(0.3).timeout
+	await RenderingServer.frame_post_draw
+	var clear_error := root.get_texture().get_image().save_png(ProjectSettings.globalize_path("res://../docs/previews/endless-runner-stage-clear.png"))
+	print("CAPTURE: stage-clear error=", clear_error)
+	if clear_error != OK: failures += 1
+	clear.free()
 	await process_frame
 	root.get_node("AudioService").shutdown()
 	await create_timer(0.3).timeout

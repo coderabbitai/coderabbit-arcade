@@ -5,6 +5,16 @@ const Hud = preload("res://scenes/runner/ui/runner_hud.tscn")
 const PauseMenu = preload("res://scenes/runner/ui/pause_menu.tscn")
 const GameOver = preload("res://scenes/runner/ui/game_over.tscn")
 const Leaderboard = preload("res://scenes/runner/systems/runner_leaderboard.gd")
+signal stage_started(index: int, name: StringName, speed: float)
+signal stage_cleared(index: int, bonus: int)
+signal turn_started(direction: int, seconds: float)
+signal turn_finished
+signal phase_changed(phase: StringName)
+var phase: StringName = &"idle"
+var stage_index := 1
+var stage_name: StringName = &"Merge Conflict Hydra"
+var stage_banner: Control
+var stage_clear: Control
 signal boss_spawned(kind: StringName, hp: int)
 signal boss_health_changed(hp: int, max_hp: int)
 signal boss_phase_changed(phase: int)
@@ -110,6 +120,11 @@ func _ready() -> void:
 	boss_overlay = preload("res://scenes/runner/ui/boss_hud.tscn").instantiate()
 	hud.add_child(boss_overlay)
 	boss_overlay.bind(self)
+	stage_banner = preload("res://scenes/runner/ui/stage_banner.tscn").instantiate()
+	stage_clear = preload("res://scenes/runner/ui/stage_clear.tscn").instantiate()
+	for overlay in [stage_banner, stage_clear]:
+		hud.add_child(overlay)
+		overlay.bind(self)
 	boss_fx = preload("res://scenes/runner/boss/boss_fx.tscn").instantiate()
 	add_child(boss_fx)
 	boss_fx.bind(self)
@@ -124,6 +139,8 @@ func start_run(run_seed: int = 4704) -> void:
 	state = &"running"
 	state_changed.emit(state)
 	run_started.emit(seed)
+	set_demo_phase(&"run")
+	stage_started.emit(stage_index, stage_name, speed)
 	health_changed.emit(hp, int(config.max_hp))
 	score_changed.emit(score, multiplier)
 	speed_changed.emit(speed, normalized_speed)
@@ -187,10 +204,19 @@ func advance_demo(delta: float) -> void:
 				health_changed.emit(hp, hp)
 				pursuit_recovered.emit(&"timer")
 				pursuit_alert.emit(&"clear", 0.0)
-	for at in [3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 14.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 30.0, 34.0, 38.4, 40.0]:
+	for at in [3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 14.0, 15.0, 17.5, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 30.0, 34.0, 38.4, 40.0]:
 		if demo_time >= at and not _events.has(at):
 			_events[at] = true
 			match at:
+				15.0:
+					set_demo_phase(&"turn")
+					turn_started.emit(1, 2.5)
+				17.5:
+					turn_finished.emit()
+					set_demo_phase(&"boss")
+				27.0:
+					set_demo_phase(&"stage_clear")
+					stage_cleared.emit(stage_index, 400)
 				18.0:
 					boss_hp = 140
 					boss_spawned.emit(boss_kind, boss_hp)
@@ -223,7 +249,11 @@ func advance_demo(delta: float) -> void:
 				6.0: collect(&"code_review", 0)
 				9.0: hit()
 				14.0: collect(&"nitro", 8)
-				30.0: collect(&"lgtm", 3)
+				30.0:
+					set_demo_phase(&"run")
+					stage_index += 1
+					stage_started.emit(stage_index, stage_name, speed)
+					collect(&"lgtm", 3)
 				34.0: hit()
 				38.4: hit()
 				40.0: finish_demo()
@@ -361,3 +391,10 @@ func _unhandled_input(event: InputEvent) -> void:
 func get_boss_info() -> Dictionary:
 	if boss_hp <= 0: return {}
 	return {"kind": boss_kind, "name": "Merge Conflict Hydra", "hp": boss_hp, "max_hp": 140, "phase": boss_phase, "phase_count": boss_phase_count, "accepted_tools": [&"lint_rule", &"unit_test"] if boss_phase == 2 else [&"review_comment", &"lint_rule", &"unit_test", &"auto_fix_patch"], "pending_attacks": []}
+
+func set_demo_phase(value: StringName) -> void:
+	phase = value
+	phase_changed.emit(value)
+
+func get_stage_info() -> Dictionary:
+	return {"index": stage_index, "name": stage_name, "phase": phase, "distance": distance, "target": 260.0, "speed_bonus": 0.0, "difficulty_floor": 0.0}

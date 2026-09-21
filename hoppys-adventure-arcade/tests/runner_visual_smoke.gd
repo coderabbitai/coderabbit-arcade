@@ -157,6 +157,8 @@ func run() -> void:
 		check(camera.position == Vector3(0, 4, 8) and camera.fov == 60.0, "preview contract camera")
 		preview.free()
 		await frames()
+	await check_turn()
+	await check_stage_seam()
 	await check_bosses()
 	await check_tools_and_projectiles()
 	await check_hazards()
@@ -225,6 +227,15 @@ func check_dev_scenes() -> void:
 		# Isolate later sections even when a scene fails its restoration checks.
 		paused = previous_paused
 		root.scaling_3d_scale = previous_scale
+	var entry_paused := paused
+	for initial_pause in [false, true]:
+		paused = initial_pause
+		var preview := preload("res://scenes/runner/environment/dev/turn_preview.tscn").instantiate()
+		root.add_child(preview)
+		paused = not initial_pause
+		preview.free()
+		check(paused == initial_pause, "turn preview restores entry pause state")
+	paused = entry_paused
 	if failures == before:
 		print("RUNNER DEV SCENES: PASS (%d scenes)" % instantiated)
 
@@ -803,7 +814,7 @@ func check_runner_audio() -> void:
 	var service := root.get_node("AudioService")
 	check(service.music.stream.resource_path == audio.MUSIC_PATH and service.music.stream.loop, "runner BGM loaded and looping")
 	check(service.music.volume_db == -12.0, "runner BGM level")
-	check(Synth.RECIPES.size() == 28, "F8 has exactly 28 recipes")
+	check(Synth.RECIPES.size() == 30, "F9 has exactly 30 recipes")
 	check(audio.HIGH_PRIORITY.has(&"alert_sting"), "alert sting is high priority")
 	for kind: StringName in Synth.RECIPES:
 		var stream := Synth.sound(kind)
@@ -1001,7 +1012,28 @@ func check_runner_audio() -> void:
 	mock.boss_spawned.emit(&"flaky_test_swarm", 100)
 	mock.boss_retreated.emit(&"flaky_test_swarm", 0)
 	check(is_equal_approx(service.music_volume_db, -12.0) and audio._boss_pitch_offset == 0, "boss retreat releases mix offsets")
-	print("RUNNER AUDIO: 28 recipes/triggers; demo heartbeat starts=1; peak voices=", peak[0], "; AudioService players=", service.get_child_count())
+	mock.turn_started.emit(-1, 2.5)
+	check(is_equal_approx(service.music_volume_db, -17.0), "turn holds minus 5 dB")
+	mock.turn_finished.emit()
+	check(is_equal_approx(service.music_volume_db, -12.0), "turn restores music")
+	for mask in [1, 4]:
+		var pan := Synth.panned_whoosh(mask, &"turn_whoosh")
+		var energy := [0.0, 0.0]
+		for i in range(0, pan.data.size(), 4):
+			energy[0] += absf(pan.data.decode_s16(i))
+			energy[1] += absf(pan.data.decode_s16(i + 2))
+		check((energy[0] > energy[1]) == (mask == 1), "turn directional stereo pan")
+	mock.stage_cleared.emit(1, 400)
+	audio._process(1.0)
+	check(is_equal_approx(service.music_volume_db, -22.0) and audio._pitch == 1.0, "stage card holds minus 10 dB and pitch 1")
+	mock.paused_changed.emit(true)
+	var remaining: float = audio._clear_remaining
+	audio._process(10.0)
+	check(audio._clear_remaining == remaining, "pause freezes stage music hold")
+	mock.paused_changed.emit(false)
+	audio._process(2.0)
+	check(is_equal_approx(service.music_volume_db, -12.0), "stage card releases hold")
+	print("RUNNER AUDIO: 30 recipes/triggers; demo heartbeat starts=1; peak voices=", peak[0], "; AudioService players=", service.get_child_count())
 	mock.free()
 	await frames()
 	check(is_equal_approx(service.music.pitch_scale, 1.0), "audio teardown resets pitch")
@@ -1118,6 +1150,7 @@ func check_runner_full_loop() -> void:
 	await frames()
 
 func check_hud_legibility() -> void:
+	var before := failures
 	var mock := load("res://scenes/runner/ui/dev/mock_runner_game.gd").new() as Node
 	mock.autoplay = false
 	root.add_child(mock)
@@ -1170,7 +1203,7 @@ func check_hud_legibility() -> void:
 	check(not hud.ready_panel.visible, "get ready fades after 2.5 seconds")
 	check(not hud.chips[&"nitro"].label.visible, "power-up name cut after 0.6 seconds")
 	check(count >= 30, "legibility census includes dynamic result rows and stats")
-	print("HUD LEGIBILITY: ", count, " labels checked")
+	print("HUD LEGIBILITY: ", "PASS" if before == failures else "FAIL", " (", count, " labels checked)")
 	mock.free()
 	await frames()
 
@@ -1285,6 +1318,7 @@ func boss_geometry_bounds(visual: Node3D) -> AABB:
 func check_boss_envelope(visual: Node3D, context: String) -> void:
 	var box := boss_geometry_bounds(visual)
 	check(box.size.x <= 7.01 and box.size.y <= 4.51 and box.size.z <= 3.01, "boss envelope " + context + " " + str(box))
+	check(box.end.y + visual.position.y <= 3.501, "boss top <= 6.1 " + context)
 	check(box.position.y + visual.position.y >= -1.001, "boss bottom >= 1.6 " + context)
 
 func check_bosses() -> void:
@@ -1305,7 +1339,7 @@ func check_bosses() -> void:
 		visual.sway_period = 3.2
 		visual.on_spawned()
 		check(visual._art.tag.text.replace("\n", " ") == visual.boss_name, "boss plate reads boss_name")
-		check(visual._art.tag.font_size >= 40 and visual._art.tag.pixel_size >= 0.020, "boss plate gameplay size")
+		check(visual._art.tag.font_size >= 40 and visual._art.tag.position.y >= 3.15 and visual._art.tag.texture_filter == BaseMaterial3D.TEXTURE_FILTER_LINEAR, "gallery plate above body and linearly filtered")
 		var count := visual.find_children("*", "", true, false).size()
 		visual.on_spawned()
 		check(count == visual.find_children("*", "", true, false).size(), "idempotent boss spawn " + kind)
@@ -1351,7 +1385,7 @@ func check_bosses() -> void:
 		peak = maxi(peak, boss_peak)
 		print("BOSS DRAW CENSUS: ", kind, "=", boss_peak)
 		visual.free()
-	print("BOSS VISUALS: 3 checked; peak draw census=", peak)
+	print("BOSS VISUALS: ", "PASS" if before == failures else "FAIL", " (3 checked; peak draw census=", peak, ")")
 	check(failures == before, "boss visual section")
 	await frames()
 
@@ -1454,6 +1488,7 @@ func check_tools_and_projectiles() -> void:
 		while arena.phase < 2: arena.apply_tool(&"unit_test")
 		check(boss_hud.pips[1].filled, "real fight phase pip")
 		var previous_hp: int = arena.hp
+		check(not arena.visual._art.tag.visible, "mounted boss HUD suppresses 3D name plate")
 		if stage == 2: arena.apply_tool(&"review_comment")
 		elif stage == 3: arena.apply_tool(&"unit_test")
 		if stage > 1: check(arena.hp == previous_hp and arena.visual._art.state == &"resist", "real phase resists wrong tool")
@@ -1463,3 +1498,135 @@ func check_tools_and_projectiles() -> void:
 	game.free()
 	await frames()
 	print("TOOLS AND PROJECTILES: ", "PASS" if failures == before else "FAIL")
+
+func check_turn() -> void:
+	var before := failures
+	root.size = Vector2i(1280, 720)
+	var corridor := preload("res://scenes/runner/environment/corridor.tscn").instantiate()
+	root.add_child(corridor)
+	corridor.set_process(false)
+	var rest := hazard_draw_count(corridor)
+	var peak := rest
+	for name in ["Floor", "Ceiling", "WallL", "WallR"]:
+		check(corridor.get_node(name).mesh.subdivide_depth == 72, "turn mesh subdivisions " + name)
+	for direction in [-1, 1]:
+		var endpoint_pose: Transform3D
+		var endpoint_pillars: Array[Transform3D] = []
+		var previous := 0.0
+		for progress in [0.0, 0.25, 0.5, 0.75, 1.0]:
+			corridor.set_turn(progress, direction)
+			corridor._process(0.0)
+			if progress == 0.0:
+				endpoint_pose = corridor.transform
+				for i in 24: endpoint_pillars.append(corridor._pillars.get_instance_transform(i))
+			elif progress == 1.0:
+				check(corridor.transform == endpoint_pose, "turn endpoint transform equals start")
+				for i in 24:
+					check(corridor._pillars.get_instance_transform(i) == endpoint_pillars[i], "turn endpoint pillar equals start")
+			var magnitude := absf(corridor.bend)
+			check(magnitude >= previous - 0.000001 if progress <= 0.5 else magnitude <= previous + 0.000001, "turn bend monotone around peak")
+			previous = magnitude
+			var pose: Transform3D = corridor.transform
+			corridor.set_turn(progress, direction)
+			corridor._process(0.0)
+			check(corridor.transform == pose, "turn idempotent")
+			var opacity: float = corridor._corner_material.get_shader_parameter("opacity")
+			var far: float = corridor._far_material.get_shader_parameter("opacity")
+			check(is_equal_approx(opacity + far, 1.0), "corner and far crossfade complement")
+			peak = maxi(peak, hazard_draw_count(corridor))
+		check(is_zero_approx(corridor.rotation.y) and is_zero_approx(corridor.bend), "turn endpoint is straight")
+	corridor.set_turn(0.5, 1)
+	corridor._process(0.0)
+	corridor.set_process(true)
+	var pose: Transform3D = corridor.transform
+	var offset: float = corridor._offset
+	paused = true
+	for i in 10: await process_frame
+	check(corridor.transform == pose and corridor._offset == offset, "ten paused frames freeze turn and scroll")
+	paused = false
+	corridor.set_turn(0.0, 0)
+	corridor._process(0.0)
+	check(corridor.rotation == Vector3.ZERO and not corridor.get_node("CornerWall").visible, "explicit turn reset")
+	check(rest <= 14 and peak <= 18, "corridor draw census budget")
+	print("CORRIDOR DRAW CENSUS: rest=", rest, "; mid-turn=", peak, " (headless geometry census; host GPU measurement pending)")
+	corridor.free()
+	var mock := preload("res://scenes/runner/ui/dev/mock_runner_game.gd").new()
+	mock.autoplay = false
+	root.add_child(mock)
+	mock.start_run()
+	mock.stage_banner.bind(mock)
+	mock.turn_started.emit(1, 2.5)
+	mock.stage_started.emit(2, &"Merge Conflict Hydra", 13.0)
+	check(not mock.stage_banner.visible and is_equal_approx(mock.hud.time_label.get_parent().modulate.a, 0.55), "turn defers banner and dims HUD")
+	mock.turn_finished.emit()
+	check(mock.stage_banner.title.text == "S T A G E  2", "stage title letter spacing")
+	check(mock.stage_banner.visible and mock.hud.time_label.get_parent().modulate.a == 1.0, "turn finish reveals banner and restores HUD")
+	mock.boss_spawned.emit(&"merge_conflict_hydra", 100)
+	check(not mock.stage_banner.visible, "boss suppresses banner")
+	mock.stage_clear.bind(mock)
+	mock.stage_cleared.emit(2, 550)
+	mock.stage_clear._process(0.5)
+	await frames()
+	var panel_rect: Rect2 = mock.stage_clear.panel.get_global_rect()
+	check(panel_rect.get_center().distance_to(root.get_visible_rect().get_center()) < 1.0, "stage card centered in viewport")
+	check(panel_rect.position.x >= 0 and panel_rect.position.y >= 0 and panel_rect.end.x <= root.get_visible_rect().end.x and panel_rect.end.y <= root.get_visible_rect().end.y, "stage card fits viewport")
+	check(mock.stage_clear.subtitle.text.ends_with(" \u2014 FIXED"), "stage clear design separator")
+	check(mock.stage_clear.bonus_label.text == "+550", "stage bonus counts up")
+	mock.pause()
+	var age: float = mock.stage_clear.age
+	mock.stage_clear._process(1.0)
+	check(mock.stage_clear.age == age, "stage card pause freeze")
+	mock.resume()
+	mock.stage_clear._process(2.31)
+	check(not mock.stage_clear.visible, "stage card closes after hold and exit")
+	mock.free()
+	print("TURN: ", "PASS" if before == failures else "FAIL")
+	await frames()
+
+func check_stage_seam() -> void:
+	var before := failures
+	var game := (load("res://scenes/runner/runner_game.tscn") as PackedScene).instantiate()
+	game.autostart = false
+	game.config = game.config.duplicate()
+	game.leaderboard_path = "user://test_runner_stage_seam_%d.cfg" % OS.get_process_id()
+	game.config.stage_base_distance = 260.0
+	game.config.time_to_max_speed = 20.0
+	game.config.boss_hp_scale = 0.4
+	root.add_child(game)
+	var corridor: Node = game.turn_rig.corridor
+	var banner := game.get_node("HUD/StageBanner")
+	var card := game.get_node("HUD/StageClear")
+	var events := {"started": 0, "finished": 0, "one": false, "reset": false, "banner_open": 0, "banner_close": 0, "card_open": 0, "card_close": 0}
+	game.turn_started.connect(func(_d: int, _s: float) -> void: events.started += 1)
+	game.turn_finished.connect(func() -> void: events.finished += 1)
+	corridor.turn_applied.connect(func(p: float, d: int) -> void:
+		if p == 1.0: events.one = true
+		if events.one and p == 0.0 and d == 0: events.reset = true)
+	banner.opened.connect(func() -> void: events.banner_open += 1)
+	banner.closed.connect(func() -> void: events.banner_close += 1)
+	card.opened.connect(func() -> void: events.card_open += 1)
+	card.closed.connect(func() -> void: events.card_close += 1)
+	game.start_run(12345)
+	game.set_autopilot(true)
+	game.autopilot.set_mode(2)
+	var old_scale := Engine.time_scale
+	var old_ticks := Engine.physics_ticks_per_second
+	var old_steps := Engine.max_physics_steps_per_frame
+	Engine.physics_ticks_per_second = 240
+	Engine.max_physics_steps_per_frame = 32
+	Engine.time_scale = 4.0
+	await _wait_for(func() -> bool: return game.stage_index >= 2 or game.state != &"running", 35.0, "real stage seam reaches stage two")
+	Engine.time_scale = old_scale
+	Engine.physics_ticks_per_second = old_ticks
+	Engine.max_physics_steps_per_frame = old_steps
+	check(game.stage_index >= 2, "shortened smoke config crosses stage seam")
+	check(events.started > 0 and events.finished > 0 and events.one and events.reset, "backend forwards turn one then reset")
+	check(events.banner_open > 0 and events.banner_close > 0, "real banner appears and closes")
+	check(events.card_open > 0 and events.card_close > 0 and not card.visible, "real stage card appears and closes")
+	check(game.turn_rig.rotation == Vector3.ZERO, "frontend hook prevents fallback rig yaw")
+	var seam_board: String = game.leaderboard_path
+	game.free()
+	for suffix in ["", ".tmp", ".bak"]:
+		if FileAccess.file_exists(seam_board + suffix): DirAccess.remove_absolute(seam_board + suffix)
+	print("STAGE SEAM: ", "PASS" if before == failures else "FAIL")
+	await frames()

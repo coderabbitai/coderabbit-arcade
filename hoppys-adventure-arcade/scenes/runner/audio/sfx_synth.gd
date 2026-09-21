@@ -3,6 +3,8 @@ extends RefCounted
 const RATE := 22050
 # seconds, start Hz, end Hz, waveform, gain
 const RECIPES := {
+	&"turn_whoosh": [1.2, 300.0, 2400.0, "turn", 0.6],
+	&"stage_clear": [1.0, 440.0, 880.0, "arpeggio", 0.65],
 	&"telegraph_tick": [0.06, 1600.0, 1600.0, "square", 0.35],
 	&"projectile_whoosh": [0.30, 900.0, 180.0, "noise", 0.45],
 	&"tool_pickup": [0.22, 880.0, 1760.0, "sine", 0.55],
@@ -57,6 +59,12 @@ static func sound(kind: StringName) -> AudioStreamWAV:
 		var envelope := minf(t / 0.008, 1.0) * pow(1.0 - progress, 1.6)
 		var sample := sin(phase)
 		match String(recipe[3]):
+			"turn":
+				frequency = lerpf(300.0, 2400.0, sin(progress * PI))
+				sample = sample * 0.4 + rng.randf_range(-1, 1) * 0.6
+				envelope = sin(progress * PI)
+			"arpeggio":
+				frequency = 440.0 * float([1.0, 1.25, 1.5, 2.0][mini(3, int(progress * 4))])
 			"alert":
 				sample = 1.0 if sin(phase) >= 0 else -1.0
 				var gate := fposmod(t, 1.0 / 9.0)
@@ -98,10 +106,10 @@ static func sound(kind: StringName) -> AudioStreamWAV:
 	_cache[kind] = stream
 	return stream
 
-static func panned_whoosh(lane_mask: int) -> AudioStreamWAV:
-	var key := StringName("whoosh_pan_%d" % (lane_mask & 7))
+static func panned_whoosh(lane_mask: int, kind: StringName = &"projectile_whoosh") -> AudioStreamWAV:
+	var key := StringName("%s_pan_%d" % [kind, lane_mask & 7])
 	if _cache.has(key): return _cache[key]
-	var source := sound(&"projectile_whoosh")
+	var source := sound(kind)
 	var mono := source.data
 	var data := PackedByteArray()
 	data.resize(mono.size() * 2)

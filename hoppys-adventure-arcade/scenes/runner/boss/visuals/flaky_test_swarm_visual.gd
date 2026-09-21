@@ -1,6 +1,7 @@
 extends "res://scenes/runner/boss/boss_visual_base.gd"
 const Art = preload("res://scenes/runner/boss/boss_art.gd")
 var _art: Art
+var show_name_plate := true
 var _clock := 0.0
 
 func _ready() -> void:
@@ -12,7 +13,14 @@ func on_spawned() -> void:
 		add_child(_art)
 		_art.build(&"flaky_test_swarm")
 	_art.reset()
-	_art.tag.text = (boss_name if not boss_name.is_empty() else String(kind).replace("_", " ")).replace(" ", "\n")
+	_art.tag.text = (boss_name if not boss_name.is_empty() else String(kind).replace("_", " "))
+	_art.tag.visible = show_name_plate
+	var ancestor := get_parent()
+	while ancestor != null:
+		if ancestor.get_node_or_null("HUD/BossHud") != null or ancestor.get_node_or_null("HUD/BossHUD") != null:
+			_art.tag.hide()
+			break
+		ancestor = ancestor.get_parent()
 	set_health(max_hp, max_hp)
 	_clock = 0.0
 	# Backend parents already supply hover_z; standalone mounts use the same depth.
@@ -61,5 +69,5 @@ func _process(delta: float) -> void:
 	var period := maxf(sway_period * (1 - 0.12 * (_art.phase - 1)), 0.1)
 	position.x = sin(_clock * TAU / period) * sway_amplitude
 	position.y = 0.04 + sin(_clock * 2) * 0.04
-	if _art.state == &"phase_change": position.y += 0.8 * sin(PI * minf(_art.age / 0.9, 1))
-	if _art.state == &"retreat": position.y += minf(_art.age, 0.95) * 0.6
+	if _art.state == &"phase_change": position.y += 0.12 * sin(PI * minf(_art.age / 0.9, 1))
+	if _art.state == &"retreat": position.y += minf(_art.age, 0.95) * 0.12

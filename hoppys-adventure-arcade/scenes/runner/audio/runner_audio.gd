@@ -14,12 +14,15 @@ const PENDING_TTL := 0.12
 const HIGH_PENDING_TTL := 0.30
 const GATE := {&"boss_hit": 0.09, &"telegraph_tick": 0.04, &"projectile_whoosh": 0.04, &"tool_pickup": 0.04, &"tool_fire": 0.04, &"boss_phase": 0.04, &"boss_defeat": 0.04}
 var _scheduled: Array[Dictionary] = []
+var _turn_active := false
+var _clear_remaining := 0.0
+var _turn_mask := 2
 var _boss_active := false
 var _boss_duck := 0.0
 var _boss_pitch_offset := 0.0
 var _whoosh_mask := 2
 const HIGH_PRIORITY := {
-	&"boss_defeat": true, &"boss_phase": true, &"tool_fire": true,
+	&"stage_clear": true, &"turn_whoosh": true, &"boss_defeat": true, &"boss_phase": true, &"tool_fire": true,
 	&"alert_sting": true, &"hit": true, &"caught": true, &"game_over": true, &"shield_block": true,
 	&"pursuit_start": true, &"retreat": true, &"recovered_chime": true, &"powerup": true,
 }
@@ -62,6 +65,8 @@ func bind(game: Node) -> void:
 	_normalized = maxf(0.0, float(game.get("normalized_speed")))
 	_pitch = 1.0
 	_connections = {
+		&"turn_started": _on_turn, &"turn_finished": _on_turn_finished,
+		&"stage_cleared": _on_stage_clear, &"phase_changed": _on_phase,
 		&"boss_spawned": _on_boss_spawned, &"boss_phase_changed": _on_boss_phase,
 		&"boss_defeated": _on_boss_defeated, &"boss_retreated": _on_boss_retreated,
 		&"boss_attack_telegraph": _on_telegraph, &"boss_projectile_fired": _on_projectile,
@@ -96,6 +101,9 @@ func _process(delta: float) -> void:
 	if not is_instance_valid(_game) or _paused:
 		return
 	_clock += delta
+	if _clear_remaining > 0.0:
+		_clear_remaining = maxf(0.0, _clear_remaining - delta)
+		if _clear_remaining == 0.0: _set_boss_mix(_boss_active)
 	for i in range(_scheduled.size() - 1, -1, -1):
 		_scheduled[i].remaining -= delta
 		if float(_scheduled[i].remaining) <= 0:
@@ -123,7 +131,7 @@ func _process(delta: float) -> void:
 			else:
 				_play(kind)
 	var target := 1.0 + 0.10 * _normalized + (0.05 if _nitro else 0.0) + _boss_pitch_offset
-	_pitch = lerpf(_pitch, target, 1.0 - exp(-5.0 * delta))
+	_pitch = 1.0 if _clear_remaining > 0.0 else lerpf(_pitch, target, 1.0 - exp(-5.0 * delta))
 	if _audio_service != null and _audio_service.has_method("set_music_pitch"):
 		_audio_service.set_music_pitch(_pitch)
 	if _running and _grounded and not _rolling:
@@ -138,6 +146,7 @@ func _play(kind: StringName, player: AudioStreamPlayer = null) -> void:
 	if _paused or _clock - float(_last_play.get(kind, -1.0)) < float(GATE.get(kind, 0.04)):
 		return
 	var stream := Synth.panned_whoosh(_whoosh_mask) if kind == &"projectile_whoosh" else Synth.sound(kind)
+	if kind == &"turn_whoosh": stream = Synth.panned_whoosh(_turn_mask, kind)
 	if stream == null:
 		return
 	if player != null:
@@ -350,13 +359,13 @@ func _duck(db: float, seconds: float) -> void:
 		_audio_service.duck_music(db, seconds)
 
 func _set_boss_mix(active: bool) -> void:
-	var target := -4.0 if active else 0.0
+	var target := -10.0 if _clear_remaining > 0.0 else (-5.0 if _turn_active else (-4.0 if active else 0.0))
 	_boss_pitch_offset = 0.04 if active else 0.0
 	if is_equal_approx(_boss_duck, target): return
 	# Hold the service's baseline so transient ducks return to the fight level.
 	if _audio_service != null and _audio_service.has_method("duck_music") and "music_volume_db" in _audio_service:
 		_audio_service.set("music_volume_db", float(_audio_service.get("music_volume_db")) + target - _boss_duck)
-		_duck(0, 0.2)
+		_duck(0, 1.2 if _clear_remaining > 0.0 else (0.5 if _turn_active else (0.6 if active else 0.2)))
 	_boss_duck = target
 
 func _on_boss_spawned(_kind: StringName, _hp: int) -> void:
@@ -370,6 +379,8 @@ func _on_boss_phase(_phase: int) -> void:
 
 func _end_boss_audio() -> void:
 	_boss_active = false
+	_turn_active = false
+	_clear_remaining = 0.0
 	_scheduled.clear()
 	_set_boss_mix(false)
 
@@ -397,3 +408,26 @@ func _on_tool(_kind: StringName, damage: int) -> void:
 	_play(&"tool_pickup")
 	_scheduled.append({"kind": &"tool_fire", "remaining": 0.10})
 	if damage > 0: _scheduled.append({"kind": &"boss_hit", "remaining": 0.14})
+
+func _on_turn(direction: int, _seconds: float) -> void:
+	_turn_active = true
+	_turn_mask = 1 if direction < 0 else 4
+	_set_boss_mix(false)
+	_play(&"turn_whoosh")
+
+func _on_turn_finished() -> void:
+	_turn_active = false
+	_set_boss_mix(_boss_active)
+
+func _on_stage_clear(_index: int, _bonus: int) -> void:
+	_clear_remaining = 2.8
+	_pitch = 1.0
+	_set_boss_mix(false)
+	if _audio_service != null and _audio_service.has_method("set_music_pitch"): _audio_service.set_music_pitch(1.0)
+	_play(&"stage_clear")
+
+func _on_phase(value: StringName) -> void:
+	if value in [&"idle", &"run"]:
+		_turn_active = false
+		_clear_remaining = 0.0
+		_set_boss_mix(false)
