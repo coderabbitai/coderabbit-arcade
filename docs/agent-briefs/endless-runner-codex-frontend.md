@@ -165,8 +165,9 @@ Primitive rabbit (≈ 22 meshes, 5 shared materials) under a `Root` pivot at the
 `AuraSparkles`, `AnimationPlayer`. Build all animations in code (`Animation.TYPE_VALUE` tracks for properties, linear, step 1/30,
 `playback_default_blend_time 0.08`; the `hurt` clip's `flash()` calls use an `Animation.TYPE_METHOD` track): `idle` 1.6 s loop (breathe, ear twitch), `run` 0.5 s loop
 (two bobs, leg/arm swing, ears flap back, head lean), `jump` 0.35 s hold (stretch then settle, limbs tuck),
-`fall` 0.6 s loop (flail, ears up), `roll` 0.5 s (forward somersault about X on `Root`, `Root.scale.y`
-0.55 so it fits 0.9 m; key rotation back to 0 at the end), `hurt` 0.45 s (knock-back lean, ear splay,
+`fall` 0.6 s loop (flail, ears up), `roll` 0.5 s (forward somersault about X on `Root`, with `Root.scale.y` keyed to the measured value that keeps the
+visual's bounds within the 0.9 m rolling hurtbox — `tests/runner_visual_smoke.gd` asserts the roll pose height; key rotation
+back to 0 at the end), `hurt` 0.45 s (knock-back lean, ear splay,
 `flash()` method track at 0 / 0.12 / 0.24 s), `dead` 0.9 s hold (tip onto back, limbs limp).
 Contract methods: `set_anim_state` (play on change; `run` speed_scale from `set_run_speed`:
 `lerp(0.85, 1.9, normalized)`; `hurt` auto-returns to `run`/`idle` via `animation_finished`),
@@ -494,9 +495,14 @@ run_test runner_smoke.gd 'RUNNER SMOKE: PASS'
 # refactor that skipped or dropped either would still print a green aggregate. run_test already
 # enforces exit 0 and the aggregate line, so only the two sub-markers are left to check.
 run_test runner_visual_smoke.gd 'RUNNER VISUAL SMOKE: PASS'
+# v2 (F7-F9) markers are required too: HUD LEGIBILITY / PURSUIT ALERT from F7, BOSS VISUALS from F8, TURN from F9.
 if ! grep -qF 'RUNNER FULL LOOP: PASS' "$RUN_TEST_LOG" \
-    || ! grep -qF 'RUNNER DEV SCENES: PASS' "$RUN_TEST_LOG"; then
-  echo "runner_visual_smoke must also print RUNNER FULL LOOP: PASS (the F6 hub -> menu -> play -> caught -> retry -> menu -> hub loop) and RUNNER DEV SCENES: PASS (every dev scene instantiated headless)" >&2
+    || ! grep -qF 'RUNNER DEV SCENES: PASS' "$RUN_TEST_LOG" \
+    || ! grep -qF 'HUD LEGIBILITY:' "$RUN_TEST_LOG" \
+    || ! grep -qF 'PURSUIT ALERT: PASS' "$RUN_TEST_LOG" \
+    || ! grep -qF 'BOSS VISUALS:' "$RUN_TEST_LOG" \
+    || ! grep -qF 'TURN: PASS' "$RUN_TEST_LOG"; then
+  echo "runner_visual_smoke must also print RUNNER FULL LOOP: PASS (the F6 hub -> menu -> play -> caught -> retry -> menu -> hub loop), the v2 markers HUD LEGIBILITY / PURSUIT ALERT: PASS / BOSS VISUALS / TURN: PASS, and RUNNER DEV SCENES: PASS (every dev scene instantiated headless)" >&2
   exit 1
 fi
 

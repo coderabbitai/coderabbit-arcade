@@ -256,6 +256,7 @@ Three layers:
   ```glsl
   uniform float bend = 0.0;        // signed curvature
   uniform float bend_start = 6.0;  // metres ahead of the player where the bend begins
+  varying vec3 world;              // post-bend world position, consumed by fragment() for the grid
   void vertex() {
       float d = max(0.0, -(MODEL_MATRIX * vec4(VERTEX,1.0)).z - bend_start);
       VERTEX.x += bend * d * d;
@@ -271,7 +272,10 @@ Three layers:
 Pillars: apply `x += bend * d * d` plus the local yaw to the 24 CPU instances. **Far glow / corner:** `FarGlow` fades out
 over `progress 0 → 0.3` sliding along the bend, back in `0.7 → 1.0`; a `CornerWall` 12 × 7 quad at z −52, yawed
 `direction * 55°`, `code_wall` duplicate at `intensity 0.4`, with a `TURN` chevron decal, fades in as FarGlow fades
-out. Net **+1 draw at most**; corridor 10 → 12 of a documented budget raised to **14 / 18**. Pause: PAUSABLE, all
+out. Draw budget, one consistent set of numbers: base corridor **10** draws (measured), turn peak **12** (the CornerWall ↔
+FarGlow crossfade adds at most **+1**, the bent pillars add none, the TURN chevron decal +1 while visible), documented
+corridor budget raised from 15 to **18** so `capture_previews.gd` and `check_turn()` assert `≤ 18` during a turn and
+`≤ 14` at rest. Pause: PAUSABLE, all
 uniforms GDScript-driven, no `TIME`. `turn_whoosh` at `progress 0.05`; HUD dims non-essential widgets to α0.55;
 stage banner waits for `turn_finished`.
 
@@ -310,7 +314,8 @@ the heartbeat below `fraction < 0.35` (pitch drop + stream switch). Boss and sta
 `boss_hit` 0.09).
 
 **Music:** pitch/duck only (AudioService keeps exactly two players). `boss_spawned` → `duck_music(-4, 0.6)` held for the
-fight (target-offset variable in the existing `_pitch` smoothing) + pitch `+0.04`; `boss_phase_changed` →
+fight (target-offset variable in the existing `_pitch` smoothing) + pitch `+0.04`, both restored on `boss_defeated` **or**
+`boss_retreated`; `boss_phase_changed` →
 `duck_music(-8, 0.35)`; `stage_cleared` → `duck_music(-10, 1.2)` and `_pitch` held at 1.0 for the card; `turn_started`
 → `duck_music(-5, 0.5)`, restored at `turn_finished`. All `has_method`-guarded.
 
@@ -358,7 +363,7 @@ UI built imperatively via `Style`/`hud_style`, cached materials duplicated befor
   `HUD LEGIBILITY: n labels checked`.
 - `check_pursuit_alert()` — mock `pursuit_started → progress 1.0 → 0.0 → recovered`: panel visible, radar rate strictly
   increasing, copy contains the catch rule, portrait SubViewport renders, everything freezes under `paused`.
-- `check_bosses()` — each boss: `on_spawned()` twice (idempotent), every state, all phases, `play_hit` per tool,
+- `check_bosses()` — each boss: `on_spawned()` twice (idempotent), every hook, all phases, `play_hit` per tool,
   `play_telegraph` per lane, `play_defeat`; merged AABB inside 7 × 4.5 × 3 m with bottom ≥ y 1.6; draw census ≤ 40.
   Prints `BOSS VISUALS: 3 checked; peak draw census=<n>`.
 - `check_tools_and_projectiles()` — 4 tools reset/collect twice; all four projectile variants (`orb`, `low`, `high`,
@@ -388,7 +393,7 @@ recapture `endless-runner-hud.png` and `endless-runner-gameplay.png`. Fixtures i
 
 | Addition | Steady | Peak |
 |---|---|---|
-| Corridor turn | +0 | +1 |
+| Corridor turn (base 10; rest budget 14, turn budget 18) | +0 | +2 |
 | Boss visual (each) | ≤ 18 | ≤ 34 (defeat) |
 | Lane telegraph (3 max) | 3 | 9 |
 | Projectile (≤ 6 live) | 2–3 | 18 |
