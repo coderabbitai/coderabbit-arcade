@@ -49,34 +49,61 @@ static func sort_entries(entries: Array) -> Array[Dictionary]:
 	return ordered
 
 ## The board on disk plus the schema it declares: `{entries: Array[Dictionary], version: int,
-## error: Error}`. `entries` is empty unless `error` is OK, so a caller that only wants rows can
-## ignore the rest; the writers use `version`/`error` to tell "nothing readable here, go ahead and
-## write" apart from "a newer build owns this file, do not touch it". `version` is the version the
-## file declared, not SCHEMA_VERSION: an older supported board reads OK and is migrated on the next
-## write.
+## error: Error, used_backup: bool}`. `entries` is empty unless `error` is OK, so a caller that only
+## wants rows can ignore the rest; the writers use `version`/`error` to tell "nothing readable here,
+## go ahead and write" apart from "a newer build owns this file, do not touch it". `version` is the
+## version the file declared, not SCHEMA_VERSION: an older supported board reads OK and is migrated
+## on the next write. `used_backup` says the rows came from the `.bak`, which the next successful
+## save rewrites into place like any other read.
 static func read_board(path := DEFAULT_PATH) -> Dictionary:
-	var empty: Array[Dictionary] = []
-	var source := path
-	# A crash between save_entries' two renames leaves only the backup; it is the last good board.
-	if not FileAccess.file_exists(source) and FileAccess.file_exists(path + ".bak"):
-		source = path + ".bak"
-	if not FileAccess.file_exists(source):
-		return {"entries": empty, "version": 0, "error": ERR_FILE_NOT_FOUND}
-	var config := ConfigFile.new()
-	if config.load(source) != OK:
-		return {"entries": empty, "version": 0, "error": ERR_FILE_CORRUPT}
+	var backup := path + ".bak"
+	var primary_exists := FileAccess.file_exists(path)
+	var backup_exists := FileAccess.file_exists(backup)
+	if not primary_exists and not backup_exists:
+		return _empty_board(0, ERR_FILE_NOT_FOUND)
+	var used_backup := false
+	var config: ConfigFile = null
+	if primary_exists:
+		config = _load_config(path)
+		# The same crash window that can leave only a backup can leave a half-written primary, and the
+		# backup is by definition the last board that was written whole. Falling back to it turns a
+		# lost board into a warning; only a corrupt primary with no readable backup is fatal.
+		if config == null and backup_exists:
+			config = _load_config(backup)
+			used_backup = config != null
+			if used_backup:
+				push_warning("Runner leaderboard: %s could not be parsed; the board was read from %s and the next successful save rewrites it" % [path, backup])
+	else:
+		# A crash between save_entries' two renames leaves only the backup; it is the last good board.
+		config = _load_config(backup)
+		used_backup = config != null
+	if config == null:
+		return _empty_board(0, ERR_FILE_CORRUPT)
 	var version := int(config.get_value("meta", "version", 0))
 	if not SUPPORTED_VERSIONS.has(version):
-		return {"entries": empty, "version": version, "error": ERR_FILE_UNRECOGNIZED}
+		return _empty_board(version, ERR_FILE_UNRECOGNIZED, used_backup)
 	var raw: Variant = config.get_value("leaderboard", "entries", [])
 	if not (raw is Array):
-		return {"entries": empty, "version": version, "error": ERR_FILE_CORRUPT}
+		return _empty_board(version, ERR_FILE_CORRUPT, used_backup)
 	var valid: Array[Dictionary] = []
 	for item in (raw as Array):
 		var entry := _validate(item)
 		if not entry.is_empty():
 			valid.append(entry)
-	return {"entries": sort_entries(valid), "version": version, "error": OK}
+	return {"entries": sort_entries(valid), "version": version, "error": OK, "used_backup": used_backup}
+
+## The parsed file, or null when it does not parse. Each attempt gets its own ConfigFile, so a
+## failed parse can never leave half a board behind for the attempt that follows it.
+static func _load_config(source: String) -> ConfigFile:
+	var config := ConfigFile.new()
+	if config.load(source) != OK:
+		return null
+	return config
+
+## The read_board shape with no rows, for every path that has nothing to hand back.
+static func _empty_board(version: int, error: Error, used_backup := false) -> Dictionary:
+	var empty: Array[Dictionary] = []
+	return {"entries": empty, "version": version, "error": error, "used_backup": used_backup}
 
 static func load_entries(path := DEFAULT_PATH) -> Array[Dictionary]:
 	var entries: Array[Dictionary] = read_board(path)["entries"]

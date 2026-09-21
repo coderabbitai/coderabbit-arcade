@@ -598,6 +598,40 @@ func _test_leaderboard() -> void:
 		"8: a corrupt board still accepts the next run")
 	check(RunnerLeaderboard.load_entries(corrupt).size() == 1, "8: the recovered board holds one entry")
 
+	# A half-written primary — the value cut mid-entry, which is what a crash inside the write leaves
+	# and what ConfigFile actually refuses to parse (the fixture above is merely unrecognised).
+	var half := "user://test_leaderboard_half_%d.cfg" % (randi() % 1000000)
+	temp_paths.append(half)
+	check(int(RunnerLeaderboard.submit(_entry("run-backup", 700), half)["error"]) == OK,
+		"8: the half-written fixture board was written")
+	var good_rows := FileAccess.get_file_as_string(half)
+	var half_file := FileAccess.open(half, FileAccess.WRITE)
+	check(half_file != null, "8: the truncated primary fixture was written")
+	if half_file != null:
+		half_file.store_string("[meta]\nversion=2\n\n[leaderboard]\nentries=[{\"run_id\"")
+		half_file.close()
+	# No .bak yet: there is nothing to fall back to, so the truncated board is simply corrupt.
+	var unbacked := RunnerLeaderboard.read_board(half)
+	check(int(unbacked["error"]) == ERR_FILE_CORRUPT and (unbacked["entries"] as Array).is_empty()
+		and not bool(unbacked["used_backup"]),
+		"8: a corrupt board with no .bak reports ERR_FILE_CORRUPT and no rows, got error %s"
+			% unbacked["error"])
+	# Now the intact backup from before the truncation is put back beside it.
+	var half_backup := FileAccess.open(half + ".bak", FileAccess.WRITE)
+	check(half_backup != null, "8: the .bak fixture was written")
+	if half_backup != null:
+		half_backup.store_string(good_rows)
+		half_backup.close()
+	var repaired := RunnerLeaderboard.read_board(half)
+	check(int(repaired["error"]) == OK and bool(repaired["used_backup"]),
+		"8: a corrupt primary falls back to the .bak, got error %s" % repaired["error"])
+	var repaired_rows: Array = repaired["entries"]
+	check(repaired_rows.size() == 1 and String(repaired_rows[0]["run_id"]) == "run-backup",
+		"8: the fallback hands back the backup rows, got %s" % [repaired_rows])
+	check(int(RunnerLeaderboard.submit(_entry("run-after", 10), half)["error"]) == OK
+		and RunnerLeaderboard.load_entries(half).size() == 2,
+		"8: the next save repairs the primary from the recovered board")
+
 # --- 8b. A leaderboard write that fails never reports a rank (contract §4.3) ---
 
 ## submit() ranks the run against the board it built in memory, so a run whose write failed would

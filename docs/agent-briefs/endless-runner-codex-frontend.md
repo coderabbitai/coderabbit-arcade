@@ -513,14 +513,15 @@ run_test runner_smoke.gd 'RUNNER SMOKE: PASS'
 # refactor that skipped or dropped either would still print a green aggregate. run_test already
 # enforces exit 0 and the aggregate line, so only the two sub-markers are left to check.
 run_test runner_visual_smoke.gd 'RUNNER VISUAL SMOKE: PASS'
-# v2 (F7-F9) markers are required too: HUD LEGIBILITY / PURSUIT ALERT from F7, BOSS VISUALS from F8, TURN from F9.
+# v2 (F7-F9) markers are required too, each with an explicit PASS status (F9 makes the HUD LEGIBILITY and BOSS VISUALS
+# sections print `: PASS (...)`): HUD LEGIBILITY / PURSUIT ALERT from F7, BOSS VISUALS from F8, TURN from F9.
 if ! grep -qF 'RUNNER FULL LOOP: PASS' "$RUN_TEST_LOG" \
     || ! grep -qF 'RUNNER DEV SCENES: PASS' "$RUN_TEST_LOG" \
-    || ! grep -qF 'HUD LEGIBILITY:' "$RUN_TEST_LOG" \
+    || ! grep -qF 'HUD LEGIBILITY: PASS' "$RUN_TEST_LOG" \
     || ! grep -qF 'PURSUIT ALERT: PASS' "$RUN_TEST_LOG" \
-    || ! grep -qF 'BOSS VISUALS:' "$RUN_TEST_LOG" \
+    || ! grep -qF 'BOSS VISUALS: PASS' "$RUN_TEST_LOG" \
     || ! grep -qF 'TURN: PASS' "$RUN_TEST_LOG"; then
-  echo "runner_visual_smoke must also print RUNNER FULL LOOP: PASS (the F6 hub -> menu -> play -> caught -> retry -> menu -> hub loop), the v2 markers HUD LEGIBILITY / PURSUIT ALERT: PASS / BOSS VISUALS / TURN: PASS, and RUNNER DEV SCENES: PASS (every dev scene instantiated headless)" >&2
+  echo "runner_visual_smoke must also print RUNNER FULL LOOP: PASS (the F6 hub -> menu -> play -> caught -> retry -> menu -> hub loop), the v2 markers HUD LEGIBILITY: PASS / PURSUIT ALERT: PASS / BOSS VISUALS: PASS / TURN: PASS, and RUNNER DEV SCENES: PASS (every dev scene instantiated headless)" >&2
   exit 1
 fi
 

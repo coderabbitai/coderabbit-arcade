@@ -12,7 +12,9 @@ stage banners and stage-clear cards, new audio.** Branch `codex/endless-runner-s
 - Edit only frontend-owned paths (contract §1 + §11.5–§11.9 + the new `scenes/runner/boss/**` visual paths,
   `scenes/runner/ui/**`, `scenes/runner/environment/**`, `scenes/runner/audio/**`, `scenes/runner/shaders/**`,
   `tests/runner_visual_smoke.gd`, `docs/endless-runner.md`, `docs/previews/*`, `Assets/runner/**`). Never edit
-  `scenes/main_menu/menu_style.gd`, backend files, `project.godot`, or `*_visual_base.gd`.
+  `scenes/main_menu/menu_style.gd`, backend files, `project.godot`, or any `*_visual_base.gd` (all of them are
+  backend-owned, including `boss/boss_visual_base.gd`; F8 *extends* it from `boss/visuals/*_visual.gd`, it does not
+  edit it).
 - Style: snake_case, **no `class_name`**, `const X = preload(...)`, typed `:=`, tabs, explicit return types, UI built
   imperatively with `Style` / the new `hud_style.gd`, cached materials duplicated before mutation, `.gd.uid` committed,
   no `TIME` in shaders that must freeze on pause (drive `clock` uniforms from GDScript).
