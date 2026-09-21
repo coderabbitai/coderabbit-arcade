@@ -4,6 +4,7 @@ var _art: Rig
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_build()
 
 func _build() -> void:
