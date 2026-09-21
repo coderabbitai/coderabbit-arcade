@@ -6,7 +6,7 @@ signal hurt
 signal swiped
 const Art = preload("res://modes/platformer/art.gd")
 const SPEED := 310.0
-const JUMP := -620.0
+const JUMP := -740.0
 var input_lock := 0.0
 var hp := 3
 var shield := false
@@ -22,7 +22,9 @@ var sprite: AnimatedSprite2D
 var swipe: Area2D
 func _ready() -> void:
 	collision_layer = 2
-	collision_mask = 1
+	collision_mask = 1 | 8
+	platform_floor_layers = 8
+	platform_on_leave = CharacterBody2D.PLATFORM_ON_LEAVE_ADD_UPWARD_VELOCITY
 	add_child(Art.shape(Vector2(34, 68), Vector2(0, -34)))
 	sprite = Art.sprite("hoppy/platformer", "idle")
 	sprite.offset.y = -40

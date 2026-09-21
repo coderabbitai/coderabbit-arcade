@@ -25,7 +25,7 @@ All art comes from `Assets/bay-area-blitz-assets-only`; Hoppy uses that pack's e
 
 | Setting | Value |
 | --- | --- |
-| Run speed / gravity / jump impulse | 310 / 1,600 / 620 pixels per second (gravity in px/s²) |
+| Run speed / gravity / jump impulse | 310 / 1,600 / 740 pixels per second (gravity in px/s²) |
 | Coyote time / jump buffer | 120 / 140 ms |
 | Post-hit protection | 1.2 seconds |
 | Swipe cycle | 360 ms; one hit per target |
@@ -50,3 +50,11 @@ Terrain uses cropped existing street sprites with matching static solids. This f
 Run `Godot --headless --path hoppys-adventure-arcade --script res://tests/platformer_smoke.gd` (or omit `--headless` for screenshots in `/tmp/hoppy-*.png`). The suite covers spawn collision, jumping, buffering/coyote time, damage protection, capped healing, shield/boost, pause input, moving cable-car support, melee deduplication, enemy scoring, boss unlock, completion, fresh retry, whole-ground-route traversal, death, and music restoration.
 
 The existing `tests/menu_smoke.gd` should run with a rendered display for its mouse-hover assertions; headless mouse dispatch does not reproduce those assertions reliably. Keyboard/gamepad action definitions are present; physical-controller feel and packaged exports still need human/device testing.
+
+## September 21 playtest fixes
+
+The original full jump rose only about 115 pixels in the physics simulation, below the 125-pixel street-to-platform rise near the first cable car. Jump impulse is now 740 px/s (roughly 165 pixels of usable rise), retaining variable height, coyote time and buffering. Elevated steel platforms permit jumping through from below and catch Hoppy on descent.
+
+Both cable cars now stop at reachable low boarding positions, pause for one second at each end of a ten-second round trip, and finish near the destination ledges with room to jump off. Their roof colliders match the visible roof width; a dedicated MovingPlatform layer explicitly supplies platform velocity to Hoppy. Jumping off preserves upward/horizontal momentum without inheriting a downward pull. An in-world sign explains roof boarding.
+
+`tests/platformer_traversal.gd` verifies street-to-platform jumps, each of the three ascending platform pairs, street-to-roof boarding of both cars, a complete round trip without input, pause, and jumping from each car onto its destination platform. It resets Hoppy to each starting street/ledge and resets the timetable to the boarding stop; boarding and disembarking use actual jump/movement inputs rather than placing Hoppy on a roof. The earlier smoke test only dropped Hoppy onto a roof and did not establish boardability.
