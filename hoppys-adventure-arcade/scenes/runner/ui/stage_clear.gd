@@ -44,6 +44,7 @@ func _base(extent: Vector2) -> VBoxContainer:
 	panel.pivot_offset = extent * 0.5
 	panel.resized.connect(func() -> void: panel.pivot_offset = panel.size * 0.5)
 	panel.add_theme_stylebox_override("panel", Style.panel(Palette.MATRIX, 0.92))
+	Style.polish(panel, true)
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_theme_constant_override("separation", 10)
@@ -63,7 +64,7 @@ var tools_label: Label
 
 func _ready() -> void:
 	connections = {&"stage_started": _stage, &"stage_cleared": _clear, &"boss_spawned": _boss, &"boss_defeated": _defeated, &"boss_retreated": _retreated, &"tool_collected": _tool, &"phase_changed": _phase}
-	var box := _base(Vector2(640, 360))
+	var box := _base(Vector2(640, 0))
 	title = Style.label("STAGE CLEAR", 44, Palette.MATRIX)
 	subtitle = Style.label("", 26)
 	for label in [title, subtitle]:

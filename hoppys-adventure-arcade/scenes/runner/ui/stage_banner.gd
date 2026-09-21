@@ -44,6 +44,7 @@ func _base(extent: Vector2) -> VBoxContainer:
 	panel.pivot_offset = extent * 0.5
 	panel.resized.connect(func() -> void: panel.pivot_offset = panel.size * 0.5)
 	panel.add_theme_stylebox_override("panel", Style.panel(Palette.MATRIX, 0.9))
+	Style.polish(panel, true)
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_theme_constant_override("separation", 10)

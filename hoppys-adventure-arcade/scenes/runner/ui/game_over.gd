@@ -1,4 +1,5 @@
 extends CanvasLayer
+const Tally = preload("res://scenes/runner/ui/hifi/result_tally.gd")
 const Style = preload("res://scenes/runner/ui/hud_style.gd")
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 var game: Node
@@ -29,21 +30,19 @@ func _ready() -> void:
 	screen.add_child(center)
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	panel = PanelContainer.new()
-	panel.custom_minimum_size = Vector2(760, 620)
-	var box := StyleBoxFlat.new()
-	box.bg_color = Palette.NAVY
-	box.border_color = Palette.ROSE
-	box.set_border_width_all(2)
+	panel.custom_minimum_size = Vector2(760, 0)
+	var box := Style.panel(Palette.DANGER)
 	box.content_margin_left = 24
 	box.content_margin_right = 24
 	box.content_margin_top = 18
 	box.content_margin_bottom = 18
 	panel.add_theme_stylebox_override("panel", box)
+	Style.polish(panel, false)
 	center.add_child(panel)
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 8)
 	panel.add_child(column)
-	column.add_child(Style.label("CAUGHT BY THE BACKLOG", 34, Palette.ROSE))
+	column.add_child(Style.label("CAUGHT BY THE BACKLOG", 34, Palette.DANGER))
 	stats = GridContainer.new()
 	stats.name = "Stats"
 	stats.columns = 2
@@ -57,6 +56,15 @@ func _ready() -> void:
 	name_field.max_length = 16
 	name_field.placeholder_text = "Hoppy"
 	name_field.custom_minimum_size = Vector2(330, 36)
+	var field_normal := Style.panel(Palette.SLATE, 0.96)
+	var field_focus := Style.panel(Palette.MINT, 0.0)
+	field_focus.draw_center = false
+	name_field.add_theme_stylebox_override("normal", field_normal)
+	name_field.add_theme_stylebox_override("focus", field_focus)
+	name_field.add_theme_color_override("font_color", Palette.CREAM)
+	name_field.add_theme_color_override("caret_color", Palette.MINT)
+	name_field.add_theme_color_override("selection_color", Palette.SLATE)
+	name_field.add_theme_color_override("font_selected_color", Palette.CREAM)
 	name_row.add_child(name_field)
 	save_button = Style.button("Save", 36)
 	save_button.custom_minimum_size.x = 160
@@ -64,8 +72,7 @@ func _ready() -> void:
 	save_button.pressed.connect(_save)
 	name_field.text_submitted.connect(func(_text: String) -> void: _save())
 	name_field.gui_input.connect(_name_input)
-	error_label = Style.label("", 17, Palette.ROSE)
-	error_label.set_meta("legibility_exemption", "Design section 1: static error text at 17 units")
+	error_label = Style.label("", 18, Palette.DANGER)
 	error_label.hide()
 	column.add_child(error_label)
 	column.add_child(Style.label("TOP 10", 19, Palette.MINT))
@@ -73,7 +80,6 @@ func _ready() -> void:
 	board.add_theme_constant_override("separation", 1)
 	column.add_child(board)
 	var actions := HBoxContainer.new()
-	board.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	actions.alignment = BoxContainer.ALIGNMENT_CENTER
 	column.add_child(actions)
 	retry_button = Style.button("Retry")
@@ -109,7 +115,11 @@ func show_result(value: Dictionary, leaderboard: Array) -> void:
 		"DISTANCE %d m" % int(result.get("distance", 0)), "DODGED %d" % int(result.get("hazards_dodged", 0)),
 		"POWER-UPS %d" % int(result.get("power_ups", 0)), "RANK %s" % (str(result.get("rank", 0)) if int(result.get("rank", 0)) > 0 else "UNPLACED")]
 	for i in lines.size():
-		stats.add_child(Style.label(lines[i], 22, Palette.MINT if i == 0 else Palette.CREAM))
+		var stat := Style.label(lines[i], 22, Palette.MINT if i == 0 else Palette.CREAM)
+		stats.add_child(stat)
+		var tally := Tally.new()
+		tally.delay = i * 0.045
+		stat.add_child(tally)
 	_render_board(leaderboard)
 	visible = true
 	dim.modulate.a = 0

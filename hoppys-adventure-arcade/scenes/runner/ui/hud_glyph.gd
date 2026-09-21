@@ -8,11 +8,14 @@ var seconds := 0.0:
 			number.text = str(ceili(seconds))
 		queue_redraw()
 var number: Label
+var phase_glyph := false
 var ring := false
 var filled := true
 var fraction := 1.0
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_PAUSABLE
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	if ring:
 		number = Style.label(str(ceili(seconds)), 20)
 		add_child(number)
@@ -29,6 +32,12 @@ func _draw() -> void:
 		draw_arc(center, radius, 0, TAU, 64, Palette.SLATE, 5, true)
 		draw_arc(center, radius, -PI / 2, -PI / 2 + TAU * clampf(fraction, 0, 1), 64, Palette.CREAM, 6, true)
 		draw_arc(center, radius - 5, -PI / 2, -PI / 2 + TAU * clampf(fraction, 0, 1), 64, Palette.DANGER, 3, true)
+		return
+	if phase_glyph:
+		var tint := Palette.DANGER if filled else Palette.SLATE
+		draw_circle(center, radius, Color(Palette.NAVY_BG, 0.95))
+		draw_arc(center, radius, 0, TAU, 32, tint, 2, true)
+		draw_colored_polygon(PackedVector2Array([center+Vector2(0,-radius*0.6), center+Vector2(radius*0.5,0), center+Vector2(0,radius*0.6),center+Vector2(-radius*0.5,0)]),tint)
 		return
 	var points := PackedVector2Array()
 	for i in 6:
