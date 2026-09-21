@@ -36,7 +36,31 @@ const RECIPES := {
 	&"caught": [0.85, 120.0, 25.0, "noise", 0.78],
 	&"game_over": [1.20, 440.0, 110.0, "chord", 0.65],
 }
+const PERCUSSIVE := {&"tool_fire": true, &"hit": true, &"land": true, &"caught": true, &"boss_hit": true, &"roll": true, &"footstep": true, &"telegraph_tick": true, &"lane_left": true, &"lane_right": true}
+const ARPEGGIO := [1.0, 1.25, 1.5, 2.0]
+# Authored carrier, detuned body, FM transient, filtered noise, sub.
+const LAYERS := {
+	&"percussive": [0.40, 0.16, 0.18, 0.12, 0.28],
+	&"jump": [0.64, 0.26, 0.08, 0.0, 0.0],
+	&"pursuit": [0.42, 0.22, 0.08, 0.04, 0.24],
+	&"chime": [0.72, 0.22, 0.04, 0.0, 0.0],
+	&"whoosh": [0.30, 0.12, 0.05, 0.38, 0.08],
+	&"drone": [0.50, 0.28, 0.0, 0.0, 0.22],
+	&"alarm": [0.42, 0.22, 0.08, 0.04, 0.24],
+}
 static var _cache: Dictionary = {}
+static var raw_peaks: Dictionary = {}
+
+static func family_for(kind: StringName) -> StringName:
+	if kind == &"jump": return &"jump"
+	if kind == &"pursuit_start": return &"pursuit"
+	if PERCUSSIVE.has(kind): return &"percussive"
+	var waveform := String(RECIPES[kind][3])
+	if waveform in ["sine", "chord", "arpeggio"]: return &"chime"
+	if kind == &"pursuit_drone": return &"drone"
+	if kind in [&"turn_whoosh", &"projectile_whoosh", &"nitro", &"retreat"]: return &"whoosh"
+	return &"alarm"
+
 
 static func sound(kind: StringName) -> AudioStreamWAV:
 	if _cache.has(kind):
@@ -46,7 +70,7 @@ static func sound(kind: StringName) -> AudioStreamWAV:
 	var recipe: Array = RECIPES[kind]
 	var seconds := float(recipe[0])
 	var count := int(seconds * RATE)
-	var stereo := kind == &"lane_left" or kind == &"lane_right"
+	var stereo := kind not in [&"pursuit_drone", &"heartbeat", &"radar_pulse"]
 	var looping := kind == &"pursuit_drone" or kind == &"heartbeat" or kind == &"radar_pulse"
 	var channels := 2 if stereo else 1
 	var data := PackedByteArray()
@@ -54,13 +78,26 @@ static func sound(kind: StringName) -> AudioStreamWAV:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 4705 + String(kind).hash()
 	var phase := 0.0
+	var low_noise := 0.0
+	var samples := PackedFloat64Array()
+	samples.resize(count * channels)
+	var waveform := String(recipe[3])
+	var family := family_for(kind)
+	var weights: Array = LAYERS[family]
+	var directional := kind == &"lane_left" or kind == &"lane_right"
+	var left_pan := kind == &"lane_left"
+	var intro := kind == &"boss_intro"
+	var alert := kind == &"alert_sting"
+	var impact := kind == &"boss_hit" or kind == &"caught"
+	var percussive := family == &"percussive"
+	var width := float(String(kind).hash() % 7 + 2) * 0.035
 	for i in count:
 		var t := float(i) / RATE
 		var progress := float(i) / count
 		var frequency := lerpf(float(recipe[1]), float(recipe[2]), progress)
-		var envelope := minf(t / 0.008, 1.0) * pow(1.0 - progress, 1.6)
+		var envelope := _envelope(family, t, seconds)
 		var sample := sin(phase)
-		match String(recipe[3]):
+		match waveform:
 			"warning":
 				frequency = 700.0 * pow(1.3, floor(t))
 				var beat := fposmod(t, 1.0)
@@ -69,9 +106,9 @@ static func sound(kind: StringName) -> AudioStreamWAV:
 				sample = (sin(phase) + sin(phase * 1.012)) * 0.5
 				envelope = smoothstep(0.0, 0.7, progress) * (1.0 - smoothstep(0.8, 1.0, progress))
 				if progress >= 0.8:
-					var impact := exp(-(progress - 0.8) * 35.0)
+					var impact_envelope := exp(-(progress - 0.8) * 35.0)
 					sample = sample * 0.4 + rng.randf_range(-1.0, 1.0) * 0.6
-					envelope = impact
+					envelope = impact_envelope
 			"turn":
 				frequency = lerpf(300.0, 2400.0, sin(progress * PI))
 				sample = sample * 0.4 + rng.randf_range(-1, 1) * 0.6
@@ -81,7 +118,7 @@ static func sound(kind: StringName) -> AudioStreamWAV:
 					sample = rng.randf_range(-1.0, 1.0)
 					envelope = 1.0 - (progress - 0.3) / 0.04
 			"arpeggio":
-				frequency = 440.0 * float([1.0, 1.25, 1.5, 2.0][mini(3, int(progress * 4))])
+				frequency = 440.0 * float(ARPEGGIO[mini(3, int(progress * 4))])
 			"alert":
 				sample = 1.0 if sin(phase) >= 0 else -1.0
 				var gate := fposmod(t, 1.0 / 9.0)
@@ -98,19 +135,52 @@ static func sound(kind: StringName) -> AudioStreamWAV:
 			"chord": sample = (sample + sin(phase * 1.25) + sin(phase * 1.5)) / 3.0
 			"drone":
 				# Integral cycles over two seconds, including the amplitude modulation.
-				sample = (sin(TAU * 55.0 * t) + sin(TAU * 57.0 * t)) * 0.5
+				sample = drone_sample(t)
 				envelope = 0.7 + 0.3 * cos(TAU * t)
 			"heartbeat":
 				var beat := fposmod(t, 0.5)
 				envelope = sin(PI * beat / 0.16) * exp(-beat * 18.0) if beat < 0.16 else 0.0
 				sample = sin(TAU * 65.0 * beat)
-		phase += TAU * frequency / RATE
-		var value := clampf(sample * envelope * float(recipe[4]), -0.8, 0.8)
+		# Band-limited harmonic body, detuned air, FM transient and swept noise.
+		var cutoff := lerpf(6200.0, 350.0, progress)
+		low_noise += (rng.randf_range(-1.0, 1.0) - low_noise) * (1.0 - exp(-TAU * cutoff / RATE))
+		var body := sin(phase) * 0.56 + sin(phase * 1.003) * 0.24
+		var transient := sin(phase + sin(phase * 2.01) * 2.0 * exp(-t * 35.0)) * exp(-t * 28.0)
+		var sub := impact_sub(t, seconds) if impact else sting_sub(t, seconds, intro) if intro or alert else sin(phase * 0.5) * exp(-t * 9.0)
+		var click := click_transient(t) * 0.16 if percussive else 0.0
+		if looping and kind != &"pursuit_drone":
+			sample = sample * 0.78 + sin(phase * 2.0 + 0.3 * sin(phase * 3.0)) * 0.16
+		if not looping:
+			sample = sample * weights[0] + body * weights[1] + transient * weights[2] + low_noise * weights[3] + sub * weights[4]
+		# Keep authored radar gaps, warning ticks and heartbeat handover precise.
+		var edge := 1.0 if looping else minf(t / 0.002, 1.0) * minf((seconds - t - 1.0 / RATE) / 0.006, 1.0)
 		for channel in channels:
+			var side := sin(phase * 1.007) * width * (1.0 if channel == 0 else -1.0) if stereo else 0.0
 			var pan := 1.0
-			if stereo:
-				pan = 1.0 if (channel == 0) == (kind == &"lane_left") else 0.2
-			data.encode_s16((i * channels + channel) * 2, int(value * pan * 32767.0))
+			if directional:
+				pan = 1.0 if (channel == 0) == left_pan else 0.2
+			samples[i * channels + channel] = ((sample + side) * envelope + click) * float(recipe[4]) * maxf(edge, 0.0) * pan
+		phase += TAU * frequency / RATE
+	var raw_peak := 0.0
+	for value in samples: raw_peak = maxf(raw_peak, absf(value))
+	raw_peaks[kind] = raw_peak
+	# Remove DC with a zero-ended correction window, then normalize only if needed.
+	var window := PackedFloat64Array()
+	window.resize(count)
+	var window_sum := 0.0
+	for i in count:
+		window[i] = sin(PI * float(i) / (count - 1))
+		window_sum += window[i]
+	for channel in channels:
+		var sum := 0.0
+		for i in count:
+			sum += samples[i * channels + channel]
+		for i in count:
+			samples[i * channels + channel] -= sum / window_sum * window[i]
+	var peak := 0.0
+	for value in samples: peak = maxf(peak, absf(value))
+	var gain := minf(1.0, 0.79 / maxf(peak, 0.00001))
+	for i in samples.size(): data.encode_s16(i * 2, int(samples[i] * gain * 32767.0))
 	var stream := AudioStreamWAV.new()
 	stream.format = AudioStreamWAV.FORMAT_16_BITS
 	stream.mix_rate = RATE
@@ -127,9 +197,11 @@ static func panned_whoosh(lane_mask: int, kind: StringName = &"projectile_whoosh
 	var key := StringName("%s_pan_%d" % [kind, lane_mask & 7])
 	if _cache.has(key): return _cache[key]
 	var source := sound(kind)
-	var mono := source.data
+	var pcm := source.data
+	var stride := 4 if source.stereo else 2
+	var frames := pcm.size() / stride
 	var data := PackedByteArray()
-	data.resize(mono.size() * 2)
+	data.resize(frames * 4)
 	var total := 0.0
 	var lanes := 0
 	for lane in 3:
@@ -137,12 +209,76 @@ static func panned_whoosh(lane_mask: int, kind: StringName = &"projectile_whoosh
 			total += lane - 1
 			lanes += 1
 	var pan := total / maxi(lanes, 1)
-	for i in mono.size() / 2:
-		var value := mono.decode_s16(i * 2)
-		data.encode_s16(i * 4, int(value * (1 - maxf(pan, 0) * 0.8)))
-		data.encode_s16(i * 4 + 2, int(value * (1 + minf(pan, 0) * 0.8)))
+	for i in frames:
+		var left := float(pcm.decode_s16(i * stride))
+		var right := float(pcm.decode_s16(i * stride + 2)) if source.stereo else left
+		data.encode_s16(i * 4, int(left * (1 - maxf(pan, 0) * 0.8)))
+		data.encode_s16(i * 4 + 2, int(right * (1 + minf(pan, 0) * 0.8)))
 	var stream := source.duplicate() as AudioStreamWAV
 	stream.stereo = true
 	stream.data = data
 	_cache[key] = stream
 	return stream
+
+static func _envelope(family: StringName, t: float, duration: float) -> float:
+	if family == &"percussive":
+		return smoothstep(0.0, 0.0015, t) * exp(-t / (duration * 0.16))
+	if family == &"jump":
+		return smoothstep(0.0, 0.003, t) * exp(-t / (duration * 0.25))
+	if family == &"pursuit":
+		var p := t / duration
+		var strike := 0.55 * smoothstep(0.0, 0.012, t) * exp(-p * 12.0)
+		var rise := 0.85 * smoothstep(0.10, 0.62, p) * (1.0 - smoothstep(0.65, 1.0, p))
+		return strike + rise
+	if family == &"chime":
+		return smoothstep(0.0, 0.005, t) * exp(-t / (duration * 0.42)) * (1.0 - smoothstep(duration * 0.85, duration, t))
+	if family == &"whoosh": return sin(PI * clampf(t / duration, 0.0, 1.0))
+	return smoothstep(0.0, 0.008, t) * (1.0 - smoothstep(duration * 0.55, duration, t))
+
+## Independent four-millisecond contact layer, outside the body envelope.
+static func click_transient(t: float) -> float:
+	if t < 0.0 or t >= 0.004: return 0.0
+	return sin(TAU * 3200.0 * t) * sin(PI * t / 0.004)
+
+## Falling 65 to 40 Hz thump; decay belongs to the duration-scaled body envelope.
+static func impact_sub(t: float, duration: float) -> float:
+	return sin(TAU * (65.0 * t - 12.5 * t * t / duration))
+
+## Reset the sub transient at the impact or each alarm gate, not at recipe start.
+static func sting_sub(t: float, duration: float, intro: bool) -> float:
+	var age := maxf(0.0, t - duration * 0.8) if intro else fposmod(t, 1.0 / 9.0)
+	return sin(TAU * 48.0 * age) * exp(-age * 9.0)
+
+## Integral cycles for every layer, with no artificial seam fade.
+static func drone_sample(t: float) -> float:
+	var weights: Array = LAYERS[&"drone"]
+	return sin(TAU * 55.0 * t) * weights[0] + sin(TAU * 57.0 * t) * weights[1] + sin(TAU * 27.5 * t) * weights[4]
+
+## Surface and strike variation are independent cache/seed axes.
+static func footstep(surface: int, variant: int = 0) -> AudioStreamWAV:
+	var material := clampi(surface, 0, 2)
+	var strike := posmod(variant, 2)
+	var key := StringName("footstep_surface_%d_variant_%d" % [material, strike])
+	if _cache.has(key): return _cache[key]
+	var stream := sound(&"footstep").duplicate() as AudioStreamWAV
+	var data := stream.data
+	var previous := PackedFloat64Array([0.0, 0.0])
+	var softness := PackedFloat64Array([0.85, 0.38, 0.16])
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 8201 + material * 101 + strike * 7919
+	var strike_gain := rng.randf_range(0.88, 1.0)
+	for i in data.size() / 2:
+		var channel := i % 2
+		previous[channel] = lerpf(previous[channel], data.decode_s16(i * 2) * strike_gain, softness[material])
+		data.encode_s16(i * 2, int(previous[channel]))
+	stream.set_meta(&"surface", material)
+	stream.set_meta(&"variant", strike)
+	stream.set_meta(&"seed", rng.seed)
+	stream.set_meta(&"softness", softness[material])
+	stream.data = data
+	_cache[key] = stream
+	return stream
+
+## Optional UI audition hook; uses the existing crisp tick recipe and voice pool.
+static func ui_click() -> AudioStreamWAV:
+	return sound(&"telegraph_tick")
