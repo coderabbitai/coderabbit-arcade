@@ -38,8 +38,8 @@ func _ready() -> void:
 		var lamp := Art.sprite("street_kit", "street_lamp", Vector2(x, 513))
 		lamp.scale = Vector2(1.6, 1.6)
 		add_child(lamp)
-	_car(Vector2(1830, 510), Vector2(390, -80))
-	_car(Vector2(3140, 520), Vector2(300, -60))
+	_car(Vector2(1680, 531), Vector2(420, -55))
+	_car(Vector2(3020, 531), Vector2(360, -55))
 	player = Player.new()
 	player.position = Vector2(150, 590)
 	add_child(player)
@@ -73,7 +73,7 @@ func _ready() -> void:
 	exit_sprite.modulate = Color(0.45, 0.45, 0.45)
 	add_child(exit_sprite)
 	_sign("BAY AREA BLITZ", "01 / THE EMBARCADERO", Vector2(120, 270))
-	_sign("CATCH A CABLE CAR", "02 / COMMITS IN TRANSIT", Vector2(1660, 180))
+	_sign("CATCH A CABLE CAR", "JUMP ON THE ROOF • RIDE TO THE NEXT PLATFORM", Vector2(1660, 180))
 	_sign("BRANCH CONFLICT", "03 / JUMP OVER THE SLAM", Vector2(4350, 230))
 	_hud()
 	player.health_changed.connect(_update_hud)
@@ -130,7 +130,9 @@ func _background() -> void:
 func platform(pos: Vector2, size: Vector2, art: String) -> void:
 	var body := StaticBody2D.new()
 	body.position = pos
-	body.add_child(Art.shape(size, size / 2))
+	var solid := Art.shape(size, size / 2)
+	solid.one_way_collision = art == "steel_platform"
+	body.add_child(solid)
 	add_child(body)
 	var fill := Polygon2D.new()
 	fill.polygon = PackedVector2Array([Vector2.ZERO, Vector2(size.x, 0), size, Vector2(0, size.y)])
@@ -151,8 +153,11 @@ func platform(pos: Vector2, size: Vector2, art: String) -> void:
 func _car(pos: Vector2, travel: Vector2) -> void:
 	var body := AnimatableBody2D.new()
 	body.position = pos
-	var shape := Art.shape(Vector2(124, 16), Vector2(0, -43))
+	body.collision_layer = 8
+	body.collision_mask = 0
+	var shape := Art.shape(Vector2(92, 12), Vector2(0, -45))
 	shape.one_way_collision = true
+	shape.one_way_collision_margin = 12
 	body.add_child(shape)
 	var sprite := Art.sprite("interactives", "cable_car")
 	sprite.offset.y = -51
@@ -203,7 +208,7 @@ func _physics_process(dt: float) -> void:
 	if finished or get_tree().paused: return
 	elapsed += dt
 	for car in cars:
-		car.body.position = car.origin + car.travel * (sin(elapsed * 0.65) * 0.5 + 0.5)
+		car.body.position = car.origin + car.travel * _car_progress(elapsed)
 	for item in pickups.duplicate():
 		var area: Area2D = item.node
 		area.position.y = item.origin.y + sin(elapsed * 3 + item.origin.x) * 5
@@ -351,3 +356,11 @@ func _sound(clip: String) -> void:
 	add_child(sound)
 	sound.finished.connect(sound.queue_free)
 	sound.play()
+
+# Ten-second round trip with a one-second boarding stop at each end.
+func _car_progress(time: float) -> float:
+	var phase := fmod(time, 10.0)
+	if phase < 1.0: return 0.0
+	if phase < 5.0: return smoothstep(0.0, 1.0, (phase - 1.0) / 4.0)
+	if phase < 6.0: return 1.0
+	return 1.0 - smoothstep(0.0, 1.0, (phase - 6.0) / 4.0)
