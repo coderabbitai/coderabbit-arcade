@@ -1123,6 +1123,19 @@ func _test_super_jump_invuln() -> void:
 	check(not hits.is_invulnerable(), "12: the expired window gives its invulnerability back")
 	check(hits.invuln_sources.is_empty(), "12: the Super Jump source is removed exactly once")
 
+	# A player driven with no config at all — a bare rig, or the scene opened on its own — still has
+	# to buffer a jump for the RunConfig default. A zero window would be consumed by the first
+	# maxf() in _update_jump() before the grounded test could ever fire it.
+	var bare := CharacterBody3D.new()
+	bare.set_script(real_player_script)
+	bare.config = null
+	junk.append(bare)
+	bare.request_jump()
+	check(is_equal_approx(bare.jump_buffer_remaining, float(base_config.jump_buffer))
+		and is_equal_approx(bare.jump_buffer_remaining, 0.10),
+		"12: a config-less player buffers a jump for %.3f s, expected the RunConfig default 0.10"
+			% bare.jump_buffer_remaining)
+
 # --- 13. Dodges are counted per crossing (contract §4.2 result.hazards_dodged) ---
 
 ## A blocking hazard that passes the player counts once, and its instance id stops the next ticks
