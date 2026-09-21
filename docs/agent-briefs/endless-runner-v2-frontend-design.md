@@ -186,10 +186,13 @@ border pulses below 25 %; slides in on `boss_spawned`, out on `boss_defeated`.
 
 ### 3.4 Telegraph, projectiles, tools, auto-fire
 
-**Lane telegraph** — `scenes/runner/boss/telegraph.gd` (pooled ×3): floor decal `QuadMesh` 2.0 × 30 at `y = 0.008`,
+**Lane telegraph** — `scenes/runner/boss/telegraph.gd` (pooled ×3), owned by `scenes/runner/boss/boss_fx.tscn/.gd`, the
+frame-owned 3D effects scene the backend mounts under `World/TurnRig/BossArena` (contract §11.8) — the HUD never adds
+nodes to the backend `World`: floor decal `QuadMesh` 2.0 × 30 at `y = 0.008`,
 `additive(DANGER, 0.35)` (the `hazard_art.gd` floor-marker convention) with an inset MATRIX quad shrinking to zero
-over `seconds`; a billboarded 1.9 × 5 beam (`hologram`, alpha 0.15 → 0.55); a Label3D at y 2.4 naming the attack
-(`GLOB` / `BEAM` / `SWEEP`), font 44, `pixel_size` 0.006, outline 10. **3 draws per lane.**
+over `seconds`; a billboarded 1.9 × 5 beam (`hologram`, alpha 0.15 → 0.55); a Label3D at y 2.4 naming the incoming
+variant (`ORB` / `LOW` / `HIGH` / `WIDE`, the §11.6 names, so the label matches the dodge vocabulary), font 44,
+`pixel_size` 0.006, outline 10. **3 draws per lane.**
 
 **Projectiles** — `scenes/runner/hazards/visuals/projectile_visual.tscn/.gd` (extends `hazards/hazard_visual_base.gd`;
 `kind = projectile`, `variant` selects the look; `closing_speed` is provided); bounds ≤ 110 % of the §11.6 hitbox:
