@@ -157,6 +157,8 @@ func run() -> void:
 		check(camera.position == Vector3(0, 4, 8) and camera.fov == 60.0, "preview contract camera")
 		preview.free()
 		await frames()
+	await check_bosses()
+	await check_tools_and_projectiles()
 	await check_hazards()
 	await check_powerups_and_pursuer()
 	await check_hud_legibility()
@@ -801,7 +803,7 @@ func check_runner_audio() -> void:
 	var service := root.get_node("AudioService")
 	check(service.music.stream.resource_path == audio.MUSIC_PATH and service.music.stream.loop, "runner BGM loaded and looping")
 	check(service.music.volume_db == -12.0, "runner BGM level")
-	check(Synth.RECIPES.size() == 21, "F7 has exactly 21 recipes")
+	check(Synth.RECIPES.size() == 28, "F8 has exactly 28 recipes")
 	check(audio.HIGH_PRIORITY.has(&"alert_sting"), "alert sting is high priority")
 	for kind: StringName in Synth.RECIPES:
 		var stream := Synth.sound(kind)
@@ -975,7 +977,31 @@ func check_runner_audio() -> void:
 	mock.caught.emit()
 	check(not audio.heartbeat.playing, "caught stops heartbeat")
 	check(service.get_child_count() == 2, "AudioService retains exactly two child players")
-	print("RUNNER AUDIO: 21 recipes/triggers; demo heartbeat starts=1; peak voices=", peak[0], "; AudioService players=", service.get_child_count())
+	# F8 burst keeps the existing seven plus three voice allocation.
+	mock.state_changed.emit(&"running")
+	mock.boss_spawned.emit(&"flaky_test_swarm", 100)
+	mock.boss_spawned.emit(&"flaky_test_swarm", 100)
+	check(is_equal_approx(service.music_volume_db, -16.0), "boss holds baseline once")
+	await create_timer(0.7).timeout
+	check(service.duck == null and is_equal_approx(service.music.volume_db, -16.0), "boss hold does not refresh duck tweens")
+	for i in 3: mock.tool_collected.emit(&"unit_test", 15)
+	for mask in [1, 4]: mock.boss_projectile_fired.emit(null, mask, &"orb", 34.0)
+	mock.boss_phase_changed.emit(2)
+	audio._process(0.15)
+	check(audio.active_voice_count() <= 10, "boss burst voice cap")
+	check(audio.GATE.get(&"boss_hit") == 0.09, "boss hit retrigger gate is 90ms")
+	for cue in [&"boss_phase", &"boss_defeat", &"tool_fire"]: check(audio.HIGH_PRIORITY.has(cue), "boss high priority " + cue)
+	var scheduled: int = audio._scheduled.size()
+	mock.paused_changed.emit(true)
+	audio._process(0.5)
+	check(audio._scheduled.size() == scheduled, "pause freezes scheduled boss cues")
+	mock.paused_changed.emit(false)
+	mock.boss_defeated.emit(&"flaky_test_swarm", 800)
+	check(not audio._boss_active and is_equal_approx(service.music_volume_db, -12.0), "boss defeat releases music hold")
+	mock.boss_spawned.emit(&"flaky_test_swarm", 100)
+	mock.boss_retreated.emit(&"flaky_test_swarm", 0)
+	check(is_equal_approx(service.music_volume_db, -12.0) and audio._boss_pitch_offset == 0, "boss retreat releases mix offsets")
+	print("RUNNER AUDIO: 28 recipes/triggers; demo heartbeat starts=1; peak voices=", peak[0], "; AudioService players=", service.get_child_count())
 	mock.free()
 	await frames()
 	check(is_equal_approx(service.music.pitch_scale, 1.0), "audio teardown resets pitch")
@@ -1233,3 +1259,207 @@ func check_pursuit_alert() -> void:
 	standalone.free()
 	legacy.free()
 	print("PURSUIT ALERT: ", "PASS" if before == failures else "FAIL")
+
+## Includes the CPU MultiMesh poses that the dummy rendering server cannot return.
+func boss_geometry_bounds(visual: Node3D) -> AABB:
+	var result := AABB()
+	var first := true
+	for node: Node3D in visual.find_children("*", "VisualInstance3D", true, false):
+		if not node.is_visible_in_tree(): continue
+		if node is MultiMeshInstance3D:
+			var builder := node.get_parent()
+			check("batches" in builder, "F8 batch has CPU poses")
+			for entry: Dictionary in builder.batches:
+				if entry.node != node: continue
+				for pose: Transform3D in entry.poses:
+					if pose.basis.determinant() == 0: continue
+					var box: AABB = visual.global_transform.affine_inverse() * node.global_transform * pose * AABB(-Vector3.ONE * 0.5, Vector3.ONE)
+					result = box if first else result.merge(box)
+					first = false
+		else:
+			var box: AABB = visual.global_transform.affine_inverse() * node.global_transform * node.get_aabb()
+			result = box if first else result.merge(box)
+			first = false
+	return result
+
+func check_boss_envelope(visual: Node3D, context: String) -> void:
+	var box := boss_geometry_bounds(visual)
+	check(box.size.x <= 7.01 and box.size.y <= 4.51 and box.size.z <= 3.01, "boss envelope " + context + " " + str(box))
+	check(box.position.y + visual.position.y >= -1.001, "boss bottom >= 1.6 " + context)
+
+func check_bosses() -> void:
+	var before := failures
+	var peak := 0
+	for kind in [&"flaky_test_swarm", &"merge_conflict_hydra", &"legacy_monolith"]:
+		var scene := load("res://scenes/runner/boss/visuals/%s_visual.tscn" % kind) as PackedScene
+		check(scene != null, "boss scene loads " + kind)
+		if scene == null: continue
+		var visual := scene.instantiate() as Node3D
+		root.add_child(visual)
+		visual.kind = kind
+		visual.boss_name = "Custom Boss Name"
+		visual.max_hp = 100
+		visual.phase_count = 3
+		visual.hover_z = -14
+		visual.sway_amplitude = 2.4
+		visual.sway_period = 3.2
+		visual.on_spawned()
+		check(visual._art.tag.text.replace("\n", " ") == visual.boss_name, "boss plate reads boss_name")
+		check(visual._art.tag.font_size >= 40 and visual._art.tag.pixel_size >= 0.020, "boss plate gameplay size")
+		var count := visual.find_children("*", "", true, false).size()
+		visual.on_spawned()
+		check(count == visual.find_children("*", "", true, false).size(), "idempotent boss spawn " + kind)
+		check(visual.process_mode == Node.PROCESS_MODE_PAUSABLE, "boss PAUSABLE " + kind)
+		var boss_peak := 0
+		for phase in [1, 2, 3]:
+			visual.set_phase(phase)
+			visual.set_health(100 - (phase - 1) * 35, 100)
+			for i in 20:
+				visual._process(0.045)
+				check_boss_envelope(visual, "%s phase %d" % [kind, phase])
+				boss_peak = maxi(boss_peak, hazard_draw_count(visual))
+			for mask in [1, 2, 4, 3, 6, 7]:
+				for variant in [&"orb", &"low", &"high", &"wide"]:
+					visual.play_telegraph(mask, variant, 0.6)
+					visual._process(0.3)
+					check_boss_envelope(visual, "%s telegraph %s" % [kind, variant])
+					visual.play_attack(variant)
+					visual._process(0.06)
+					check_boss_envelope(visual, String(kind) + " attack")
+			for tool in [&"review_comment", &"lint_rule", &"unit_test", &"auto_fix_patch"]:
+				visual.play_hit(tool, 15)
+				visual._process(0.09)
+				check_boss_envelope(visual, String(kind) + " hit")
+				visual.play_resist(tool)
+				visual._process(0.09)
+				check_boss_envelope(visual, String(kind) + " resist")
+		var previous: Transform3D = visual.transform
+		paused = true
+		await frames()
+		check(visual.transform == previous, "boss freezes on pause " + kind)
+		paused = false
+		for ending in [&"play_defeat", &"play_retreat"]:
+			visual.on_spawned()
+			visual.call(ending)
+			for i in 20:
+				visual._process(0.045)
+				check_boss_envelope(visual, String(kind) + " " + String(ending))
+				boss_peak = maxi(boss_peak, hazard_draw_count(visual))
+			visual._process(0.1)
+			check(not visual._art.visible, "boss outro fits backend second")
+		check(boss_peak <= 40, "boss peak draw budget " + kind)
+		peak = maxi(peak, boss_peak)
+		print("BOSS DRAW CENSUS: ", kind, "=", boss_peak)
+		visual.free()
+	print("BOSS VISUALS: 3 checked; peak draw census=", peak)
+	check(failures == before, "boss visual section")
+	await frames()
+
+func check_tools_and_projectiles() -> void:
+	var before := failures
+	for kind in [&"review_comment", &"lint_rule", &"unit_test", &"auto_fix_patch"]:
+		var visual := (load("res://scenes/runner/powerups/visuals/%s_visual.tscn" % kind) as PackedScene).instantiate() as Node3D
+		root.add_child(visual)
+		for cycle in 2:
+			visual.on_spawned()
+			var count := visual.find_children("*", "", true, false).size()
+			visual.on_spawned()
+			check(count == visual.find_children("*", "", true, false).size(), "tool idempotent spawn")
+			check(visual.visible and hazard_draw_count(visual) <= 7, "tool draw budget " + kind)
+			visual._art._process(0.25)
+			check(visual._art.pivot.rotation == Vector3.ZERO, "tools do not spin")
+			visual.on_collected()
+			visual.on_collected()
+			check(not visual.visible, "tool collect is idempotent")
+		visual.free()
+	var variants := [&"orb", &"low", &"high", &"wide"]
+	var sizes := [Vector3(1.6, 0.9, 1.2), Vector3(5.6, 0.9, 1.2), Vector3(5.6, 0.4, 1.2), Vector3(3.6, 1, 1.2)]
+	var projectile := preload("res://scenes/runner/hazards/visuals/projectile_visual.tscn").instantiate()
+	root.add_child(projectile)
+	for i in 4:
+		projectile.variant = variants[i]
+		projectile.hitbox_size = sizes[i]
+		projectile.hitbox_offset = Vector3(0, 1.3 if i == 2 else sizes[i].y * 0.5, 0)
+		projectile.closing_speed = 34
+		projectile.on_spawned()
+		projectile.on_spawned()
+		for sample in 11:
+			projectile._process(0.02)
+			var box := boss_geometry_bounds(projectile)
+			var permitted: Vector3 = sizes[i] * 1.1
+			var relative: Vector3 = box.position - projectile.hitbox_offset
+			check(relative.x >= -permitted.x / 2 - 0.001 and relative.y >= -permitted.y / 2 - 0.001 and relative.z >= -permitted.z / 2 - 0.001, "projectile lower bounds " + variants[i])
+			var upper := relative + box.size
+			check(upper.x <= permitted.x / 2 + 0.001 and upper.y <= permitted.y / 2 + 0.001 and upper.z <= permitted.z / 2 + 0.001, "projectile upper bounds " + variants[i])
+		projectile.on_cleared()
+		check(not projectile.visible, "cleared projectile hidden")
+	projectile.free()
+	var mock := preload("res://scenes/runner/ui/dev/mock_runner_game.gd").new()
+	mock.autoplay = false
+	root.add_child(mock)
+	var hud: Control = mock.boss_overlay
+	hud.bind(mock)
+	hud.bind(mock)
+	check(mock.get_node_or_null("World") == null, "HUD mock has no fake World")
+	mock.boss_fx.bind(mock)
+	mock.boss_fx.bind(mock)
+	check(mock.boss_fx.telegraphs.size() == 3, "idempotent standalone FX bind")
+	mock.boss_phase_count = 4
+	mock.boss_hp = 140
+	mock.boss_spawned.emit(&"merge_conflict_hydra", 140)
+	check(hud.pips.size() == 4, "HUD rebuilds phase_count pips")
+	mock.boss_health_changed.emit(60, 140)
+	mock.boss_phase_changed.emit(2)
+	check(hud.visible and hud.title.text.contains("HYDRA") and hud.pips[1].filled and not hud.pips[2].filled, "boss HUD name and phase from facade")
+	mock.boss_attack_telegraph.emit(5, &"wide", 0.6)
+	var fx: Node3D = mock.boss_fx
+	check(fx.telegraphs[0].active and not fx.telegraphs[1].active and fx.telegraphs[2].active, "telegraph lane mask bits")
+	check(fx.telegraphs[0].tag.text == "WIDE", "telegraph names actual variant")
+	for i in 8:
+		mock.tool_collected.emit(&"lint_rule", 0 if i % 2 else 12)
+	for tracer in fx.tracers: tracer._process(0.15)
+	check(fx.tracers.size() == 4 and fx.numbers.size() == 6, "bounded auto-fire pools")
+	var resisted := false
+	for number in fx.numbers:
+		resisted = resisted or number.tag.text == "RESISTED"
+	check(resisted, "zero damage displays RESISTED")
+	paused = true
+	var frozen: float = fx.telegraphs[0].remaining
+	await frames()
+	check(fx.telegraphs[0].remaining == frozen, "telegraph freezes on pause")
+	paused = false
+	for node in fx.numbers + fx.telegraphs: node._process(1.0)
+	for node in fx.numbers + fx.telegraphs + fx.tracers: check(not node.active, "FX pool returns idle")
+	await create_timer(0.75).timeout
+	check(is_equal_approx(hud.hp.value, 60.0 / 140) and is_equal_approx(hud.chip.value, hud.hp.value), "HP and delayed chip converge")
+	mock.boss_defeated.emit(&"merge_conflict_hydra", 800)
+	await create_timer(1.0).timeout
+	check(not hud.visible, "HUD exits on defeat")
+	mock.free()
+	await frames()
+	# Exercise the actual backend mount and signals without simulating collisions by hand.
+	var game := (load("res://scenes/runner/runner_game.tscn") as PackedScene).instantiate()
+	game.autostart = false
+	root.add_child(game)
+	var arena: Node = game.boss_encounter
+	var boss_hud: Control
+	for node in game.find_children("*", "Control", true, false):
+		if node.get_script() == preload("res://scenes/runner/ui/boss_hud.gd"): boss_hud = node
+	check(boss_hud != null, "backend mounts boss HUD")
+	check(game.get_node_or_null("World/TurnRig/BossArena/BossFX") != null, "backend mounts standalone BossFX under arena")
+	for stage in [1, 2, 3]:
+		arena.start(stage)
+		check(arena.visual.get_script().resource_path.contains("boss/visuals/"), "backend mounts shipped boss visual")
+		check(boss_hud.visible and boss_hud.title.text.contains(String(game.get_boss_info().name).to_upper()), "real fight name plate")
+		while arena.phase < 2: arena.apply_tool(&"unit_test")
+		check(boss_hud.pips[1].filled, "real fight phase pip")
+		var previous_hp: int = arena.hp
+		if stage == 2: arena.apply_tool(&"review_comment")
+		elif stage == 3: arena.apply_tool(&"unit_test")
+		if stage > 1: check(arena.hp == previous_hp and arena.visual._art.state == &"resist", "real phase resists wrong tool")
+		arena.apply_tool(&"review_comment" if stage == 3 else &"unit_test")
+		check(arena.hp < previous_hp, "real phase accepts correct tool")
+		arena.abort()
+	game.free()
+	await frames()
+	print("TOOLS AND PROJECTILES: ", "PASS" if failures == before else "FAIL")

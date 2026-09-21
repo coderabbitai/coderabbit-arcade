@@ -234,3 +234,292 @@ These host results supersede the earlier sandbox persistence failures. They are 
 No backend code change is required for F7. The optional future standalone alert mount may call bind(game) repeatedly. Keep emitting the existing v1 pursuit signals; the frontend guards the optional v2 signal. All changes remain within frontend-owned paths.
 
 Coordinator: run final acceptance on Godot 4.7.1 and capture the pursuit alert plus refreshed HUD/gameplay at 960x540. The headless sandbox cannot provide that visual acceptance evidence.
+
+## F8: boss fights, tools and audio
+
+The three bosses now mount through the v2 backend's existing visual hooks. Each scene directly extends
+`boss_visual_base.gd`, delegates procedural geometry to `boss/boss_art.gd`, implements all nine hooks, and
+resets without rebuilding on repeated `on_spawned()` calls. Sway uses the supplied amplitude and period;
+phase changes accelerate it. Animation clocks, shader uniforms, telegraphs and effects freeze on tree pause.
+The backend still owns damage, projectile/tool lifetimes and camera shake.
+
+- **Flaky Test Swarm:** 24 CPU-animated test tiles, deterministic MATRIX/DANGER flicker, a core and hologram
+  shell, PASS/FAIL glyph clusters, and three orbiting groups from phase two.
+- **Merge Conflict Hydra:** three segmented necks and labelled heads, a preallocated fourth neck/head in
+  phase two, LILAC eyes in one batch, lane-directed charge poses and a glowing conflict seam.
+- **Legacy Monolith:** nine slab plates, six widening debt cracks, a code-wall face whose intensity follows
+  HP, DANGER vents and a deprecated name plate. Its dimensions follow the contract envelope rather than
+  allowing the design's taller slab to cross the floor limit.
+- All three support charge, attack recoil, white hit flash, grey resistance, phase rise/strobe/ring, CPU
+  breakup and retreat. The outro fits the backend's default one-second lifetime. Forward-facing name plates read `boss_name`, with a kind fallback, and use 48 px type, 0.021 pixel size,
+  outline 10 and NEAREST filtering. Short lines fit the boss width; the monolith also displays its deprecated inscription.
+
+`ui/boss_hud.tscn` provides an idempotent `bind(game)`, a backed 26-unit name plate, fractional HP fill,
+350 ms delayed chip drain, phase hexes, low-health border pulse, slide transitions and a BUG FIXED resolution.
+It uses `hud_style.gd` and the existing optional HUD mount. The backend mounts the standalone frontend
+`boss/boss_fx.tscn` under `World/TurnRig/BossArena`, sets PAUSABLE and calls its idempotent `bind(game)`.
+The HUD only reads facade signals and `get_boss_info()`, rebuilding pips from `phase_count` each fight.
+FX owns the telegraph, tracer, spark and damage-number pools; late binding restores pending telegraphs.
+The HUD does not access World. Its border processing runs only while visible during an active fight.
+
+`boss/telegraph.tscn` is pooled across three lanes. Lane-mask bits select x = -2/0/+2, with a floor decal,
+shrinking countdown inset, billboard hologram beam and an outlined label naming ORB, LOW, HIGH or WIDE.
+`projectile_visual.tscn` implements those four contract variants, including the high beam's 1.1-1.5 m gap;
+all geometry and CPU trail poses stay within 110% of the hitbox. Orb trails have 12 instances; wide blades
+carry eight tiles. Closing speed drives the orb's shader clock.
+
+The four tools share `boss/tool_art.gd`: REVIEW COMMENT uses a speech bubble and tail, LINT a five-tooth comb,
+UNIT TEST a square frame and tick, and AUTO-FIX a double chevron. MATRIX cores and ORANGE rings pulse toward
+the boss without spinning; pickup/reset hooks are idempotent. Tools remain distinct from the six v1 power-ups.
+`BossFX` pools four 140 ms tracers and six 700 ms rising damage labels with 20 CPU spark instances each.
+Zero damage displays a grey RESISTED tag and no sparks. Killing tracers can finish during the boss outro.
+
+Audio adds seven deterministic cached PCM recipes: `telegraph_tick`, `projectile_whoosh`, `tool_pickup`,
+`tool_fire`, `boss_hit`, `boss_phase`, `boss_defeat`. Telegraph ticks accelerate across the warning;
+projectile whooshes are stereo-panned from the lane mask. Pickup fires after 100 ms and damaging impact
+sounds after 140 ms. The per-kind `GATE` uses 90 ms for boss hits; phase, defeat and tool-fire cues gain
+priority. Boss music ducks by 4 dB with a +0.04 pitch offset, deepens to 8 dB for phase changes and releases
+on fight end. No AudioService change or additional player is needed: seven polyphonic slots plus three
+existing dedicated voices still cap playback at ten. The recipe census is 28; the two F9 recipes remain
+outside this milestone.
+
+The existing mock's 40-second timeline includes a boss spawn, warnings, shots, damaging/resisted tools,
+phase transitions and defeat between seconds 18 and 26. It exposes `get_boss_info()` and mounts the HUD/FX.
+`boss/dev/boss_gallery.tscn` cycles one boss at a time in the corridor with depth fog and glow.
+Space toggles fixture cycling. `boss/dev/boss_swarm.tscn`, `boss_hydra.tscn` and `boss_monolith.tscn`
+are fixed single-boss fixtures. Each uses camera (0, 4, 8), target (0, 1, -8), FOV 60, boss (0, 2.6, -14),
+one matching warning/projectile, two lane tools and a partially drained HUD with phase pips.
+The dev-scene smoke discovers all four scenes automatically.
+`capture_previews.gd` supplies `endless-runner-boss-swarm.png`, `endless-runner-boss-hydra.png` and
+`endless-runner-boss-monolith.png`, each with the design's 184-draw gallery budget. The coordinator must run
+these on the host; no graphical scenes or captures were run for this implementation.
+
+### F8 draw accounting
+
+These are headless node/CPU-pose censuses, not GPU measurements. Outlined Label3D nodes count twice,
+MultiMesh nodes once, and the boss flashes mutate duplicated materials without overlay passes.
+
+| Boss | Peak across phases, attacks, hits and endings | Contract cap |
+|---|---:|---:|
+| Flaky Test Swarm | 12 | 40 |
+| Merge Conflict Hydra | 18 | 40 |
+| Legacy Monolith | 11 | 40 |
+
+Tool items use at most seven draws; projectiles use two or three. Each telegraph conservatively counts
+**five** draws: floor + inset + beam + two label passes. The design's three-draw estimate does not cover
+all requested components. The fully saturated FX pools reserve 22 draws (four tracers + six sets of
+one spark batch and two label passes). A conservative fight estimate is **167**: boss 18 + telegraphs 15 +
+six projectiles 18 + three tools 21 + FX pools 22 + UI allowance 14 + corridor allowance 10 + Hoppy fixture
+allowance 33 + pursuer allowance 16. With one active tool effect, this falls to **149**. These deliberately
+include simultaneous pool saturation and existing fixture allowances; host capture must measure actual
+culling/batching. The gallery capture ceiling remains 184.
+
+### F8 verification
+
+Engine: `4.7.stable.official.5b4e0cb0f`. Verification uses headless import, `--check-only` for every changed/new
+GDScript, visual smoke, backend smoke and `git diff --check`. New smoke sections exercise all boss hooks,
+three phases, four tools, four projectile variants, repeated spawn/reset, all lane masks, CPU bounds,
+pause, pool saturation/expiry, HUD rebind/HP/pips and real backend mounts/resist rules. Existing smoke
+sections remain intact. Sandbox persistence and writable-path rerun results are recorded below. This frontend relies on the merged backend optional BossFX mount and `phase_count` facade field; host visual/audio review remains outstanding.
+
+Commands, from the repository root (`GODOT=/Applications/Godot.app/Contents/MacOS/Godot`):
+
+```sh
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8.log --import
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8.log --check-only --script res://<each-new-or-changed-script.gd>
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8.log --script res://tests/runner_visual_smoke.gd
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8-backend.log --script res://tests/runner_smoke.gd
+git diff --check
+```
+
+Import completed, with sandbox-denied editor-settings writes and the platform certificate diagnostic.
+The check-only loop reported `F8 CHECK-ONLY: 21 scripts; 0 failures`. `git diff --check` produced no output.
+The unmodified backend smoke's only failures were persistence:
+
+```text
+ERROR: RUNNER SMOKE: the board write reported error 12
+ERROR: RUNNER SMOKE: leaderboard_saved was never emitted
+ERROR: RUNNER SMOKE: this run is not on the leaderboard
+RUNNER SMOKE: FAIL (3 failures / 123 checks)
+```
+
+The full loop fails only on the two sandbox user:// persistence checks:
+
+```text
+VISUAL CHECK FAILED: Codex name persists
+VISUAL CHECK FAILED: temporary board contains saved run
+RUNNER VISUAL SMOKE: FAIL (2 failures)
+```
+
+Supplemental `/tmp/f8_backend_writable.gd` and `/tmp/f8_visual_writable.gd` harnesses extend the repository
+smoke scripts. Their `_initialize()` overrides set only `leaderboard_path` / `loop_board_path` to unique
+`/tmp/...cfg` files before calling `super._initialize()`. They do not alter game logic or test assertions.
+The backend smoke exercises the stage seam and boss fight; the visual full loop retains its existing
+menu/pursuit/persistence coverage, with F8 real boss mount/resistance checks in the new tools section.
+
+```sh
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8-writable-backend.log --script /tmp/f8_backend_writable.gd
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8-writable-visual.log --script /tmp/f8_visual_writable.gd
+```
+
+Verbatim successful markers from the writable-path runs:
+
+```text
+RUNNER DEV SCENES: PASS (7 scenes)
+BOSS DRAW CENSUS: flaky_test_swarm=12
+BOSS DRAW CENSUS: merge_conflict_hydra=18
+BOSS DRAW CENSUS: legacy_monolith=9
+BOSS VISUALS: 3 checked; peak draw census=18
+TOOLS AND PROJECTILES: PASS
+HUD LEGIBILITY: 40 labels checked
+PURSUIT ALERT: PASS
+RUNNER AUDIO: 28 recipes/triggers; demo heartbeat starts=1; peak voices=10; AudioService players=2
+RUNNER FULL LOOP: PASS (menu, play, hit, pursuit, 18.0s timer recovery, hit, hit, caught, finished, game over, Codex, retry, menu, hub, default music; isolated board removed)
+RUNNER VISUAL SMOKE: PASS (0 failures)
+RUNNER SMOKE: PASS (0 failures / 126 checks)
+```
+
+### F8 touched files
+
+The worktree was clean before F8. All 51 task-touched files are frontend-owned, including generated UIDs.
+Paths below are relative to the repository root. No commit or push was made.
+
+```text
+docs/endless-runner.md
+hoppys-adventure-arcade/scenes/runner/audio/runner_audio.gd
+hoppys-adventure-arcade/scenes/runner/audio/sfx_synth.gd
+hoppys-adventure-arcade/scenes/runner/boss/boss_art.gd
+hoppys-adventure-arcade/scenes/runner/boss/boss_art.gd.uid
+hoppys-adventure-arcade/scenes/runner/boss/boss_fx.gd
+hoppys-adventure-arcade/scenes/runner/boss/boss_fx.gd.uid
+hoppys-adventure-arcade/scenes/runner/boss/damage_number.gd
+hoppys-adventure-arcade/scenes/runner/boss/damage_number.gd.uid
+hoppys-adventure-arcade/scenes/runner/boss/dev/boss_gallery.gd
+hoppys-adventure-arcade/scenes/runner/boss/dev/boss_gallery.gd.uid
+hoppys-adventure-arcade/scenes/runner/boss/dev/boss_gallery.tscn
+hoppys-adventure-arcade/scenes/runner/boss/telegraph.gd
+hoppys-adventure-arcade/scenes/runner/boss/telegraph.gd.uid
+hoppys-adventure-arcade/scenes/runner/boss/telegraph.tscn
+hoppys-adventure-arcade/scenes/runner/boss/tool_art.gd
+hoppys-adventure-arcade/scenes/runner/boss/tool_art.gd.uid
+hoppys-adventure-arcade/scenes/runner/boss/tool_tracer.gd
+hoppys-adventure-arcade/scenes/runner/boss/tool_tracer.gd.uid
+hoppys-adventure-arcade/scenes/runner/boss/visuals/flaky_test_swarm_visual.gd
+hoppys-adventure-arcade/scenes/runner/boss/visuals/flaky_test_swarm_visual.gd.uid
+hoppys-adventure-arcade/scenes/runner/boss/visuals/flaky_test_swarm_visual.tscn
+hoppys-adventure-arcade/scenes/runner/boss/visuals/legacy_monolith_visual.gd
+hoppys-adventure-arcade/scenes/runner/boss/visuals/legacy_monolith_visual.gd.uid
+hoppys-adventure-arcade/scenes/runner/boss/visuals/legacy_monolith_visual.tscn
+hoppys-adventure-arcade/scenes/runner/boss/visuals/merge_conflict_hydra_visual.gd
+hoppys-adventure-arcade/scenes/runner/boss/visuals/merge_conflict_hydra_visual.gd.uid
+hoppys-adventure-arcade/scenes/runner/boss/visuals/merge_conflict_hydra_visual.tscn
+hoppys-adventure-arcade/scenes/runner/environment/dev/capture_previews.gd
+hoppys-adventure-arcade/scenes/runner/hazards/visuals/projectile_visual.gd
+hoppys-adventure-arcade/scenes/runner/hazards/visuals/projectile_visual.gd.uid
+hoppys-adventure-arcade/scenes/runner/hazards/visuals/projectile_visual.tscn
+hoppys-adventure-arcade/scenes/runner/powerups/visuals/auto_fix_patch_visual.gd
+hoppys-adventure-arcade/scenes/runner/powerups/visuals/auto_fix_patch_visual.gd.uid
+hoppys-adventure-arcade/scenes/runner/powerups/visuals/auto_fix_patch_visual.tscn
+hoppys-adventure-arcade/scenes/runner/powerups/visuals/lint_rule_visual.gd
+hoppys-adventure-arcade/scenes/runner/powerups/visuals/lint_rule_visual.gd.uid
+hoppys-adventure-arcade/scenes/runner/powerups/visuals/lint_rule_visual.tscn
+hoppys-adventure-arcade/scenes/runner/powerups/visuals/review_comment_visual.gd
+hoppys-adventure-arcade/scenes/runner/powerups/visuals/review_comment_visual.gd.uid
+hoppys-adventure-arcade/scenes/runner/powerups/visuals/review_comment_visual.tscn
+hoppys-adventure-arcade/scenes/runner/powerups/visuals/unit_test_visual.gd
+hoppys-adventure-arcade/scenes/runner/powerups/visuals/unit_test_visual.gd.uid
+hoppys-adventure-arcade/scenes/runner/powerups/visuals/unit_test_visual.tscn
+hoppys-adventure-arcade/scenes/runner/shaders/boss_beam.gdshader
+hoppys-adventure-arcade/scenes/runner/shaders/boss_beam.gdshader.uid
+hoppys-adventure-arcade/scenes/runner/ui/boss_hud.gd
+hoppys-adventure-arcade/scenes/runner/ui/boss_hud.gd.uid
+hoppys-adventure-arcade/scenes/runner/ui/boss_hud.tscn
+hoppys-adventure-arcade/scenes/runner/ui/dev/mock_runner_game.gd
+hoppys-adventure-arcade/tests/runner_visual_smoke.gd
+```
+
+
+### F8 validator and capture corrections (2026-09-20)
+
+All existing uncommitted F8 work and host PNGs are preserved. No backend-owned file was edited,
+and no commit or push was made. The installed Godot 4.7.0 results below are diagnostic against the
+project's 4.7.1 pin. Host recapture and listening remain outstanding.
+
+- Items 1, 2, 5: `boss/boss_fx.tscn:1`, `boss/boss_fx.gd:30`, `ui/boss_hud.gd:58`,
+  `ui/boss_hud.gd:84`, `ui/boss_hud.gd:150`, `ui/dev/mock_runner_game.gd:95`.
+  The backend owns the arena mount; the HUD has no World lookup or 3D ownership. The mock directly
+  instantiates the FX scene. Pips follow phase_count and border updates require a visible active fight.
+- Items 3, 7 and C4: `boss/boss_art.gd:151`, each `boss/visuals/*_visual.gd:15`,
+  `tests/runner_visual_smoke.gd:1290`. All seven base vars are set in the smoke before spawn.
+  Name plates preserve boss_name with line breaks, with kind used only for an empty name;
+  max_hp initializes health and hover_z supplies initial depth without double-offsetting the backend mount.
+  Plates use 48 px type, 0.021 pixel size, outline 10 and NEAREST, with forward-facing text to keep
+  the depth envelope bounded. The monolith retains its deprecated inscription beside its actual name.
+- Item 4: ORB / LOW / HIGH / WIDE remain unchanged; the smoke asserts WIDE.
+- Item 6: `audio/runner_audio.gd:352`, `tests/runner_visual_smoke.gd:982`.
+  The -4 dB music baseline and +0.04 pitch target are held once per fight and released on both endings.
+  A phase applies another -4 dB transient for -8 dB total. The test checks no recurring duck tween,
+  repeated spawn idempotence and defeat/retreat restoration. Pause skips finished drone tweens.
+- C1/C2: `boss/dev/boss_gallery.gd:18`, `boss/dev/boss_gallery.gd:39`,
+  `environment/dev/capture_previews.gd:76`. Fixed host fixtures are
+  `res://scenes/runner/boss/dev/boss_swarm.tscn`, `boss_hydra.tscn`, `boss_monolith.tscn`.
+  Each shows exactly one boss in the corridor at gameplay framing, one matching warning/projectile,
+  two tools and a settled partial-health HUD. Existing PNG output names remain unchanged.
+- C3: `hazards/visuals/projectile_visual.gd:40`. Additive alpha is 0.18 for LOW/HIGH and 0.20 for WIDE;
+  white inner geometry is replaced with DANGER/ORANGE. The 110 percent bounds checks pass.
+
+Exact final commands (repository root):
+
+```sh
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8-check.log --check-only --script res://<each-changed-gd>
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8-fix.log --script res://tests/runner_visual_smoke.gd
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8-backend.log --script res://tests/runner_smoke.gd
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8-writable-visual.log --script /tmp/f8_visual_writable.gd
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/runner-f8-writable-backend.log --script /tmp/f8_backend_writable.gd
+grep -c "Removing a CollisionObject" /tmp/f8-backend.txt
+grep -c "Removing a CollisionObject" /tmp/f8-backend-writable-final.txt
+git diff --check
+```
+
+`/tmp/f8-check-only-final.txt` contains every expanded check-only command, output and exit code.
+All 21 changed/new scripts returned exit 0. Verbatim summary:
+
+```text
+F8 CHECK-ONLY: 21 scripts; 0 failures
+```
+
+The full loop fails only on the two sandbox user:// persistence checks:
+
+```text
+RUNNER DEV SCENES: PASS (10 scenes)
+BOSS VISUALS: 3 checked; peak draw census=18
+TOOLS AND PROJECTILES: PASS
+HUD LEGIBILITY: 40 labels checked
+PURSUIT ALERT: PASS
+RUNNER AUDIO: 28 recipes/triggers; demo heartbeat starts=1; peak voices=10; AudioService players=2
+VISUAL CHECK FAILED: Codex name persists
+VISUAL CHECK FAILED: temporary board contains saved run
+RUNNER FULL LOOP: FAIL (menu, play, hit, pursuit, 18.0s timer recovery, hit, hit, caught, finished, game over, Codex, retry, menu, hub, default music; isolated board removed)
+RUNNER VISUAL SMOKE: FAIL (2 failures)
+```
+
+Unmodified backend smoke, with sandbox error 12:
+
+```text
+ERROR: RUNNER SMOKE: the board write reported error 12
+ERROR: RUNNER SMOKE: leaderboard_saved was never emitted
+ERROR: RUNNER SMOKE: this run is not on the leaderboard
+RUNNER SMOKE: FAIL (3 failures / 123 checks)
+```
+
+Supplemental harnesses change only the leaderboard paths to writable `/tmp` files. Verbatim results:
+
+```text
+RUNNER FULL LOOP: PASS (menu, play, hit, pursuit, 18.0s timer recovery, hit, hit, caught, finished, game over, Codex, retry, menu, hub, default music; isolated board removed)
+RUNNER VISUAL SMOKE: PASS (0 failures)
+RUNNER SMOKE: PASS (0 failures / 126 checks)
+```
+
+Both collision-removal grep commands printed `0` (grep exit 1 means no matching lines).
+`git diff --check` produced no output and exited 0. Both runs also emit the pre-existing macOS
+`get_system_ca_certificates` diagnostic before the test logger starts.

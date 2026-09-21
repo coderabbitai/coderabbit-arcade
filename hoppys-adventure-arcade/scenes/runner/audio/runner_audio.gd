@@ -12,7 +12,14 @@ var _clock := 0.0
 var _pending: Dictionary = {}
 const PENDING_TTL := 0.12
 const HIGH_PENDING_TTL := 0.30
+const GATE := {&"boss_hit": 0.09, &"telegraph_tick": 0.04, &"projectile_whoosh": 0.04, &"tool_pickup": 0.04, &"tool_fire": 0.04, &"boss_phase": 0.04, &"boss_defeat": 0.04}
+var _scheduled: Array[Dictionary] = []
+var _boss_active := false
+var _boss_duck := 0.0
+var _boss_pitch_offset := 0.0
+var _whoosh_mask := 2
 const HIGH_PRIORITY := {
+	&"boss_defeat": true, &"boss_phase": true, &"tool_fire": true,
 	&"alert_sting": true, &"hit": true, &"caught": true, &"game_over": true, &"shield_block": true,
 	&"pursuit_start": true, &"retreat": true, &"recovered_chime": true, &"powerup": true,
 }
@@ -55,6 +62,10 @@ func bind(game: Node) -> void:
 	_normalized = maxf(0.0, float(game.get("normalized_speed")))
 	_pitch = 1.0
 	_connections = {
+		&"boss_spawned": _on_boss_spawned, &"boss_phase_changed": _on_boss_phase,
+		&"boss_defeated": _on_boss_defeated, &"boss_retreated": _on_boss_retreated,
+		&"boss_attack_telegraph": _on_telegraph, &"boss_projectile_fired": _on_projectile,
+		&"tool_collected": _on_tool,
 		&"run_started": _on_run_started, &"state_changed": _on_state,
 		&"speed_changed": _on_speed, &"player_action": _on_action,
 		&"power_up_collected": _on_powerup, &"power_up_expired": _on_expired,
@@ -85,6 +96,11 @@ func _process(delta: float) -> void:
 	if not is_instance_valid(_game) or _paused:
 		return
 	_clock += delta
+	for i in range(_scheduled.size() - 1, -1, -1):
+		_scheduled[i].remaining -= delta
+		if float(_scheduled[i].remaining) <= 0:
+			_play(_scheduled[i].kind)
+			_scheduled.remove_at(i)
 	if _pursued:
 		var next_phase := _radar_phase + delta * _radar_rate
 		_radar_age += delta
@@ -106,7 +122,7 @@ func _process(delta: float) -> void:
 				_pending.erase(kind)
 			else:
 				_play(kind)
-	var target := 1.0 + 0.10 * _normalized + (0.05 if _nitro else 0.0)
+	var target := 1.0 + 0.10 * _normalized + (0.05 if _nitro else 0.0) + _boss_pitch_offset
 	_pitch = lerpf(_pitch, target, 1.0 - exp(-5.0 * delta))
 	if _audio_service != null and _audio_service.has_method("set_music_pitch"):
 		_audio_service.set_music_pitch(_pitch)
@@ -119,9 +135,9 @@ func _process(delta: float) -> void:
 		_step_time = 0.0
 
 func _play(kind: StringName, player: AudioStreamPlayer = null) -> void:
-	if _paused or _clock - float(_last_play.get(kind, -1.0)) < 0.04:
+	if _paused or _clock - float(_last_play.get(kind, -1.0)) < float(GATE.get(kind, 0.04)):
 		return
-	var stream := Synth.sound(kind)
+	var stream := Synth.panned_whoosh(_whoosh_mask) if kind == &"projectile_whoosh" else Synth.sound(kind)
 	if stream == null:
 		return
 	if player != null:
@@ -288,6 +304,7 @@ func _on_recovered(_reason: StringName) -> void:
 	_play(&"recovered_chime")
 
 func _on_caught() -> void:
+	_end_boss_audio()
 	_running = false
 	_nitro = false
 	footsteps.stop()
@@ -295,6 +312,7 @@ func _on_caught() -> void:
 	_play(&"caught")
 
 func _on_finished(_result: Dictionary) -> void:
+	_end_boss_audio()
 	_running = false
 	_nitro = false
 	footsteps.stop()
@@ -305,13 +323,14 @@ func _on_paused(value: bool) -> void:
 	_paused = value
 	for player: AudioStreamPlayer in [one_shots, footsteps, drone, heartbeat]:
 		player.stream_paused = value
-	if _drone_fade != null:
+	if _drone_fade != null and _drone_fade.is_valid():
 		if value:
 			_drone_fade.pause()
 		else:
 			_drone_fade.play()
 
 func _stop_all() -> void:
+	_end_boss_audio()
 	_stop_pursuit()
 	one_shots.stop()
 	footsteps.stop()
@@ -325,3 +344,56 @@ func _exit_tree() -> void:
 	_stop_all()
 	if _audio_service != null and _audio_service.has_method("set_music_pitch"):
 		_audio_service.set_music_pitch(1.0)
+
+func _duck(db: float, seconds: float) -> void:
+	if _audio_service != null and _audio_service.has_method("duck_music"):
+		_audio_service.duck_music(db, seconds)
+
+func _set_boss_mix(active: bool) -> void:
+	var target := -4.0 if active else 0.0
+	_boss_pitch_offset = 0.04 if active else 0.0
+	if is_equal_approx(_boss_duck, target): return
+	# Hold the service's baseline so transient ducks return to the fight level.
+	if _audio_service != null and _audio_service.has_method("duck_music") and "music_volume_db" in _audio_service:
+		_audio_service.set("music_volume_db", float(_audio_service.get("music_volume_db")) + target - _boss_duck)
+		_duck(0, 0.2)
+	_boss_duck = target
+
+func _on_boss_spawned(_kind: StringName, _hp: int) -> void:
+	_boss_active = true
+	_set_boss_mix(true)
+
+func _on_boss_phase(_phase: int) -> void:
+	_play(&"boss_phase")
+	# Another 4 dB below the held -4 dB baseline gives the -8 dB punch.
+	_duck(-4 if _boss_active else -8, 0.35)
+
+func _end_boss_audio() -> void:
+	_boss_active = false
+	_scheduled.clear()
+	_set_boss_mix(false)
+
+func _on_boss_defeated(_kind: StringName, _bonus: int) -> void:
+	for i in range(_scheduled.size() - 1, -1, -1):
+		if _scheduled[i].kind == &"telegraph_tick": _scheduled.remove_at(i)
+	# Preserve the killing tool's delayed fire/hit through the short outro.
+	_boss_active = false
+	_set_boss_mix(false)
+	_play(&"boss_defeat")
+
+func _on_boss_retreated(_kind: StringName, _bonus: int) -> void:
+	_end_boss_audio()
+
+func _on_telegraph(_mask: int, _kind: StringName, seconds: float) -> void:
+	_play(&"telegraph_tick")
+	_scheduled.append({"kind": &"telegraph_tick", "remaining": seconds * 0.55})
+	_scheduled.append({"kind": &"telegraph_tick", "remaining": seconds * 0.85})
+
+func _on_projectile(_projectile: Area3D, mask: int, _kind: StringName, _speed: float) -> void:
+	_whoosh_mask = mask
+	_play(&"projectile_whoosh")
+
+func _on_tool(_kind: StringName, damage: int) -> void:
+	_play(&"tool_pickup")
+	_scheduled.append({"kind": &"tool_fire", "remaining": 0.10})
+	if damage > 0: _scheduled.append({"kind": &"boss_hit", "remaining": 0.14})

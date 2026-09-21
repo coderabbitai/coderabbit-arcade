@@ -3,6 +3,13 @@ extends RefCounted
 const RATE := 22050
 # seconds, start Hz, end Hz, waveform, gain
 const RECIPES := {
+	&"telegraph_tick": [0.06, 1600.0, 1600.0, "square", 0.35],
+	&"projectile_whoosh": [0.30, 900.0, 180.0, "noise", 0.45],
+	&"tool_pickup": [0.22, 880.0, 1760.0, "sine", 0.55],
+	&"tool_fire": [0.18, 2400.0, 600.0, "saw", 0.5],
+	&"boss_hit": [0.20, 300.0, 90.0, "fm", 0.6],
+	&"boss_phase": [0.80, 220.0, 440.0, "detuned", 0.6],
+	&"boss_defeat": [1.30, 330.0, 1320.0, "burst", 0.7],
 	&"alert_sting": [0.55, 180.0, 180.0, "alert", 0.65],
 	&"radar_pulse": [0.5, 1200.0, 900.0, "radar", 0.55],
 	&"footstep": [0.07, 140.0, 65.0, "noise", 0.35],
@@ -60,6 +67,9 @@ static func sound(kind: StringName) -> AudioStreamWAV:
 			"square": sample = 0.65 * (1.0 if sin(phase) >= 0 else -1.0) + 0.35 * sample
 			"saw": sample = 0.65 * (2.0 * fposmod(phase / TAU, 1.0) - 1.0) + 0.35 * sample
 			"noise": sample = sample * 0.55 + rng.randf_range(-1.0, 1.0) * 0.45
+			"fm": sample = sin(phase + 2.5 * sin(phase * 1.7))
+			"detuned": sample = (sin(phase) + sin(phase * 1.006) + sin(phase * 1.5)) / 3.0
+			"burst": sample = rng.randf_range(-1, 1) if t < 0.18 else (sin(phase) + sin(phase * 1.25) + sin(phase * 1.5)) / 3.0
 			"chord": sample = (sample + sin(phase * 1.25) + sin(phase * 1.5)) / 3.0
 			"drone":
 				# Integral cycles over two seconds, including the amplitude modulation.
@@ -86,4 +96,28 @@ static func sound(kind: StringName) -> AudioStreamWAV:
 		stream.loop_begin = 0
 		stream.loop_end = count
 	_cache[kind] = stream
+	return stream
+
+static func panned_whoosh(lane_mask: int) -> AudioStreamWAV:
+	var key := StringName("whoosh_pan_%d" % (lane_mask & 7))
+	if _cache.has(key): return _cache[key]
+	var source := sound(&"projectile_whoosh")
+	var mono := source.data
+	var data := PackedByteArray()
+	data.resize(mono.size() * 2)
+	var total := 0.0
+	var lanes := 0
+	for lane in 3:
+		if lane_mask & (1 << lane):
+			total += lane - 1
+			lanes += 1
+	var pan := total / maxi(lanes, 1)
+	for i in mono.size() / 2:
+		var value := mono.decode_s16(i * 2)
+		data.encode_s16(i * 4, int(value * (1 - maxf(pan, 0) * 0.8)))
+		data.encode_s16(i * 4 + 2, int(value * (1 + minf(pan, 0) * 0.8)))
+	var stream := source.duplicate() as AudioStreamWAV
+	stream.stereo = true
+	stream.data = data
+	_cache[key] = stream
 	return stream

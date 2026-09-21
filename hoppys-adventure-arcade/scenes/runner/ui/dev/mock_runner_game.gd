@@ -5,6 +5,21 @@ const Hud = preload("res://scenes/runner/ui/runner_hud.tscn")
 const PauseMenu = preload("res://scenes/runner/ui/pause_menu.tscn")
 const GameOver = preload("res://scenes/runner/ui/game_over.tscn")
 const Leaderboard = preload("res://scenes/runner/systems/runner_leaderboard.gd")
+signal boss_spawned(kind: StringName, hp: int)
+signal boss_health_changed(hp: int, max_hp: int)
+signal boss_phase_changed(phase: int)
+signal boss_attack_telegraph(lane_mask: int, kind: StringName, seconds: float)
+signal boss_projectile_fired(projectile: Area3D, lane_mask: int, kind: StringName, speed: float)
+signal boss_defeated(kind: StringName, bonus: int)
+signal boss_retreated(kind: StringName, bonus: int)
+signal tool_collected(kind: StringName, damage: int)
+var boss: Node3D
+var boss_hp := 0
+var boss_phase := 1
+var boss_kind := &"merge_conflict_hydra"
+var boss_phase_count := 3
+var boss_fx: Node3D
+var boss_overlay: Control
 signal run_started(seed: int)
 signal state_changed(state: StringName)
 signal health_changed(hp: int, max_hp: int)
@@ -79,6 +94,9 @@ var _board: Array[Dictionary] = []
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	cosmetic_rng.seed = seed
+	boss = Node3D.new()
+	boss.position = Vector3(0, 2.6, -14)
+	add_child(boss)
 	player = CharacterBody3D.new()
 	add_child(player)
 	camera_rig = MockCamera.new()
@@ -89,6 +107,12 @@ func _ready() -> void:
 	for overlay in [hud, pause_menu, game_over]:
 		add_child(overlay)
 		overlay.bind(self)
+	boss_overlay = preload("res://scenes/runner/ui/boss_hud.tscn").instantiate()
+	hud.add_child(boss_overlay)
+	boss_overlay.bind(self)
+	boss_fx = preload("res://scenes/runner/boss/boss_fx.tscn").instantiate()
+	add_child(boss_fx)
+	boss_fx.bind(self)
 
 func _process(delta: float) -> void:
 	if autoplay:
@@ -163,10 +187,35 @@ func advance_demo(delta: float) -> void:
 				health_changed.emit(hp, hp)
 				pursuit_recovered.emit(&"timer")
 				pursuit_alert.emit(&"clear", 0.0)
-	for at in [3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 14.0, 30.0, 34.0, 38.4, 40.0]:
+	for at in [3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 14.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 30.0, 34.0, 38.4, 40.0]:
 		if demo_time >= at and not _events.has(at):
 			_events[at] = true
 			match at:
+				18.0:
+					boss_hp = 140
+					boss_spawned.emit(boss_kind, boss_hp)
+					boss_health_changed.emit(boss_hp, 140)
+				19.0: boss_attack_telegraph.emit(5, &"orb", 0.8)
+				20.0: boss_projectile_fired.emit(null, 5, &"orb", 28.0)
+				21.0:
+					tool_collected.emit(&"review_comment", 10)
+					boss_hp = 90
+					boss_health_changed.emit(boss_hp, 140)
+					boss_phase = 2
+					boss_phase_changed.emit(2)
+				22.0: tool_collected.emit(&"auto_fix_patch", 0)
+				23.0: boss_attack_telegraph.emit(7, &"high", 0.7)
+				24.0:
+					tool_collected.emit(&"unit_test", 15)
+					boss_hp = 40
+					boss_phase = 3
+					boss_health_changed.emit(boss_hp, 140)
+					boss_phase_changed.emit(3)
+				25.0: tool_collected.emit(&"lint_rule", 12)
+				26.0:
+					boss_hp = 0
+					boss_health_changed.emit(0, 140)
+					boss_defeated.emit(boss_kind, 800)
 				3.0: collect(&"approve_shield", 0)
 				5.0: hit()
 				7.0: collect(&"auto_fix", 0)
@@ -308,3 +357,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_N: collect()
 			_: return
 		get_viewport().set_input_as_handled()
+
+func get_boss_info() -> Dictionary:
+	if boss_hp <= 0: return {}
+	return {"kind": boss_kind, "name": "Merge Conflict Hydra", "hp": boss_hp, "max_hp": 140, "phase": boss_phase, "phase_count": boss_phase_count, "accepted_tools": [&"lint_rule", &"unit_test"] if boss_phase == 2 else [&"review_comment", &"lint_rule", &"unit_test", &"auto_fix_patch"], "pending_attacks": []}

@@ -73,6 +73,23 @@ func run() -> void:
 				failures += 1
 		hud_preview.free()
 		await process_frame
+	var bosses := preload("res://scenes/runner/boss/dev/boss_gallery.tscn").instantiate()
+	root.add_child(bosses)
+	bosses.animate = false
+	for i in 3:
+		bosses.capture_boss(i)
+		await create_timer(0.35).timeout
+		await RenderingServer.frame_post_draw
+		var suffix: String = ["swarm", "hydra", "monolith"][i]
+		var output := ProjectSettings.globalize_path("res://../docs/previews/endless-runner-boss-%s.png" % suffix)
+		var error := root.get_texture().get_image().save_png(output)
+		var calls := root.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
+		print("CAPTURE: boss-", suffix, " error=", error, " draw_calls=", calls)
+		# Contract has four projectile variants, so reserve four slots in the 184 budget.
+		print("BOSS GALLERY DRAW BUDGET: ", calls, " / 184")
+		if error != OK or calls > 184: failures += 1
+	bosses.free()
+	await process_frame
 	root.get_node("AudioService").shutdown()
 	await create_timer(0.3).timeout
 	print("PREVIEW CAPTURE: ", "PASS" if failures == 0 else "FAIL")
