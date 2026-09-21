@@ -1548,6 +1548,12 @@ func _test_boss_fight() -> void:
 	check(StringName(info["kind"]) == &"flaky_test_swarm" and int(info["hp"]) == 100
 		and int(info["phase"]) == 1 and (info["pending_attacks"] as Array).is_empty(),
 		"19: get_boss_info reports the fresh fight, got %s" % [info])
+	# Contract §11.4: phase_count is the fight's own phase count, so a HUD can draw "1 / 3" from the
+	# one dictionary; the facade mirrors it while the arena is live.
+	check(int(info["phase_count"]) == BossDefs.PHASE_COUNT
+		and int(game.get_boss_info()["phase_count"]) == BossDefs.PHASE_COUNT,
+		"19: get_boss_info reports phase_count %d / %d, expected %d"
+			% [int(info["phase_count"]), int(game.get_boss_info()["phase_count"]), BossDefs.PHASE_COUNT])
 
 	# Five Auto-Fix patches at 20 damage: the 66 % and the 33 % thresholds are crossed once each.
 	var expected_hp := 100
@@ -1918,13 +1924,13 @@ func _bonus_reasons(events: Dictionary) -> Array[StringName]:
 
 ## The contract §11.4 boss block outside a fight: every key present, every value empty.
 func _boss_info_is_empty(info: Dictionary) -> bool:
-	for key in ["kind", "name", "hp", "max_hp", "phase", "accepted_tools", "pending_attacks"]:
+	for key in ["kind", "name", "hp", "max_hp", "phase", "phase_count", "accepted_tools", "pending_attacks"]:
 		if not info.has(key):
 			return false
 	var tools: Array = info["accepted_tools"]
 	var attacks: Array = info["pending_attacks"]
 	return StringName(info["kind"]) == &"" and String(info["name"]) == "" and int(info["hp"]) == 0 \
-		and int(info["max_hp"]) == 0 and int(info["phase"]) == 0 \
+		and int(info["max_hp"]) == 0 and int(info["phase"]) == 0 and int(info["phase_count"]) == 0 \
 		and tools.is_empty() and attacks.is_empty()
 
 # --- harness ---

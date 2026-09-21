@@ -385,7 +385,8 @@ World
    └─ BossArena (boss/boss_arena.tscn, boss/boss_encounter.gd)
       ├─ Boss (Node3D) └─ Visual        mount boss/visuals/<kind>_visual.tscn
       ├─ Projectiles (Node3D)           hazards/projectile.tscn instances
-      └─ Tools (Node3D)                 powerups/tool_pickup.tscn instances
+      ├─ Tools (Node3D)                 powerups/tool_pickup.tscn instances
+      └─ (mount boss/boss_fx.tscn)      optional 3D fight effects, PAUSABLE, `bind(game)`
 Systems
 └─ StageManager (systems/stage_manager.gd), inserted after Spawner, before Autopilot
 HUD mounts (optional, PAUSABLE, `bind(game)`): ui/pursuit_alert.tscn, ui/boss_hud.tscn,
@@ -420,7 +421,8 @@ Read-only properties: `phase`, `stage_index: int`, `stage_name: StringName`, `st
 `stage_distance_target: float`, `run_clock: float`, `boss: Node3D` (null outside a fight), `boss_kind`, `boss_hp`,
 `boss_max_hp`, `boss_phase: int`. Methods: `get_stage_info() -> Dictionary`
 (`index, name, phase, distance, target, speed_bonus, difficulty_floor`), `get_boss_info() -> Dictionary`
-(`kind, name, hp, max_hp, phase, accepted_tools, pending_attacks`). `result` gains `stages_cleared`,
+(`kind, name, hp, max_hp, phase, phase_count, accepted_tools, pending_attacks`; `phase_count` is the fight's own
+phase count, 3 today, and 0 in the empty block). `result` gains `stages_cleared`,
 `stage_reached`, `bosses_defeated`, `bosses_escaped`, `tools_used`, `boss_damage_dealt`, `turns_taken` (all int).
 Projectiles count in `hazards_dodged` (it is a stat, not a score input). `camera_rig.shake(0.35)` fires on every
 damaging tool hit (backend-owned, as in §4.2).
@@ -483,12 +485,16 @@ projectiles; Nitro/LGTM invulnerability applies; Shield blocks a projectile).
 
 ### 11.8 UI mounts (extends §5.6) — all optional, `bind(game: Node)`, PAUSABLE, no backend graybox
 
+The one non-UI mount in this table is `boss/boss_fx.tscn`: it mounts under `World/TurnRig/BossArena` (§11.3) rather
+than under `HUD`, and it is the sanctioned home for 3D fight effects, so no panel has to reach into `World`.
+
 | Scene | Purpose | Reads |
 |---|---|---|
 | `ui/pursuit_alert.tscn` | Star Fox-style incoming-transmission panel with radar/pulse; states the catch rule | `pursuit_started`, `pursuit_progress`, `pursuit_alert`, `pursuit_recovered`, `damage_blocked`, `caught` |
 | `ui/boss_hud.tscn` | boss name plate, HP bar, phase pips | `boss_*` signals, `get_boss_info()` |
 | `ui/stage_banner.tscn` | `STAGE n / <boss name>` banner; deferred until `turn_finished` | `stage_started`, `turn_*` |
 | `ui/stage_clear.tscn` | stage-clear card (time, tools used, bonus) | `stage_cleared`, `boss_defeated`/`boss_retreated`, `get_stage_info()` |
+| `boss/boss_fx.tscn` | 3D fight effects: telegraphs, tracers, damage numbers; never touches gameplay nodes | `boss_*` signals, `tool_collected`, `get_boss_info()` |
 
 `ui/runner_hud.tscn`, `ui/pause_menu.tscn`, `ui/game_over.tscn` keep their v1 contract; the frontend may restyle
 them for legibility (font ≥ 18 units, outline ≥ 6, panel-backed; see the v2 frontend design §1). The F3

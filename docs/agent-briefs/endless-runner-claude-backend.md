@@ -162,8 +162,8 @@ GODOT_BIN="${GODOT_BIN:-/Applications/Godot.app/Contents/MacOS/Godot}"
 
 # The AppRouter suppression is scoped by the `at:` line that follows the diagnostic, which names the
 # script the identifier is in: only runner_game.gd and runner_menu.gd are excused. The same error in
-# any other script is printed and fails the gate. The cascade lines name the dependent script
-# themselves, so they need no scoping.
+# any other script is printed and fails the gate. The cascade lines are scoped the same way: they are
+# excused only under res://scenes/runner/ or res://tests/, the roots that preload those two scripts.
 grep -q '^AppRouter=' hoppys-adventure-arcade/project.godot \
   || { echo "AppRouter autoload missing from project.godot" >&2; exit 1; }
 check_only() {
@@ -175,7 +175,10 @@ check_only() {
   # Stateful, exact suppression. An `Identifier not found: AppRouter` is excused only when the line
   # immediately after it locates the error in runner_game.gd or runner_menu.gd by full res:// path,
   # and the compile cascade is excused only once such a diagnostic has been accepted in THIS script's
-  # output — Godot always emits the root cause first, so a cascade without it is a different failure.
+  # output — Godot always emits the root cause first, so a cascade without it is a different failure —
+  # AND the cascade itself names a script under res://scenes/runner/ or res://tests/, the two roots
+  # whose scripts legitimately preload runner_game.gd / runner_menu.gd. A cascade from anywhere else
+  # is a real failure wearing the same words, so it is printed and fails the gate.
   # The trailing __DOCUMENTED_CASCADE__ tells the shell an excused diagnostic was actually seen.
   out="$(printf '%s\n' "$raw" | awk '
     /^Godot Engine/ { next }
@@ -187,13 +190,27 @@ check_only() {
       print pending; print; pending = ""; next
     }
     pending != "" && NF { print pending; pending = "" }
-    /Compile Error: Failed to compile depended scripts\./ { cascade = $0; next }
-    /Failed to load script .* with error "Compilation failed"\./ { cascade = $0; next }
-    cascade != "" && /^[[:space:]]*at: / {
-      if (accepted) { cascade = ""; next }
-      print cascade; print; cascade = ""; next
+    # The depended-scripts line carries no path of its own, so its following `at:` line is what gets
+    # scoped; a "Failed to load script" line names the script in quotes, which is scoped directly.
+    /Compile Error: Failed to compile depended scripts\./ { cascade = $0; cascade_path = ""; next }
+    /Failed to load script .* with error "Compilation failed"\./ {
+      cascade = $0
+      cascade_path = $0
+      sub(/^.*Failed to load script "/, "", cascade_path)
+      sub(/".*$/, "", cascade_path)
+      next
     }
-    cascade != "" && NF { print cascade; cascade = "" }
+    cascade != "" && /^[[:space:]]*at: / {
+      excused = 0
+      if (accepted) {
+        if (cascade_path != "") {
+          if (cascade_path ~ /^res:\/\/(scenes\/runner|tests)\//) excused = 1
+        } else if ($0 ~ /res:\/\/(scenes\/runner|tests)\//) excused = 1
+      }
+      if (excused) { cascade = ""; cascade_path = ""; next }
+      print cascade; print; cascade = ""; cascade_path = ""; next
+    }
+    cascade != "" && NF { print cascade; cascade = ""; cascade_path = "" }
     NF { print }
     END {
       if (pending != "") print pending

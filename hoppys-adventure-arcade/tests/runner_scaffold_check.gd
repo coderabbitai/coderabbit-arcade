@@ -68,6 +68,10 @@ const PROPERTIES := [
 	"stage_manager", "turn_rig", "boss_encounter"
 ]
 
+## Contract §11.3 and §11.8: the optional 3D fight effects, mounted inside the arena. Like the HUD
+## panels it is tolerated when absent, and when it exists it must be PAUSABLE.
+const BOSS_FX_SCENE := "res://scenes/runner/boss/boss_fx.tscn"
+
 ## Contract §11.8: optional, never grayboxed, tolerated when absent.
 const OPTIONAL_HUD_MOUNTS := [
 	"res://scenes/runner/ui/pursuit_alert.tscn",
@@ -319,7 +323,7 @@ func _check_stage_scaffold(game: Node) -> void:
 	for key in ["index", "name", "phase", "distance", "target", "speed_bonus", "difficulty_floor"]:
 		check(info.has(key), "get_stage_info() is missing the %s key" % key)
 	var boss_info: Dictionary = game.get_boss_info()
-	for key in ["kind", "name", "hp", "max_hp", "phase", "accepted_tools", "pending_attacks"]:
+	for key in ["kind", "name", "hp", "max_hp", "phase", "phase_count", "accepted_tools", "pending_attacks"]:
 		check(boss_info.has(key), "get_boss_info() is missing the %s key" % key)
 
 	# track_z is the identity while the rig is square, which is every frame outside a turn.
@@ -332,6 +336,23 @@ func _check_stage_scaffold(game: Node) -> void:
 	# Contract §11.3: a bare arena is a valid placeholder, but it must never be missing.
 	check(game.boss_encounter != null and is_instance_valid(game.boss_encounter),
 		"World/TurnRig/BossArena did not resolve into boss_encounter")
+	_check_boss_fx_mount(game)
+
+## Contract §11.3 and §11.8: boss/boss_fx.tscn mounts inside the arena when the frontend has
+## authored it, and is simply absent until then — the fight never depends on it.
+func _check_boss_fx_mount(game: Node) -> void:
+	var arena: Node = game.boss_encounter
+	if arena == null or not is_instance_valid(arena):
+		return
+	var fx: Node = null
+	for child in arena.get_children():
+		if child.scene_file_path == BOSS_FX_SCENE:
+			fx = child
+	if ResourceLoader.exists(BOSS_FX_SCENE):
+		check(fx != null and fx.process_mode == Node.PROCESS_MODE_PAUSABLE,
+			"boss_fx.tscn exists but is not mounted under the arena as a PAUSABLE child")
+	else:
+		check(fx == null, "boss_fx.tscn does not exist, so nothing may be mounted for it")
 
 ## Every row of the contract §8 hazard table survives a round trip through hazard.tscn.
 func _check_hazards() -> void:
