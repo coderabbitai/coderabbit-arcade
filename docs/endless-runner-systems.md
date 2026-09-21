@@ -20,9 +20,11 @@ result against it line by line. Paths are relative to `hoppys-adventure-arcade/`
   capsule radius is 0.4, so a hazard whose x-extent is ±0.8 around a lane centre (per-lane width 1.6)
   cannot touch a player in an adjacent lane.
 - Physics 60 Hz. Jump apex 1.715 m, airtime 0.70 s. Per-tick travel at the v2 Nitro cap (38 m/s) is
-  0.63 m; the minimum hazard depth of 1.2 m plus the 0.8 m capsule footprint (2.0 m) gives ≥ 3 overlapping
-  ticks at any legal speed, so `Area3D` overlap detection cannot tunnel. `runner_logic.gd` asserts
-  `(min_hazard_depth + 0.8) / (nitro_speed_cap / 60) ≥ 2.0` against the stage-adjusted caps.
+  0.63 m; the minimum hazard depth of 1.2 m plus the 0.8 m capsule footprint (2.0 m) gives 3.16 overlapping
+  ticks at the highest legal speed, so `Area3D` overlap detection cannot tunnel. `runner_logic.gd`
+  (`_test_config_sanity`) asserts the tunnelling floor `(min_hazard_depth + 0.8) / (nitro_speed_cap / 60) ≥ 2.0`
+  against the stage-adjusted caps — two overlapping ticks is the hard requirement for detection, and the
+  defaults keep a full tick of margin above it.
 
 ### 1.1 Physics derivations (feet height y(t) = 9.8 t − 14 t²)
 
@@ -170,7 +172,7 @@ overlap created during physics frame 1 is delivered at `physics_frame == 2`, ahe
 `_physics_process`. So `hazard.gd::_on_area_entered` → `hit_player()` → `HitManager.report_hit()` always
 resolves before `HitManager._physics_process` decrements `recovery_remaining` in the same frame, and
 `report_hit` can stay fully synchronous. The order is deterministic (it is the engine's iteration order,
-not node order or signal-connection order), but it *is* load-bearing, so it is pinned twice:
+not node order or signal-connection order), but it *is* load-bearing, so it is pinned twice: This ordering was **measured on the installed Godot 4.7.0** (physics flush → `physics_frame` → `_physics_process`) and is pinned by the two tests named here; it is treated as a diagnostic result until the §9 commands are re-run on the pinned 4.7.1, and any difference must be recorded in the contract §10 change log.
 
 - `runner_logic.gd` §3, out of tree: a hit delivered first kills and the expiring timer cannot revive
   it, while the reverse order only starts a fresh pursuit.
