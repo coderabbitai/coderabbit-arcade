@@ -195,6 +195,8 @@ func shatter() -> void:
 func advance(delta: float) -> void:
 	clock += delta
 	age += delta
+	# Entrance root transforms never leak into idle, hit, or defeat poses.
+	position = Vector3.ZERO
 	if age >= duration and state not in [&"idle", &"defeated", &"retreat"]: state = &"idle"
 	var u := clampf(age / maxf(duration, 0.001), 0, 1)
 	for node: Node3D in rest_poses:
@@ -233,6 +235,15 @@ func advance(delta: float) -> void:
 				if ((b == 0 and i >= 15) or (b == 1 and i == 3)) and phase < 2: current.basis = Basis.from_scale(Vector3.ZERO)
 			if boss_kind == &"legacy_monolith" and b == 1:
 				current.basis = current.basis.scaled_local(Vector3(1 + phase * 0.35 + (1 - health), 1, 1))
+			if state == &"intro":
+				if boss_kind == &"flaky_test_swarm":
+					var assembled := smoothstep(0.0, 1.0, clampf((u - float(i % 8) * 0.035) / 0.72, 0.0, 1.0))
+					current.origin = Vector3(current.origin.x, current.origin.y, -55.0).lerp(current.origin, assembled)
+					current.basis = current.basis.scaled_local(Vector3.ONE * lerpf(0.12, 1.0, assembled))
+				elif boss_kind == &"merge_conflict_hydra":
+					var unfold := lerpf(0.12, 1.0, smoothstep(0.0, 0.85, u))
+					current.origin.y = -0.65 + (current.origin.y + 0.65) * unfold
+					current.basis = Basis.from_scale(Vector3(1.0, unfold, 1.0)) * current.basis
 			if state == &"defeated":
 				current.origin += Vector3(sin(i * 2.3) * u * 0.3, 1.0 * u - 0.6 * u * u, cos(i * 1.7) * u * 0.12)
 				current.basis = current.basis.scaled_local(Vector3.ONE * (1 - u))
@@ -244,6 +255,17 @@ func advance(delta: float) -> void:
 		heads[i].visible = i < 3 or phase >= 2
 		heads[i].rotation.y = aim * charge * 0.08
 		heads[i].position.x += sin(clock * 2 + i) * 0.07
+	if state == &"intro":
+		if boss_kind == &"merge_conflict_hydra":
+			var unfold := lerpf(0.12, 1.0, smoothstep(0.0, 0.85, u))
+			core.position.y = -0.65 + (core.position.y + 0.65) * unfold
+			core.scale.y = unfold
+			for i in heads.size():
+				var unfurl := smoothstep(0.1 + i * 0.10, 0.9, u)
+				heads[i].position.y = lerpf(-0.4, heads[i].position.y, unfurl)
+				heads[i].scale = Vector3.ONE * lerpf(0.25, 1.0, unfurl)
+		elif boss_kind == &"legacy_monolith":
+			position.z = -55.0 * (1.0 - pow(minf(u / 0.8, 1.0), 3.0))
 	if state in [&"defeated", &"retreat"]:
 		for node: GeometryInstance3D in find_children("*", "GeometryInstance3D", true, false):
 			node.transparency = u

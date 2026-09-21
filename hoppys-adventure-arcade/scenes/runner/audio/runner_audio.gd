@@ -14,6 +14,7 @@ const PENDING_TTL := 0.12
 const HIGH_PENDING_TTL := 0.30
 const GATE := {&"boss_hit": 0.09, &"telegraph_tick": 0.04, &"projectile_whoosh": 0.04, &"tool_pickup": 0.04, &"tool_fire": 0.04, &"boss_phase": 0.04, &"boss_defeat": 0.04}
 var _scheduled: Array[Dictionary] = []
+var _intro_remaining := 0.0
 var _turn_active := false
 var _clear_remaining := 0.0
 var _turn_mask := 2
@@ -22,7 +23,7 @@ var _boss_duck := 0.0
 var _boss_pitch_offset := 0.0
 var _whoosh_mask := 2
 const HIGH_PRIORITY := {
-	&"stage_clear": true, &"turn_whoosh": true, &"boss_defeat": true, &"boss_phase": true, &"tool_fire": true,
+	&"turn_warning": true, &"boss_intro": true, &"stage_clear": true, &"turn_whoosh": true, &"boss_defeat": true, &"boss_phase": true, &"tool_fire": true,
 	&"alert_sting": true, &"hit": true, &"caught": true, &"game_over": true, &"shield_block": true,
 	&"pursuit_start": true, &"retreat": true, &"recovered_chime": true, &"powerup": true,
 }
@@ -65,6 +66,7 @@ func bind(game: Node) -> void:
 	_normalized = maxf(0.0, float(game.get("normalized_speed")))
 	_pitch = 1.0
 	_connections = {
+		&"turn_incoming": _on_turn_warning, &"boss_intro": _on_boss_intro,
 		&"turn_started": _on_turn, &"turn_finished": _on_turn_finished,
 		&"stage_cleared": _on_stage_clear, &"phase_changed": _on_phase,
 		&"boss_spawned": _on_boss_spawned, &"boss_phase_changed": _on_boss_phase,
@@ -101,6 +103,9 @@ func _process(delta: float) -> void:
 	if not is_instance_valid(_game) or _paused:
 		return
 	_clock += delta
+	if _intro_remaining > 0.0:
+		_intro_remaining = maxf(0.0, _intro_remaining - delta)
+		if _intro_remaining == 0.0: _set_boss_mix(_boss_active)
 	if _clear_remaining > 0.0:
 		_clear_remaining = maxf(0.0, _clear_remaining - delta)
 		if _clear_remaining == 0.0: _set_boss_mix(_boss_active)
@@ -359,7 +364,7 @@ func _duck(db: float, seconds: float) -> void:
 		_audio_service.duck_music(db, seconds)
 
 func _set_boss_mix(active: bool) -> void:
-	var target := -10.0 if _clear_remaining > 0.0 else (-5.0 if _turn_active else (-4.0 if active else 0.0))
+	var target := -12.0 if _intro_remaining > 0.0 else -10.0 if _clear_remaining > 0.0 else (-5.0 if _turn_active else (-4.0 if active else 0.0))
 	_boss_pitch_offset = 0.04 if active else 0.0
 	if is_equal_approx(_boss_duck, target): return
 	# Hold the service's baseline so transient ducks return to the fight level.
@@ -378,6 +383,8 @@ func _on_boss_phase(_phase: int) -> void:
 	_duck(-4 if _boss_active else -8, 0.35)
 
 func _end_boss_audio() -> void:
+	for kind in [&"boss_intro", &"turn_warning", &"turn_whoosh"]: _stop_cue(kind)
+	_intro_remaining = 0.0
 	_boss_active = false
 	_turn_active = false
 	_clear_remaining = 0.0
@@ -385,6 +392,8 @@ func _end_boss_audio() -> void:
 	_set_boss_mix(false)
 
 func _on_boss_defeated(_kind: StringName, _bonus: int) -> void:
+	_stop_cue(&"boss_intro")
+	_intro_remaining = 0.0
 	for i in range(_scheduled.size() - 1, -1, -1):
 		if _scheduled[i].kind == &"telegraph_tick": _scheduled.remove_at(i)
 	# Preserve the killing tool's delayed fire/hit through the short outro.
@@ -413,9 +422,13 @@ func _on_turn(direction: int, _seconds: float) -> void:
 	_turn_active = true
 	_turn_mask = 1 if direction < 0 else 4
 	_set_boss_mix(false)
+	_stop_cue(&"turn_warning")
 	_play(&"turn_whoosh")
+	_pitch_cue(&"turn_whoosh", 2.4 / maxf(_seconds, 0.05))
 
 func _on_turn_finished() -> void:
+	_stop_cue(&"turn_warning")
+	_stop_cue(&"turn_whoosh")
 	_turn_active = false
 	_set_boss_mix(_boss_active)
 
@@ -431,3 +444,25 @@ func _on_phase(value: StringName) -> void:
 		_turn_active = false
 		_clear_remaining = 0.0
 		_set_boss_mix(false)
+
+func _on_turn_warning(_direction: int, seconds: float) -> void:
+	_play(&"turn_warning")
+	# Scale the three authored ticks to the facade's warning window.
+	_pitch_cue(&"turn_warning", 3.0 / maxf(seconds, 0.05))
+
+func _on_boss_intro(_kind: StringName, _name: String, seconds: float) -> void:
+	_intro_remaining = maxf(seconds, 0.0)
+	_set_boss_mix(_boss_active)
+	_play(&"boss_intro")
+	_pitch_cue(&"boss_intro", 3.0 / maxf(seconds, 0.05))
+
+func _pitch_cue(kind: StringName, pitch: float) -> void:
+	if _playback == null: return
+	for voice in _voices:
+		if _voice_kinds.get(voice) == kind: _playback.set_stream_pitch_scale(voice, pitch)
+
+func _stop_cue(kind: StringName) -> void:
+	_pending.erase(kind)
+	if _playback == null: return
+	for voice in _voices:
+		if _voice_kinds.get(voice) == kind: _playback.stop_stream(voice)

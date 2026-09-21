@@ -3,7 +3,9 @@ extends RefCounted
 const RATE := 22050
 # seconds, start Hz, end Hz, waveform, gain
 const RECIPES := {
-	&"turn_whoosh": [1.2, 300.0, 2400.0, "turn", 0.6],
+	&"turn_warning": [3.0, 700.0, 1400.0, "warning", 0.6],
+	&"boss_intro": [3.0, 35.0, 150.0, "intro", 0.7],
+	&"turn_whoosh": [2.4, 300.0, 2400.0, "turn", 0.6],
 	&"stage_clear": [1.0, 440.0, 880.0, "arpeggio", 0.65],
 	&"telegraph_tick": [0.06, 1600.0, 1600.0, "square", 0.35],
 	&"projectile_whoosh": [0.30, 900.0, 180.0, "noise", 0.45],
@@ -59,10 +61,25 @@ static func sound(kind: StringName) -> AudioStreamWAV:
 		var envelope := minf(t / 0.008, 1.0) * pow(1.0 - progress, 1.6)
 		var sample := sin(phase)
 		match String(recipe[3]):
+			"warning":
+				frequency = 700.0 * pow(1.3, floor(t))
+				var beat := fposmod(t, 1.0)
+				envelope = sin(PI * beat / 0.12) if beat < 0.12 else 0.0
+			"intro":
+				sample = (sin(phase) + sin(phase * 1.012)) * 0.5
+				envelope = smoothstep(0.0, 0.7, progress) * (1.0 - smoothstep(0.8, 1.0, progress))
+				if progress >= 0.8:
+					var impact := exp(-(progress - 0.8) * 35.0)
+					sample = sample * 0.4 + rng.randf_range(-1.0, 1.0) * 0.6
+					envelope = impact
 			"turn":
 				frequency = lerpf(300.0, 2400.0, sin(progress * PI))
 				sample = sample * 0.4 + rng.randf_range(-1, 1) * 0.6
 				envelope = sin(progress * PI)
+				# Snap at the camera hold boundary, inside the same voice.
+				if progress >= 0.3 and progress < 0.34:
+					sample = rng.randf_range(-1.0, 1.0)
+					envelope = 1.0 - (progress - 0.3) / 0.04
 			"arpeggio":
 				frequency = 440.0 * float([1.0, 1.25, 1.5, 2.0][mini(3, int(progress * 4))])
 			"alert":

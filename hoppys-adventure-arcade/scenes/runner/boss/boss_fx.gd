@@ -32,7 +32,7 @@ func bind(value: Node) -> void:
 	_disconnect()
 	clear()
 	game = value
-	connections = {&"boss_attack_telegraph": _telegraph, &"tool_collected": _tool, &"boss_defeated": _end, &"boss_retreated": _end, &"caught": clear, &"run_started": _reset}
+	connections = {&"boss_intro": _intro, &"boss_attack_telegraph": _telegraph, &"tool_collected": _tool, &"boss_defeated": _end, &"boss_retreated": _end, &"caught": clear, &"run_started": _reset}
 	for event: StringName in connections:
 		if game.has_signal(event): game.connect(event, connections[event])
 	if game.has_method("get_boss_info"):
@@ -82,3 +82,12 @@ func clear() -> void:
 
 func _exit_tree() -> void:
 	_disconnect()
+
+func _intro(_kind: StringName, _name: String, seconds: float) -> void:
+	# The visual is already mounted, but the facade mirrors boss at boss_spawned.
+	# Resolve the documented mount for the earlier intro signal, then mock/v1 fallback.
+	var boss := game.get_node_or_null("World/TurnRig/BossArena/Boss") as Node3D
+	if boss == null: boss = game.get("boss") as Node3D
+	if not is_instance_valid(boss): return
+	for visual in boss.get_children():
+		if visual.has_method("play_intro"): visual.play_intro(seconds)

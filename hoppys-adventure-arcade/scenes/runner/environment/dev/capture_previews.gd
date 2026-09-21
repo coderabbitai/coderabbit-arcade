@@ -1,5 +1,5 @@
 extends SceneTree
-## Run non-headless from the repository root. Captures F0-F9 visual fixtures.
+## Run non-headless from the repository root. Captures F0-F10 visual fixtures.
 const Gallery = preload("res://scenes/runner/hazards/visuals/dev/hazard_gallery.gd")
 var failures := 0
 
@@ -72,6 +72,35 @@ func run() -> void:
 			if error != OK:
 				failures += 1
 		hud_preview.free()
+		await process_frame
+	# Deterministic F10 cards. Capture is deliberately graphical-only.
+	for fixture in ["turn-warning", "boss-intro"]:
+		var preview := hud_scene.instantiate()
+		preview.autoplay = false
+		root.add_child(preview)
+		preview.start_run()
+		preview.hud.ready_panel.hide()
+		preview.stage_banner.hide()
+		if fixture == "turn-warning":
+			preview.turn_incoming.emit(-1, 3.0)
+			preview.hud.warning_age = 0.4
+			preview.hud._update_turn_warning()
+		else:
+			preview.boss_hp = 140
+			preview.mount_demo_boss()
+			preview.boss_intro.emit(preview.boss_kind, "Merge Conflict Hydra", 3.0)
+			preview.boss_spawned.emit(preview.boss_kind, 140)
+			preview.boss_overlay._process(1.2)
+			preview.boss.get_child(0)._process(1.2)
+		preview.hud.set_process(false)
+		preview.boss_overlay.set_process(false)
+		for visual in preview.boss.get_children(): visual.set_process(false)
+		await process_frame
+		await RenderingServer.frame_post_draw
+		var error := root.get_texture().get_image().save_png(ProjectSettings.globalize_path("res://../docs/previews/endless-runner-%s.png" % fixture))
+		print("CAPTURE: ", fixture, " error=", error)
+		if error != OK: failures += 1
+		preview.free()
 		await process_frame
 	var bosses := preload("res://scenes/runner/boss/dev/boss_gallery.tscn").instantiate()
 	root.add_child(bosses)

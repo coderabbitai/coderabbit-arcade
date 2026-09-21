@@ -1,12 +1,16 @@
 extends Node3D
 ## Standalone facade fixture. No backend systems or persistence are used.
 const Config = preload("res://scenes/runner/data/run_config.tres")
+const Corridor = preload("res://scenes/runner/environment/corridor.tscn")
 const Hud = preload("res://scenes/runner/ui/runner_hud.tscn")
 const PauseMenu = preload("res://scenes/runner/ui/pause_menu.tscn")
 const GameOver = preload("res://scenes/runner/ui/game_over.tscn")
 const Leaderboard = preload("res://scenes/runner/systems/runner_leaderboard.gd")
 signal stage_started(index: int, name: StringName, speed: float)
 signal stage_cleared(index: int, bonus: int)
+signal turn_incoming(direction: int, seconds: float)
+signal boss_intro(kind: StringName, name: String, seconds: float)
+var next_turn_direction := 0
 signal turn_started(direction: int, seconds: float)
 signal turn_finished
 signal phase_changed(phase: StringName)
@@ -111,6 +115,10 @@ func _ready() -> void:
 	add_child(player)
 	camera_rig = MockCamera.new()
 	add_child(camera_rig)
+	if get_node_or_null("Backdrop") == null:
+		var corridor := Corridor.instantiate()
+		corridor.name = "Backdrop"
+		add_child(corridor)
 	hud = Hud.instantiate()
 	pause_menu = PauseMenu.instantiate()
 	game_over = GameOver.instantiate()
@@ -204,14 +212,18 @@ func advance_demo(delta: float) -> void:
 				health_changed.emit(hp, hp)
 				pursuit_recovered.emit(&"timer")
 				pursuit_alert.emit(&"clear", 0.0)
-	for at in [3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 14.0, 15.0, 17.5, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 30.0, 34.0, 38.4, 40.0]:
+	for at in [3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 12.0, 14.0, 15.0, 17.4, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 30.0, 34.0, 38.4, 40.0]:
 		if demo_time >= at and not _events.has(at):
 			_events[at] = true
 			match at:
+				12.0:
+					next_turn_direction = 1
+					turn_incoming.emit(next_turn_direction, 3.0)
 				15.0:
 					set_demo_phase(&"turn")
-					turn_started.emit(1, 2.5)
-				17.5:
+					turn_started.emit(next_turn_direction, 2.4)
+				17.4:
+					next_turn_direction = 0
 					turn_finished.emit()
 					set_demo_phase(&"boss")
 				27.0:
@@ -219,17 +231,20 @@ func advance_demo(delta: float) -> void:
 					stage_cleared.emit(stage_index, 400)
 				18.0:
 					boss_hp = 140
+					mount_demo_boss()
+					boss_intro.emit(boss_kind, "Merge Conflict Hydra", 3.0)
 					boss_spawned.emit(boss_kind, boss_hp)
 					boss_health_changed.emit(boss_hp, 140)
-				19.0: boss_attack_telegraph.emit(5, &"orb", 0.8)
-				20.0: boss_projectile_fired.emit(null, 5, &"orb", 28.0)
 				21.0:
+					boss_attack_telegraph.emit(5, &"orb", 0.8)
 					tool_collected.emit(&"review_comment", 10)
 					boss_hp = 90
 					boss_health_changed.emit(boss_hp, 140)
 					boss_phase = 2
 					boss_phase_changed.emit(2)
-				22.0: tool_collected.emit(&"auto_fix_patch", 0)
+				22.0:
+					boss_projectile_fired.emit(null, 5, &"orb", 28.0)
+					tool_collected.emit(&"auto_fix_patch", 0)
 				23.0: boss_attack_telegraph.emit(7, &"high", 0.7)
 				24.0:
 					tool_collected.emit(&"unit_test", 15)
@@ -398,3 +413,17 @@ func set_demo_phase(value: StringName) -> void:
 
 func get_stage_info() -> Dictionary:
 	return {"index": stage_index, "name": stage_name, "phase": phase, "distance": distance, "target": 260.0, "speed_bonus": 0.0, "difficulty_floor": 0.0}
+
+func mount_demo_boss() -> void:
+	for child in boss.get_children(): child.free()
+	var scene := load("res://scenes/runner/boss/visuals/%s_visual.tscn" % boss_kind) as PackedScene
+	if scene == null: return
+	var visual := scene.instantiate() as Node3D
+	boss.add_child(visual)
+	visual.kind = boss_kind
+	visual.boss_name = String(stage_name)
+	visual.max_hp = 140
+	visual.hover_z = -14.0
+	visual.sway_amplitude = 2.4
+	visual.sway_period = 3.2
+	visual.on_spawned()

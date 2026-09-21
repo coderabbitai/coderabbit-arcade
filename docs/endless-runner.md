@@ -731,3 +731,50 @@ The worktree was clean at task start. Task-touched files:
 - `hoppys-adventure-arcade/scenes/runner/ui/stage_clear.gd.uid`
 - `hoppys-adventure-arcade/scenes/runner/ui/stage_clear.tscn`
 - `hoppys-adventure-arcade/tests/runner_visual_smoke.gd`
+
+## F10: sharp announced corners and boss entrances
+
+Frontend-only implementation of contract 2.1, sections 11.4, 11.9 and 11.10. No backend API or camera changes.
+
+- `turn_incoming(direction, seconds)` opens an outlined 42-unit orange warning in a DANGER-bordered panel above the lane reading area. The arrow and remaining-seconds countdown pulse over the supplied duration. One reusable additive MultiMesh draws chevrons in all three lanes. HUD binding mounts it directly under the frontend corridor, inheriting its transform. `turn_started` clears the floor chevrons as the end wall takes over; `turn_finished` clears the banner and pending warning audio.
+- Corridor yaw reaches 55 degrees at progress 0.3, holds through 0.7, then returns to zero at 1.0. Curvature peaks at 0.010. `TURN_SWING_IN`, `TURN_SWING_OUT` and `TURN_YAW` in `corridor.gd` mirror RunConfig defaults and must stay in sync with the backend camera. The end wall spans the corridor and carries a 120-unit directional TURN face. Glyphs sweep laterally, rain accelerates and speed lines intensify in the hold. Endpoints and explicit `(0, 0)` reset restore the same pose.
+- The turn preview mirrors the backend camera swing: positive direction applies positive yaw and bank, orbiting the player at (0, 0, 0), with 55° yaw, 12° bank, and 0.3 ramp-in/out fractions. Hold alignment is checked in both directions at p = 0.3/0.5/0.7.
+- `boss_intro(kind, name, seconds)` opens a top-centre card at y 140 with width at most 900, below the top HUD panels. It displays `WARNING · BUG DETECTED`, the supplied boss name at 52 units, and a kind-specific taunt typed over one second. Copy is centralized in `boss_hud.gd:TAUNTS`; unknown kinds show only the supplied name. The stage banner stays suppressed, and the health HUD slides in only after the supplied duration. Pause freezes the card and entrance.
+- Boss FX forwards the optional frontend `play_intro(seconds)` method to the mounted visual. It resolves `World/TurnRig/BossArena/Boss` first because the facade mirrors `boss` only at the subsequent `boss_spawned` signal; mock facades use the property fallback. Swarm tiles assemble from the vanishing point, Hydra rises and unfurls three heads, and Monolith approaches from the far end before a slam. A DANGER vignette and screen flash accent the impact at 80% of the intro. No frontend code calls camera shake. Every entrance frame keeps x within [-3.5, 3.5] and y within [1.6, 6.1]. Only depth travel toward the far end is allowed, never closer than hover_z + 3. Swarm tiles converge along -Z, Hydra unfolds from a compressed above-floor pose, and Monolith slides along -Z. Transforms reset at the duration boundary.
+- Audio has 32 cached recipes. `turn_warning` contains three rising ticks scaled to the warning window. The hard-panned turn whoosh includes its snap at the 0.3 hold boundary. `boss_intro` is a deep rising drone and hit, scaled to the intro window. Intro music ducks by 12 dB, releasing into the existing 4 dB boss duck. The seven polyphonic plus three dedicated voice allocation remains capped at ten.
+- The mock demo emits both new signals, mounts its boss visual, and delays attacks until the three-second intro has elapsed. Smoke coverage includes `TURN WARNING: PASS` and `BOSS INTRO: PASS`, directional warnings, countdown, correct taunts, fallback copy, visual forwarding/poses, HP handover, banner suppression, pause, audio duck release and the revised turn profile.
+- Graphical capture fixtures are registered as `endless-runner-turn-warning.png` and `endless-runner-boss-intro.png`. The coordinator captured both PNGs on the host. Existing capture checks retain the corridor budgets of 14 at rest and 18 during a turn.
+
+Verification uses Godot 4.7 and the repository-root commands below. The headless draw census is a geometry estimate, not a GPU measurement. The coordinator owns host graphical inspection and captured PNGs.
+
+```sh
+export GODOT=/Applications/Godot.app/Contents/MacOS/Godot
+"$GODOT" --headless --log-file /tmp/runner-f10.log --path hoppys-adventure-arcade --import
+# Check every changed or new GDScript from this milestone.
+python3 - <<'PY_CHECK'
+import os
+import subprocess
+paths = set(subprocess.check_output(["git", "diff", "--name-only"], text=True).splitlines())
+paths.update(subprocess.check_output(["git", "ls-files", "--others", "--exclude-standard"], text=True).splitlines())
+for path in sorted(paths):
+    if path.startswith("hoppys-adventure-arcade/") and path.endswith(".gd"):
+        subprocess.run([os.environ["GODOT"], "--headless",
+                        "--log-file", "/tmp/runner-f10.log", "--path", "hoppys-adventure-arcade",
+                        "--check-only", "--script", "res://" + path.split("/", 1)[1]], check=True)
+PY_CHECK
+"$GODOT" --headless --log-file /tmp/runner-f10.log --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd
+"$GODOT" --headless --log-file /tmp/runner-f10.log --path hoppys-adventure-arcade --script res://tests/runner_smoke.gd
+git diff --check
+```
+
+F10 fix verification result (Godot `4.7.stable.official.5b4e0cb0f`): all 16 changed/new scripts passed check-only, and `git diff --check` exited 0 with no output. Each boss entrance passed bounds checks at all 181 sampled frames over three seconds at 60 Hz. Camera-forward versus corridor-forward angles were 10.620° at p = 0.3, 0.5 and 0.7 for both directions, below the 15° limit, so corridor yaw remains 55°. Backend camera values are unchanged. Some headless processes reported the macOS system-certificate diagnostic.
+
+The standard visual smoke passed every feature section and failed only these two sandbox persistence assertions:
+
+```text
+VISUAL CHECK FAILED: Codex name persists
+VISUAL CHECK FAILED: temporary board contains saved run
+RUNNER VISUAL SMOKE: FAIL (2 failures)
+```
+
+The standard backend smoke reported `RUNNER SMOKE: FAIL (3 failures / 127 checks)`, all caused by the unwritable leaderboard (write error 12, no saved signal, no persisted entry). Temporary `/tmp` harnesses extended each unchanged test suite and changed only its leaderboard-path variable before initialization. With writable isolated leaderboard files, the complete visual suite reported `RUNNER VISUAL SMOKE: PASS (0 failures)`, the full loop passed, and the backend reported `RUNNER SMOKE: PASS (0 failures / 130 checks)`. The suites removed their isolated boards. Corridor geometry census: 10 at rest, 13 mid-turn; the warning adds one pooled MultiMesh draw. Audio: 32 recipes, peak 10 voices. The fix pass used headless verification and did not regenerate the coordinator's host captures. No commits or pushes were made.

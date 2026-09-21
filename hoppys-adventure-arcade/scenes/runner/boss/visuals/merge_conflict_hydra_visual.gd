@@ -3,6 +3,8 @@ const Art = preload("res://scenes/runner/boss/boss_art.gd")
 var _art: Art
 var show_name_plate := true
 var _clock := 0.0
+var intro_calls := 0
+var _intro_tag_visible := false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -65,9 +67,21 @@ func play_retreat() -> void:
 func _process(delta: float) -> void:
 	if _art == null: return
 	_clock += delta
+	var was_intro: bool = _art.state == &"intro"
 	_art.advance(delta)
+	if was_intro and _art.state != &"intro": _art.tag.visible = _intro_tag_visible
+	if _art.state == &"intro": return
 	var period := maxf(sway_period * (1 - 0.12 * (_art.phase - 1)), 0.1)
 	position.x = sin(_clock * TAU / period) * sway_amplitude
 	position.y = 0.04 + sin(_clock * 2) * 0.04
 	if _art.state == &"phase_change": position.y += 0.12 * sin(PI * minf(_art.age / 0.9, 1))
 	if _art.state == &"retreat": position.y += minf(_art.age, 0.95) * 0.12
+
+func play_intro(seconds: float) -> void:
+	if _art == null: on_spawned()
+	intro_calls += 1
+	_clock = 0.0
+	_intro_tag_visible = _art.tag.visible
+	_art.tag.hide()
+	_art.react(&"intro", seconds)
+	_art.advance(0.0)

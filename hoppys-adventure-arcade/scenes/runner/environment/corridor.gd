@@ -4,6 +4,10 @@ const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 const Materials = preload("res://scenes/runner/environment/runner_materials.gd")
 const Atlas = preload("res://scenes/runner/shaders/glyph_atlas.gd")
 @export_range(0.25, 1.0, 0.05) var retro_scale := 0.5
+# Mirror RunConfig defaults. Keep these fractions and yaw in sync with the backend camera.
+const TURN_SWING_IN := 0.3
+const TURN_SWING_OUT := 0.3
+const TURN_YAW := 55.0
 var turn_progress := 0.0
 var turn_direction := 0
 var bend := 0.0
@@ -79,12 +83,12 @@ func _ready() -> void:
 	_corner_material.set_shader_parameter("atlas", Atlas.texture())
 	_corner_material.set_shader_parameter("horizontal_axis", Vector3.RIGHT)
 	_corner_material.set_shader_parameter("intensity", 0.4)
-	_quad("CornerWall", Vector2(12, 7), Vector3(0, 3, -52), Vector3.ZERO, _corner_material)
+	_quad("CornerWall", Vector2(18, 8), Vector3(0, 3, -30), Vector3.ZERO, _corner_material)
 	_corner = get_node("CornerWall") as MeshInstance3D
-	var sign := Materials.label(self, "TURN  >>>", 64, Palette.MINT)
+	var sign := Materials.label(self, "TURN  ►", 120, Palette.MINT)
 	_turn_chevron = sign
 	sign.name = "TurnChevron"
-	sign.position = Vector3(0, 3.5, -51.8)
+	sign.position = Vector3(0, 3.5, -29.8)
 	sign.pixel_size = 0.02
 	sign.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 	_build_pillars()
@@ -255,29 +259,32 @@ func set_turn(progress: float, direction: int) -> void:
 	turn_applied.emit(turn_progress, turn_direction)
 
 func _apply_turn() -> void:
-	var wave := sin(turn_progress * PI) if turn_progress > 0.0 and turn_progress < 1.0 else 0.0
-	bend = float(turn_direction) * 0.0042 * wave
-	rotation.y = float(turn_direction) * deg_to_rad(11.0) * wave
+	var wave := turn_profile(turn_progress) if turn_direction != 0 else 0.0
+	bend = float(turn_direction) * 0.010 * wave
+	rotation.y = float(turn_direction) * deg_to_rad(TURN_YAW) * wave
 	if _far_material == null: return
 	for material in _scroll_materials + [_far_material]:
 		material.set_shader_parameter("bend", bend)
 		material.set_shader_parameter("bend_frame", global_transform)
-	var sweep := float(turn_direction) * turn_progress * 14.0 if wave > 0.0 else 0.0
+	var sweep := float(turn_direction) * turn_progress * 48.0 if wave > 0.0 else 0.0
 	_scroll_materials[2].set_shader_parameter("lateral_scroll", sweep)
-	var blend := minf(smoothstep(0.0, 0.3, turn_progress), 1.0 - smoothstep(0.7, 1.0, turn_progress)) if turn_direction != 0 else 0.0
+	var blend := wave
 	_far_material.set_shader_parameter("opacity", 1.0 - blend)
 	_corner_material.set_shader_parameter("opacity", blend)
 	_corner_material.set_shader_parameter("lateral_scroll", sweep)
 	_corner.visible = blend > 0.0
-	_corner.position.x = bend * 46.0 * 46.0
-	_corner.rotation.y = float(turn_direction) * deg_to_rad(55.0) * wave
+	_corner.position.x = bend * 24.0 * 24.0
+	_corner.rotation.y = 0.0
 	_turn_chevron.visible = blend > 0.0
 	_turn_chevron.modulate.a = blend
-	_turn_chevron.text = "<<<  TURN" if turn_direction < 0 else "TURN  >>>"
+	_turn_chevron.text = "◄  TURN" if turn_direction < 0 else "TURN  ►"
 	_turn_chevron.position.x = _corner.position.x
 	_turn_chevron.rotation.y = _corner.rotation.y
-	for particles in [_rain, _dust]:
-		particles.amount_ratio = 0.35 if wave > 0.0 else 1.0
+	_rain.amount_ratio = lerpf(0.55, 1.0, wave)
+	_dust.amount_ratio = 1.0
+	_speed_lines.emitting = wave > 0.95 or clampf((_speed - 12.0) / 12.0, 0.0, 1.0) > 0.6
+	_speed_lines.speed_scale = 1.0 + wave
+	_rain.speed_scale = 1.0 + wave * 1.5
 
 func set_phase(value: StringName) -> void:
 	phase = value
@@ -287,3 +294,9 @@ func set_boss_arena(active: bool) -> void:
 	boss_arena = active
 	if _far_material != null:
 		_far_material.set_shader_parameter("arena", 0.45 if active else 1.0)
+
+static func turn_profile(p: float) -> float:
+	if p <= 0.0 or p >= 1.0: return 0.0
+	if p < TURN_SWING_IN: return smoothstep(0.0, 1.0, p / TURN_SWING_IN)
+	if p > 1.0 - TURN_SWING_OUT: return smoothstep(0.0, 1.0, (1.0 - p) / TURN_SWING_OUT)
+	return 1.0

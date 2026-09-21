@@ -57,7 +57,7 @@ var boss_visible := false
 var rules: Array[ColorRect] = []
 
 func _ready() -> void:
-	connections = {&"stage_started": _stage, &"turn_started": _turn, &"turn_finished": _finish_turn, &"boss_spawned": _boss, &"phase_changed": _phase}
+	connections = {&"boss_intro": _intro, &"turn_incoming": _turn, &"stage_started": _stage, &"turn_started": _turn, &"turn_finished": _finish_turn, &"boss_spawned": _boss, &"phase_changed": _phase}
 	var box := _base(Vector2(820, 180))
 	title = Style.label("S T A G E  1", 30, Palette.MINT)
 	subtitle = Style.label("", 52)
@@ -113,3 +113,7 @@ func _process(delta: float) -> void:
 		rule.pivot_offset.x = rule.size.x * 0.5
 		rule.scale.x = smoothstep(0.0, 0.35, age)
 	if age >= 2.35: _close()
+
+func _intro(_kind: StringName, _name: String, _seconds: float) -> void:
+	boss_visible = true
+	_close()

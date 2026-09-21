@@ -1,6 +1,8 @@
 extends Node3D
 const Corridor = preload("res://scenes/runner/environment/corridor.tscn")
 const Style = preload("res://scenes/runner/ui/hud_style.gd")
+var camera: Camera3D
+var base_rotation := Vector3.ZERO
 var corridor: Node3D
 var progress := 0.0
 var direction := 1
@@ -14,12 +16,13 @@ func _ready() -> void:
 	corridor = Corridor.instantiate()
 	add_child(corridor)
 	corridor.set_scroll_speed(20.0)
-	var camera := Camera3D.new()
+	camera = Camera3D.new()
 	camera.position = Vector3(0, 4, 8)
 	camera.fov = 60
 	add_child(camera)
 	camera.look_at(Vector3(0, 1, -8))
 	camera.current = true
+	base_rotation = camera.rotation
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	var panel := PanelContainer.new()
@@ -35,6 +38,7 @@ func _process(delta: float) -> void:
 		progress = minf(1.0, progress + delta / 2.5)
 		corridor.set_turn(progress, direction)
 		if progress >= 1.0: playing = false
+	apply_camera_swing(camera, base_rotation, progress, direction)
 	var calls := get_viewport().get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
 	readout.text = "LEFT / RIGHT play   [ / ] scrub   SPACE pause\np %.2f   direction %+d   bend %.5f   yaw %.1f°   draw calls %d" % [progress, direction, corridor.bend, corridor.rotation_degrees.y, calls]
 
@@ -54,3 +58,17 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 func _exit_tree() -> void:
 	get_tree().paused = _previous_paused
+
+## Mirrors camera_rig's default ramp, sign, Euler rotation and player-centred orbit.
+static func apply_camera_swing(target: Camera3D, rest_rotation: Vector3, value: float, turn_direction: int) -> void:
+	var p := clampf(value, 0.0, 1.0)
+	var profile := 0.0
+	if p > 0.0 and p < 1.0:
+		profile = 1.0
+		if p < 0.3: profile = smoothstep(0.0, 1.0, p / 0.3)
+		elif p > 0.7: profile = smoothstep(0.0, 1.0, (1.0 - p) / 0.3)
+	var swing := float(signi(turn_direction)) * profile
+	var yaw := deg_to_rad(55.0) * swing
+	var bank := deg_to_rad(12.0) * swing
+	target.position = Vector3(0, 4, 8).rotated(Vector3.UP, yaw)
+	target.rotation = rest_rotation + Vector3(0.0, yaw, bank)
