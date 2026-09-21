@@ -82,7 +82,8 @@ const OPTIONAL_HUD_MOUNTS := [
 	"res://scenes/runner/ui/pursuit_alert.tscn",
 	"res://scenes/runner/ui/boss_hud.tscn",
 	"res://scenes/runner/ui/stage_banner.tscn",
-	"res://scenes/runner/ui/stage_clear.tscn"
+	"res://scenes/runner/ui/stage_clear.tscn",
+	"res://scenes/runner/ui/post_fx.tscn"
 ]
 
 ## Contract §6.

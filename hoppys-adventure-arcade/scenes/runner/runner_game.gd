@@ -35,7 +35,10 @@ const FRONTEND_MOUNTS := {
 		"res://scenes/runner/ui/pursuit_alert.tscn",
 		"res://scenes/runner/ui/boss_hud.tscn",
 		"res://scenes/runner/ui/stage_banner.tscn",
-		"res://scenes/runner/ui/stage_clear.tscn"
+		"res://scenes/runner/ui/stage_clear.tscn",
+		## Full-screen post-processing pass (colour grade, grain, vignette, letterbox, speed
+		## streaks) on its own layer below the panels; optional like the rest (contract §11.8).
+		"res://scenes/runner/ui/post_fx.tscn"
 	],
 	"Overlays": [
 		"res://scenes/runner/ui/pause_menu.tscn",
