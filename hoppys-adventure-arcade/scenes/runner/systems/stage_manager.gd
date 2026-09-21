@@ -26,7 +26,8 @@ const PHASE_STAGE_CLEAR: StringName = &"stage_clear"
 ## never in step with the spawner's stream.
 const STAGE_SEED_MIX := 0x5F356495
 ## Contract §11.10 fallbacks, used only when no config has been supplied yet.
-const DEFAULT_TURN_SECONDS := 2.5
+const DEFAULT_TURN_SECONDS := 2.4
+const DEFAULT_TURN_WARNING_SECONDS := 3.0
 const DEFAULT_STAGE_DRAIN_DISTANCE := 120.0
 const DEFAULT_STAGE_DRAIN_TIMEOUT := 6.0
 const DEFAULT_STAGE_CLEAR_LINE_Z := 8.0
@@ -47,6 +48,10 @@ var stage_distance := 0.0
 var stage_distance_target := 0.0
 ## RUN-phase seconds only: frozen through turn, boss and stage_clear (contract §11.1).
 var run_clock := 0.0
+## -1 left, +1 right for the turn this seam is about to take, 0 when none is pending. Set when the
+## drain window opens and held through the bend, so the direction turn_incoming announced, the one
+## turn_started repeats and the one the rigs sweep are always the same (contract §11.4).
+var next_turn_direction := 0
 
 # Result counters (contract §11.4). They are tallied from the facade signals, so they survive the
 # boss encounter being freed and are correct whether or not an encounter is mounted at all.
@@ -68,6 +73,8 @@ var _turn_direction := 0
 var _boss_active := false
 ## True once the spawner has been told to stop placing for this stage.
 var _draining := false
+## True once turn_incoming has gone out for this seam, so the warning fires exactly once.
+var _turn_announced := false
 
 func setup(runner: RunnerGame) -> void:
 	game = runner
@@ -105,6 +112,7 @@ func reset(run_seed: int) -> void:
 	_phase_timer = 0.0
 	_turn_direction = 0
 	_draining = false
+	_turn_announced = false
 	_abort_boss()
 	_apply_turn_reset()
 	_set_boss_arena(false)
@@ -156,7 +164,15 @@ func _tick_run(delta: float) -> void:
 	stage_distance_target = StageDefs.distance_target(stage_index, config)
 	if not _draining and stage_distance >= stage_distance_target - _drain_distance():
 		_draining = true
+		# The direction is drawn here rather than at the bend, so the warning below and the
+		# turn_started that follows it can never disagree (contract §11.4).
+		next_turn_direction = stage_rng.randi_range(0, 1) * 2 - 1
+		_publish()
 		_set_spawning(false)
+	# Announce the corner turn_warning_seconds of travel out. A drain shorter than that window is
+	# already inside it when it opens, so the warning lands on the same tick as the drain gate.
+	if _draining and not _turn_announced and stage_distance >= stage_distance_target - _turn_warning_distance():
+		_announce_turn()
 	if stage_distance < stage_distance_target:
 		return
 	# Past the target the drain window opens: wait for the last blocking hazard to pass the clear
@@ -178,6 +194,9 @@ func _tick_turn(delta: float) -> void:
 		return
 	turns_taken += 1
 	_apply_turn_reset()
+	# Mirrors before the signal: a listener on turn_finished must not still read the direction of
+	# the bend that just ended off next_turn_direction.
+	_publish()
 	game.turn_finished.emit()
 	_enter_boss()
 
@@ -203,6 +222,7 @@ func _tick_stage_clear(delta: float) -> void:
 func _enter_run() -> void:
 	_phase_timer = 0.0
 	_draining = false
+	_turn_announced = false
 	stage_distance = 0.0
 	stage_distance_target = StageDefs.distance_target(stage_index, config)
 	stage_name = StageDefs.boss_name(stage_index)
@@ -219,9 +239,14 @@ func _enter_run() -> void:
 	_set_spawning(true)
 	game.stage_started.emit(stage_index, stage_name, _stage_base_speed())
 
+## The bend takes the direction the drain drew, so it matches the turn_incoming that announced it.
+## A seam that somehow reached the bend without a drain pick (a zero-length stage, a hand-driven
+## test) draws one here rather than turning by 0.
 func _enter_turn() -> void:
 	_phase_timer = 0.0
-	_turn_direction = stage_rng.randi_range(0, 1) * 2 - 1
+	if next_turn_direction == 0:
+		next_turn_direction = stage_rng.randi_range(0, 1) * 2 - 1
+	_turn_direction = next_turn_direction
 	_publish()
 	_set_phase(PHASE_TURN)
 	_apply_turn(0.0)
@@ -266,6 +291,25 @@ func _on_caught() -> void:
 	_set_boss_arena(false)
 	_set_phase(PHASE_IDLE)
 	_publish()
+
+## turn_incoming, once per seam (contract §11.4). `seconds` is the estimated time left to the bend
+## at the corridor's current speed, which is what a frontend counts an announcement card down on.
+func _announce_turn() -> void:
+	_turn_announced = true
+	var remaining := maxf(stage_distance_target - stage_distance, 0.0)
+	var pace := _turn_pace()
+	var seconds := remaining / pace if pace > 0.0 else 0.0
+	game.turn_incoming.emit(next_turn_direction, seconds)
+
+## The speed the warning is measured at: the corridor's own, floored at the stage's base speed so a
+## stalled or hand-driven facade still gets a sane lead rather than an infinite one.
+func _turn_pace() -> float:
+	var current := float(game.speed) if game != null else 0.0
+	return maxf(current, _stage_base_speed())
+
+## Metres of run left when the warning goes out: turn_warning_seconds of travel at that pace.
+func _turn_warning_distance() -> float:
+	return maxf(_turn_pace() * _turn_warning_seconds(), 0.0)
 
 func _on_boss_defeated(_kind: StringName, _bonus: int) -> void:
 	bosses_defeated += 1
@@ -318,10 +362,12 @@ func _apply_turn(progress: float) -> void:
 	if camera != null and is_instance_valid(camera) and camera.has_method("set_turn"):
 		camera.set_turn(progress, _turn_direction)
 
-## Both rigs back to square. The camera swing is a sine over the bend, so p = 1 and p = 0 already
-## agree; this is what makes that explicit on every exit path, including a catch mid-turn.
+## Both rigs back to square, and no turn pending any more. The camera swing profile is zero at both
+## ends of the bend, so p = 1 and p = 0 already agree; this is what makes that explicit on every
+## exit path, including a catch mid-turn.
 func _apply_turn_reset() -> void:
 	_turn_direction = 0
+	next_turn_direction = 0
 	if game == null:
 		return
 	var rig: Node = game.turn_rig
@@ -406,6 +452,7 @@ func _publish() -> void:
 	game.stage_distance = stage_distance
 	game.stage_distance_target = stage_distance_target
 	game.run_clock = run_clock
+	game.next_turn_direction = next_turn_direction
 
 ## The stage's base speed, as stage_started reports it (systems spec §10.1).
 func _stage_base_speed() -> float:
@@ -422,6 +469,9 @@ func _stage_clear_bonus() -> int:
 
 func _turn_seconds() -> float:
 	return _float_config(&"turn_seconds", DEFAULT_TURN_SECONDS)
+
+func _turn_warning_seconds() -> float:
+	return maxf(_float_config(&"turn_warning_seconds", DEFAULT_TURN_WARNING_SECONDS), 0.0)
 
 func _drain_distance() -> float:
 	return maxf(_float_config(&"stage_drain_distance", DEFAULT_STAGE_DRAIN_DISTANCE), 0.0)

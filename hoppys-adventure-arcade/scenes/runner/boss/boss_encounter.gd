@@ -155,6 +155,10 @@ func start(index: int) -> void:
 	_mount_boss()
 	boss = boss_root
 	_active = true
+	# The entrance card goes out first (contract §11.4): boss_intro opens the intro, boss_spawned
+	# right behind it is the moment the boss is visible and armed, and the attacks start once the
+	# _intro seconds boss_intro carries have run down.
+	_emit(&"boss_intro", [kind, boss_name, _intro])
 	_emit(&"boss_spawned", [kind, hp])
 	_emit(&"boss_health_changed", [hp, max_hp])
 

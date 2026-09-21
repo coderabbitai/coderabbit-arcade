@@ -111,17 +111,23 @@ extends Resource
 @export var stage_clear_bonus_per_stage := 150
 
 @export_group("Turn")
-@export var turn_seconds := 2.5
+@export var turn_seconds := 2.4
+## Seconds of warning turn_incoming gives before the bend is expected to start (contract §11.4).
+@export var turn_warning_seconds := 3.0
 ## Graybox fallback only: the yaw the TurnRig sweeps when the corridor has no set_turn (§11.9).
 @export var turn_yaw_degrees := 90.0
-@export var turn_camera_yaw_degrees := 18.0
-@export var turn_camera_bank_degrees := 6.0
+@export var turn_camera_yaw_degrees := 55.0
+@export var turn_camera_bank_degrees := 12.0
+## Fractions of the bend the camera swing spends ramping to the peak and returning from it; it
+## holds at the peak in between (contract §11.9).
+@export var turn_swing_in_fraction := 0.3
+@export var turn_swing_out_fraction := 0.3
 
 @export_group("Boss")
 @export var boss_z := -14.0
 @export var boss_sway_amplitude := 2.4
 @export var boss_sway_period := 3.2
-@export var boss_intro_seconds := 1.2
+@export var boss_intro_seconds := 3.0
 @export var boss_outro_seconds := 1.0
 @export var boss_timeout_seconds := 55.0
 ## HP fractions that open phases 1, 2 and 3 (contract §11.10).

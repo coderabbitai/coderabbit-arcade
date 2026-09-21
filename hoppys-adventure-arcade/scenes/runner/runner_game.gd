@@ -81,8 +81,10 @@ signal paused_changed(paused: bool)
 signal phase_changed(phase: StringName)
 signal stage_started(index: int, name: StringName, speed: float)
 signal stage_cleared(index: int, bonus: int)
+signal turn_incoming(direction: int, seconds: float)
 signal turn_started(direction: int, seconds: float)
 signal turn_finished
+signal boss_intro(kind: StringName, name: String, seconds: float)
 signal boss_spawned(kind: StringName, hp: int)
 signal boss_health_changed(hp: int, max_hp: int)
 signal boss_phase_changed(phase: int)
@@ -136,6 +138,10 @@ var stage_distance := 0.0
 var stage_distance_target := 0.0
 ## RUN-phase seconds only; drives speed and difficulty (contract §11.1).
 var run_clock := 0.0
+## -1 left, +1 right for the turn this seam is about to take; 0 when none is pending. Set when the
+## stage enters its drain window, which is before turn_incoming announces it, and back to 0 once
+## the bend is over (contract §11.4).
+var next_turn_direction := 0
 ## The live boss node, or null outside a fight.
 var boss: Node3D = null
 var boss_kind: StringName = &""
@@ -227,6 +233,7 @@ func start_run(run_seed := 0) -> void:
 	run_clock = 0.0
 	stage_distance = 0.0
 	stage_distance_target = 0.0
+	next_turn_direction = 0
 	_clear_boss_state()
 	for node in [speed_controller, hit_manager, score_manager, effect_manager, autopilot,
 			player, pursuer, camera_rig, turn_rig]:
@@ -541,10 +548,12 @@ func _on_phase_changed(value: StringName) -> void:
 	if value != &"boss":
 		_clear_boss_state()
 
-func _on_boss_spawned(kind: StringName, hp: int) -> void:
+## `spawned_hp`, not `hp`: this facade already has an `hp` of its own (the player's), and a
+## parameter by that name would read as a write to it two lines down.
+func _on_boss_spawned(kind: StringName, spawned_hp: int) -> void:
 	boss_kind = kind
-	boss_hp = hp
-	boss_max_hp = maxi(boss_max_hp, hp)
+	boss_hp = spawned_hp
+	boss_max_hp = maxi(boss_max_hp, spawned_hp)
 	boss_phase = 1
 	boss = _find_boss_node()
 

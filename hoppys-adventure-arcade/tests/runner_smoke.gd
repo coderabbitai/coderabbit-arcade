@@ -33,7 +33,9 @@ const STAGE_DISTANCE := 260.0
 const BOSS_HP_SCALE := 0.4
 const SMOKE_BOSS_HP := 40
 ## Wall-clock ceilings for the two v2 phases. The stage seam is the long one: a 260 m run, the
-## drain, the bend, the fight and the card.
+## drain, the bend, the 3 s boss entrance, the fight and the card. Every wait below carries its own
+## copy of this budget, and at TIME_SCALE 6 it buys 240 game seconds each — so the v2.1 entrance
+## (boss_intro_seconds 1.2 -> 3.0, half a wall-clock second) needs no more room here.
 const STAGE_WALL_TIMEOUT := 40.0
 const BOSS_WALL_TIMEOUT := 20.0
 
@@ -148,6 +150,21 @@ func _stage_phase() -> void:
 		return
 	var direction := int(events["turn_started"][0][0])
 	check(direction == -1 or direction == 1, "the turn went in direction %d" % direction)
+	# Contract §11.4: the corner is announced before it is taken, once, and on the same direction.
+	check(events["turn_log"].size() >= 2 and StringName(events["turn_log"][0]) == &"incoming"
+		and StringName(events["turn_log"][1]) == &"started",
+		"the seam's turn signals arrived as %s, expected the warning first" % [events["turn_log"]])
+	check(events["turn_incoming"].size() == 1, "turn_incoming fired %d times for one seam"
+		% events["turn_incoming"].size())
+	if events["turn_incoming"].is_empty():
+		return
+	check(int(events["turn_incoming"][0][0]) == direction,
+		"the warning announced direction %d and the bend went %d"
+			% [int(events["turn_incoming"][0][0]), direction])
+	var lead := float(events["turn_incoming"][0][1])
+	var warning := float(game.config.turn_warning_seconds)
+	check(lead >= 0.0 and lead <= warning + 0.5,
+		"turn_incoming promised the corner in %.2f s, expected 0 .. %.1f" % [lead, warning + 0.5])
 	check(await _wait_until(func() -> bool: return events["turn_finished"] > 0, STAGE_WALL_TIMEOUT),
 		"the turn never finished")
 	check(events["turn_started"].size() == 1 and events["turn_finished"] == 1,
@@ -626,8 +643,12 @@ func _watch() -> void:
 		"power_up_collected": [],
 		"stage_started": [],
 		"stage_cleared": [],
+		"turn_incoming": [],
 		"turn_started": [],
 		"turn_finished": 0,
+		# The order the seam's two turn signals actually arrived in: the announcement has to precede
+		# the bend in the real stage machine, not merely to have happened (contract §11.4).
+		"turn_log": [],
 		"boss_spawned": [],
 		"boss_defeated": [],
 		"boss_retreated": [],
@@ -640,8 +661,12 @@ func _watch() -> void:
 		events["stage_started"].append([index, name, speed]))
 	game.stage_cleared.connect(func(index: int, bonus: int) -> void:
 		events["stage_cleared"].append([index, bonus]))
+	game.turn_incoming.connect(func(direction: int, seconds: float) -> void:
+		events["turn_incoming"].append([direction, seconds])
+		events["turn_log"].append(&"incoming"))
 	game.turn_started.connect(func(direction: int, seconds: float) -> void:
-		events["turn_started"].append([direction, seconds]))
+		events["turn_started"].append([direction, seconds])
+		events["turn_log"].append(&"started"))
 	game.turn_finished.connect(func() -> void:
 		events["turn_finished"] += 1)
 	game.boss_spawned.connect(func(kind: StringName, hp: int) -> void:

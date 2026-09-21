@@ -11,8 +11,10 @@ extends Node3D
 const RunnerGame = preload("res://scenes/runner/runner_game.gd")
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
 ## Contract §11.10 fallbacks, used only when no config has been supplied yet.
-const DEFAULT_TURN_CAMERA_YAW := 18.0
-const DEFAULT_TURN_CAMERA_BANK := 6.0
+const DEFAULT_TURN_CAMERA_YAW := 55.0
+const DEFAULT_TURN_CAMERA_BANK := 12.0
+const DEFAULT_TURN_SWING_IN_FRACTION := 0.3
+const DEFAULT_TURN_SWING_OUT_FRACTION := 0.3
 
 @onready var camera: Camera3D = $Camera
 
@@ -88,17 +90,52 @@ func _aim(target: Vector3) -> void:
 	camera.reset_physics_interpolation()
 
 ## The cinematic turn swing (contract §11.9). The StageManager calls this every physics tick of the
-## `turn` phase and once with (0, 0) at each end of it; the swing is a sine over the bend, so at
-## p = 0 and p = 1 the camera sits exactly where the follow left it.
+## `turn` phase and once with (0, 0) at each end of it; the swing profile is zero at both ends, so
+## at p = 0 and p = 1 the camera sits exactly where the follow left it.
 func set_turn(progress: float, direction: int) -> void:
 	turn_progress = clampf(progress, 0.0, 1.0)
 	turn_direction = signi(direction)
+
+## The ramp-hold-return swing envelope (contract §11.9): a smoothstep up over the first
+## `turn_swing_in_fraction` of the bend, a hold at the peak, a smoothstep back down over the last
+## `turn_swing_out_fraction`. That is what makes the corner read as a committed turn rather than as
+## a wave — the camera is pointed into the corner for the whole middle of the bend.
+##
+## The result is exactly 0 at p = 0 and p = 1 whatever the fractions are, so the camera can never be
+## left displaced: the endpoints are answered before the ramps, which also covers an authored 0/0
+## that would otherwise leave a step at each end. Fractions that together exceed the whole bend are
+## scaled down in proportion, so the hold shrinks to nothing rather than the ramps overlapping.
+func turn_swing_profile(progress: float) -> float:
+	var p := clampf(progress, 0.0, 1.0)
+	if p <= 0.0 or p >= 1.0:
+		return 0.0
+	var rise := clampf(turn_swing_in_fraction(), 0.0, 1.0)
+	var fall := clampf(turn_swing_out_fraction(), 0.0, 1.0)
+	var total := rise + fall
+	if total > 1.0:
+		rise /= total
+		fall /= total
+	if rise > 0.0 and p < rise:
+		return smoothstep(0.0, 1.0, p / rise)
+	if fall > 0.0 and p > 1.0 - fall:
+		return smoothstep(0.0, 1.0, (1.0 - p) / fall)
+	return 1.0
 
 func turn_camera_yaw_degrees() -> float:
 	return float(config.turn_camera_yaw_degrees) if config != null else DEFAULT_TURN_CAMERA_YAW
 
 func turn_camera_bank_degrees() -> float:
 	return float(config.turn_camera_bank_degrees) if config != null else DEFAULT_TURN_CAMERA_BANK
+
+func turn_swing_in_fraction() -> float:
+	if config == null or not (&"turn_swing_in_fraction" in config):
+		return DEFAULT_TURN_SWING_IN_FRACTION
+	return float(config.turn_swing_in_fraction)
+
+func turn_swing_out_fraction() -> float:
+	if config == null or not (&"turn_swing_out_fraction" in config):
+		return DEFAULT_TURN_SWING_OUT_FRACTION
+	return float(config.turn_swing_out_fraction)
 
 func shake(strength: float, duration := 0.35) -> void:
 	if duration <= 0.0 or strength <= 0.0:
@@ -143,9 +180,10 @@ func _physics_process(delta: float) -> void:
 	camera.fov = base_fov + fov_punch + speed_boost
 
 ## Swing the camera around the player and bank it, on top of the follow and shake result. Both
-## angles ride sin(PI * progress), so the bend starts and ends at the resting pose exactly.
+## angles ride turn_swing_profile(progress), so the bend starts and ends at the resting pose exactly
+## and spends its middle held at the peak.
 func _apply_turn_swing() -> void:
-	var swing := float(turn_direction) * sin(PI * turn_progress)
+	var swing := float(turn_direction) * turn_swing_profile(turn_progress)
 	if is_zero_approx(swing):
 		camera.rotation = _base_rotation
 		return
