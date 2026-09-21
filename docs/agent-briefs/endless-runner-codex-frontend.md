@@ -523,8 +523,10 @@ if ! grep -qF 'RUNNER FULL LOOP: PASS' "$RUN_TEST_LOG" \
     || ! grep -qF 'HUD LEGIBILITY: PASS' "$RUN_TEST_LOG" \
     || ! grep -qF 'PURSUIT ALERT: PASS' "$RUN_TEST_LOG" \
     || ! grep -qF 'BOSS VISUALS: PASS' "$RUN_TEST_LOG" \
-    || ! grep -qF 'TURN: PASS' "$RUN_TEST_LOG"; then
-  echo "runner_visual_smoke must also print RUNNER FULL LOOP: PASS (the F6 hub -> menu -> play -> caught -> retry -> menu -> hub loop), the v2 markers HUD LEGIBILITY: PASS / PURSUIT ALERT: PASS / BOSS VISUALS: PASS / TURN: PASS, and RUNNER DEV SCENES: PASS (every dev scene instantiated headless)" >&2
+    || ! grep -qF 'TOOLS AND PROJECTILES: PASS' "$RUN_TEST_LOG" \
+    || ! grep -qF 'TURN: PASS' "$RUN_TEST_LOG" \
+    || ! grep -qF 'STAGE SEAM: PASS' "$RUN_TEST_LOG"; then
+  echo "runner_visual_smoke must also print RUNNER FULL LOOP: PASS (the F6 hub -> menu -> play -> caught -> retry -> menu -> hub loop), the v2 markers HUD LEGIBILITY: PASS / PURSUIT ALERT: PASS / BOSS VISUALS: PASS / TOOLS AND PROJECTILES: PASS / TURN: PASS / STAGE SEAM: PASS, and RUNNER DEV SCENES: PASS (every dev scene instantiated headless)" >&2
   exit 1
 fi
 
