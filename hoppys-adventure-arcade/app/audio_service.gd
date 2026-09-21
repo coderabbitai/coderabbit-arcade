@@ -12,7 +12,7 @@ func _ready() -> void:
 	sfx.bus = "SFX"
 	add_child(music)
 	add_child(sfx)
-	var track := load("res://Assets/Audio/happy_adveture.mp3") as AudioStreamMP3
+	var track := load("res://Assets/Audio/Main Menu/happy_adveture.mp3") as AudioStreamMP3
 	track.loop = true
 	music.stream = track
 	music.volume_db = -10

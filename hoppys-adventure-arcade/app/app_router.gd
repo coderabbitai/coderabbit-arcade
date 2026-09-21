@@ -1,5 +1,6 @@
 extends CanvasLayer
 const ROUTES := {
+	"bay_area_blitz": "res://scenes/platformer/bay_area_blitz.tscn",
 	"hub": "res://scenes/main_menu/main_menu.tscn",
 	"platformer": "res://scenes/platformer/platformer_menu.tscn",
 	"runner": "res://scenes/runner/runner_menu.tscn",

@@ -14,16 +14,16 @@ func _ready() -> void:
 	match index:
 		0:
 			for layer in ["sCitySky", "sCityFar", "sCityMid", "sCityClose"]:
-				paths.append("res://Assets/CityBackground/" + layer + ".png")
+				paths.append("res://Assets/Backgrounds/CityBackground/" + layer + ".png")
 		1:
 			for layer in ["backgound", "stars", "far-planets"]:
-				paths.append("res://Assets/space_background_pack/layers/parallax-space-" + layer + ".png")
+				paths.append("res://Assets/Backgrounds/space_background_pack/layers/parallax-space-" + layer + ".png")
 		2:
 			for layer in ["back-trees", "lights", "middle-trees", "front-trees"]:
-				paths.append("res://Assets/parallax_forest_pack/layers/parallax-forest-" + layer + ".png")
+				paths.append("res://Assets/Backgrounds/parallax_forest_pack/layers/parallax-forest-" + layer + ".png")
 		4:
 			for layer in ["back", "middle", "foreground"]:
-				paths.append("res://Assets/cyberpunk-street-files/Assets/Version 2/Layers/" + layer + ".png")
+				paths.append("res://Assets/Backgrounds/cyberpunk-street-files/Assets/Version 2/Layers/" + layer + ".png")
 	for i in paths.size():
 		var tex := load(paths[i]) as Texture2D
 		if tex == null:
