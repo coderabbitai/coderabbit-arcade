@@ -113,7 +113,7 @@ New `scenes/runner/ui/pursuit_alert.gd` + `.tscn`, a `Control` child of the HUD'
 - **Waveform bar.** 380×26 `Control` whose `_draw()` calls `draw_multiline()`: 48 bars, heights from a deterministic
   `sin(i*0.7 + clock*6) * sin(i*0.31 + clock*2.3)` mix, amplitude by `1 - fraction`; MATRIX → DANGER with threat.
 - **Copy** (CREAM 20, outline 6):
-  ```
+  ```text
   INCOMING TRANSMISSION
   UNREVIEWED PR BACKLOG
   CATCHES UP IN 18.0 s
@@ -158,8 +158,9 @@ Base vars (set before `on_spawned()`): `kind`, `boss_name`, `max_hp`, `phase_cou
 ### 3.2 The three bosses (`scenes/runner/boss/visuals/`)
 
 Shared builder `boss_art.gd` (mirrors `hazard_art.gd`): `box()`, `sphere()`, `torus()`, `label()`, `batch()`,
-`flash()`, `shatter()`. Envelope: **≤ 7 m wide × 4.5 m tall × 3 m deep, centre y = 2.6, z = hover_z (−14)**, bottom
-edge never below **y = 1.6** so lane decals stay visible. Sway ±2.2 m over 3.2 s (phase 0) → 2.2 s (phase 2).
+`flash()`, `shatter()`. Envelope: a bounding box **≤ 7 m wide × 3 m deep** whose vertical extent stays within **y ∈ [1.6, 6.1]** (4.5 m of
+headroom above the y 1.6 floor, so lane decals stay visible); the core body is nominally centred around **y ≈ 2.6**
+at z = hover_z (−14) and may rise within the box during phase changes. Sway ±2.2 m over 3.2 s (phase 0) → 2.2 s (phase 2).
 
 | Boss | Build | Draws |
 |---|---|---|
@@ -170,10 +171,11 @@ edge never below **y = 1.6** so lane decals stay visible. Sway ±2.2 m over 3.2 
 Steady-state ≤ 18 draws per boss, defeat peak ≤ 34 (< 40 cap). Palette: DANGER bodies, ORANGE accents, MATRIX only on
 damageable highlights, LILAC for the Hydra's "theirs", CREAM text.
 
-**States.** `idle`: sway + bob + slow rotation. `telegraph`: lean toward the lane, charge glow 0→1 over `seconds`,
-core scales 1→1.6. `attack`: 0.12 s recoil + muzzle flash. `hurt`: 0.18 s white flash via a *duplicated* material's
-`emission_energy_multiplier` + 0.06 m jolt. `phase_change`: 0.9 s rise 0.8 m, strobe, ring expands, HP pips animate.
-`defeated`: instances scatter on a CPU ballistic curve, emissives fade, one burst, toast `BUG FIXED`.
+**Internal states** (driven by the §11.5 hooks): `idle` (sway + bob + slow rotation); `play_telegraph` → lean toward the
+lanes, charge glow 0→1 over `seconds`, core scales 1→1.6; `play_attack` → 0.12 s recoil + muzzle flash; `play_hit` → 0.18 s
+white flash via a *duplicated* material's `emission_energy_multiplier` + 0.06 m jolt; `set_phase` → 0.9 s rise 0.8 m,
+strobe, ring expands, HP pips animate; `play_defeat` → instances scatter on a CPU ballistic curve, emissives fade, one
+burst, toast `BUG FIXED`; `play_retreat` → fly-away over 1.6 s.
 
 ### 3.3 Boss HUD — `scenes/runner/ui/boss_hud.tscn/.gd` (contract §11.8 mount)
 
@@ -184,10 +186,13 @@ border pulses below 25 %; slides in on `boss_spawned`, out on `boss_defeated`.
 
 ### 3.4 Telegraph, projectiles, tools, auto-fire
 
-**Lane telegraph** — `scenes/runner/boss/telegraph.gd` (pooled ×3): floor decal `QuadMesh` 2.0 × 30 at `y = 0.008`,
+**Lane telegraph** — `scenes/runner/boss/telegraph.gd` (pooled ×3), owned by `scenes/runner/boss/boss_fx.tscn/.gd`, the
+frame-owned 3D effects scene the backend mounts under `World/TurnRig/BossArena` (contract §11.8) — the HUD never adds
+nodes to the backend `World`: floor decal `QuadMesh` 2.0 × 30 at `y = 0.008`,
 `additive(DANGER, 0.35)` (the `hazard_art.gd` floor-marker convention) with an inset MATRIX quad shrinking to zero
-over `seconds`; a billboarded 1.9 × 5 beam (`hologram`, alpha 0.15 → 0.55); a Label3D at y 2.4 naming the attack
-(`GLOB` / `BEAM` / `SWEEP`), font 44, `pixel_size` 0.006, outline 10. **3 draws per lane.**
+over `seconds`; a billboarded 1.9 × 5 beam (`hologram`, alpha 0.15 → 0.55); a Label3D at y 2.4 naming the incoming
+variant (`ORB` / `LOW` / `HIGH` / `WIDE`, the §11.6 names, so the label matches the dodge vocabulary), font 44,
+`pixel_size` 0.006, outline 10. **3 draws per lane.**
 
 **Projectiles** — `scenes/runner/hazards/visuals/projectile_visual.tscn/.gd` (extends `hazards/hazard_visual_base.gd`;
 `kind = projectile`, `variant` selects the look; `closing_speed` is provided); bounds ≤ 110 % of the §11.6 hitbox:
@@ -214,7 +219,7 @@ Each ≤ 7 draws; pickup radius 0.35; bob ±0.06 m; 0.5 Hz scale pulse synced to
 
 **Auto-fire** — `scenes/runner/boss/tool_tracer.gd` (pooled ×4) + `damage_number.gd` (pooled ×6): on
 `tool_collected(kind, damage)` a tool-coloured additive tracer strip from Hoppy's chest (y 1.1) to the boss over
-0.14 s (1 draw); at arrival the boss `on_hit` flash + 20-particle sparks (1 draw); a Label3D `"-%d"` at font 56
+0.14 s (1 draw); at arrival the boss `play_hit` flash + 20-particle sparks (1 draw); a Label3D `"-%d"` at font 56
 (CREAM, DANGER outline) rises 1.1 m over 0.7 s with random x (2 draws). Camera shake is backend-owned
 (`camera_rig.shake` on tool hits, requested).
 
@@ -251,9 +256,10 @@ The corridor sells the turn alone, with a fixed camera. This is safe because a t
 Three layers:
 
 - **(a) Curvature deformation.** Shared vertex displacement in `floor_grid`, `code_wall` and a `far_glow` copy:
-  ```
+  ```glsl
   uniform float bend = 0.0;        // signed curvature
   uniform float bend_start = 6.0;  // metres ahead of the player where the bend begins
+  varying vec3 world;              // post-bend world position, consumed by fragment() for the grid
   void vertex() {
       float d = max(0.0, -(MODEL_MATRIX * vec4(VERTEX,1.0)).z - bend_start);
       VERTEX.x += bend * d * d;
@@ -269,7 +275,10 @@ Three layers:
 Pillars: apply `x += bend * d * d` plus the local yaw to the 24 CPU instances. **Far glow / corner:** `FarGlow` fades out
 over `progress 0 → 0.3` sliding along the bend, back in `0.7 → 1.0`; a `CornerWall` 12 × 7 quad at z −52, yawed
 `direction * 55°`, `code_wall` duplicate at `intensity 0.4`, with a `TURN` chevron decal, fades in as FarGlow fades
-out. Net **+1 draw at most**; corridor 10 → 12 of a documented budget raised to **14 / 18**. Pause: PAUSABLE, all
+out. Draw budget, one consistent set of numbers: base corridor **10** draws (measured), turn peak **12** (the CornerWall ↔
+FarGlow crossfade adds at most **+1**, the bent pillars add none, the TURN chevron decal +1 while visible), documented
+corridor budget raised from 15 to **18** so `capture_previews.gd` and `check_turn()` assert `≤ 18` during a turn and
+`≤ 14` at rest. Pause: PAUSABLE, all
 uniforms GDScript-driven, no `TIME`. `turn_whoosh` at `progress 0.05`; HUD dims non-essential widgets to α0.55;
 stage banner waits for `turn_finished`.
 
@@ -308,7 +317,8 @@ the heartbeat below `fraction < 0.35` (pitch drop + stream switch). Boss and sta
 `boss_hit` 0.09).
 
 **Music:** pitch/duck only (AudioService keeps exactly two players). `boss_spawned` → `duck_music(-4, 0.6)` held for the
-fight (target-offset variable in the existing `_pitch` smoothing) + pitch `+0.04`; `boss_phase_changed` →
+fight (target-offset variable in the existing `_pitch` smoothing) + pitch `+0.04`, both restored on `boss_defeated` **or**
+`boss_retreated`; `boss_phase_changed` →
 `duck_music(-8, 0.35)`; `stage_cleared` → `duck_music(-10, 1.2)` and `_pitch` held at 1.0 for the card; `turn_started`
 → `duck_music(-5, 0.5)`, restored at `turn_finished`. All `has_method`-guarded.
 
@@ -356,11 +366,11 @@ UI built imperatively via `Style`/`hud_style`, cached materials duplicated befor
   `HUD LEGIBILITY: n labels checked`.
 - `check_pursuit_alert()` — mock `pursuit_started → progress 1.0 → 0.0 → recovered`: panel visible, radar rate strictly
   increasing, copy contains the catch rule, portrait SubViewport renders, everything freezes under `paused`.
-- `check_bosses()` — each boss: `on_spawned()` twice (idempotent), every state, all phases, `on_hit` per tool,
-  `on_telegraph` per lane, `on_defeated`; merged AABB inside 7 × 4.5 × 3 m with bottom ≥ y 1.6; draw census ≤ 40.
+- `check_bosses()` — each boss: `on_spawned()` twice (idempotent), every hook, all phases, `play_hit` per tool,
+  `play_telegraph` per lane, `play_defeat`; merged AABB inside 7 × 4.5 × 3 m with bottom ≥ y 1.6; draw census ≤ 40.
   Prints `BOSS VISUALS: 3 checked; peak draw census=<n>`.
-- `check_tools_and_projectiles()` — 4 tools reset/collect twice; 3 projectile kinds ≤ 110 % of their hitbox; tracer
-  and damage-number pools return to idle.
+- `check_tools_and_projectiles()` — 4 tools reset/collect twice; all four projectile variants (`orb`, `low`, `high`,
+  `wide`) ≤ 110 % of their hitbox; tracer and damage-number pools return to idle.
 - `check_turn()` — `set_turn(p, ±1)` at p = 0, 0.25, 0.5, 0.75, 1: monotone bend to the peak and back, `rotation.y`
   returns to 0, CornerWall/FarGlow never both fully opaque, draws ≤ 18, pause mid-turn leaves the transform unchanged
   for 10 frames.
@@ -386,7 +396,7 @@ recapture `endless-runner-hud.png` and `endless-runner-gameplay.png`. Fixtures i
 
 | Addition | Steady | Peak |
 |---|---|---|
-| Corridor turn | +0 | +1 |
+| Corridor turn (base 10; rest budget 14, turn budget 18) | +0 | +2 |
 | Boss visual (each) | ≤ 18 | ≤ 34 (defeat) |
 | Lane telegraph (3 max) | 3 | 9 |
 | Projectile (≤ 6 live) | 2–3 | 18 |

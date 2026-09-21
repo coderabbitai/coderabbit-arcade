@@ -237,6 +237,8 @@ func get_info() -> Dictionary:
 		"hp": hp,
 		"max_hp": max_hp,
 		"phase": phase,
+		# How many phases this fight has at all, so a HUD can draw "2 / 3" without a second lookup.
+		"phase_count": int(def.get("phase_count", BossDefs.PHASE_COUNT)),
 		"accepted_tools": BossDefs.accepted_tools(def, phase),
 		"pending_attacks": pending
 	}
@@ -257,6 +259,7 @@ static func empty_info() -> Dictionary:
 		"hp": 0,
 		"max_hp": 0,
 		"phase": 0,
+		"phase_count": 0,
 		"accepted_tools": no_tools,
 		"pending_attacks": no_attacks
 	}

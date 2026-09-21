@@ -5,6 +5,9 @@ extends Node3D
 
 const RunnerLeaderboard = preload("res://scenes/runner/systems/runner_leaderboard.gd")
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
+## Only for the phase count of the §11.4 boss block; boss_defs.gd preloads no scene script, so this
+## is not the cycle boss_encounter.gd has to avoid.
+const BossDefs = preload("res://scenes/runner/boss/boss_defs.gd")
 const CONFIG_PATH := "res://scenes/runner/data/run_config.tres"
 ## Seconds the corridor takes to decelerate to a stop once the pursuer catches Hoppy.
 const CAUGHT_STOP_SECONDS := 0.4
@@ -24,6 +27,9 @@ const BOSS_ARENA_PATH := "World/TurnRig/BossArena"
 ## instantiated only if it exists, and receives bind(self) before run_started is emitted.
 const FRONTEND_MOUNTS := {
 	"World/TurnRig/Environment": ["res://scenes/runner/environment/corridor.tscn"],
+	## 3D fight effects (telegraphs, tracers, damage numbers) live here, inside the arena, so the
+	## frontend never has to reach into World for them (contract §11.3, §11.8).
+	"World/TurnRig/BossArena": ["res://scenes/runner/boss/boss_fx.tscn"],
 	"HUD": [
 		"res://scenes/runner/ui/runner_hud.tscn",
 		"res://scenes/runner/ui/pursuit_alert.tscn",
@@ -339,7 +345,7 @@ func get_stage_info() -> Dictionary:
 		"difficulty_floor": 0.0
 	}
 
-## Contract §11.4: kind, name, hp, max_hp, phase, accepted_tools, pending_attacks. Outside a fight
+## Contract §11.4: kind, name, hp, max_hp, phase, phase_count, accepted_tools, pending_attacks. Outside a fight
 ## (or before the boss encounter is mounted) every key is present and empty — the same shape the
 ## encounter's own get_boss_info() returns between fights, so a HUD reading either one agrees.
 func get_boss_info() -> Dictionary:
@@ -355,6 +361,8 @@ func get_boss_info() -> Dictionary:
 	info["hp"] = boss_hp
 	info["max_hp"] = boss_max_hp
 	info["phase"] = boss_phase
+	# Every boss runs the same number of phases, so the mirror can fill this in without an arena.
+	info["phase_count"] = BossDefs.PHASE_COUNT
 	return info
 
 ## The contract §11.4 boss block with every field empty (boss_encounter.gd's empty_info(), built
@@ -368,6 +376,7 @@ func _empty_boss_info() -> Dictionary:
 		"hp": 0,
 		"max_hp": 0,
 		"phase": 0,
+		"phase_count": 0,
 		"accepted_tools": empty_tools,
 		"pending_attacks": empty_attacks
 	}
@@ -691,6 +700,10 @@ func _mount_frontend() -> void:
 			if instance == null:
 				continue
 			mount.add_child(instance)
+			# The arena inherits this facade's ALWAYS process mode so the fight keeps ticking through
+			# a hit-stop; fight effects must freeze with the pause menu instead, like the HUD mounts.
+			if mount == boss_encounter:
+				instance.process_mode = Node.PROCESS_MODE_PAUSABLE
 			if instance.has_method("bind"):
 				instance.bind(self)
 			# A real corridor replaces the backend graybox lighting and grid (contract §3), and the

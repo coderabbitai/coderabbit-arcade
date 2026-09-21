@@ -165,8 +165,9 @@ Primitive rabbit (≈ 22 meshes, 5 shared materials) under a `Root` pivot at the
 `AuraSparkles`, `AnimationPlayer`. Build all animations in code (`Animation.TYPE_VALUE` tracks for properties, linear, step 1/30,
 `playback_default_blend_time 0.08`; the `hurt` clip's `flash()` calls use an `Animation.TYPE_METHOD` track): `idle` 1.6 s loop (breathe, ear twitch), `run` 0.5 s loop
 (two bobs, leg/arm swing, ears flap back, head lean), `jump` 0.35 s hold (stretch then settle, limbs tuck),
-`fall` 0.6 s loop (flail, ears up), `roll` 0.5 s (forward somersault about X on `Root`, `Root.scale.y`
-0.55 so it fits 0.9 m; key rotation back to 0 at the end), `hurt` 0.45 s (knock-back lean, ear splay,
+`fall` 0.6 s loop (flail, ears up), `roll` 0.5 s (forward somersault about X on `Root`, with `Root.scale.y` keyed to the measured value that keeps the
+visual's bounds within the 0.9 m rolling hurtbox — `tests/runner_visual_smoke.gd` asserts the roll pose height; key rotation
+back to 0 at the end), `hurt` 0.45 s (knock-back lean, ear splay,
 `flash()` method track at 0 / 0.12 / 0.24 s), `dead` 0.9 s hold (tip onto back, limbs limp).
 Contract methods: `set_anim_state` (play on change; `run` speed_scale from `set_run_speed`:
 `lerp(0.85, 1.9, normalized)`; `hurt` auto-returns to `run`/`idle` via `animation_finished`),
@@ -372,7 +373,8 @@ fi
 # The AppRouter suppression is scoped by the `at:` line that follows the diagnostic, which names the
 # script the identifier is in: only runner_game.gd and runner_menu.gd are excused. The same error in
 # any other script — a visual that reaches for the autoload directly — is printed and fails the gate.
-# The cascade lines need no such scoping: they name the dependent script themselves.
+# The cascade lines are scoped the same way: excused only under res://scenes/runner/ or res://tests/,
+# the roots that preload those two scripts.
 grep -q '^AppRouter=' hoppys-adventure-arcade/project.godot \
   || { echo "AppRouter autoload missing from project.godot" >&2; exit 1; }
 check_only() {
@@ -384,7 +386,10 @@ check_only() {
   # Stateful, exact suppression. An `Identifier not found: AppRouter` is excused only when the line
   # immediately after it locates the error in runner_game.gd or runner_menu.gd by full res:// path,
   # and the compile cascade is excused only once such a diagnostic has been accepted in THIS script's
-  # output — Godot always emits the root cause first, so a cascade without it is a different failure.
+  # output — Godot always emits the root cause first, so a cascade without it is a different failure —
+  # AND the cascade itself names a script under res://scenes/runner/ or res://tests/, the two roots
+  # whose scripts legitimately preload runner_game.gd / runner_menu.gd. A cascade from anywhere else
+  # is a real failure wearing the same words, so it is printed and fails the gate.
   # The trailing __DOCUMENTED_CASCADE__ tells the shell an excused diagnostic was actually seen.
   out="$(printf '%s\n' "$raw" | awk '
     /^Godot Engine/ { next }
@@ -396,13 +401,27 @@ check_only() {
       print pending; print; pending = ""; next
     }
     pending != "" && NF { print pending; pending = "" }
-    /Compile Error: Failed to compile depended scripts\./ { cascade = $0; next }
-    /Failed to load script .* with error "Compilation failed"\./ { cascade = $0; next }
-    cascade != "" && /^[[:space:]]*at: / {
-      if (accepted) { cascade = ""; next }
-      print cascade; print; cascade = ""; next
+    # The depended-scripts line carries no path of its own, so its following `at:` line is what gets
+    # scoped; a "Failed to load script" line names the script in quotes, which is scoped directly.
+    /Compile Error: Failed to compile depended scripts\./ { cascade = $0; cascade_path = ""; next }
+    /Failed to load script .* with error "Compilation failed"\./ {
+      cascade = $0
+      cascade_path = $0
+      sub(/^.*Failed to load script "/, "", cascade_path)
+      sub(/".*$/, "", cascade_path)
+      next
     }
-    cascade != "" && NF { print cascade; cascade = "" }
+    cascade != "" && /^[[:space:]]*at: / {
+      excused = 0
+      if (accepted) {
+        if (cascade_path != "") {
+          if (cascade_path ~ /^res:\/\/(scenes\/runner|tests)\//) excused = 1
+        } else if ($0 ~ /res:\/\/(scenes\/runner|tests)\//) excused = 1
+      }
+      if (excused) { cascade = ""; cascade_path = ""; next }
+      print cascade; print; cascade = ""; cascade_path = ""; next
+    }
+    cascade != "" && NF { print cascade; cascade = ""; cascade_path = "" }
     NF { print }
     END {
       if (pending != "") print pending
@@ -494,9 +513,14 @@ run_test runner_smoke.gd 'RUNNER SMOKE: PASS'
 # refactor that skipped or dropped either would still print a green aggregate. run_test already
 # enforces exit 0 and the aggregate line, so only the two sub-markers are left to check.
 run_test runner_visual_smoke.gd 'RUNNER VISUAL SMOKE: PASS'
+# v2 (F7-F9) markers are required too: HUD LEGIBILITY / PURSUIT ALERT from F7, BOSS VISUALS from F8, TURN from F9.
 if ! grep -qF 'RUNNER FULL LOOP: PASS' "$RUN_TEST_LOG" \
-    || ! grep -qF 'RUNNER DEV SCENES: PASS' "$RUN_TEST_LOG"; then
-  echo "runner_visual_smoke must also print RUNNER FULL LOOP: PASS (the F6 hub -> menu -> play -> caught -> retry -> menu -> hub loop) and RUNNER DEV SCENES: PASS (every dev scene instantiated headless)" >&2
+    || ! grep -qF 'RUNNER DEV SCENES: PASS' "$RUN_TEST_LOG" \
+    || ! grep -qF 'HUD LEGIBILITY:' "$RUN_TEST_LOG" \
+    || ! grep -qF 'PURSUIT ALERT: PASS' "$RUN_TEST_LOG" \
+    || ! grep -qF 'BOSS VISUALS:' "$RUN_TEST_LOG" \
+    || ! grep -qF 'TURN: PASS' "$RUN_TEST_LOG"; then
+  echo "runner_visual_smoke must also print RUNNER FULL LOOP: PASS (the F6 hub -> menu -> play -> caught -> retry -> menu -> hub loop), the v2 markers HUD LEGIBILITY / PURSUIT ALERT: PASS / BOSS VISUALS / TURN: PASS, and RUNNER DEV SCENES: PASS (every dev scene instantiated headless)" >&2
   exit 1
 fi
 

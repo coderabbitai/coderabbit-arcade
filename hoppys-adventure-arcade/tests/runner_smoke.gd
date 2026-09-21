@@ -187,8 +187,10 @@ func _stage_phase() -> void:
 	check(StringName(events["stage_started"][1][1]) == &"Merge Conflict Hydra",
 		"stage 2 announced %s" % events["stage_started"][1][1])
 	check(game.phase == &"run", "stage 2 did not open in the run phase (phase %s)" % game.phase)
-	check(int(events["stage_cleared"][0][1]) > 0,
-		"the stage-clear bonus was %d" % int(events["stage_cleared"][0][1]))
+	# `and` short-circuits, so the index is only read once the array is known to have an entry: the
+	# wait above can time out, and an empty array here would fault instead of failing the check.
+	check(not events["stage_cleared"].is_empty() and int(events["stage_cleared"][0][1]) > 0,
+		"the stage clear paid no bonus across %d stage_cleared event(s)" % events["stage_cleared"].size())
 
 	# The whole point of the fair bot: the shots are telegraphed and it answers every one of them.
 	check(events["damage_taken"].is_empty(),

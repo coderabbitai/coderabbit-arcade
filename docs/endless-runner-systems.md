@@ -469,6 +469,13 @@ Authoritative tuning and facade live in the contract §11; this section is the i
 unchanged. Two clocks: `elapsed` (total unpaused seconds) and `run_clock` (RUN-phase seconds; drives speed and
 difficulty; frozen in `turn`, `boss`, `stage_clear`).
 
+`runner_game.gd` `FRONTEND_MOUNTS` gains one v2 entry beyond the HUD panels: `World/TurnRig/BossArena` →
+`boss/boss_fx.tscn`, the optional 3D fight effects (telegraphs, tracers, damage numbers). It follows the same rules
+as every other mount — instantiated only when the file exists, `bind(self)` when it has `bind`, freed with the scene
+— and is pinned to `PROCESS_MODE_PAUSABLE` on mount, because the arena inherits the facade's ALWAYS mode and effects
+must freeze with the pause menu. Giving the effects a home inside the arena is what keeps `ui/boss_hud.tscn` out of
+`World`.
+
 ### 10.1 `systems/stage_manager.gd` — phase state machine
 
 Vars: `phase: StringName = &"idle"`, `stage_index := 0`, `stage_distance := 0.0`, `stage_distance_target := 0.0`,
@@ -516,7 +523,8 @@ stage bonus cases (b = 0, 3, 6 → caps 26/29/32; Nitro ≤ 38) and the floor ru
 
 ### 10.3 `boss/boss_encounter.gd` (+ `boss/boss_arena.tscn`, `boss/boss_defs.gd`)
 
-`BossArena` root (Node3D, `boss_encounter.gd`) children `Boss` (Node3D) → `Visual` mount, `Projectiles`, `Tools`.
+`BossArena` root (Node3D, `boss_encounter.gd`) children `Boss` (Node3D) → `Visual` mount, `Projectiles`, `Tools`,
+plus the optional `boss/boss_fx.tscn` frontend mount (contract §11.3, §11.8) that `runner_game.gd` adds here.
 `start(stage_index)`: read defs (kind, name, base HP, speeds, telegraphs, intervals, patterns, accepted tools per
 phase) scaled by the cycle escalation (contract §11.10), with `boss_hp_scale` multiplying the base HP before that
 growth so a test config can shorten a fight without bending the curve; `hp = max_hp`; `phase = 1`; mount the visual
@@ -567,8 +575,10 @@ of the tree by hand (§9): each one is marked `consumed`, has `monitoring` disab
 synchronously, so nothing on the way out can score a dodge (tools are in `runner_tools`, which `_track_dodges`
 never scans) or damage anything after the fight. `projectile_count()` / `tool_count()` skip queued nodes, so both
 still read 0 on the tick the fight ends. `get_info()` returns the empty contract §11.4 block (`kind &""`, `name ""`,
-`hp`/`max_hp`/`phase` 0, empty arrays) whenever no fight is active — before the first one and from the end of the
-outro — which is the same shape `RunnerGame.get_boss_info()` returns with no arena mounted.
+`hp`/`max_hp`/`phase`/`phase_count` 0, empty arrays) whenever no fight is active — before the first one and from the
+end of the outro — which is the same shape `RunnerGame.get_boss_info()` returns with no arena mounted. During a fight
+`phase_count` is the fight's own phase count (`BossDefs.PHASE_COUNT`, 3 today), so a HUD can draw "2 / 3" from the one
+dictionary; the facade mirror fills in the same constant when no arena is mounted.
 
 Patterns (beat lists; `L` = random single lane, `Ladj` = two adjacent lanes leaving one free, `alt` = alternate):
 Swarm P1 `orb L`; P2 `orb Ladj` (two orbs); P3 `high, low` alt. Hydra P1 `wide (one lane free)`; P2 `orb lane0 +
