@@ -1,17 +1,22 @@
 extends "res://scenes/runner/pursuer/pursuer_visual_base.gd"
 const Materials = preload("res://scenes/runner/environment/runner_materials.gd")
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
-const FarGlow = preload("res://scenes/runner/shaders/far_glow.gdshader")
+const Forge = preload("res://scenes/runner/pursuer/hifi/forge.gd")
+const Plating = preload("res://scenes/runner/pursuer/hifi/plating.gdshader")
+const Shock = preload("res://scenes/runner/pursuer/hifi/shockwave.gdshader")
+const Exhaust = preload("res://scenes/runner/pursuer/hifi/exhaust.gdshader")
 const HEADLINES := ["PR #3312 UNREVIEWED", "CHANGES REQUESTED", "STALE", "NEEDS REBASE", "DO NOT MERGE", "0 approvals"]
 var _shockwave: MeshInstance3D
-var _shockwave_material: StandardMaterial3D
+var _shockwave_material: ShaderMaterial
+var _metal: ShaderMaterial
+var _lens: ShaderMaterial
+var _exhaust: ShaderMaterial
 var _shockwave_time := 0.0
 var _wall: MultiMeshInstance3D
 var _cards: Array[Transform3D] = []
 var _labels: Array[Label3D] = []
 var _light: OmniLight3D
 var _glitch: GPUParticles3D
-var _haze: ShaderMaterial
 var _threat := 0.0
 var _t := 0.0
 var _reaction := &"idle"
@@ -37,18 +42,24 @@ func _build() -> void:
 	_wall.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var cards := MultiMesh.new()
 	cards.transform_format = MultiMesh.TRANSFORM_3D
-	cards.use_colors = true
-	var card := BoxMesh.new()
-	card.size = Vector3(0.92, 0.40, 0.16)
-	var material := Materials.lit(Color.WHITE).duplicate() as StandardMaterial3D
-	material.vertex_color_use_as_albedo = true
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	card.material = material
+	var card := Forge.bevel_box(Vector3(0.98, 0.43, 0.22), 0.035)
+	_metal = ShaderMaterial.new()
+	_metal.shader = Plating
+	_metal.set_shader_parameter("diff_marks", Forge.diff_marks())
+	var maps := Forge.maps()
+	_metal.set_shader_parameter("plating", maps[0])
+	_metal.set_shader_parameter("normals", maps[1])
+	_metal.set_shader_parameter("roughness_map", maps[2])
+	card.surface_set_material(0, _metal)
+	_lens = _metal.duplicate() as ShaderMaterial
+	_lens.set_shader_parameter("lens", 1.0)
 	cards.mesh = card
 	cards.instance_count = 20
 	for row in 4:
 		for column in 5:
-			var pose := Transform3D(Basis(Vector3.FORWARD, sin(float(row * 5 + column)) * 0.035), Vector3((column - 2) * 1.04, 0.3 + row * 0.49, 0))
+			var pose := Transform3D(Basis(Vector3.FORWARD, sin(float(row * 5 + column)) * 0.035), Vector3((column - 2) * 1.04, 0.3 + row * 0.49, 0.05 + 0.09 * sin(float(row * 5 + column))))
+			# A common mounting depth seats both lenses across the top-center cards.
+			if row == 3 and column >= 1 and column <= 3: pose.origin.z = 0.04
 			_cards.append(pose)
 			cards.set_instance_transform(row * 5 + column, pose)
 	_wall.multimesh = cards
@@ -58,15 +69,17 @@ func _build() -> void:
 	var torus := TorusMesh.new()
 	torus.inner_radius = 0.72
 	torus.outer_radius = 2.6 / 3.4
-	torus.rings = 32
-	torus.ring_segments = 8
+	torus.rings = 64
+	torus.ring_segments = 24
 	_shockwave.mesh = torus
-	_shockwave.position.y = 1.2
+	_shockwave.position = Vector3(0, 1.2, 0.72)
 	_shockwave.rotation.x = PI / 2
-	_shockwave_material = Materials.additive(Palette.DANGER, 0.5).duplicate() as StandardMaterial3D
+	_shockwave_material = ShaderMaterial.new()
+	_shockwave_material.shader = Shock
 	_shockwave.material_override = _shockwave_material
 	_shockwave.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_wall.add_child(_shockwave)
+	var backing_positions: Array[Vector3] = []
 	for i in HEADLINES.size():
 		var label := Materials.label(_wall, HEADLINES[i], 28, Palette.CREAM)
 		label.name = "Headline%d" % i
@@ -74,16 +87,25 @@ func _build() -> void:
 		label.outline_size = 0
 		# Fit each headline into its half of the wall without reducing glyph height.
 		label.scale.x = 0.65
-		label.position = Vector3(-1.25 if i % 2 == 0 else 1.25, 0.48 + (i / 2) * 0.51, 0.11)
+		label.position = Vector3(-1.25 if i % 2 == 0 else 1.25, 0.48 + (i / 2) * 0.51, 0.38)
+		if i == HEADLINES.find("CHANGES REQUESTED"): label.modulate = Palette.DANGER
 		_labels.append(label)
+		backing_positions.append(label.position)
+	var backing := MeshInstance3D.new()
+	backing.name = "HeadlineBackings"
+	backing.mesh = Forge.headline_backings(backing_positions)
+	var neutral := _metal.duplicate() as ShaderMaterial
+	neutral.set_shader_parameter("glyph_enabled", 0.0)
+	backing.material_override = neutral
+	backing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_wall.add_child(backing)
 	for side in [-1.0, 1.0]:
 		var eye := MeshInstance3D.new()
 		eye.name = "EyeL" if side < 0 else "EyeR"
-		var slit := BoxMesh.new()
-		slit.size = Vector3(0.68, 0.085, 0.055)
+		var slit := Forge.bevel_box(Vector3(0.78, 0.095, 0.09), 0.018)
 		eye.mesh = slit
-		eye.material_override = Materials.glow(Palette.DANGER, 2.5)
-		eye.position = Vector3(side * 0.48, 1.88, 0.15)
+		eye.material_override = _lens
+		eye.position = Vector3(side * 0.48, 1.80, 0.18)
 		eye.rotation.z = side * 0.19
 		eye.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_wall.add_child(eye)
@@ -94,30 +116,43 @@ func _build() -> void:
 	_light.shadow_enabled = false
 	_light.position = Vector3(0, 1.2, 0.6)
 	add_child(_light)
-	_glitch = Materials.glyph_particles(48, Vector3(2.35, 0.75, 0.05))
+	_glitch = GPUParticles3D.new()
+	_glitch.amount = 48
 	_glitch.name = "Glitch"
-	_glitch.position.y = 1.1
-	_glitch.lifetime = 0.25
-	_glitch.preprocess = 0.25
-	var process := _glitch.process_material as ParticleProcessMaterial
-	process.direction = Vector3.UP
-	process.initial_velocity_min = 0.05
-	process.initial_velocity_max = 0.1
-	var glyph_material := _glitch.draw_pass_1.material as StandardMaterial3D
-	glyph_material.albedo_color = Color(Palette.DANGER, 0.55)
-	_glitch.visibility_aabb = AABB(Vector3(-2.5, -0.9, -0.2), Vector3(5, 1.9, 0.4))
+	_glitch.position = Vector3(0, 1.1, 0.48)
+	_glitch.lifetime = 0.6
+	_glitch.preprocess = 0.6
+	var process := ParticleProcessMaterial.new()
+	process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	process.emission_box_extents = Vector3(2.1, 0.48, 0.02)
+	process.direction = Vector3(0, 0, 1)
+	process.spread = 5.0
+	process.gravity = Vector3.ZERO
+	process.initial_velocity_min = 1.0
+	process.initial_velocity_max = 1.6
+	process.scale_min = 0.6
+	process.scale_max = 1.0
+	_glitch.process_material = process
+	var streak := QuadMesh.new()
+	streak.size = Vector2(0.075, 0.22)
+	_exhaust = ShaderMaterial.new()
+	_exhaust.shader = Exhaust
+	streak.material = _exhaust
+	_glitch.draw_pass_1 = streak
+	_glitch.visibility_aabb = AABB(Vector3(-2.3, -0.7, -0.05), Vector3(4.6, 1.4, 1.15))
 	_wall.add_child(_glitch)
-	var haze := MeshInstance3D.new()
-	haze.name = "Haze"
-	var quad := QuadMesh.new()
-	quad.size = Vector2(5.6, 2.3)
-	haze.mesh = quad
-	haze.position = Vector3(0, 1.18, -0.16)
-	_haze = ShaderMaterial.new()
-	_haze.shader = FarGlow
-	haze.material_override = _haze
-	haze.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_wall.add_child(haze)
+	var cables := MeshInstance3D.new()
+	cables.name = "CableTendrils"
+	cables.mesh = Forge.cables()
+	cables.material_override = neutral
+	cables.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_wall.add_child(cables)
+	_configure_cosmetics(self)
+
+func _configure_cosmetics(node: Node) -> void:
+	node.process_mode = Node.PROCESS_MODE_PAUSABLE
+	node.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	for child in node.get_children(): _configure_cosmetics(child)
 
 func set_threat(t: float) -> void:
 	_build()
@@ -166,7 +201,13 @@ func _process(delta: float) -> void:
 	_shockwave.visible = _reaction != &"retreat" and not _retreated and (_reaction != &"catch" or _shockwave_time < 0.35)
 	var pulse := fposmod(_shockwave_time, pulse_duration) / pulse_duration
 	_shockwave.scale = Vector3.ONE * lerpf(1.0, 3.4, pulse)
-	_shockwave_material.albedo_color.a = 0.5 * (1 - pulse)
+	_shockwave_material.set_shader_parameter("opacity", 0.5 * (1 - pulse))
+	_shockwave_material.set_shader_parameter("clock", _t)
+	_exhaust.set_shader_parameter("clock", _t)
+	for material in [_metal, _lens]:
+		material.set_shader_parameter("clock", _t)
+		material.set_shader_parameter("threat", _threat)
+		material.set_shader_parameter("flash", maxf(0.0, 1.0 - _reaction_time / 0.35) if _reaction == &"catch" else 0.0)
 	if _reaction == &"idle":
 		_apply()
 		return
@@ -201,14 +242,12 @@ func _apply() -> void:
 	_wall.position.x = sin(_t * 39.0) * 0.025 * _threat * _threat
 	if _threat > 0.001:
 		_last_threat_pose = _wall.transform
-	for i in _cards.size():
-		_wall.multimesh.set_instance_color(i, Palette.NAVY.lerp(Palette.DANGER, _threat * _threat))
+	_metal.set_shader_parameter("threat", _threat)
 	for i in _labels.size():
 		_labels[i].text = HEADLINES[i]
 		_labels[i].modulate.a = 1.0 - _threat * 0.3 * maxf(0.0, sin(_t * 27.0 + i))
 	_glitch.amount_ratio = _threat
 	_light.light_energy = 2.5 * _threat
-	_haze.set_shader_parameter("color", Color(Palette.DANGER, 0.08 + 0.3 * _threat))
 
 ## The same CPU transforms uploaded to MultiMesh, for meaningful headless validation.
 func card_transforms() -> Array[Transform3D]:
