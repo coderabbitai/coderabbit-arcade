@@ -1,4 +1,5 @@
 extends SceneTree
+const Prewarm = preload("res://scenes/runner/environment/hifi/prewarm.gd")
 const Corridor = preload("res://scenes/runner/environment/corridor.tscn")
 const Cleanup = preload("res://scenes/runner/environment/hifi/fixture_cleanup.gd")
 const Textures = preload("res://scenes/runner/environment/hifi/texture_forge.gd")
@@ -43,10 +44,20 @@ func census(node: Node) -> Vector2i:
 	return result
 
 func run() -> void:
+	# Dummy rendering keeps the original get_image() snapshot after set_image().
+	# Exercise the full lazy path for pixel/mipmap assertions; prewarm_check covers
+	# worker Images, finalization metadata and stable live bindings separately.
+	Textures.maps()
+	Textures.floor_maps()
 	var baseline := root.scaling_3d_scale
 	var corridor := Corridor.instantiate()
 	root.add_child(corridor)
 	corridor.set_process(false)
+	# Texture-content assertions need the full images, not startup placeholders.
+	var deadline := Time.get_ticks_msec() + 15000
+	while not Prewarm.is_complete() and Time.get_ticks_msec() < deadline:
+		await process_frame
+	check(Prewarm.is_complete(), "asynchronous prewarm completed before texture census")
 	check(corridor.get_node("Floor").position.y == 0, "floor top remains y=0")
 	check(corridor.get_node("Floor").mesh.size.x == 8, "eight meter lane envelope")
 	check(corridor.find_children("*", "CollisionObject3D", true, false).is_empty(), "cosmetic only")

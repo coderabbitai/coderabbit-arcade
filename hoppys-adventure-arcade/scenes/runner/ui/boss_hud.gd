@@ -52,6 +52,7 @@ func _ready() -> void:
 	border.draw_center = false
 	panel.add_theme_stylebox_override("panel", border)
 	Style.polish(panel, false)
+	border = panel.get_theme_stylebox("panel") as StyleBoxFlat
 	var column := VBoxContainer.new()
 	panel.add_child(column)
 	var row := HBoxContainer.new()

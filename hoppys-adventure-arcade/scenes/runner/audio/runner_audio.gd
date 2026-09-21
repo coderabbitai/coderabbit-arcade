@@ -3,6 +3,7 @@ const BusChain = preload("res://scenes/runner/audio/hifi/bus_chain.gd")
 var _whoosh_bus: StringName = &"SFX"
 var _surface := 0
 var _tread := 0
+const Prewarm = preload("res://scenes/runner/environment/hifi/prewarm.gd")
 const Synth = preload("res://scenes/runner/audio/sfx_synth.gd")
 const MUSIC_PATH := "res://Assets/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg"
 ## Emitted only after an actual playback start, also usable by headless smoke tests.
@@ -63,8 +64,8 @@ func _ready() -> void:
 		player.process_mode = Node.PROCESS_MODE_PAUSABLE
 
 func bind(game: Node) -> void:
-	# Build the longest impact cue before the first fight can trigger it.
-	Synth.sound(&"boss_intro")
+	# Shared warmup also covers turn cues and every panned whoosh variant.
+	Prewarm.warm()
 	_disconnect_game()
 	_stop_all()
 	_game = game

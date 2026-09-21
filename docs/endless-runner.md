@@ -1,10 +1,10 @@
 # Endless Runner frontend
 
-The Codebase Corridor, F0-F9. Godot 4.7.0 results are diagnostic, pending 4.7.1 acceptance.
+The Codebase Corridor, F0-F10 and the merged high-fidelity A1–A9 asset pass (coordinator release scope; current headless verification below). Backend integration follows contract 2.2. Installed Godot 4.7.0 results are diagnostic, pending acceptance on the pinned 4.7.1.
 
 ## Run
 
-Run all commands from the repository root. The project pins Godot 4.7.1; the installed 4.7.0 build is diagnostic only. Graphical commands below are for the coordinator, and were not run during F6.
+Run all commands from the repository root. The project pins Godot 4.7.1; the installed 4.7.0 build is diagnostic only. Graphical commands below are host-only and coordinator-owned; none were run during this documentation pass.
 
 ```sh
 /Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade
@@ -18,7 +18,7 @@ Run all commands from the repository root. The project pins Godot 4.7.1; the ins
 /Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --script res://scenes/runner/environment/dev/capture_previews.gd
 ```
 
-Development cameras use (0,4,8), looking at (0,1,-8), FOV 60. The menu camera uses (2.6,1.9,3.4), looking at (0,1,-2), FOV 55 with a slow drift. The `capture_previews.gd` runner_menu fixture writes `docs/previews/endless-runner-menu.png`; the coordinator recaptured it on the host with Hoppy at (0.7, 0, -0.3), and the preview is committed.
+Development cameras use (0,4,8), looking at (0,1,-8), FOV 60. The menu camera uses (2.6,1.9,3.4), looking at (0,1,-2), FOV 55 with a slow drift. The `capture_previews.gd` runner_menu fixture writes `docs/previews/endless-runner-menu.png`; the coordinator recaptured it on the host with Hoppy at (0.7, 0, -0.3), and the latest host recapture is present in the working tree.
 
 | Scene | Keys | Action |
 | --- | --- | --- |
@@ -41,7 +41,7 @@ Key 6 reaches the F1 26 m/s acceptance limit; key 7 exercises the Nitro cap. The
 
 ## Behavior and ownership
 
-F0-F6 introduced the runner menu, routed full-loop integration, capture fixture and documentation. F7 adds legibility and pursuit presentation, F8 adds boss fights, and F9 adds cinematic turns and stage transitions. The milestone sections retain their original verification history; the final v2 table records current acceptance.
+F0-F6 introduced the runner menu, routed full-loop integration, capture fixture and documentation. F7 adds legibility and pursuit presentation, F8 adds boss fights, and F9 adds cinematic turns and stage transitions. F10 sharpens announced corners and boss entrances. The milestone sections and v2 tables retain their original verification history; the high-fidelity section below records the integrated asset pass and its evidence limits.
 
 The hub routes to `RunnerMenu`, a Node3D with Backdrop and Interface children. The backdrop mounts the existing corridor at 3.5 m/s and Hoppy in run at normalized speed 0.25. Hoppy stands at (0.7, 0, -0.3), facing -Z with feet at y=0, in the gap between the buttons and controls card. The camera remains at (2.6, 1.9, 3.4), looking at (0, 1, -2), with its existing slow drift. A shaded 1280x720 composition uses the hub Style helpers, mint eyebrow, cream title, numbered buttons, controls card and footer. It centers in larger viewports and scales to fit smaller ones. Play owns initial focus; Up/Down and Tab wrap through the four buttons. Leaderboard reads `runner_leaderboard.gd.load_entries()` without a game instance, shows ten rank/name/score/mm:ss rows with `---` placeholders, disables the other three menu buttons while keeping Leaderboard enabled and focusable, and initially focuses Close. Pressing Leaderboard again closes the panel. Closing restores Leaderboard focus. `ui_cancel` closes the panel first, otherwise returns to the hub.
 
@@ -51,9 +51,184 @@ HUD is on layer 10, PauseMenu 21 and GameOver 22. HUD listens to facade signals,
 
 Hoppy supplies seven animations and every player visual hook, retains feet at y=0, stands 1.8 m and rolls within 0.9 m. Hurt returns to previous locomotion unless interrupted. Hazards implement all eight kinds and every variant; collision artwork stays within the 110% envelope, while ground projections use exact hitbox footprints. Power-ups supply six types with spin/bob/collection reactions. The pursuer uses threat-driven cards, a 1.4 s catch and 0.7 s retreat. Shared resources are duplicated before mutation. Cosmetic clocks and particles inherit pause.
 
-The corridor scrolls shaders and recycles 24 pillars over 96 m. Its per-viewport ownership stack restores the previous 3D scale and scaling mode after overlapping menu/game corridors exit. The backend replaces its graybox environment with the mounted corridor. Standalone development fixtures are frontend-owned; tests other than runner_visual_smoke.gd remain backend-owned.
+The corridor scrolls shaders and recycles 24 pillars over 96 m. Its per-viewport ownership stack restores the previous 3D scale and scaling mode after overlapping menu/game corridors exit. The backend replaces its graybox environment with the mounted corridor. Standalone development fixtures and package checks under `tests/assets/` are frontend-owned; other runner tests except `runner_visual_smoke.gd` remain backend-owned.
+
+## High-fidelity asset pass (A1–A9)
+
+**Prewarm.** The first corridor `_ready()` calls `environment/hifi/prewarm.gd` before runner chunks or pickups spawn, skips editor hints, and keeps its static guard across retries and menu/game transitions. A3 hazards/projectile meshes and atlas, A4 pickup maps/templates, shared materials/theme, A8 percussives, jump, boss-intro and turn cues, six footsteps and all 16 directional whooshes warm synchronously. `runner_audio.bind()` relies on that same guarded warmup. A1 fur/cloth, A2 plating/circuit/floor and A6 pursuer maps, plus A5 boss maps, generate local Images in six WorkerThreadPool tasks. Main-thread polling finalizes at most one image package or deferred package per frame; remaining audio recipes and boss glyph/mesh/material preparation are deferred on the main thread. No worker touches scene nodes or ImageTextures. Early player, boss and pursuer use the original lazy fallback; later finalizers preserve their caches. A2 initially binds neutral 1x1 textures, then installs full images into those same texture objects. Instance-owned animated materials remain private.
+
+The coordinator reports the current host marker `PREWARM: PASS (326 checks)`, cold `warm()` approximately **0.67 s**, and repeat **0.001 ms**. The earlier local headless prewarm check measured **712.276 ms cold**, **737.983 ms including corridor ready**, **0.002 ms repeat while pending**, and **0.001 ms repeat after completion**, versus this review's fresh **3,318.868 ms** synchronous baseline. It passed **326 checks**, including worker/main-thread ownership, critical audio before gameplay, early-boss fallback, complete worker images, populated package census, unchanged texture identities, all ten pickups and corridor retries. These are Godot `4.7.stable.official.5b4e0cb0f` CPU/resource measurements, not GPU upload or shader compilation measurements. The dummy renderer retains the initial pixel snapshot after texture replacement; A2 exercises the full lazy image path for pixel/mipmap checks, while prewarm verifies the worker Images and replacement metadata. Graphical appearance, placeholder-to-detail transition and GPU replacement remain unverified. Graphical capture fixtures should wait for `Prewarm.is_complete()` before reading finished surfaces. [Current integration findings, per-package timings and verbatim verification](assets/frontend-review-verification.md) supersede the earlier documentation-pass measurements below.
+
+The merged asset pass replaces the earlier primitive presentation with procedural meshes, cached generated textures, shaders and synthesized audio, following the [art bible](agent-briefs/endless-runner-art-bible.md). Each package was developed on its own branch and iterated with an Opus 5 art reviewer until accepted, as reported by the coordinator. Package checks enforce draw, triangle, texture, particle and audio budgets alongside collision envelopes, pause behavior and existing hooks. The coordinator reports that the main `docs/previews/endless-runner-*.png` previews were recaptured on the host with the new assets; this documentation pass performs no graphical runs.
+
+**Evidence boundary:** the available package budget sections explicitly report headless resource/geometry censuses, not host GPU measurements. The table transcribes those source numbers without relabeling them as host draws. Host fixtures include backdrop/lighting costs, and A9's 3D viewport counter does not measure its CanvasLayer pass. No corresponding host GPU census transcript is present in these package docs. A3's document, check, capture fixture and saved PNGs are now present. This review ran A3 successfully with 158393 checks; its saved captures and package-reported host results do not constitute a new graphical run.
+
+Paths beginning with `tests/` or `scenes/` are relative to `hoppys-adventure-arcade/`; `docs/` paths are repository-relative. In the check column, the argument follows `"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/asset-aN.log`. The table success markers match the current coordinator-reported host run; local integration results are in the linked review transcript.
+
+| Asset | Key techniques | Documented census: draws / triangles / textures | Check argument and success marker | Host capture fixture | Preview pattern | Package doc |
+| --- | --- | --- | --- | --- | --- | --- |
+| A1: Hoppy | Forged meshes, triplanar fur, metric cloth UVs, hex shield/aura, articulated animation | 39 / 18,204 / 6 × 256² | `--script res://tests/assets/a1_check.gd`; `ASSET A1: PASS (2950 checks)` | `scenes/runner/player/dev/capture_a1.gd` | `docs/previews/assets/a1-*.png` | [A1](assets/a1.md) |
+| A2: Corridor | Derivative-filtered floor joints, normal-mapped metal, rack/ceiling lighting, recycled geometry | 11 rest, 14 turn / 44,286 / 8 (3 × 1024², 3 × 512², 1 × 256², shared glyph atlas) | `--script res://tests/assets/a2_check.gd`; `ASSET A2: PASS (261 checks)` | `scenes/runner/environment/dev/capture_a2.gd` | `docs/previews/assets/a2-*.png` | [A2](assets/a2.md) |
+| A3: Hazards + projectiles | Shared relief atlas, forged meshes, pit-depth and exposure guards | Maximum 11 / 5,968 per asset; 3 shared 512² maps + 256² border | `--script res://tests/assets/a3_check.gd`; `ASSET A3: PASS (158393 checks)` | `scenes/runner/hazards/dev/capture_a3.gd` | `docs/previews/assets/a3-*.png` | [A3](assets/a3.md) |
+| A4: Power-ups + tools | Extruded glyph sculptures, smooth tubes, cached relief maps, filtered emission, billboard tags | 7 idle, 8 peak each / pickups: 250, 350, 314, 334, 1,818, 2,002; tools: 266, 290, 374, 330 / 4 × 256² | `--script res://tests/assets/a4_check.gd`; `ASSET A4: PASS (4556 checks)` | `scenes/runner/powerups/dev/capture_a4.gd` | `docs/previews/assets/a4-*.png` | [A4](assets/a4.md) |
+| A5: Bosses + fight FX | Forged reactor, articulated Hydra, cached metal maps, pooled telegraphs/tracers/numbers | Swarm 11 / 22,080; Hydra 18 / 21,396; Monolith 14 / 6,970; FX pool 22 / 7,716; whole fight 40 draws / 4 shared 256² textures | `--script res://tests/assets/a5_check.gd`; `ASSET A5: PASS (60339 checks)` | `scenes/runner/boss/dev/capture_a5.gd` | `docs/previews/assets/a5-*.png` | [A5](assets/a5.md) |
+| A6: Pursuer | Bevelled MultiMesh PR cards, Sobel normals, routed cables, threat-driven effects | 13 / 7,144 / 3 × 256² | `--script res://tests/assets/a6_check.gd`; `ASSET A6: PASS (102 checks)` | `scenes/runner/pursuer/dev/capture_a6.gd` | `docs/previews/assets/a6-*.png` | [A6](assets/a6.md) |
+| A7: UI | Vector panels/icons, portrait viewport and single-sample scan shader, styled focus/name entry | 0 3D draws / 0 mesh tris / 0 procedural maps; 192 CanvasItems and existing 256² portrait viewport (not zero UI GPU cost) | `--script res://tests/assets/a7_check.gd`; `ASSET A7: PASS (950 checks)` | `scenes/runner/ui/dev/capture_a7.gd` | `docs/previews/assets/a7-*.png` | [A7](assets/a7.md) |
+| A8: Audio | Deterministic layered PCM, FM transients, filtered noise, family envelopes, leased reverb/compressor/delay buses | 0 / 0 / 0; 32 recipes, 3,901,938 checked PCM bytes, peak 0.789972 | `--script res://tests/assets/a8_check.gd`; `ASSET A8: PASS (2323 checks)` | `scenes/runner/audio/dev/capture_a8.gd` | `docs/previews/assets/a8-*.png` | [A8](assets/a8.md) |
+| A9: Post-processing | Single screen-reading shader: grading, grain, vignette, hit aberration, letterbox, speed streaks, Nitro lift | 1 fullscreen pass / 2 / 0 generated textures; implicit screen backbuffer copy is additional storage/bandwidth | `--script res://tests/assets/a9_check.gd`; `ASSET A9: PASS (147 checks)` | `scenes/runner/ui/dev/capture_a9.gd` | `docs/previews/assets/a9-*.png` | [A9](assets/a9.md) |
+
+A4 triangle values follow package order: approve_shield, auto_fix, lgtm, nitro, super_jump, code_review; then review_comment, lint_rule, unit_test, auto_fix_patch. A5 whole-fight draws are a concurrent budget, not the sum of every boss. A9's current 147-check verification supersedes both the earlier 126- and 134-check transcripts.
+
+Run all nine checks from the repository root:
+
+```sh
+GODOT=/Applications/Godot.app/Contents/MacOS/Godot
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/asset-a1.log --script res://tests/assets/a1_check.gd
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/asset-a2.log --script res://tests/assets/a2_check.gd
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/asset-a3.log --script res://tests/assets/a3_check.gd
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/asset-a4.log --script res://tests/assets/a4_check.gd
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/asset-a5.log --script res://tests/assets/a5_check.gd
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/asset-a6.log --script res://tests/assets/a6_check.gd
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/asset-a7.log --script res://tests/assets/a7_check.gd
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/asset-a8.log --script res://tests/assets/a8_check.gd
+"$GODOT" --headless --path hoppys-adventure-arcade --log-file /tmp/asset-a9.log --script res://tests/assets/a9_check.gd
+```
+
+Captures are **host-only (graphical)**. Invoke the matching fixture with `"$GODOT" --path hoppys-adventure-arcade --script res://<capture-fixture-from-table>`, without `--headless`. Each successful fixture prints its own `ASSET AN CAPTURE: PASS` marker (N = 1 through 9).  A PNG's presence alone does not establish a successful capture run or pinned-engine acceptance.
+
+Contract 2.2 is mounted by the backend: `scenes/runner/ui/post_fx.tscn` is a PAUSABLE CanvasLayer at layer 9, below HUD layer 10, with an idempotent `bind(game)`. Pursuit vignette and corner bars stay HUD-owned by default (`pursuit = false` in A9). Explicit handover must disable the HUD drawing before enabling A9 pursuit through `set_settings()`. The A9 integration fix removes completed tweens from tracking, records only valid running tweens on pause, and resumes only those recorded pauses. Replacement/reset clears both tracking dictionaries, so finished tweens are never replayed.
+
+Known verification caveats: installed Godot `4.7.stable.official.5b4e0cb0f` is 4.7.0 diagnostic evidence; final acceptance remains pinned to 4.7.1. The sandbox may fail only the two documented `user://` persistence checks: `Codex name persists` and `temporary board contains saved run`. Report their actual output and exit code separately from asset PASS markers. macOS certificate-store lookup and editor-settings write errors are environment diagnostics. The coordinator-reported host smoke PASS results in package docs do not replace this pass's local results or establish 4.7.1 acceptance.
+
+### Documentation-pass verification (2026-09-21)
+
+Historical import and visual-smoke outputs follow: import exited 0 and visual smoke exited 2 with only the two documented sandbox `user://` persistence failures. The superseding current host A9 result is labeled separately below. No graphical scenes were run in this documentation pass. Output is verbatim except ANSI color/style escapes removed from the import transcript.
+
+<details>
+<summary>Commands and complete verification output</summary>
+
+```sh
+/Applications/Godot.app/Contents/MacOS/Godot --headless --log-file /tmp/runner-asset-integration-import.log --path hoppys-adventure-arcade --import > /tmp/runner-asset-integration-import.txt 2>&1
+```
+
+Exit 0.
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+[   0% ] first_scan_filesystem | Started Project initialization (5 steps)
+[   0% ] first_scan_filesystem | Scanning file structure...
+WARNING: Detected another project.godot at res://Assets/SynthCitiesGodot. The folder will be ignored.
+     at: _should_skip_directory (editor/file_system/editor_file_system.cpp:3485)
+[  16% ] first_scan_filesystem | Loading global class names...
+[  33% ] first_scan_filesystem | Verifying GDExtensions...
+[  50% ] first_scan_filesystem | Creating autoload scripts...
+[  66% ] first_scan_filesystem | Initializing plugins...
+[  83% ] first_scan_filesystem | Starting file scan...
+[ DONE ] first_scan_filesystem
+
+[   0% ] loading_editor_layout | Started Loading editor (5 steps)
+[   0% ] loading_editor_layout | Loading editor layout...
+[  16% ] loading_editor_layout | Loading docks...
+[  33% ] loading_editor_layout | Reopening scenes...
+[  50% ] loading_editor_layout | Loading central editor layout...
+[  66% ] loading_editor_layout | Loading plugin window layout...
+[  83% ] loading_editor_layout | Editor layout ready.
+[ DONE ] loading_editor_layout
+
+ERROR: Cannot save file '/Users/jp/Library/Application Support/Godot/editor_settings-4.7.tres'.
+   at: save (scene/resources/resource_format_text.cpp:1768)
+ERROR: Error saving editor settings to /Users/jp/Library/Application Support/Godot/editor_settings-4.7.tres
+   at: save (editor/settings/editor_settings.cpp:1525)
+```
+
+```sh
+/Applications/Godot.app/Contents/MacOS/Godot --headless --log-file /tmp/runner-asset-integration-smoke.log --path hoppys-adventure-arcade --script res://tests/runner_visual_smoke.gd > /tmp/runner-asset-integration-smoke.txt 2>&1
+```
+
+Exit 2.
+
+```text
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+INTERPOLATION OPT-OUT: PASS (71 nodes)
+SPIKE: renderer=gl_compatibility scale=0.5 glow_threshold=0.75 fog=22..88 particles=320
+RUNNER DEV SCENES: PASS (12 scenes)
+TURN CAMERA ALIGNMENT: direction=-1 p=0.3 angle=10.620 degrees
+TURN CAMERA ALIGNMENT: direction=-1 p=0.5 angle=10.620 degrees
+TURN CAMERA ALIGNMENT: direction=-1 p=0.7 angle=10.620 degrees
+TURN CAMERA ALIGNMENT: direction=+1 p=0.3 angle=10.620 degrees
+TURN CAMERA ALIGNMENT: direction=+1 p=0.5 angle=10.620 degrees
+TURN CAMERA ALIGNMENT: direction=+1 p=0.7 angle=10.620 degrees
+CORRIDOR DRAW CENSUS: rest=11; mid-turn=14 (headless geometry census; host GPU measurement pending)
+TURN: PASS
+TURN WARNING: PASS
+BOSS INTRO: PASS
+STAGE SEAM: PASS
+BOSS DRAW CENSUS: flaky_test_swarm=11
+BOSS DRAW CENSUS: merge_conflict_hydra=18
+BOSS DRAW CENSUS: legacy_monolith=14
+BOSS VISUALS: PASS (3 checked; peak draw census=18)
+TOOLS AND PROJECTILES: PASS
+HAZARD DRAW CENSUS: pr_backlog_low/ peak=6
+HAZARD DRAW CENSUS: pr_backlog_high/ peak=8
+HAZARD DRAW CENSUS: bug_swarm/ peak=6
+HAZARD DRAW CENSUS: merge_conflict/ peak=9
+HAZARD DRAW CENSUS: deprecated_pit/full peak=8
+HAZARD DRAW CENSUS: deprecated_pit/two_lane peak=8
+HAZARD DRAW CENSUS: laser_grid/ground peak=8
+HAZARD DRAW CENSUS: laser_grid/mid peak=8
+HAZARD DRAW CENSUS: laser_grid/high peak=8
+HAZARD DRAW CENSUS: laser_grid/timed peak=8
+HAZARD DRAW CENSUS: comment_flood/ peak=7
+HAZARD DRAW CENSUS: build_shockwave/ peak=6
+HAZARD CASES CHECKED: 12; summed peak draw census=90
+POWER-UP VISUALS: 6 checked; reuse, collection and pause PASS
+PURSUER WALL THREAT 1 MERGED VISIBLE AABB: [P: (-2.778117, 0.058948, -0.300199), S: (5.556236, 1.948992, 1.832372)]
+PURSUER VISUAL: threat, catch, retreat, reuse and pause checked
+HUD LEGIBILITY: PASS (55 labels checked)
+PURSUIT ALERT: PASS
+RUNNER UI MOCK: HUD, pursuit, pause, results, focus and save PASS
+RUNNER UI REAL FACADE: autostart=false, start_run, autopilot 3s PASS
+RUNNER AUDIO: 32 recipes/triggers; demo heartbeat starts=1; peak voices=10; AudioService players=2
+WARNING: Runner leaderboard: this run was not written to user://test_runner_menu_leaderboard_97875.cfg (error 12); it keeps rank 0
+     at: push_warning (core/variant/variant_utility.cpp:1033)
+     GDScript backtrace (most recent call first):
+         [0] _finish_run (res://scenes/runner/runner_game.gd:680)
+         [1] _physics_process (res://scenes/runner/runner_game.gd:444)
+WARNING: Runner leaderboard: cannot rename this run in user://test_runner_menu_leaderboard_97875.cfg (error 33)
+     at: push_warning (core/variant/variant_utility.cpp:1033)
+     GDScript backtrace (most recent call first):
+         [0] submit_name (res://scenes/runner/runner_game.gd:323)
+         [1] check_runner_full_loop (res://tests/runner_visual_smoke.gd:1141)
+         [2] _wait_for (res://tests/runner_visual_smoke.gd:1077)
+VISUAL CHECK FAILED: Codex name persists
+VISUAL CHECK FAILED: temporary board contains saved run
+RUNNER FULL LOOP: FAIL (menu, play, hit, pursuit, 18.0s timer recovery, hit, hit, caught, finished, game over, Codex, retry, menu, hub, default music; isolated board removed)
+RUNNER VISUAL SMOKE: FAIL (2 failures)
+```
+
+Current coordinator-reported host A9 result, superseding this documentation pass's earlier A9 transcript:
+
+```text
+ASSET A9: PASS (147 checks)
+```
+
+```sh
+git diff --check
+```
+
+Exit 0, no output.
+
+</details>
 
 ## Art direction and replacement points
+
+The following v1 inventory records the original replacement contracts. The A1–A9 package documentation above describes the current high-fidelity artwork.
 
 The navy environment and dim MATRIX grid/rain reuse the hub preview palette and perspective motif. Lanes are centered at x -2/0/+2, bounded by lines at x +/-1 and +/-3. F3 hazards use hot DANGER/ORANGE accents; power-ups use MINT icons, rings, sparkles and billboard tags. The pursuer uses NAVY cards turning DANGER with threat. Material cache results must be duplicated before mutation.
 
@@ -172,7 +347,7 @@ None outstanding for these findings. The scaffold now checks the F6 four-button 
 
 ## Known gaps
 
-F0-F6 implementation is complete. The Hoppy menu recapture at (0.7, 0, -0.3) is committed, and the backend's scaffold four-button assertion is complete (284 checks PASS).
+F0-F10 and the high-fidelity asset pass are integrated in the coordinator release scope. The coordinator reports refreshed main previews in the working tree. A3 files and its headless check are verified; host GPU budget transcripts remain outside this pass's evidence. See the asset evidence boundary above. Historical milestone check counts below are not current integrated totals.
 
 Required: final acceptance on the pinned Godot 4.7.1, which the briefs' acceptance scripts gate on.
 
@@ -644,8 +819,7 @@ No backend changes requested. The merged TurnRig, StageManager, UI mounts and bo
 the required hooks. No backend files, base visual scripts, project settings or shared menu style
 were edited. No commits or pushes were made.
 
-Outstanding acceptance is the coordinator's graphical Compatibility-renderer inspection, new PNGs,
-actual draw-call measurement and pinned-engine run. In particular, inspect bent lane readability,
+At F9 handoff, graphical inspection, new PNGs, actual draw-call measurement and the pinned-engine run were outstanding. The coordinator has since recaptured the main previews with the new assets. Recorded host GPU budget measurements and pinned-4.7.1 acceptance remain outstanding in this document. In particular, inspect bent lane readability,
 transparent CornerWall ordering and the enlarged boss silhouettes at gameplay distance. Historical
 F0-F8 host results above are retained as history, not evidence for the new F9 code.
 
@@ -745,7 +919,7 @@ Frontend-only implementation of contract 2.1, sections 11.4, 11.9 and 11.10. No 
 - The mock demo emits both new signals, mounts its boss visual, and delays attacks until the three-second intro has elapsed. Smoke coverage includes `TURN WARNING: PASS` and `BOSS INTRO: PASS`, directional warnings, countdown, correct taunts, fallback copy, visual forwarding/poses, HP handover, banner suppression, pause, audio duck release and the revised turn profile.
 - Graphical capture fixtures are registered as `endless-runner-turn-warning.png` and `endless-runner-boss-intro.png`. The coordinator captured both PNGs on the host. Existing capture checks retain the corridor budgets of 14 at rest and 18 during a turn.
 
-Verification uses Godot 4.7 and the repository-root commands below. The headless draw census is a geometry estimate, not a GPU measurement. The coordinator owns host graphical inspection and captured PNGs.
+Verification uses installed Godot 4.7.0 diagnostically, pending pinned-4.7.1 acceptance, and the repository-root commands below. The headless draw census is a geometry estimate, not a GPU measurement. The coordinator owns host graphical inspection and captured PNGs.
 
 ```sh
 export GODOT=/Applications/Godot.app/Contents/MacOS/Godot

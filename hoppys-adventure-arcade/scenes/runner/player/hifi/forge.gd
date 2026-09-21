@@ -7,8 +7,11 @@ const FUR_REPEATS_PER_METER := 6.25
 static var cache: Dictionary = {}
 
 static func maps(kind: String) -> Array:
-	if cache.has(kind):
-		return cache[kind]
+	if cache.has(kind): return cache[kind]
+	return finish_maps(kind, generate_maps(kind))
+
+## Worker-safe: local Images only, no shared caches or rendering resources.
+static func generate_maps(kind: String) -> Array[Image]:
 	var n := 256
 	var height := Image.create(n, n, false, Image.FORMAT_RF)
 	var albedo := Image.create(n, n, false, Image.FORMAT_RGB8)
@@ -42,7 +45,13 @@ static func maps(kind: String) -> Array:
 	albedo.generate_mipmaps()
 	normal.generate_mipmaps(true)
 	rough.generate_mipmaps()
-	cache[kind] = [ImageTexture.create_from_image(albedo), ImageTexture.create_from_image(normal), ImageTexture.create_from_image(rough)]
+	return [albedo, normal, rough]
+
+static func finish_maps(kind: String, images: Array[Image]) -> Array:
+	if cache.has(kind): return cache[kind]
+	var result: Array[ImageTexture] = []
+	for image: Image in images: result.append(ImageTexture.create_from_image(image))
+	cache[kind] = result
 	return cache[kind]
 
 static func material(color: Color, kind: String) -> StandardMaterial3D:

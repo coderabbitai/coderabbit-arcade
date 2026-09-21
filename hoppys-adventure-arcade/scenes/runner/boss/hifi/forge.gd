@@ -42,6 +42,10 @@ static func bevel_box(size: Vector3, bevel: float = 0.08) -> ArrayMesh:
 
 static func textures() -> Dictionary:
 	if not maps.is_empty(): return maps
+	return finish_textures(generate_textures())
+
+## Worker-safe: local Images only, no shared caches or rendering resources.
+static func generate_textures() -> Dictionary:
 	var width := 256
 	var height := PackedFloat32Array()
 	height.resize(width * width)
@@ -72,7 +76,11 @@ static func textures() -> Dictionary:
 	albedo.generate_mipmaps()
 	normal.generate_mipmaps(true)
 	rough.generate_mipmaps()
-	maps = {"albedo": ImageTexture.create_from_image(albedo), "normal": ImageTexture.create_from_image(normal), "rough": ImageTexture.create_from_image(rough)}
+	return {"albedo": albedo, "normal": normal, "rough": rough}
+
+static func finish_textures(images: Dictionary) -> Dictionary:
+	if not maps.is_empty(): return maps
+	for key in images: maps[key] = ImageTexture.create_from_image(images[key])
 	return maps
 
 static func metal(color: Color) -> StandardMaterial3D:

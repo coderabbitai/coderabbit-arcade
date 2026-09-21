@@ -374,8 +374,11 @@ func check_shader_masks() -> void:
 		check(conflict_lines_mask(section, point) > 0.99, "R3 B3 incoming branches and conflict stem")
 	for point in [Vector2(-0.23, 0), Vector2(0.23, 0)]:
 		check(conflict_lines_mask(section, point) < 0.01, "R3 B3 gaps isolate conflict marker")
-	var beam := FileAccess.get_file_as_string("res://scenes/runner/shaders/boss_beam.gdshader")
+	var beam := (load("res://scenes/runner/shaders/boss_beam.gdshader") as Shader).code
 	check(beam.contains("lens * (0.85 + rim * 0.15) * scan"), "R3 view-independent beam core")
+	check(beam.contains("uniform vec4 color : source_color = vec4(1.0,0.302,0.239,0.35);"), "R3 default beam vec4 alpha")
+	check(beam.contains("float scan = 0.85 + 0.15 * sin(UV.y * 80.0 - clock * 9.0);"), "R3 scan minimum is 0.70")
+	check(beam.contains("ALPHA = color.a * mask * (0.9 + 0.1 * sin(clock * 6.0));"), "R3 final alpha minimum factor is 0.80")
 	check(0.35 * 0.85 * 0.70 * 0.80 > 0.15, "R3 head-on beam minimum alpha at half countdown")
 	var capture := FileAccess.get_file_as_string("res://scenes/runner/boss/dev/capture_a5.gd")
 	check(capture.contains("Art.Materials.environment()") and capture.contains("key.light_color = Palette.MATRIX") and capture.contains("key.light_energy = 0.35"), "R3 production corridor environment and sun")
@@ -442,7 +445,7 @@ func check_round_four(visual: Node3D) -> void:
 		var cavity := vent.transform * vent.mesh.get_aabb()
 		var glow: AABB = art.core.transform * art.core.mesh.get_aabb()
 		check(glow.end.z < cavity.end.z and glow.position.z > cavity.position.z, "R4 core recessed in vent")
-	var beam := FileAccess.get_file_as_string("res://scenes/runner/shaders/boss_beam.gdshader")
+	var beam := (load("res://scenes/runner/shaders/boss_beam.gdshader") as Shader).code
 	check(beam.contains("lane_fill(UV,progress)") and beam.contains("smoothstep(0.72,1.0"), "R4 B3 mask uses soft lane fill")
 	var start := shader_float(beam, "fill_start")
 	var end := shader_float(beam, "fill_end")
@@ -477,6 +480,6 @@ func check_round_five(visual: Node3D) -> void:
 		var channel: MeshInstance3D = art.core.get_node("SeamChannel")
 		check(channel.mesh.get_aabb().end.z > art.core.mesh.get_aabb().end.z, "R5 seam below channel lips")
 		check(art.batches[3].poses[24].basis.determinant() > 0 and art.batches[3].poses[25].basis.determinant() > 0, "R5 dormant socket and mirrored shoulder vent")
-	var beam := FileAccess.get_file_as_string("res://scenes/runner/shaders/boss_beam.gdshader")
+	var beam := (load("res://scenes/runner/shaders/boss_beam.gdshader") as Shader).code
 	check(beam.contains("1.0-smoothstep(0.9,1.0,uv.y)") and beam.contains("across*along*end_fade"), "R5 near-end lane fade wired")
 	check(is_zero_approx(1.0-smoothstep(0.9,1.0,1.0)) and is_equal_approx(1.0-smoothstep(0.9,1.0,0.95),0.5), "R5 near edge fades over last ten percent")

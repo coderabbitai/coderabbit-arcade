@@ -4,6 +4,10 @@ static var cache: Dictionary = {}
 
 static func maps() -> Array[ImageTexture]:
 	if cache.has("plating"): return cache["plating"]
+	return finish_maps(generate_maps())
+
+## Worker-safe: local Images only, no shared caches or rendering resources.
+static func generate_maps() -> Array[Image]:
 	var height := Image.create(256, 256, false, Image.FORMAT_RF)
 	var albedo := Image.create(256, 256, false, Image.FORMAT_RGBA8)
 	var normal := Image.create(256, 256, false, Image.FORMAT_RGB8)
@@ -33,9 +37,14 @@ static func maps() -> Array[ImageTexture]:
 	albedo.generate_mipmaps()
 	normal.generate_mipmaps(true)
 	rough.generate_mipmaps()
-	var result: Array[ImageTexture] = [ImageTexture.create_from_image(albedo), ImageTexture.create_from_image(normal), ImageTexture.create_from_image(rough)]
+	return [albedo, normal, rough]
+
+static func finish_maps(images: Array[Image]) -> Array[ImageTexture]:
+	if cache.has("plating"): return cache["plating"]
+	var result: Array[ImageTexture] = []
+	for image: Image in images: result.append(ImageTexture.create_from_image(image))
 	cache["plating"] = result
-	return result
+	return cache["plating"]
 
 static func bevel_box(size: Vector3, bevel: float) -> ArrayMesh:
 	var st := SurfaceTool.new()

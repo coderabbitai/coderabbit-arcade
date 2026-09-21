@@ -3,6 +3,10 @@ extends RefCounted
 static var cache: Dictionary = {}
 static func maps() -> Dictionary:
 	if not cache.is_empty(): return cache
+	return finish_maps(generate_maps())
+
+## Worker-safe: local Images only, no shared caches or rendering resources.
+static func generate_maps() -> Dictionary:
 	var n := 1024
 	var height := PackedFloat32Array()
 	height.resize(n * n)
@@ -41,8 +45,13 @@ static func maps() -> Dictionary:
 			var track := (x % 64 == 12 and y % 64 < 44) or (y % 64 == 44 and x % 64 >= 12 and x % 64 <= 36)
 			circuit.set_pixel(x, y, Color(1.0 if track else 0.0, 0, 0))
 	circuit.generate_mipmaps()
-	cache = {"circuit_map": ImageTexture.create_from_image(circuit),"albedo_map": ImageTexture.create_from_image(albedo), "normal_map": ImageTexture.create_from_image(normal), "roughness_map": ImageTexture.create_from_image(rough)}
+	return {"circuit_map": circuit,"albedo_map": albedo, "normal_map": normal, "roughness_map": rough}
+
+static func finish_maps(images: Dictionary) -> Dictionary:
+	if not cache.is_empty(): return cache
+	for key in images: cache[key] = ImageTexture.create_from_image(images[key])
 	return cache
+
 
 ## Dedicated floor maps: diffuse plating, Sobel normal, and packed roughness/AO/wear.
 const FLOOR_BRUSH_PERIOD := 32.0
@@ -50,6 +59,10 @@ const FLOOR_RIVET_RADIUS := 0.10
 static var floor_cache: Dictionary = {}
 static func floor_maps() -> Dictionary:
 	if not floor_cache.is_empty(): return floor_cache
+	return finish_floor_maps(generate_floor_maps())
+
+## Worker-safe: local Images only, no shared caches or rendering resources.
+static func generate_floor_maps() -> Dictionary:
 	var n := 512
 	var height := PackedFloat32Array()
 	height.resize(n * n)
@@ -84,5 +97,32 @@ static func floor_maps() -> Dictionary:
 	albedo.generate_mipmaps()
 	normal.generate_mipmaps(true)
 	response.generate_mipmaps()
-	floor_cache = {"albedo_map": ImageTexture.create_from_image(albedo), "normal_map": ImageTexture.create_from_image(normal), "roughness_map": ImageTexture.create_from_image(response)}
+	return {"albedo_map": albedo, "normal_map": normal, "roughness_map": response}
+
+static func finish_floor_maps(images: Dictionary) -> Dictionary:
+	if not floor_cache.is_empty(): return floor_cache
+	for key in images: floor_cache[key] = ImageTexture.create_from_image(images[key])
 	return floor_cache
+
+
+## A corridor needs bindings immediately; preserve texture identity when detail arrives.
+static var pending: Dictionary = {}
+static func prepare_async(method: String) -> void:
+	var target := cache if method == "maps" else floor_cache
+	if not target.is_empty(): return
+	var colors := {"albedo_map": Color(0.85, 0.85, 0.85), "normal_map": Color(0.5, 0.5, 1.0), "roughness_map": Color(0.38, 0.8, 1.0)}
+	if method == "maps": colors["circuit_map"] = Color.BLACK
+	for key in colors:
+		var image := Image.create(1, 1, false, Image.FORMAT_RGB8)
+		image.fill(colors[key])
+		target[key] = ImageTexture.create_from_image(image)
+	pending[method] = true
+
+static func install_async(method: String, images: Dictionary) -> Dictionary:
+	var target := cache if method == "maps" else floor_cache
+	if pending.has(method):
+		for key in images: target[key].set_image(images[key])
+		pending.erase(method)
+	elif target.is_empty():
+		for key in images: target[key] = ImageTexture.create_from_image(images[key])
+	return target

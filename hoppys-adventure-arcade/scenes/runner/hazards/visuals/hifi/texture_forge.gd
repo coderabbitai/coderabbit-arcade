@@ -6,7 +6,8 @@ const SIZE := 512
 
 static func maps() -> Dictionary:
 	if not _cache.is_empty(): return _cache
-	var height := Image.create(SIZE, SIZE, false, Image.FORMAT_RF)
+	var height := PackedFloat32Array()
+	height.resize(SIZE * SIZE)
 	var albedo := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
 	var normal := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
 	var rough := Image.create(SIZE, SIZE, false, Image.FORMAT_RGBA8)
@@ -32,17 +33,17 @@ static func maps() -> Dictionary:
 				glyph = absi(u % 24 - 12 - absi(v % 32 - 16) / 2) < 3
 			var tone := 0.34 + grain + (0.15 if rivet else 0.0)
 			albedo.set_pixel(x, y, Color(tone, tone, tone, 1.0 if glyph else 0.0))
-			height.set_pixel(x, y, Color(h + (0.03 if glyph else 0.0), 0, 0))
+			height[y * SIZE + x] = h + (0.03 if glyph else 0.0)
 			rough.set_pixel(x, y, Color(0.31 if edge else 0.40 + grain, 0, 0))
 	for y in SIZE:
 		for x in SIZE:
-			var dx := 0.0
-			var dy := 0.0
-			for oy in [-1, 0, 1]:
-				for ox in [-1, 0, 1]:
-					var h := height.get_pixel(posmod(x+ox, SIZE), posmod(y+oy, SIZE)).r
-					dx += h * float(ox) * (2.0 if oy == 0 else 1.0)
-					dy += h * float(oy) * (2.0 if ox == 0 else 1.0)
+			var left := posmod(x - 1, SIZE)
+			var right := (x + 1) % SIZE
+			var top := posmod(y - 1, SIZE) * SIZE
+			var bottom := ((y + 1) % SIZE) * SIZE
+			var row := y * SIZE
+			var dx := height[top + right] - height[top + left] + 2.0 * (height[row + right] - height[row + left]) + height[bottom + right] - height[bottom + left]
+			var dy := height[bottom + left] - height[top + left] + 2.0 * (height[bottom + x] - height[top + x]) + height[bottom + right] - height[top + right]
 			var n := Vector3(-dx * 1.8, -dy * 1.8, 1).normalized()
 			normal.set_pixel(x, y, Color(n.x*0.5+0.5, n.y*0.5+0.5, n.z*0.5+0.5))
 	albedo.generate_mipmaps()

@@ -1,5 +1,7 @@
 extends Node3D
 ## Cosmetic only. Backend owns floor collision, speed, and gameplay state.
+const Prewarm = preload("res://scenes/runner/environment/hifi/prewarm.gd")
+static var _warmed := false
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 const Materials = preload("res://scenes/runner/environment/runner_materials.gd")
 const Textures = preload("res://scenes/runner/environment/hifi/texture_forge.gd")
@@ -47,6 +49,9 @@ func _init() -> void:
 	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 
 func _ready() -> void:
+	if not Engine.is_editor_hint() and not _warmed:
+		Prewarm.warm()
+		_warmed = true
 	process_mode = Node.PROCESS_MODE_PAUSABLE
 	_viewport = get_viewport()
 	_apply_retro_scale()

@@ -31,6 +31,7 @@ func inspect(node: Node) -> void:
 		inspect(child)
 
 func run() -> void:
+	await check_ui_layers()
 	var game := PreviewScript.StubGame.new()
 	root.add_child(game)
 	var fx := PostFX.instantiate()
@@ -270,3 +271,52 @@ func check_round_two(fx: Node, game: Node) -> void:
 	fx.set_settings({"pursuit": true})
 	check(is_equal_approx(value(fx, "strength"), 0.85) and value(fx, "corner_bars") == 1.0, "B5 explicit handover enables existing hook state")
 	game.run_started.emit(912)
+
+func effective_layer(node: Node) -> int:
+	var ancestor := node
+	while ancestor != null:
+		if ancestor is CanvasLayer: return ancestor.layer
+		ancestor = ancestor.get_parent()
+	return 0
+
+func check_ui_layers() -> void:
+	var production := load("res://scenes/runner/runner_game.tscn") as PackedScene
+	var skeleton := production.instantiate()
+	var mounts: Dictionary = skeleton.get_script().get("FRONTEND_MOUNTS")
+	var post := PostFX.instantiate()
+	var post_layer: int = post.layer
+	post.free()
+	for parent_path in ["HUD", "Overlays"]:
+		for path: String in mounts[parent_path]:
+			if path == "res://scenes/runner/ui/post_fx.tscn": continue
+			var ui := (load(path) as PackedScene).instantiate()
+			skeleton.get_node(parent_path).add_child(ui)
+			check(effective_layer(ui) > post_layer, "production UI above post: " + path)
+	skeleton.free()
+	# Check actual card bounds at the authored viewport with post bars fully open.
+	var viewport := SubViewport.new()
+	viewport.size = Vector2i(1280, 720)
+	root.add_child(viewport)
+	var hud := CanvasLayer.new()
+	hud.layer = 10
+	viewport.add_child(hud)
+	var boss := (load("res://scenes/runner/ui/boss_hud.tscn") as PackedScene).instantiate()
+	var clear := (load("res://scenes/runner/ui/stage_clear.tscn") as PackedScene).instantiate()
+	hud.add_child(boss)
+	hud.add_child(clear)
+	boss._intro(&"legacy_monolith", "Legacy Monolith", 3.0)
+	clear.show()
+	clear.title.text = "STAGE 1 CLEAR"
+	clear.subtitle.text = "LEGACY MONOLITH / FIXED"
+	clear._process(0.3)
+	await process_frame
+	await process_frame
+	check(boss.border == boss.panel.get_theme_stylebox("panel"), "boss animation owns visible polished border")
+	var shader := load("res://scenes/runner/shaders/post_grade.gdshader") as Shader
+	check(shader.code.contains("letterbox * 0.065"), "tested letterbox height matches shader")
+	var bar_height := 720.0 * 0.065 + 1.0
+	for card: Control in [boss.intro_card, clear.panel]:
+		var rect := card.get_global_rect()
+		check(effective_layer(card) > post_layer, "card stays above letterbox: " + card.name)
+		check(rect.position.y > bar_height and rect.end.y < 720.0 - bar_height, "bars frame card bounds: " + card.name)
+	viewport.free()
