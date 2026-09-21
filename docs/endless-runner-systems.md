@@ -170,7 +170,7 @@ overlap created during physics frame 1 is delivered at `physics_frame == 2`, ahe
 `_physics_process`. So `hazard.gd::_on_area_entered` → `hit_player()` → `HitManager.report_hit()` always
 resolves before `HitManager._physics_process` decrements `recovery_remaining` in the same frame, and
 `report_hit` can stay fully synchronous. The order is deterministic (it is the engine's iteration order,
-not node order or signal-connection order), but it *is* load-bearing, so it is pinned twice:
+not node order or signal-connection order), but it *is* load-bearing, so it is pinned twice: This ordering was **measured on the installed Godot 4.7.0** (physics flush → `physics_frame` → `_physics_process`) and is pinned by the two tests named here; it is treated as a diagnostic result until the §9 commands are re-run on the pinned 4.7.1, and any difference must be recorded in the contract §10 change log.
 
 - `runner_logic.gd` §3, out of tree: a hit delivered first kills and the expiring timer cannot revive
   it, while the reverse order only starts a fresh pursuit.
