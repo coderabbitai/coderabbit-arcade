@@ -22,7 +22,7 @@ a backend-owned file.
 
 <completeness_contract>
 Work milestone by milestone (F0 → F6). Do not stop after the first scene works. Each milestone has a
-definition of done; verify it before moving on. Finish all seven (F0 through F6).
+definition of done; verify it before moving on. Finish all ten milestones (F0 through F6 here, F7 through F9 in `docs/agent-briefs/endless-runner-v2-frontend.md`, whose markers the acceptance gate greps for).
 </completeness_contract>
 
 <verification_loop>
@@ -335,6 +335,9 @@ Screenshots to `docs/previews/endless-runner-{spike,corridor,gallery,hud,gameove
 | F4 | HUD, pause, game over, `mock_runner_game.gd`, `hud_preview.tscn` | whole demo works from the mock with keyboard and simulated gamepad; anchors hold at 1440×900 and 1000×720 |
 | F5 | `sfx_synth.gd`, `runner_audio.tscn/gd` | every trigger audible in the mock; ≤ 10 voices; pitch ramp audible |
 | F6 | `runner_menu.tscn/gd`, `tests/runner_visual_smoke.gd`, `docs/endless-runner.md`, previews | full loop with the backend: hub → menu → play → hit → pursuit → a clean `recovery_seconds` (RunConfig) window ending in `pursuit_recovered("timer")` → hit (new pursuit) → second hit during pursuit → caught → game over → save → retry → menu → hub. Evidence is `RUNNER FULL LOOP: PASS` from `tests/runner_visual_smoke.gd`, which the acceptance gate greps for |
+| F7 | v2 — HUD legibility + pursuit alert (`ui/hud_style.gd`, `ui/pursuit_alert.*`; see `docs/agent-briefs/endless-runner-v2-frontend.md`) | `HUD LEGIBILITY: PASS (n labels checked)` and `PURSUIT ALERT: PASS` from `tests/runner_visual_smoke.gd`; voices ≤ 10 |
+| F8 | v2 — boss visuals, boss HUD, `boss_fx` effects, projectile and tool visuals (v2 brief) | `BOSS VISUALS: PASS (3 checked; peak draw census=n)` with n ≤ 40 and `TOOLS AND PROJECTILES: PASS` |
+| F9 | v2 — corridor turns, stage banner and clear card, turn/stage audio, final docs (v2 brief) | `TURN: PASS`, `STAGE SEAM: PASS`, audio census 30 with peak voices ≤ 10; the acceptance gate greps every marker above |
 
 Check commands (repo root). Set `GODOT_BIN` to the editor binary (`/Applications/Godot.app/Contents/MacOS/Godot`
 on the build Mac) and confirm the engine first: `"$GODOT_BIN" --version` must report `4.7.1.stable` for final

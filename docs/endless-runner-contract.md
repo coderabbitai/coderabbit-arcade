@@ -24,8 +24,8 @@ in the PR description. Design authority: the GDD Endless Runner section and
 
 | Owner | Paths (relative to `hoppys-adventure-arcade/` unless noted) |
 |---|---|
-| Backend | `project.godot`, `app/*`, `scenes/runner/runner_game.{tscn,gd}`, `scenes/runner/runner_layers.gd`, `scenes/runner/systems/*`, `scenes/runner/player/runner_player.{tscn,gd}`, `scenes/runner/player/runner_visual_base.gd`, `scenes/runner/hazards/hazard.{tscn,gd}`, `scenes/runner/hazards/hazard_defs.gd`, `scenes/runner/hazards/hazard_visual_base.gd`, `scenes/runner/powerups/power_up.{tscn,gd}`, `scenes/runner/powerups/power_up_defs.gd`, `scenes/runner/powerups/power_up_visual_base.gd`, `scenes/runner/pursuer/pursuer.gd`, `scenes/runner/pursuer/pursuer_visual_base.gd`, `scenes/runner/chunks/*`, `scenes/runner/data/*`, `tests/*` except `tests/runner_visual_smoke.gd`, repo `docs/endless-runner-contract.md`, `docs/endless-runner-systems.md`, `docs/agent-briefs/*` |
-| Frontend | `scenes/runner/runner_menu.{tscn,gd}`, `scenes/runner/environment/**`, `scenes/runner/ui/**`, `scenes/runner/audio/**`, `scenes/runner/shaders/**`, `scenes/runner/player/hoppy_runner_visual.{tscn,gd}` and `scenes/runner/player/dev/**`, `scenes/runner/hazards/visuals/**`, `scenes/runner/powerups/visuals/**`, `scenes/runner/pursuer/pursuer_visual.{tscn,gd}`, `Assets/runner/**` (with `Assets/runner/LICENSES.md`), `tests/runner_visual_smoke.gd`, repo `docs/endless-runner.md`, `docs/previews/endless-runner-*.png` |
+| Backend | `project.godot`, `app/*`, `scenes/runner/runner_game.{tscn,gd}`, `scenes/runner/runner_layers.gd`, `scenes/runner/systems/*`, `scenes/runner/player/runner_player.{tscn,gd}`, `scenes/runner/player/runner_visual_base.gd`, `scenes/runner/hazards/hazard.{tscn,gd}`, `scenes/runner/hazards/hazard_defs.gd`, `scenes/runner/hazards/hazard_visual_base.gd`, `scenes/runner/powerups/power_up.{tscn,gd}`, `scenes/runner/powerups/power_up_defs.gd`, `scenes/runner/powerups/power_up_visual_base.gd`, `scenes/runner/pursuer/pursuer.gd`, `scenes/runner/pursuer/pursuer_visual_base.gd`, `scenes/runner/chunks/*`, `scenes/runner/data/*`, `tests/*` except `tests/runner_visual_smoke.gd`, repo `docs/endless-runner-contract.md`, `docs/endless-runner-systems.md`, `docs/agent-briefs/*`, `scenes/runner/boss/boss_arena.tscn`, `scenes/runner/boss/boss_encounter.gd`, `scenes/runner/boss/boss_defs.gd`, `scenes/runner/boss/boss_visual_base.gd`, `scenes/runner/hazards/projectile.{tscn,gd}`, `scenes/runner/powerups/tool_pickup.{tscn,gd}`, `scenes/runner/powerups/tool_defs.gd` (v2) |
+| Frontend | `scenes/runner/runner_menu.{tscn,gd}`, `scenes/runner/environment/**`, `scenes/runner/ui/**`, `scenes/runner/audio/**`, `scenes/runner/shaders/**`, `scenes/runner/player/hoppy_runner_visual.{tscn,gd}` and `scenes/runner/player/dev/**`, `scenes/runner/hazards/visuals/**`, `scenes/runner/powerups/visuals/**`, `scenes/runner/pursuer/pursuer_visual.{tscn,gd}`, `Assets/runner/**` (with `Assets/runner/LICENSES.md`), `tests/runner_visual_smoke.gd`, repo `docs/endless-runner.md`, `docs/previews/endless-runner-*.png`, `scenes/runner/boss/visuals/**`, `scenes/runner/boss/boss_fx.{tscn,gd}`, `scenes/runner/boss/boss_art.gd`, `scenes/runner/boss/tool_art.gd`, `scenes/runner/boss/telegraph.*`, `scenes/runner/boss/tool_tracer.gd`, `scenes/runner/boss/damage_number.gd`, `scenes/runner/boss/dev/**` (v2) |
 
 Rules:
 
@@ -276,7 +276,7 @@ Actions: `move_left` (A, ←, D-pad ←, left stick −X), `move_right` (D, →,
 `roll` (Ctrl, S, ↓, gamepad B/1), `pause` (Esc, P, gamepad Start/6). Keys are bound by
 `physical_keycode`. Stick deadzone 0.5 on the four `move_*` actions.
 
-## 7. Authoritative tuning (`scenes/runner/data/run_config.tres`)
+## 7. Authoritative tuning (`scenes/runner/data/run_config.gd` defaults; `run_config.tres` is the empty override resource)
 
 | Group | Values |
 |---|---|
@@ -367,8 +367,8 @@ seconds only and drives speed and difficulty. Stage index starts at 1 and never 
 ### 11.2 Speed and difficulty (replaces §7 Speed row)
 
 `speed_at(run_clock) = lerp(base_speed + b, max_speed + b, smoothstep(0, 1, clamp(run_clock / time_to_max_speed, 0, 1)))`
-with the tail `+ tail_speed_per_minute` per 60 s of run_clock past `time_to_max_speed`, capped at
-`hard_cap_speed + b`, where the stage bonus `b = min(stage_speed_step × (stage_index − 1), stage_speed_bonus_max)`.
+with the tail `+ tail_speed_per_minute` (RunConfig, default 1.0 m/s) per 60 s of run_clock past `time_to_max_speed`,
+capped at `hard_cap_speed + b` (RunConfig, default 26.0; §7's "hard_cap 26" and "+1 m/s per 60 s" name these two fields), where the stage bonus `b = min(stage_speed_step × (stage_index − 1), stage_speed_bonus_max)`.
 Defaults: `time_to_max_speed 100` (was 165), `stage_speed_step 1.0`, `stage_speed_bonus_max 6.0`. Nitro still
 multiplies by `nitro_speed_multiplier` and caps at `nitro_speed_cap` (raised to 38).
 `difficulty = max(clamp(run_clock / time_to_max_speed, 0, 1), min(stage_difficulty_step × (stage_index − 1), 1))`
@@ -504,15 +504,18 @@ them for legibility (font ≥ 18 units, outline ≥ 6, panel-backed; see the v2 
 
 Optional methods, all `has_method`-guarded by the backend: `set_turn(progress: float, direction: int)` (called every
 physics tick during `turn`, `progress` 0→1; the frontend owns the visual bend and must make p = 1 visually identical
-to p = 0), `set_phase(phase: StringName)`, `set_boss_arena(active: bool)`. When the corridor lacks `set_turn`, the
-backend `TurnRig` yaws the graybox environment instead (fallback only). The camera swing
+to p = 0), `set_phase(phase: StringName)`, `set_boss_arena(active: bool)`. When the mounted corridor lacks `set_turn`,
+the backend `TurnRig` rotates **itself** by `turn_yaw_degrees × smoothstep(progress)` (fallback only), so whatever
+environment is mounted under it turns with it — the frontend corridor when present, otherwise the graybox
+environment. Mounting a corridor still frees `GrayboxEnvironment` (§3); nothing is retained for the fallback. The camera swing
 (`turn_camera_yaw_degrees` 18, `turn_camera_bank_degrees` 6, returning to zero at p = 1) is backend-owned in
 `camera_rig.gd` and always applies.
 
-### 11.10 RunConfig additions (all defaults in `run_config.gd`; the `.tres` stays empty)
+### 11.10 RunConfig additions (single tuning source: the `@export` defaults in `run_config.gd`; `run_config.tres` stays an empty resource that may override them and is never mutated at runtime — this supersedes the §7 heading's wording)
 
 ```text
-Speed:     time_to_max_speed 100.0 (was 165), stage_speed_step 1.0, stage_speed_bonus_max 6.0, nitro_speed_cap 38.0
+Speed:     time_to_max_speed 100.0 (was 165), tail_speed_per_minute 1.0, hard_cap_speed 26.0 (unchanged v1 fields, named here
+           because §11.2 and runner_boss_validator.gd use them), stage_speed_step 1.0, stage_speed_bonus_max 6.0, nitro_speed_cap 38.0
 Stages:    stage_base_distance 900.0, stage_distance_step 250.0, stage_distance_max 2000.0, stage_difficulty_step 0.25
            stage_drain_distance 120.0, stage_drain_timeout 6.0, stage_clear_line_z 8.0, stage_clear_seconds 3.0
            stage_clear_bonus_base 400, stage_clear_bonus_per_stage 150

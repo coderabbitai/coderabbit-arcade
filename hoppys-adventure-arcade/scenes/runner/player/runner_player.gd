@@ -20,6 +20,9 @@ const HURT_ANIM_SECONDS := 0.25
 const GROUND_STICK_SPEED := 2.0
 ## Clearance margin in front of the standing capsule, on top of two ticks of corridor travel.
 const CLEARANCE_MARGIN := 0.3
+## RunConfig's jump_buffer default, used when a player is driven without a config (a test rig, a
+## scene opened on its own). Zero would drop the buffered jump before _update_jump() ever sees it.
+const DEFAULT_JUMP_BUFFER := 0.10
 ## Graybox tint per animation state, so a run with no frontend visual still reads the pose.
 const GRAYBOX_TINTS := {
 	&"idle": Color("fff0d3"),
@@ -150,7 +153,7 @@ func sync_input_state() -> void:
 
 ## Buffer a jump: it fires as soon as the player is grounded (or inside the coyote window).
 func request_jump() -> void:
-	jump_buffer_remaining = float(config.jump_buffer) if config != null else 0.0
+	jump_buffer_remaining = float(config.jump_buffer) if config != null else DEFAULT_JUMP_BUFFER
 
 ## On the floor: roll now. In the air: fast-fall and roll on touchdown (systems spec §3.3).
 func request_roll() -> void:

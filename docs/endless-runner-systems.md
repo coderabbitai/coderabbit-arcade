@@ -274,8 +274,8 @@ JUMP-type hazard's front (`jump`).
 - `_fill()`: while `active.size() < max_active_chunks` and `frontier_z > spawn_horizon_z`: pick and place the next chunk, then **advance `frontier_z = chunk.back_edge_z()`** so the next iteration and the horizon check use the new frontier. `frontier_z` is recomputed from the last active chunk's back edge at the start of every `_fill()` call, because chunks move between calls.
 - Pick: candidates with `min_difficulty ≤ difficulty ≤ max_difficulty`, excluding the last index when more than one candidate; breather weights ×2 while PURSUED; `spawn_rng.rand_weighted(weights)`. If no candidate, fall back to all metas and `push_warning`.
 - Place: `gap = max(0, v_eff × 1.02 × (t_spacing(d) + (0.15 if pursued else 0)) − prev.exit_clear − next.entry_clear)` where `v_eff` includes the Nitro multiplier while active; `chunk.position.z = frontier_z − gap`; `mirrored = mirror_x and spawn_rng.randf() < 0.5`; `chunk.setup(game, mirrored)`; log `"%.1fs d=%.2f %s%s gap=%.1f"`; emit `chunk_spawned`.
-- Power-ups: if `elapsed − last_powerup_time ≥ 10` and at least one chunk since the last pickup chunk and `powerup_rng.randf() < lerp(0.55, 0.35, d)`: choose one slot; choose kind by weight excluding the previous kind and kinds currently active/held; instantiate `power_up.tscn` at the slot (y 1.0 or 2.2); update `last_powerup_time`.
-- `clear_hazards_in_range() -> int` (Auto-Fix): every hazard in group `runner_hazards` with `is_blocking()` and `global_position.z ∈ [−blast_range_z, 1.0]` → `hazard.clear()` (visual `on_cleared()`, emit `hazard_cleared`); return the count; caller emits `hazards_blasted`.
+- Power-ups: if `elapsed − last_powerup_time ≥ 10` and at least one chunk since the last pickup chunk and `powerup_rng.randf() < lerp(0.55, 0.35, d)`: choose one slot; choose kind by weight excluding the previous kind and kinds currently active/held; instantiate `power_up.tscn` at the slot (y 1.0 or 2.2); update `last_powerup_time`. A chunk without a `PowerUpSlot` skips placement and leaves `last_powerup_time` and the retry state untouched; if excluding active/held kinds empties the weighted set, fall back to any kind except `last_powerup_kind`; if that is empty too, skip placement without touching the retry state.
+- `clear_hazards_in_range() -> int` (Auto-Fix): every hazard in group `runner_hazards` with `is_blocking()` and `RunnerGame.track_z(hazard) ∈ [−blast_range_z, 1.0]` (rig-local z through `TurnRig`, the single coordinate rule; identity while unrotated) → `hazard.clear()` (visual `on_cleared()`, emit `hazard_cleared`); return the count; caller emits `hazards_blasted`.
 
 ### 5.3 Hazard (`hazard.gd`, root Area3D)
 
@@ -307,7 +307,7 @@ Godot 4.7 rules: never toggle `monitoring`/`monitorable` directly inside an area
 ### 5.4 Power-up (`power_up.gd`, root Area3D)
 
 Layer `PICKUP`, mask `PLAYER_HURTBOX`, `SphereShape3D` r 0.35. `collect(player)`: `if consumed: return;
-consumed = true; set_deferred("monitoring", false); game.effect_manager.apply(kind); visual.on_collected()`.
+consumed = true; set_deferred("monitoring", false); game.effect_manager.apply(kind); visual.on_collected()`. The pickup is consumed **before** `EffectManager.apply()` decides acceptance on purpose: a refused kind (unknown, or a timed effect with a non-positive duration, see §6) is a configuration error, and a mis-configured pickup must disappear rather than linger in the lane; the run itself is unchanged in that case.
 Graybox: coloured `SphereMesh` per kind.
 
 ## 6. Score and effects
@@ -605,8 +605,9 @@ layer/group setup; `_physics_process` (enabled while alive): `position.z += clos
 `hazard_visual_base.gd` with default 0.0). Consumed/cleared projectiles stop processing (existing rule).
 
 `tool_pickup.gd extends "res://scenes/runner/powerups/power_up.gd"`: group `runner_tools` instead of
-`runner_powerups`; `collect(player)` → `game.boss_encounter.apply_tool(kind)` (guarded), plays the visual
-`on_collected()`, frees itself; moves +Z at `game.speed` like chunks (so Nitro raises throughput); frees past
+`runner_powerups`; `collect(player)` sets `consumed = true`, `set_deferred("monitoring", false)` (inside an area callback), calls
+`game.boss_encounter.apply_tool(kind)` (guarded), plays the visual `on_collected()`, then `queue_free()` (never a
+synchronous free); moves +Z at `game.speed` like chunks (so Nitro raises throughput); frees past
 `despawn_z`. `powerups/tool_defs.gd`: kinds, display names, damage, weights, spawn y (contract §11.7). Visual mount
 `powerups/visuals/<kind>_visual.tscn`; graybox fallback: an ORANGE sphere r 0.35 with a Label3D tag.
 
