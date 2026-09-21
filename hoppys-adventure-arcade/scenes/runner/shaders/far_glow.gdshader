@@ -4,6 +4,7 @@ uniform mat4 bend_frame = mat4(1.0);
 uniform float bend = 0.0;
 uniform float bend_start = 6.0;
 uniform vec4 color : source_color = vec4(0.388,0.976,0.698,0.3);
+uniform float clock = 0.0;
 uniform float opacity = 1.0;
 uniform float arena = 1.0;
 void vertex() {
@@ -15,5 +16,5 @@ void vertex() {
 void fragment() {
 	float radial = pow(max(0.0, 1.0-length(UV*2.0-1.0)), 3.0);
 	ALBEDO = color.rgb;
-	ALPHA = radial*color.a*opacity*arena;
+	ALPHA = radial*color.a*opacity*arena*(0.96+0.04*sin(clock*1.57));
 }
