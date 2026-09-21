@@ -1,4 +1,8 @@
 extends Node
+const BusChain = preload("res://scenes/runner/audio/hifi/bus_chain.gd")
+var _whoosh_bus: StringName = &"SFX"
+var _surface := 0
+var _tread := 0
 const Synth = preload("res://scenes/runner/audio/sfx_synth.gd")
 const MUSIC_PATH := "res://Assets/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg"
 ## Emitted only after an actual playback start, also usable by headless smoke tests.
@@ -49,11 +53,18 @@ var _drone_fade: Tween
 @onready var drone: AudioStreamPlayer = $Drone
 @onready var heartbeat: AudioStreamPlayer = $Heartbeat
 
+func _enter_tree() -> void:
+	_whoosh_bus = BusChain.acquire()
+
 func _ready() -> void:
 	# Publish this frame's shared radar phase before HUD processing.
 	process_priority = -10
+	for player: AudioStreamPlayer in [one_shots, footsteps, drone, heartbeat]:
+		player.process_mode = Node.PROCESS_MODE_PAUSABLE
 
 func bind(game: Node) -> void:
+	# Build the longest impact cue before the first fight can trigger it.
+	Synth.sound(&"boss_intro")
 	_disconnect_game()
 	_stop_all()
 	_game = game
@@ -152,6 +163,9 @@ func _play(kind: StringName, player: AudioStreamPlayer = null) -> void:
 		return
 	var stream := Synth.panned_whoosh(_whoosh_mask) if kind == &"projectile_whoosh" else Synth.sound(kind)
 	if kind == &"turn_whoosh": stream = Synth.panned_whoosh(_turn_mask, kind)
+	if kind == &"footstep":
+		stream = Synth.footstep(_surface, _tread % 2)
+		_tread += 1
 	if stream == null:
 		return
 	if player != null:
@@ -165,7 +179,7 @@ func _play(kind: StringName, player: AudioStreamPlayer = null) -> void:
 		if not HIGH_PRIORITY.has(kind) and _high_pending_count() > 0:
 			_queue(kind)
 			return
-		var voice := _playback.play_stream(stream, 0.0, 0.0, 1.0, AudioServer.PLAYBACK_TYPE_DEFAULT, &"SFX")
+		var voice := _playback.play_stream(stream, 0.0, 0.0, 1.0, AudioServer.PLAYBACK_TYPE_DEFAULT, _whoosh_bus if kind in [&"turn_whoosh", &"projectile_whoosh", &"nitro"] else &"SFX")
 		if voice == AudioStreamPlaybackPolyphonic.INVALID_ID:
 			_queue(kind)
 			var poly := one_shots.stream as AudioStreamPolyphonic
@@ -356,6 +370,7 @@ func _stop_all() -> void:
 func _exit_tree() -> void:
 	_disconnect_game()
 	_stop_all()
+	BusChain.release()
 	if _audio_service != null and _audio_service.has_method("set_music_pitch"):
 		_audio_service.set_music_pitch(1.0)
 
@@ -466,3 +481,12 @@ func _stop_cue(kind: StringName) -> void:
 	if _playback == null: return
 	for voice in _voices:
 		if _voice_kinds.get(voice) == kind: _playback.stop_stream(voice)
+
+## Optional frontend hooks. Surface 0 metal, 1 grating, 2 rubber.
+func set_footstep_surface(surface: int) -> void:
+	_surface = clampi(surface, 0, 2)
+	_tread = 0
+
+## Gameplay-only audition hook. Paused UI must use AudioService.play_ui.
+func play_ui_click() -> void:
+	_play(&"telegraph_tick")
