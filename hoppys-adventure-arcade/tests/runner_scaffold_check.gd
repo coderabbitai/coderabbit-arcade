@@ -73,6 +73,10 @@ const PROPERTIES := [
 ## panels it is tolerated when absent, and when it exists it must be PAUSABLE.
 const BOSS_FX_SCENE := "res://scenes/runner/boss/boss_fx.tscn"
 
+## Contract §11.8: the one HUD mount the backend guarantees. The frontend replaces the scene in
+## place, so the path is the same on both trees.
+const HUD_SCENE := "res://scenes/runner/ui/runner_hud.tscn"
+
 ## Contract §11.8: optional, never grayboxed, tolerated when absent.
 const OPTIONAL_HUD_MOUNTS := [
 	"res://scenes/runner/ui/pursuit_alert.tscn",
@@ -293,17 +297,29 @@ func _check_environment(game: Node) -> void:
 	if mounted:
 		check(graybox == null, "a mounted corridor must free World/TurnRig/GrayboxEnvironment")
 
-## Contract §11.8: the graybox HUD is always there; the four v2 panels mount only when the frontend
-## has authored them, so the count is a range and every extra child has to be one of those scenes.
+## Contract §11.8: the HUD mount point is shared, so its children are never counted. The backend
+## asserts only its own mounts — `runner_hud` once, each v2 panel once when its scene exists on
+## disk, and no scene mounted twice — and tolerates any other child the frontend has parented here
+## (F10's turn-warning banner, boss-intro card and effects all live on this layer). Both branches of
+## the optional loop spend one check, so the run's check total is identical on either tree.
 func _check_hud_mounts(game: Node) -> void:
 	var hud := game.get_node("HUD") as CanvasLayer
-	var expected := 1
+	var mounted := {}
+	for child in hud.get_children():
+		var scene_path := String(child.scene_file_path)
+		if scene_path.is_empty():
+			continue
+		mounted[scene_path] = int(mounted.get(scene_path, 0)) + 1
+	var hud_count := int(mounted.get(HUD_SCENE, 0))
+	check(hud_count == 1,
+		"HUD must mount runner_hud.tscn exactly once, found %d (extra frontend children are fine, a second runner_hud is not)"
+			% hud_count)
 	for path in OPTIONAL_HUD_MOUNTS:
+		var count := int(mounted.get(path, 0))
 		if ResourceLoader.exists(path):
-			expected += 1
-	check(hud.get_child_count() == expected,
-		"HUD holds %d children, expected %d (graybox HUD plus the optional v2 panels that exist)"
-			% [hud.get_child_count(), expected])
+			check(count == 1, "%s exists but is mounted %d times under HUD, expected exactly once" % [path, count])
+		else:
+			check(count == 0, "%s is absent from disk, so nothing may be mounted for it, found %d" % [path, count])
 
 ## Contract §11.1-§11.4: the stage machine is live, the phases line up with the state, the rig
 ## accessors resolve and the boss block reads empty outside a fight.

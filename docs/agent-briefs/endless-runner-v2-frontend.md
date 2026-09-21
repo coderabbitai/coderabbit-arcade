@@ -36,11 +36,14 @@ stage banners and stage-clear cards, new audio.** Branch `codex/endless-runner-s
 
 ## Acceptance (the v1 acceptance script in the v1 brief, unchanged in shape)
 
-`run_test runner_smoke.gd 'RUNNER SMOKE: PASS'`, `run_test runner_visual_smoke.gd 'RUNNER VISUAL SMOKE: PASS'`
-with the extra markers `RUNNER FULL LOOP: PASS`, `RUNNER DEV SCENES: PASS`, and from F8 `BOSS VISUALS`, from F9
-`TURN`; `run_test menu_smoke.gd 'MENU SMOKE: PASS'` with the documented 4.7.0 tolerance. Use `--log-file /tmp/...`
-when the sandbox blocks `user://logs`; if the full loop fails only on the two sandbox `user://` persistence checks,
-say so verbatim (the coordinator re-runs on the host).
+`run_test runner_smoke.gd 'RUNNER SMOKE: PASS'`, then `run_test runner_visual_smoke.gd 'RUNNER VISUAL SMOKE: PASS'`
+whose captured log must also contain every milestone marker the gate greps for: `RUNNER FULL LOOP: PASS`,
+`RUNNER DEV SCENES: PASS`, `HUD LEGIBILITY: PASS`, `PURSUIT ALERT: PASS` (F7), `BOSS VISUALS: PASS`,
+`TOOLS AND PROJECTILES: PASS` (F8), `TURN: PASS`, `STAGE SEAM: PASS` (F9), `TURN WARNING: PASS`, `BOSS INTRO: PASS`
+(F10), plus the audio census line `RUNNER AUDIO: <n> recipes/triggers` with `peak voices=10` (n = 30 after F9, 32 after
+F10); `run_test menu_smoke.gd 'MENU SMOKE: PASS'` with the documented 4.7.0 tolerance. Use `--log-file /tmp/...` when
+the sandbox blocks `user://logs`; if the full loop fails only on the two sandbox `user://` persistence checks, say so
+verbatim (the coordinator re-runs on the host).
 
 ## Report format
 

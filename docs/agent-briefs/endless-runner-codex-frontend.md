@@ -338,6 +338,7 @@ Screenshots to `docs/previews/endless-runner-{spike,corridor,gallery,hud,gameove
 | F7 | v2 — HUD legibility + pursuit alert (`ui/hud_style.gd`, `ui/pursuit_alert.*`; see `docs/agent-briefs/endless-runner-v2-frontend.md`) | `HUD LEGIBILITY: PASS (n labels checked)` and `PURSUIT ALERT: PASS` from `tests/runner_visual_smoke.gd`; voices ≤ 10 |
 | F8 | v2 — boss visuals, boss HUD, `boss_fx` effects, projectile and tool visuals (v2 brief) | `BOSS VISUALS: PASS (3 checked; peak draw census=n)` with n ≤ 40 and `TOOLS AND PROJECTILES: PASS` |
 | F9 | v2 — corridor turns, stage banner and clear card, turn/stage audio, final docs (v2 brief) | `TURN: PASS`, `STAGE SEAM: PASS`, audio census 30 with peak voices ≤ 10; the acceptance gate greps every marker above |
+| F10 | v2 — announced sharp corners (turn_incoming banner, lane chevrons, 55° corridor turn with end wall) and the boss entrance card with per-bug taunts (v2 brief) | `TURN WARNING: PASS`, `BOSS INTRO: PASS`; audio census 32 with peak voices ≤ 10 |
 
 Check commands (repo root). Set `GODOT_BIN` to the editor binary (`/Applications/Godot.app/Contents/MacOS/Godot`
 on the build Mac) and confirm the engine first: `"$GODOT_BIN" --version` must report `4.7.1.stable` for final
@@ -527,8 +528,8 @@ run_test runner_smoke.gd 'RUNNER SMOKE: PASS'
 # refactor that skipped or dropped either would still print a green aggregate. run_test already
 # enforces exit 0 and the aggregate line, so only the two sub-markers are left to check.
 run_test runner_visual_smoke.gd 'RUNNER VISUAL SMOKE: PASS'
-# v2 (F7-F9) markers are required too, each with an explicit PASS status (F9 makes the HUD LEGIBILITY and BOSS VISUALS
-# sections print `: PASS (...)`): HUD LEGIBILITY / PURSUIT ALERT from F7, BOSS VISUALS from F8, TURN from F9.
+# v2 (F7-F10) markers are required too, each with an explicit PASS status: HUD LEGIBILITY / PURSUIT ALERT from F7,
+# BOSS VISUALS / TOOLS AND PROJECTILES from F8, TURN / STAGE SEAM from F9, TURN WARNING / BOSS INTRO from F10.
 if ! grep -qF 'RUNNER FULL LOOP: PASS' "$RUN_TEST_LOG" \
     || ! grep -qF 'RUNNER DEV SCENES: PASS' "$RUN_TEST_LOG" \
     || ! grep -qF 'HUD LEGIBILITY: PASS' "$RUN_TEST_LOG" \
@@ -536,8 +537,10 @@ if ! grep -qF 'RUNNER FULL LOOP: PASS' "$RUN_TEST_LOG" \
     || ! grep -qF 'BOSS VISUALS: PASS' "$RUN_TEST_LOG" \
     || ! grep -qF 'TOOLS AND PROJECTILES: PASS' "$RUN_TEST_LOG" \
     || ! grep -qF 'TURN: PASS' "$RUN_TEST_LOG" \
-    || ! grep -qF 'STAGE SEAM: PASS' "$RUN_TEST_LOG"; then
-  echo "runner_visual_smoke must also print RUNNER FULL LOOP: PASS (the F6 hub -> menu -> play -> caught -> retry -> menu -> hub loop), the v2 markers HUD LEGIBILITY: PASS / PURSUIT ALERT: PASS / BOSS VISUALS: PASS / TOOLS AND PROJECTILES: PASS / TURN: PASS / STAGE SEAM: PASS, and RUNNER DEV SCENES: PASS (every dev scene instantiated headless)" >&2
+    || ! grep -qF 'STAGE SEAM: PASS' "$RUN_TEST_LOG" \
+    || ! grep -qF 'TURN WARNING: PASS' "$RUN_TEST_LOG" \
+    || ! grep -qF 'BOSS INTRO: PASS' "$RUN_TEST_LOG"; then
+  echo "runner_visual_smoke must also print RUNNER FULL LOOP: PASS (the F6 hub -> menu -> play -> caught -> retry -> menu -> hub loop), the v2 markers HUD LEGIBILITY: PASS / PURSUIT ALERT: PASS / BOSS VISUALS: PASS / TOOLS AND PROJECTILES: PASS / TURN: PASS / STAGE SEAM: PASS / TURN WARNING: PASS / BOSS INTRO: PASS, and RUNNER DEV SCENES: PASS (every dev scene instantiated headless)" >&2
   exit 1
 fi
 

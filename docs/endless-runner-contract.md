@@ -502,6 +502,9 @@ than under `HUD`, and it is the sanctioned home for 3D fight effects, so no pane
 | `ui/stage_clear.tscn` | stage-clear card (time, tools used, bonus) | `stage_cleared`, `boss_defeated`/`boss_retreated`, `get_stage_info()` |
 | `boss/boss_fx.tscn` | 3D fight effects: telegraphs, tracers, damage numbers; never touches gameplay nodes | `boss_*` signals, `tool_collected`, `get_boss_info()` |
 
+The `HUD` mount point may carry additional frontend-owned children beyond the scenes in this table; the backend
+asserts only that its own contract mounts are present exactly once, never how many children the layer holds.
+
 `ui/runner_hud.tscn`, `ui/pause_menu.tscn`, `ui/game_over.tscn` keep their v1 contract; the frontend may restyle
 them for legibility (font ≥ 18 units, outline ≥ 6, panel-backed; see the v2 frontend design §1). The F3
 `DebugOverlay` (backend) prints phase, stage, boss HP/phase and pending attacks so graybox play stays readable.
