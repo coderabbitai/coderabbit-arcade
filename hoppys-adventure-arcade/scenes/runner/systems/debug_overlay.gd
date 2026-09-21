@@ -1,6 +1,9 @@
 extends CanvasLayer
 ## F3 debug readout plus the developer shortcuts (systems spec §2).
 ## F3 toggle, F5 retry, F6 runner menu, F7 autopilot, F8 random power-up.
+## Every shortcut that changes the run — F5, F6, F7, F8 — is gated on OS.is_debug_build() and does
+## nothing at all in an exported build, so a player cannot restart or leave a run by pressing a
+## function key. F3 is a read-only readout toggle and stays available everywhere.
 
 const RunnerGame = preload("res://scenes/runner/runner_game.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
@@ -33,13 +36,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_F3:
 			readout.visible = not readout.visible
 		KEY_F5:
+			if not OS.is_debug_build():
+				return
 			if game != null:
 				game.retry()
 		KEY_F6:
+			if not OS.is_debug_build():
+				return
 			if game != null:
 				game.go_to_menu()
 		KEY_F7:
-			# The bot and the power-up cheat ship only in debug builds; F3 stays everywhere.
 			if not OS.is_debug_build():
 				return
 			if game != null and game.autopilot != null:
