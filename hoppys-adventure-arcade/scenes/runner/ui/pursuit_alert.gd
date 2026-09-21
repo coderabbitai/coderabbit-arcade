@@ -25,16 +25,47 @@ var _connections := {}
 var _audio: Node
 
 class PortraitArt extends Control:
+	const EYE_PLATE := Rect2(24, 12, 208, 80)
+	const CARD_RECTS := [Rect2(8, 116, 240, 116)]
+	const CARD_TYPE := [64]
+	var portrait_font: Font
+	var deferred_redraws := 0
+	static func headlines() -> Array[String]:
+		var result: Array[String] = []
+		for headline: String in Pursuer.HEADLINES: result.append(headline)
+		result.sort_custom(func(a: String, b: String) -> bool: return a.length() < b.length())
+		return [result[0]]
+	func _ready() -> void:
+		process_mode = Node.PROCESS_MODE_PAUSABLE
+		# Retain the shared mono face; the cached theme keeps it alive across overlays.
+		portrait_font = Style.theme().default_font
+		portrait_font.changed.connect(queue_redraw)
+		queue_redraw()
+		_refresh_font.call_deferred()
+	func _refresh_font() -> void:
+		await get_tree().process_frame
+		if not is_inside_tree(): return
+		deferred_redraws += 1
+		queue_redraw()
 	func _draw() -> void:
+		if portrait_font == null: return
 		draw_rect(Rect2(0, 0, 256, 256), Palette.NAVY_BG)
-		for row in 4:
-			for column in 5:
-				draw_rect(Rect2(5 + column * 50, 16 + row * 54, 46, 48), Palette.NAVY)
+		var plate := Style.panel(Palette.DANGER, 1.0)
+		plate.bg_color = Palette.NAVY_2
+		draw_style_box(plate, EYE_PLATE)
 		for side in [-1, 1]:
-			draw_line(Vector2(128 + side * 20, 66), Vector2(128 + side * 78, 53), Palette.DANGER, 9)
-		var font := Style.theme().default_font
-		for i in 3:
-			draw_string(font, Vector2(12, 128 + i * 38), Pursuer.HEADLINES[i], HORIZONTAL_ALIGNMENT_LEFT, 236, 18, Palette.CREAM)
+			var eye := PackedVector2Array([Vector2(128 + side * 18, 51), Vector2(128 + side * 78, 32), Vector2(128 + side * 70, 53), Vector2(128 + side * 20, 63)])
+			draw_colored_polygon(eye, Palette.DANGER)
+		var rect: Rect2 = CARD_RECTS[0]
+		var card := Style.panel(Palette.SLATE, 1.0)
+		card.bg_color = Palette.NAVY_2
+		draw_style_box(card, rect)
+		var text := headlines()[0]
+		var units: int = CARD_TYPE[0]
+		var width := portrait_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, units).x
+		var at := rect.position + Vector2((rect.size.x-width)*0.5, 80)
+		draw_string_outline(portrait_font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, units, 6, Palette.NAVY_BG)
+		draw_string(portrait_font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, units, Palette.CREAM)
 
 class Waveform extends Control:
 	var clock := 0.0
@@ -62,6 +93,7 @@ class Radar extends Control:
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	theme = Style.theme()
 	set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	offset_left = 28
@@ -73,6 +105,7 @@ func _ready() -> void:
 	add_child(panel)
 	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	panel.add_theme_stylebox_override("panel", Style.panel(Palette.DANGER, 0.96))
+	Style.polish(panel, false)
 	# A plain Control preserves the exact 420 x 196 composition inside the backing.
 	var content := Control.new()
 	panel.add_child(content)
@@ -102,9 +135,8 @@ func _ready() -> void:
 	heading = _label(content, "INCOMING TRANSMISSION", 20, Vector2.ZERO, Vector2(390, 26))
 	copy = _label(content, "UNREVIEWED PR\nBACKLOG", 20, Vector2(84, 28), Vector2(218, 54))
 	countdown = _label(content, "CATCHES UP IN 18.0 s", 20, Vector2(84, 82), Vector2(308, 26))
-	catch_rule = _label(content, "ONE MORE HIT BEFORE RECOVERY\nAND IT HAS YOU", 17, Vector2(0, 110), Vector2(392, 42))
+	catch_rule = _label(content, "ONE MORE HIT BEFORE RECOVERY\nAND IT HAS YOU", 18, Vector2(0, 110), Vector2(392, 42))
 	catch_rule.add_theme_color_override("font_color", Color(Palette.CREAM, 0.85))
-	catch_rule.set_meta("legibility_exemption", "Design section 2: catch-rule caption at 17 units")
 	waveform = Waveform.new()
 	content.add_child(waveform)
 	waveform.position = Vector2(6, 154)

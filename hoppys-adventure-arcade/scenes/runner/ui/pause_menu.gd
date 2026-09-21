@@ -20,15 +20,13 @@ func _ready() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(center)
 	var panel := PanelContainer.new()
-	var box := StyleBoxFlat.new()
-	box.bg_color = Color("101d2d")
-	box.border_color = Style.MINT
-	box.set_border_width_all(2)
+	var box := Style.panel(Style.MINT)
 	box.content_margin_left = 28
 	box.content_margin_right = 28
 	box.content_margin_top = 24
 	box.content_margin_bottom = 24
 	panel.add_theme_stylebox_override("panel", box)
+	Style.polish(panel, false)
 	center.add_child(panel)
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 18)

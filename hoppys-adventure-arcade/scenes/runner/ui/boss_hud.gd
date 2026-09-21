@@ -1,4 +1,5 @@
 extends Control
+const Segments = preload("res://scenes/runner/ui/hifi/bar_segments.gd")
 const Style = preload("res://scenes/runner/ui/hud_style.gd")
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 const Glyph = preload("res://scenes/runner/ui/hud_glyph.gd")
@@ -22,6 +23,7 @@ var phase_row: HBoxContainer
 var _fight_active := false
 var panel: PanelContainer
 var title: Label
+var tool_glyph: Control
 var hp: ProgressBar
 var chip: ProgressBar
 var pips: Array[Control] = []
@@ -34,22 +36,29 @@ var _clock := 0.0
 var _target := 1.0
 
 func _ready() -> void:
+	theme = Style.theme()
 	process_mode = Node.PROCESS_MODE_PAUSABLE
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	offset_left = -380
 	offset_right = 380
-	offset_top = 140
-	offset_bottom = 166
+	offset_top = 236
+	offset_bottom = 262
 	panel = PanelContainer.new()
 	add_child(panel)
 	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	border = Style.panel(Palette.DANGER, 0.92)
+	border.draw_center = false
 	panel.add_theme_stylebox_override("panel", border)
+	Style.polish(panel, false)
 	var column := VBoxContainer.new()
 	panel.add_child(column)
 	var row := HBoxContainer.new()
 	column.add_child(row)
+	tool_glyph = Style.icon(&"review_comment", Palette.ORANGE)
+	row.add_child(tool_glyph)
+	tool_glyph.hide()
 	title = Style.label("BOSS", 26)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(title)
@@ -57,15 +66,17 @@ func _ready() -> void:
 	var bars := Control.new()
 	bars.custom_minimum_size = Vector2(720, 22)
 	column.add_child(bars)
-	chip = Style.bar(Vector2(720, 22), Palette.CREAM, Palette.NAVY_BG)
+	chip = Style.bar(Vector2(720, 22), Palette.SLATE, Palette.NAVY_2)
 	hp = Style.bar(Vector2(720, 22), Palette.DANGER, Color.TRANSPARENT)
 	for bar in [chip, hp]:
 		bar.step = 0.0
 		bars.add_child(bar)
 		bar.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var segmentation := Segments.new()
+	bars.add_child(segmentation)
 	var track := chip.get_theme_stylebox("background").duplicate() as StyleBoxFlat
 	track.border_color = Palette.CREAM
-	track.set_border_width_all(3)
+	track.set_border_width_all(1)
 	chip.add_theme_stylebox_override("background", track)
 	hide()
 	_build_intro()
@@ -73,7 +84,7 @@ func _ready() -> void:
 func bind(value: Node) -> void:
 	_disconnect()
 	game = value
-	connections = {&"boss_intro": _intro, &"phase_changed": _game_phase, &"boss_spawned": _spawn, &"boss_health_changed": _health, &"boss_phase_changed": _phase, &"boss_defeated": _end, &"boss_retreated": _retreat, &"caught": _caught}
+	connections = {&"tool_collected": _tool_icon, &"boss_intro": _intro, &"phase_changed": _game_phase, &"boss_spawned": _spawn, &"boss_health_changed": _health, &"boss_phase_changed": _phase, &"boss_defeated": _end, &"boss_retreated": _retreat, &"caught": _caught}
 	for event: StringName in connections:
 		if game.has_signal(event): game.connect(event, connections[event])
 	if game.has_method("get_boss_info"):
@@ -97,6 +108,7 @@ func _disconnect() -> void:
 func _spawn(kind: StringName, _health_value: int) -> void:
 	var info: Dictionary = game.get_boss_info() if game.has_method("get_boss_info") else {}
 	_fight_active = true
+	tool_glyph.hide()
 	_rebuild_pips(maxi(1, int(info.get("phase_count", 1))))
 	title.text = "BOSS · " + String(info.get("name", String(kind).replace("_", " "))).to_upper()
 	for tween in [drain, fill]:
@@ -125,6 +137,7 @@ func _rebuild_pips(count: int) -> void:
 	for i in count:
 		var pip := Glyph.new()
 		pip.custom_minimum_size = Vector2(26, 28)
+		pip.phase_glyph = true
 		phase_row.add_child(pip)
 		pips.append(pip)
 
@@ -207,14 +220,17 @@ func _build_intro() -> void:
 	intro_flash.color = Color(Palette.DANGER, 0.0)
 	intro_card = PanelContainer.new()
 	intro_card.name = "BossIntroCard"
+	# The intro is a sibling under CanvasLayer, so it needs its own theme boundary.
+	intro_card.theme = theme
 	get_parent().add_child(intro_card)
 	intro_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	intro_card.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	intro_card.offset_left = -450
 	intro_card.offset_right = 450
-	intro_card.offset_top = 140
-	intro_card.offset_bottom = 316
+	intro_card.offset_top = 236
+	intro_card.offset_bottom = 380
 	intro_card.add_theme_stylebox_override("panel", Style.panel(Palette.DANGER, 0.95))
+	Style.polish(intro_card, false)
 	var column := VBoxContainer.new()
 	intro_card.add_child(column)
 	var eyebrow := Style.label("WARNING · BUG DETECTED", 24, Palette.DANGER)
@@ -249,3 +265,8 @@ func _cancel_intro() -> void:
 
 func _game_phase(value: StringName) -> void:
 	if value in [&"idle", &"run"]: _caught()
+
+func _tool_icon(kind: StringName, _damage: int) -> void:
+	tool_glyph.show()
+	tool_glyph.kind = kind
+	tool_glyph.queue_redraw()

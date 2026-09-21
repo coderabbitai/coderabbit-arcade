@@ -8,6 +8,7 @@ const Vignette = preload("res://scenes/runner/shaders/vignette.gdshader")
 var turn_fx: Node3D
 var turn_panel: PanelContainer
 var turn_label: Label
+var turn_icon: Control
 var warning_age := 0.0
 var warning_seconds := 0.0
 var warning_direction := 0
@@ -54,6 +55,8 @@ var turn_alpha := 1.0
 var pulse_clock := 0.0
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_PAUSABLE
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	screen = Control.new()
 	screen.name = "Screen"
 	add_child(screen)
@@ -115,7 +118,7 @@ func _ready() -> void:
 	tick.size = Vector2(2, 12)
 	toast = Style.label("", 28)
 	toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	toast_panel = _back(toast, Control.PRESET_CENTER_TOP, Vector2(0, 164), Vector2.ZERO, Palette.MINT)
+	toast_panel = _back(toast, Control.PRESET_CENTER_TOP, Vector2(0, 172), Vector2.ZERO, Palette.MINT)
 	toast_panel.hide()
 	nitro_banner = Style.label("NITRO COMMIT!", 34, Palette.ORANGE)
 	nitro_banner.name = "NitroBanner"
@@ -138,10 +141,15 @@ func _ready() -> void:
 	screen.add_child(hit_flash)
 	hit_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	hit_flash.color = Color(1, 1, 1, 0)
-	turn_label = Style.label("", 42, Palette.ORANGE)
+	turn_label = Style.label("", 34, Palette.ORANGE)
 	turn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	turn_panel = _back(turn_label, Control.PRESET_CENTER_TOP, Vector2(-290, 184), Vector2(580, 76), Palette.DANGER, 0.94)
+	turn_panel = _back(turn_label, Control.PRESET_CENTER_TOP, Vector2(-180, 536), Vector2(360, 76), Palette.DANGER, 0.94)
 	turn_panel.hide()
+	turn_icon = Style.icon(&"arrow", Palette.ORANGE)
+	turn_label.add_child(turn_icon)
+	turn_icon.position = Vector2(4, 16)
+	turn_icon.size = Vector2(30, 30)
+	turn_icon.pivot_offset = Vector2(15, 15)
 	_ignore_mouse(screen)
 
 func _place(control: Control, preset: int, offset: Vector2, extent: Vector2) -> void:
@@ -162,6 +170,7 @@ func _ignore_mouse(node: Node) -> void:
 func _back(content: Control, preset: int, offset: Vector2, extent: Vector2, accent: Color, alpha: float = 0.82) -> PanelContainer:
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", Style.panel(accent, alpha))
+	Style.polish(panel, false)
 	_place(panel, preset, offset, extent)
 	panel.add_child(content)
 	return panel
@@ -396,6 +405,7 @@ func _show_toast(entry: Dictionary) -> void:
 	toast_remaining = 1.5
 	toast_age = 0.0
 	toast_panel.add_theme_stylebox_override("panel", Style.panel(entry.accent))
+	Style.polish(toast_panel, false)
 	toast_panel.modulate.a = 0.0
 	toast_panel.show()
 	ready_panel.hide()
@@ -411,10 +421,13 @@ func _powerup(kind: StringName, duration: float) -> void:
 	column.add_child(title)
 	var row := HBoxContainer.new()
 	column.add_child(row)
-	var symbols := {&"approve_shield": "✓", &"lgtm": "OK", &"nitro": ">>", &"super_jump": "^^", &"code_review": "</>"}
-	var icon := Style.label(symbols.get(kind, "◆"), 18, Palette.MINT)
+	var icon := Style.icon(kind)
 	icon.tooltip_text = String(kind).replace("_", " ")
 	row.add_child(icon)
+	var accessible := Style.label(String(kind).replace("_", " ").to_upper(), 18)
+	accessible.name = "AccessiblePowerUpName"
+	accessible.hide()
+	icon.add_child(accessible)
 	var bar := _bar(Vector2(112, 9))
 	bar.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -473,7 +486,8 @@ func _turn_incoming(direction: int, seconds: float) -> void:
 
 func _update_turn_warning() -> void:
 	var tick := maxi(1, ceili(warning_seconds - warning_age))
-	turn_label.text = ("◄ TURN LEFT" if warning_direction < 0 else "TURN RIGHT ►") + "   %d" % tick
+	turn_label.text = ("TURN LEFT" if warning_direction < 0 else "TURN RIGHT") + " %d" % tick
+	turn_icon.scale.x = -1.0 if warning_direction < 0 else 1.0
 	turn_label.modulate.a = 0.65 + 0.35 * (1.0 - fposmod(warning_age, 1.0))
 
 func _exit_tree() -> void:
