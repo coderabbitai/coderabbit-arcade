@@ -1,11 +1,20 @@
 extends Node3D
-## Geometry is authored in a unit hitbox, then scaled to the supplied dimensions.
-## Floor projections are deliberately separate from the collision-volume artwork.
+## Normalized collision geometry and metre-space annotations share one bounded rig.
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 const Materials = preload("res://scenes/runner/environment/runner_materials.gd")
+const MeshForge = preload("res://scenes/runner/hazards/visuals/hifi/mesh_forge.gd")
+const TextureForge = preload("res://scenes/runner/hazards/visuals/hifi/texture_forge.gd")
+const Surface = preload("res://scenes/runner/hazards/visuals/hifi/surface.gdshader")
+const Energy = preload("res://scenes/runner/hazards/visuals/hifi/energy.gdshader")
+const Wing = preload("res://scenes/runner/hazards/visuals/hifi/wing.gdshader")
+const PitInterior = preload("res://scenes/runner/hazards/visuals/hifi/pit_interior.gdshader")
+const PitMouth = preload("res://scenes/runner/hazards/visuals/hifi/pit_mouth.gdshader")
+const Trail = preload("res://scenes/runner/hazards/visuals/hifi/trail.gdshader")
+const BatchRoot = preload("res://scenes/runner/hazards/visuals/hifi/batch_root.gd")
+const LASER_HIGH_Y := 1.3
 var body: Node3D
 var beams: Node3D
-var scanner: MeshInstance3D
+var scanner: Node3D
 var tag: Label3D
 var _kind: StringName
 var _variant: StringName
@@ -15,22 +24,71 @@ var _t := 0.0
 var _reaction := 0.0
 var _hit := false
 var _cleared := false
-var _parts: Array[Node3D] = []
-var _rests: Array[Vector3] = []
-# Contract section 8: high laser row spans y=1.1..1.5.
-const LASER_HIGH_Y := 1.3
-var _glyphs: GPUParticles3D
-var _overlay_removed := false
-var _geometry: Array[GeometryInstance3D] = []
-var _batches: Array[Dictionary] = []
-var _core: MeshInstance3D
-var _fades: Array[StandardMaterial3D] = []
-var _seams: Array[StandardMaterial3D] = []
 var _state: StringName = &"ground"
+var _batches: Array[Dictionary] = []
+var _moving: Array[Dictionary] = []
+var _materials: Dictionary = {}
+var _labels: Array[Label3D] = []
+var _plates: Array[Node3D] = []
+var _charge := 0.0
+var _distance_gain := 0.0
+var _pit_mouth: MeshInstance3D
 
 func _init() -> void:
-	# Cosmetic transforms are animated on render frames, not physics ticks.
+	process_mode = Node.PROCESS_MODE_PAUSABLE
 	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+
+func _pivot(parent: Node3D, pos := Vector3.ZERO) -> Node3D:
+	var node := Node3D.new()
+	node.process_mode = Node.PROCESS_MODE_PAUSABLE
+	node.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	parent.add_child(node)
+	node.position = pos
+	return node
+
+func _material(key: String) -> ShaderMaterial:
+	if _materials.has(key): return _materials[key]
+	var mat := ShaderMaterial.new()
+	var maps := TextureForge.maps()
+	mat.shader = Trail if key == "trail" else Wing if key == "glass" else Energy if key in ["halo", "glyph"] else PitInterior if key in ["pit_bottom", "pit_wall"] else Surface
+	mat.set_shader_parameter("atlas", maps.albedo)
+	mat.set_shader_parameter("accent", Palette.MATRIX if key in ["eyes", "glass"] else Palette.LILAC if key.begins_with("lilac") else Palette.DANGER)
+	if key == "glass": mat.set_shader_parameter("membrane_color",Palette.MATRIX)
+	if mat.shader == Surface: mat.set_shader_parameter("diff_color",Palette.CREAM)
+	if mat.shader in [Surface, PitInterior]:
+		mat.set_shader_parameter("normal_atlas", maps.normal)
+		mat.set_shader_parameter("rough_atlas", maps.roughness)
+		mat.set_shader_parameter("tint", Palette.SLATE if key in ["metal", "housing", "pit_wall", "wheel"] else Palette.NAVY_BG if key == "pit_bottom" else Palette.NAVY_2)
+		if key in ["edge", "wheel_edge", "threat"]: mat.set_shader_parameter("tint",Palette.DANGER*0.55)
+		if key.begins_with("lilac"): mat.set_shader_parameter("tint",Palette.LILAC*0.45)
+		mat.set_shader_parameter("tile", 1.0 if key in ["screen", "lilac_screen"] else 2.0 if key == "stripe" else 3.0 if key == "lilac" else 0.0)
+		mat.set_shader_parameter("emission_gain", 0.28 if key.begins_with("lilac") else 0.65 if key in ["edge", "eyes", "wheel_edge", "threat"] else 0.40 if key == "screen" else 0.30 if key == "stripe" else 0.0)
+		if key in ["wheel", "wheel_edge"]: mat.set_shader_parameter("roll_rate",2.0)
+	elif mat.shader == Energy:
+		mat.set_shader_parameter("strength", 0.28 if key == "glass" else 0.55)
+		mat.set_shader_parameter("glyph", 1.0 if key == "glyph" else 0.0)
+
+	if mat.shader in [Surface, Energy, Trail]: mat.set_shader_parameter("distance_gain",_distance_gain)
+	_materials[key] = mat
+	return mat
+
+func _piece(parent: Node3D, pos: Vector3, size: Vector3, material: String, mesh: Mesh = null) -> Node3D:
+	if mesh == null: mesh = MeshForge.bevel_box()
+	var pivot := _pivot(parent, pos)
+	var mat := _material(material)
+	var group: Dictionary = {}
+	for batch in _batches:
+		if batch.material == mat and batch.mesh == mesh:
+			group = batch
+			break
+	if group.is_empty():
+		group = {"material": mat, "mesh": mesh, "instances": [], "poses": []}
+		_batches.append(group)
+	group.instances.append([pivot, size])
+	return pivot
+
+func _animate(node: Node3D, style: String, phase: float = 0.0) -> void:
+	_moving.append({"node": node, "rest": node.position, "rotation": node.rotation, "style": style, "phase": phase})
 
 func build(kind: StringName, variant: StringName, size: Vector3, offset: Vector3) -> void:
 	name = "Artwork"
@@ -38,332 +96,393 @@ func build(kind: StringName, variant: StringName, size: Vector3, offset: Vector3
 	_variant = variant
 	_size = size
 	_offset = offset
-	var marker := MeshInstance3D.new()
-	marker.name = "FloorMarker"
-	var quad := QuadMesh.new()
-	quad.size = Vector2(size.x, size.z)
-	marker.mesh = quad
-	marker.rotation.x = -PI / 2.0
-	marker.position = Vector3(offset.x, 0.006, offset.z)
-	marker.material_override = Materials.additive(Palette.DANGER, 0.35)
-	add_child(marker)
-	if kind == &"pr_backlog_high":
-		var safe := marker.duplicate() as MeshInstance3D
-		safe.name = "SafeGap"
-		safe.position.y = 0.009
-		safe.mesh = quad.duplicate()
-		(safe.mesh as QuadMesh).size.y *= 0.6
-		safe.material_override = Materials.additive(Palette.MATRIX, 0.25)
-		add_child(safe)
-	body = Node3D.new()
-	body.name = "Body"
-	body.position = offset
-	body.scale = size
+	update_view_distance()
+	if kind != &"projectile":
+		_floor_marker("FloorMarker", size, 0.006, Palette.DANGER, 0.35)
+		if kind == &"pr_backlog_high": _floor_marker("SafeGap", size * Vector3(1,1,0.6), 0.009, Palette.MATRIX, 0.25)
+	body = BatchRoot.new()
+	body.process_mode = Node.PROCESS_MODE_PAUSABLE
+	body.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	add_child(body)
+	body.position = offset
+	body.batches = _batches
+	body.name = "Body"
+	body.scale = size
 	match kind:
 		&"pr_backlog_low", &"pr_backlog_high": _backlog()
-		&"bug_swarm": _bug()
+		&"bug_swarm": _bugs()
 		&"merge_conflict": _merge()
 		&"deprecated_pit": _pit()
 		&"laser_grid": _laser()
 		&"comment_flood": _comments()
 		&"build_shockwave": _shockwave()
-	for part in _parts:
-		_rests.append(part.position)
-	_batch_boxes()
-	for node in body.find_children("*", "GeometryInstance3D", true, false):
-		if node is MeshInstance3D or node is MultiMeshInstance3D:
-			_geometry.append(node)
+		&"projectile": _projectile()
+	_flush()
+	update_view_distance()
+	if kind in [&"pr_backlog_low", &"deprecated_pit", &"build_shockwave"]: _sparks()
 
-func box(parent: Node3D, pos: Vector3, size: Vector3, color: Color, glow: bool = false) -> MeshInstance3D:
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	return shape(parent, mesh, pos, Materials.glow(color) if glow else Materials.lit(color))
+func _floor_marker(title: String, size: Vector3, elevation: float, color: Color, opacity: float) -> void:
+	var node := MeshInstance3D.new()
+	node.name = title
+	node.process_mode = Node.PROCESS_MODE_PAUSABLE
+	node.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	var quad := QuadMesh.new()
+	quad.size = Vector2(size.x, size.z)
+	node.mesh = quad
+	node.position = Vector3(_offset.x, elevation, _offset.z)
+	node.rotation.x = -PI/2.0
+	var mat := Materials.additive(color, opacity).duplicate() as StandardMaterial3D
+	# Fine striped footprint, not a solid emissive rectangle. Keep smoke's color contract.
+	mat.albedo_texture = TextureForge.maps().albedo
+	mat.uv1_scale = Vector3(0.25,1,1)
+	mat.uv1_offset = Vector3(0.5,0,0)
+	node.material_override = mat
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(node)
+	# Preserve the smoke's footprint metadata, but never paint across the hole.
+	if _kind == &"deprecated_pit" and title == "FloorMarker": node.hide()
+	if _kind == &"pr_backlog_high" and title == "FloorMarker":
+		var border := Materials.additive(color,opacity).duplicate() as StandardMaterial3D
+		border.albedo_texture = TextureForge.marker_border()
+		node.material_override = border
 
-func shape(parent: Node3D, mesh: Mesh, pos: Vector3, material: Material) -> MeshInstance3D:
-	var result := MeshInstance3D.new()
-	result.mesh = mesh
-	result.position = pos
-	result.material_override = material
-	result.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	parent.add_child(result)
-	return result
-
-func sphere(parent: Node3D, pos: Vector3, diameter: float, color: Color) -> MeshInstance3D:
-	var mesh := SphereMesh.new()
-	mesh.radius = diameter * 0.5
-	mesh.height = diameter
-	mesh.radial_segments = 12
-	mesh.rings = 6
-	return shape(parent, mesh, pos, Materials.glow(color))
-
-func label(parent: Node3D, text: String, pos: Vector3, width: float, height: float) -> Label3D:
-	var result := Materials.label(parent, text, 32, Palette.CREAM)
-	result.position = pos
-	# Fixed orientation avoids a billboard rotating outside a shallow hitbox.
-	result.pixel_size = minf(width / (float(text.length()) * 26.0 + 32.0), height / 64.0)
-	result.no_depth_test = false
-	return result
-
-func card(pos: Vector3, size: Vector3, color: Color) -> Node3D:
-	var pivot := Node3D.new()
-	body.add_child(pivot)
-	pivot.position = pos
-	box(pivot, Vector3.ZERO, size, Palette.NAVY)
-	box(pivot, Vector3(0, size.y * 0.42, size.z * 0.51), Vector3(size.x, size.y * 0.08, 0.012), color, true)
-	_parts.append(pivot)
-	return pivot
+func _label(text: String, pos: Vector3, width: float, height: float) -> Label3D:
+	# Input layout is normalized; glyph transforms are authored in metres at unit scale.
+	var label := Label3D.new()
+	label.process_mode = Node.PROCESS_MODE_PAUSABLE
+	label.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	label.text = text
+	label.font_size = 64
+	label.outline_size = 0
+	label.modulate = Palette.CREAM
+	var width_m := width*_size.x
+	var height_m := minf(maxf(height*_size.y,0.17),_size.y*0.65)
+	label.pixel_size = minf(width_m/(float(text.length())*40.0+24),height_m/80.0)
+	label.position = _offset+Vector3(pos.x*_size.x,clampf(pos.y*_size.y,-_size.y*0.30,_size.y*0.30),_size.z*0.515)
+	label.no_depth_test = false
+	add_child(label)
+	var plate := _piece(self,label.position-Vector3(0,0,0.025),Vector3(width_m,height_m+0.015,0.025),"dark")
+	plate.name = "TextBacking%d" % _labels.size()
+	_labels.append(label)
+	_plates.append(plate)
+	return label
 
 func _backlog() -> void:
-	if _kind == &"pr_backlog_high":
-		# Rail at 2.97 m for the contract hitbox, inside its 110% envelope.
-		box(body, Vector3(0, 0.535, 0), Vector3(0.96, 0.02, 0.12), Palette.ORANGE, true)
-		for i in 3:
-			var x := (float(i) - 1.0) * 0.31
-			box(body, Vector3(x, 0.34, 0), Vector3(0.008, 0.34, 0.025), Palette.SLATE)
-			card(Vector3(x, -0.06, 0), Vector3(0.28, 0.66, 0.32), Palette.DANGER)
-	else:
-		for row in 3:
-			for column in 3:
-				card(Vector3((column - 1) * 0.31, (row - 1) * 0.29, 0), Vector3(0.285, 0.25, 0.62), Palette.ORANGE if row % 2 == 0 else Palette.DANGER)
-	tag = label(body, "CI FAILING" if _kind == &"pr_backlog_high" else "NEEDS REVIEW", Vector3(0, 0, 0.46), 0.75, 0.14)
+	var high := _kind == &"pr_backlog_high"
+	for col in 3:
+		for row in (2 if high else 3):
+			var card := _pivot(body, Vector3((col-1)*0.31, (row-0.5)*0.40 if high else (row-1)*0.30, (row-1)*-0.055))
+			_animate(card, "card", float(col+row*3))
+			var height := 0.36 if high else 0.26
+			_piece(card, Vector3.ZERO, Vector3(0.285,height,0.55), "metal")
+			_piece(card, Vector3(0,0,0.286), Vector3(0.24,height*0.70,0.018), "screen")
+			_piece(card, Vector3(0,height*0.43,0.294), Vector3(0.255,0.055,0.024), "edge")
+			_piece(card, Vector3(0.10,-height*0.34,0.295), Vector3(0.033,0.028,0.028), "edge")
+	if high:
+		_piece(body, Vector3(0,0.47,-0.07), Vector3(0.98,0.035,0.24), "metal")
+		for col in 3: _piece(body, Vector3((col-1)*0.31,0.39,-0.07), Vector3(0.014,0.16,0.04), "metal")
+	tag = _label("CI FAILING" if high else "NEEDS REVIEW", Vector3(0,0.03,0.41),0.68,0.13)
 
-func _bug() -> void:
-	_core = sphere(body, Vector3.ZERO, 0.44, Palette.DANGER)
-	for side in [-1, 1]:
-		for i in 3:
-			var leg := box(body, Vector3(side * 0.29, -0.09, (i - 1) * 0.17), Vector3(0.25, 0.045, 0.04), Palette.ORANGE, true)
-			leg.rotation.z = side * (i - 1) * 0.22
-			_parts.append(leg)
-	_glyph_cloud(36, false)
-	tag = label(body, "throw new Error()", Vector3(0, -0.34, 0.43), 0.85, 0.13)
+func _bugs() -> void:
+	# Three curved 32-ring beetles replace seven boxes without exceeding 6000 tris.
+	for i in 3:
+		var insect := _pivot(body,Vector3((i-1)*0.24,0.08 if i == 1 else -0.12,-0.10 if i == 1 else 0.10))
+		_animate(insect,"bug",float(i))
+		var shell := _piece(insect,Vector3.ZERO,Vector3(0.23,0.29,0.33),"carapace",MeshForge.carapace())
+		shell.name = "Carapace%d" % i
+		_piece(insect,Vector3(0,0.135,0),Vector3(0.06,0.025,0.27),"edge")
+		var head := _piece(insect,Vector3(0,0,0.20),Vector3(0.16,0.13,0.16),"carapace",MeshForge.wedge())
+		head.rotation.x = -0.18
+		for side in [-1,1]:
+			_piece(insect,Vector3(side*0.048,0.035,0.275),Vector3(0.048,0.045,0.025),"eyes")
+			for leg in 3:
+				var limb := _piece(insect,Vector3(side*0.16,-0.09,(leg-1)*0.105),Vector3(0.20,0.20,0.03),"carapace",MeshForge.jointed_leg())
+				limb.rotation.y = PI if side < 0 else 0.0
+				limb.name = "JointedLeg%d_%d" % [side,leg]
+			var wing := _piece(insect,Vector3(side*0.10,0.17,-0.075),Vector3(0.20,0.35,0.10),"glass",MeshForge.wing())
+			wing.name = "Wing%d_%d" % [i,side]
+			wing.rotation.x = -0.8
+			_animate(wing,"wing",float(i)+side)
+	tag = _label("BUG SWARM",Vector3(0,-0.32,0.48),0.68,0.20)
 
 func _merge() -> void:
-	card(Vector3(-0.235, 0, 0), Vector3(0.43, 0.75, 0.65), Palette.MATRIX)
-	card(Vector3(0.235, 0, 0), Vector3(0.43, 0.75, 0.65), Palette.LILAC)
-	var pulse := Materials.glow(Palette.DANGER).duplicate() as StandardMaterial3D
-	_seams.append(pulse)
-	for i in 7:
-		var seam := box(body, Vector3(0, (i - 3) * 0.1, 0.37), Vector3(0.018, 0.13, 0.03), Palette.DANGER, true)
-		seam.rotation.z = 0.3 if i % 2 == 0 else -0.3
-		seam.material_override = pulse
-	label(body, "=======", Vector3(0, -0.24, 0.43), 0.22, 0.08).outline_size = 0
-	tag = label(body, "MERGE CONFLICT", Vector3(0, 0.38, 0.43), 0.65, 0.12)
+	# Staggered fragments form a jagged physical fracture, with recessed branch light.
+	for side in [-1,1]:
+		for row in 5:
+			var width := 0.41 - (0.025 if row%2 else 0.0)
+			_piece(body,Vector3(side*(0.055+width*0.5),(row-2)*0.17,0),Vector3(width,0.165,0.66),"lilac_plate" if side > 0 else "metal")
+			var seam := _piece(body,Vector3(side*(0.033+0.01*(row%2)),(row-2)*0.17,0.34),Vector3(0.024,0.175,0.026),"lilac" if side>0 else "edge")
+			seam.rotation.z = side*(0.15 if row%2 else -0.15)
+		var glyph := _piece(body,Vector3(side*0.25,0.05,0.39),Vector3(0.36,0.42,0.014),"lilac_screen" if side>0 else "screen")
+		_animate(glyph,"card",float(side))
+	_label("<<<<<<<",Vector3(-0.25,-0.18,0.40),0.35,0.12)
+	_label(">>>>>>>",Vector3(0.25,-0.18,0.40),0.35,0.12)
+	tag = _label("MERGE CONFLICT",Vector3(0,0.42,0.39),0.64,0.10)
 
 func _pit() -> void:
-	var hole := QuadMesh.new()
-	hole.size = Vector2(0.96, 0.96)
-	var surface := shape(body, hole, Vector3(0, (0.015 - _offset.y) / _size.y, 0), Materials.lit(Palette.NAVY_BG))
-	surface.rotation.x = -PI / 2.0
-	for i in 14:
-		for side in [-1, 1]:
-			box(body, Vector3((i - 6.5) * 0.067, 0.14, side * 0.465), Vector3(0.065, 0.18, 0.06), Palette.ORANGE if i % 2 == 0 else Palette.NAVY)
-	for side in [-1, 1]:
-		box(body, Vector3(side * 0.465, 0.14, 0), Vector3(0.06, 0.18, 0.88), Palette.ORANGE)
-	tag = label(body, "@deprecated", Vector3(0, 0.12, 0), 0.7, 0.3)
-	tag.rotation.x = -PI / 2.0
-	var since := label(body, "since v0.9", Vector3(0, 0.12, 0.29), 0.45, 0.14)
-	since.rotation.x = -PI / 2.0
-	since.outline_size = 0
-	_glyph_cloud(24, true)
+	# Physical well below the floor, with a normally depth-tested parallax mouth.
+	# Opaque corridor floor is not edited or bypassed.
+	var bottom := _piece(body,Vector3(0,-0.45,0),Vector3(0.90,0.04,0.88),"pit_bottom")
+	bottom.name = "PitBottom"
+	for side in [-1,1]:
+		_piece(body,Vector3(side*0.46,-0.20,0),Vector3(0.065,0.44,0.98),"pit_wall")
+		_piece(body,Vector3(0,-0.20,side*0.455),Vector3(0.89,0.44,0.065),"pit_wall")
+		_piece(body,Vector3(side*0.46,0.010,0),Vector3(0.050,0.04,0.98),"carapace")
+		_piece(body,Vector3(0,0.010,side*0.455),Vector3(0.90,0.04,0.055),"stripe")
+		for cable in 3:
+			var wire := _piece(body,Vector3(side*0.41,-0.20,cable*0.22-0.22),Vector3(0.012,0.36,0.025),"pit_wall")
+			wire.rotation.z = side*0.06
+		for bolt in 6:
+			_piece(body,Vector3(side*0.46,0.035,(bolt-2.5)*0.14),Vector3(0.014,0.020,0.018),"metal")
+		_piece(body,Vector3(side*0.45,0.030,0.38),Vector3(0.035,0.035,0.09),"edge")
+	tag = _label("@deprecated",Vector3.ZERO,0.46,0.30)
+	tag.position = Vector3(0,0.028,1.38)
+	tag.pixel_size = minf(_size.x*0.42/440.0,0.006)
+	tag.rotation.x = -PI/2
+	var plate: Node3D = _plates.back()
+	plate.position = tag.position-Vector3(0,0.015,0)
+	# The backing is an XZ slab, so its local Y remains the upward surface normal.
+	plate.rotation = Vector3.ZERO
+	plate.scale = Vector3.ONE
+	for batch in _batches:
+		for item: Array in batch.instances:
+			if item[0] == plate: item[1] = Vector3(_size.x*0.46,0.012,0.48)
+	_pit_mouth = MeshInstance3D.new()
+	_pit_mouth.name = "PitMouth"
+	_pit_mouth.process_mode = Node.PROCESS_MODE_PAUSABLE
+	_pit_mouth.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	var mouth := PlaneMesh.new()
+	mouth.size = Vector2(_size.x*0.88,_size.z*0.84)
+	_pit_mouth.mesh = mouth
+	_pit_mouth.position = Vector3(_offset.x,0.001,_offset.z)
+	_pit_mouth.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var mouth_material := ShaderMaterial.new()
+	mouth_material.shader = PitMouth
+	mouth_material.set_shader_parameter("opening_size",mouth.size)
+	mouth_material.set_shader_parameter("well_depth",1.6)
+	mouth_material.set_shader_parameter("bottom_color",Palette.NAVY_BG)
+	mouth_material.set_shader_parameter("wall_shadow",Palette.NAVY_2)
+	mouth_material.set_shader_parameter("wall_color",Palette.SLATE)
+	mouth_material.set_shader_parameter("accent",Palette.DANGER)
+	mouth_material.set_shader_parameter("cable_color",Palette.MATRIX)
+	_pit_mouth.material_override = mouth_material
+	add_child(_pit_mouth)
 
 func _laser() -> void:
-	for side in [-1, 1]:
-		box(body, Vector3(side * 0.465, 0, 0), Vector3(0.035, 0.8, 0.38), Palette.NAVY)
-		sphere(body, Vector3(side * 0.465, 0.35, 0), 0.07, Palette.DANGER)
-	beams = Node3D.new()
+	for side in [-1,1]:
+		_piece(body,Vector3(side*0.46,0,0),Vector3(0.075,0.90,0.66),"housing")
+		_piece(body,Vector3(side*0.46,0.34,0.36),Vector3(0.025,0.09,0.04),"eyes")
+		_piece(body,Vector3(side*0.46,0,0.36),Vector3(0.045,0.40,0.04),"halo",MeshForge.carapace())
+		for vent in 4: _piece(body,Vector3(side*0.46,(vent-1.5)*0.18,0.34),Vector3(0.048,0.045,0.025),"metal")
+		for row in 3:
+			_piece(body,Vector3(side*0.415,(row-1)*0.28,0),Vector3(0.033,0.19,0.26),"edge")
+	beams = _pivot(body)
 	beams.name = "Beams"
-	body.add_child(beams)
-	for i in 3:
-		var beam := box(beams, Vector3(0, (i - 1) * 0.29, 0), Vector3(0.9, 0.07, 0.1), Palette.DANGER, true)
-		beam.material_override = Materials.additive(Palette.DANGER, 0.85)
-	scanner = box(body, Vector3.ZERO, Vector3(0.89, 0.055, 0.8), Palette.MINT)
+	for row in 3:
+		_piece(beams,Vector3(0,(row-1)*0.28,0),Vector3(0.035,0.81,0.045),"edge",MeshForge.cylinder()).rotation.z = PI/2
+		_piece(beams,Vector3(0,(row-1)*0.28,0),Vector3(0.15,0.82,0.19),"halo",MeshForge.cylinder()).rotation.z = PI/2
+	scanner = _pivot(body)
 	scanner.name = "Scanner"
-	scanner.material_override = Materials.additive(Palette.MINT, 0.4)
+	_piece(scanner,Vector3(0,0,0.39),Vector3(0.81,0.22,0.075),"edge")
+	_piece(scanner,Vector3(0,0,0.40),Vector3(0.83,0.32,0.08),"halo")
 	scanner.hide()
-	tag = label(body, "SECURITY SCAN", Vector3(0, 0.01, 0.43), 0.6, 0.19)
 	_state = &"high" if _variant == &"high" else &"ground"
-	_glyph_cloud(12, false)
-	_glyphs.hide()
+	tag = _label("LINTER ARMED",Vector3(0,0,0.50),0.38,0.48)
 
 func _comments() -> void:
-	var shell := box(body, Vector3.ZERO, Vector3(0.97, 0.98, 0.86), Palette.DANGER)
-	shell.material_override = Materials.additive(Palette.DANGER, 0.12)
-	for i in 4:
-		var bubble := card(Vector3(0.035 if i % 2 else -0.035, (i - 1.5) * 0.21, 0), Vector3(0.8, 0.16, 0.52), Palette.ORANGE)
-		box(bubble, Vector3(-0.3, -0.087, 0), Vector3(0.07, 0.035, 0.3), Palette.ORANGE)
-	tag = label(body, "BLOCKING // TODO", Vector3(0, 0, 0.46), 0.7, 0.14)
+	# Opaque panel layers resolve depth; their glyph faces follow the helix.
+	for layer in 3:
+		for i in 7:
+			var angle := float(i)*2.1 + layer*0.7
+			var card := _pivot(body,Vector3(sin(angle)*0.30,(i-3)*0.13,(layer-1)*0.28))
+			_animate(card,"tornado",float(i+layer*7))
+			_piece(card,Vector3.ZERO,Vector3(0.26,0.095,0.06),"metal")
+			_piece(card,Vector3(0,0,0.036),Vector3(0.23,0.072,0.009),"screen")
+			_piece(card,Vector3(-0.09,-0.049,0),Vector3(0.035,0.02,0.05),"metal")
+	tag = _label("BLOCKING // TODO",Vector3(0,0.43,0.43),0.72,0.06)
 
 func _shockwave() -> void:
-	var ring := TorusMesh.new()
-	ring.inner_radius = 0.36
-	ring.outer_radius = 0.47
-	ring.rings = 24
-	ring.ring_segments = 8
-	var mesh := shape(body, ring, Vector3(0, -0.12, 0), Materials.glow(Palette.DANGER))
-	_parts.append(mesh)
-	sphere(body, Vector3.ZERO, 0.27, Palette.DANGER)
-	for i in 10:
-		var angle := float(i) * TAU / 10.0
-		var shard := box(body, Vector3(cos(angle) * 0.35, 0.08, sin(angle) * 0.35), Vector3(0.03, 0.14, 0.035), Palette.ORANGE, true)
-		_parts.append(shard)
-	tag = label(body, "BUILD FAILED  x", Vector3(0, 0.3, 0.38), 0.73, 0.19)
+	# One 64-segment crest spans all lanes, clipped to a low circular arc.
+	_piece(self,_offset,Vector3(5.41,0.39,0.11),"metal",MeshForge.wave_arc()).name = "WaveCrest"
+	_piece(self,_offset+Vector3(0,0,0.075),Vector3(5.41,0.39,0.07),"threat",MeshForge.wave_arc()).name = "WaveLeadingEdge"
+	_piece(self,_offset+Vector3(0,-0.08,-0.42),Vector3(5.20,0.30,0.07),"threat",MeshForge.wave_arc()).name = "WaveTrailingEdge"
+	for i in 20:
+		var shard := _piece(body,Vector3((i-9.5)*0.046,0.08,sin(float(i))*0.27),Vector3(0.045,0.40,0.16),"metal",MeshForge.shard())
+		_piece(shard,Vector3.ZERO,Vector3(0.045,0.40,0.16),"edge",MeshForge.shard_glint())
+		shard.name = "Shard%d" % i
+		shard.rotation.z = sin(float(i))*0.20
+		_animate(shard,"debris",float(i))
+	tag = _label("BUILD FAILED",Vector3(0,-0.20,0.51),0.35,0.35)
 
-func _glyph_cloud(count: int, falling: bool) -> void:
-	_glyphs = Materials.glyph_particles(count, _size * 0.28)
-	_glyphs.name = "GlyphParticles"
-	_glyphs.process_mode = Node.PROCESS_MODE_PAUSABLE
-	_glyphs.position = _offset
-	_glyphs.visibility_aabb = AABB(-_size * 0.5, _size)
-	_glyphs.trail_enabled = false
-	_glyphs.sub_emitter = NodePath()
-	var process := _glyphs.process_material as ParticleProcessMaterial
-	process.collision_mode = ParticleProcessMaterial.COLLISION_DISABLED
-	# Keep the full lifetime trajectory inside the hitbox, including billboard size.
-	process.initial_velocity_min = 0.0
-	process.initial_velocity_max = _size.y * 0.035 if falling else 0.0
-	process.color = Palette.DANGER
-	var quad := _glyphs.draw_pass_1 as QuadMesh
-	(quad.material as StandardMaterial3D).albedo_color = Color(1, 1, 1, 0.6)
-	quad.size = Vector2.ONE * minf(_size.x, minf(_size.y, _size.z)) * 0.07
-	add_child(_glyphs)
+func _projectile() -> void:
+	match _variant:
+		&"orb":
+			_piece(body,Vector3(0,0,0.16),Vector3(0.44,0.64,0.48),"threat",MeshForge.plasma_sphere()).name = "OrbCore"
+			_piece(body,Vector3(0,0,0.16),Vector3(0.49,0.70,0.54),"halo",MeshForge.sphere())
+			var collar := _piece(body,Vector3(0,0,0.16),Vector3(0.55,0.48,0.66),"edge",MeshForge.ring())
+			collar.rotation.x = PI/2
+		&"low":
+			_piece(body,Vector3(0,-0.20,0.12),Vector3(0.92,0.42,0.65),"threat",MeshForge.wedge()).name = "LowWedge"
+			for side in [-1,1]: _piece(body,Vector3(side*0.34,-0.40,0.05),Vector3(0.18,0.10,0.80),"edge")
+		&"high":
+			_piece(body,Vector3(0,0,0.14),Vector3(0.95,0.22,0.33),"threat").name = "HighBar"
+			_piece(body,Vector3(0,0,0.32),Vector3(0.89,0.12,0.04),"edge")
+			for side in [-1,1]: _piece(body,Vector3(side*0.33,0.04,0.06),Vector3(0.12,0.83,0.50),"metal",MeshForge.wedge())
+		&"wide":
+			_piece(body,Vector3(0,0,0.06),Vector3(0.95,0.95,0.92),"threat",MeshForge.crescent()).name = "WideCrescent"
+			_piece(body,Vector3(0,0,0.07),Vector3(0.95,0.18,0.92),"edge",MeshForge.crescent())
+	# Trails extend aft toward -Z, outside the core's screen-space silhouette.
+	for side in [-1,1]:
+		var trail := _piece(body,Vector3(side*(0.34 if _variant == &"orb" else 0.49),0,-0.16),Vector3(0.075,0.12,0.78),"trail",MeshForge.trail())
+		trail.name = "AftTrail%d" % side
+		_animate(trail,"trail",float(side))
 
-func _batch_boxes() -> void:
-	# Unit boxes share one draw per material; pivots retain per-card animation.
-	var groups: Dictionary = {}
-	for mesh: MeshInstance3D in body.find_children("*", "MeshInstance3D", true, false):
-		if not mesh.mesh is BoxMesh or mesh == scanner:
-			continue
-		var material := mesh.material_override
-		if not groups.has(material): groups[material] = []
-		var pivot := Node3D.new()
-		mesh.get_parent().add_child(pivot)
-		pivot.transform = mesh.transform
-		var index := _parts.find(mesh)
-		if index >= 0: _parts[index] = pivot
-		groups[material].append([pivot, (mesh.mesh as BoxMesh).size])
-		mesh.free()
-	for material: Material in groups:
-		var batch := MultiMeshInstance3D.new()
-		batch.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
-		batch.multimesh = MultiMesh.new()
-		batch.multimesh.transform_format = MultiMesh.TRANSFORM_3D
-		var box := BoxMesh.new()
-		box.size = Vector3.ONE
-		batch.multimesh.mesh = box
-		batch.multimesh.instance_count = groups[material].size()
-		batch.material_override = material
-		batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		body.add_child(batch)
-		_batches.append({"node": batch, "instances": groups[material]})
+func _flush() -> void:
+	for batch in _batches:
+		var node := MultiMeshInstance3D.new()
+		node.name = "Batch%02d" % body.get_child_count()
+		node.process_mode = Node.PROCESS_MODE_PAUSABLE
+		node.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		node.multimesh = MultiMesh.new()
+		node.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+		node.multimesh.mesh = batch.mesh
+		node.multimesh.instance_count = batch.instances.size()
+		node.material_override = batch.material
+		body.add_child(node)
+		batch.node = node
 	_update_batches()
 
 func _update_batches() -> void:
 	for batch in _batches:
-		var node: MultiMeshInstance3D = batch.node
+		var bounds := AABB()
+		var first := true
+		batch.poses.clear()
 		for i in batch.instances.size():
-			var instance: Array = batch.instances[i]
-			var pivot: Node3D = instance[0]
-			var pose := body.global_transform.affine_inverse() * pivot.global_transform
-			pose.basis = pose.basis.scaled_local(instance[1])
-			# Hidden beam pivots still control the visibility of their instances.
+			var item: Array = batch.instances[i]
+			var pivot: Node3D = item[0]
+			var pose := body.global_transform.affine_inverse()*pivot.global_transform
+			pose.basis = pose.basis.scaled_local(item[1])
 			if not pivot.is_visible_in_tree(): pose.basis = pose.basis.scaled_local(Vector3.ZERO)
-			node.multimesh.set_instance_transform(i, pose)
+			batch.poses.append(pose)
+			batch.node.multimesh.set_instance_transform(i,pose)
+			var box: AABB = pose * batch.mesh.get_aabb()
+			bounds = box if first else bounds.merge(box)
+			first = false
+		batch.node.multimesh.custom_aabb = bounds
 
 func react(cleared: bool) -> void:
 	_hit = not cleared
 	_cleared = cleared
 	_reaction = 0.0
-	_overlay_removed = false
 	if cleared:
-		get_node("FloorMarker").material_override = Materials.additive(Palette.MINT, 0.35)
-	var words := {&"pr_backlog_low": "AUTO-FIXED", &"pr_backlog_high": "AUTO-FIXED", &"bug_swarm": "FIXED", &"merge_conflict": "MERGED", &"deprecated_pit": "REMOVED", &"laser_grid": "SCAN PASSED", &"comment_flood": "RESOLVED", &"build_shockwave": "BUILD FIXED"}
-	if scanner != null:
-		scanner.hide()
-	_fades.clear()
-	if cleared:
-		tag.text = words[_kind]
-		tag.modulate = Palette.MINT
-	if _glyphs != null:
-		_glyphs.show()
-		(_glyphs.process_material as ParticleProcessMaterial).color = Palette.MINT if cleared else Palette.CREAM
-	for mesh in _geometry:
-		mesh.material_overlay = Materials.additive(Palette.MINT if cleared else Palette.CREAM, 0.65)
-		if not cleared and _kind in [&"pr_backlog_low", &"comment_flood"]:
-			var fade := mesh.material_override.duplicate() as StandardMaterial3D
-			fade.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			mesh.material_override = fade
-			_fades.append(fade)
+		var marker := get_node_or_null("FloorMarker") as MeshInstance3D
+		if marker != null:
+			var mat := marker.material_override.duplicate() as StandardMaterial3D
+			mat.albedo_color = Color(Palette.MINT,0.35)
+			marker.material_override = mat
+		if tag != null:
+			tag.text = "AUTO-FIXED"
+			tag.modulate = Palette.MINT
+	if scanner != null: scanner.hide()
 
 func telegraph(t: float) -> void:
-	if scanner == null or _variant != &"timed":
-		return
-	var amount := clampf(t, 0.0, 1.0)
-	scanner.visible = amount > 0.0 and not _cleared
-	scanner.position.y = lerpf(-0.39, 0.39, amount)
-	scanner.scale.x = 0.5 + amount * 0.5
+	if scanner == null or _variant != &"timed": return
+	var amount := clampf(t,0,1)
+	scanner.visible = amount > 0 and not _cleared
+	_charge = amount
+	scanner.position.y = lerpf(-0.25,0.25,amount)
+	scanner.scale.x = lerpf(0.15,1.0,amount)
+	_material("housing").set_shader_parameter("charge",amount)
+	_material("halo").set_shader_parameter("charge",amount)
+	if tag != null: tag.text = "CHARGING" if amount > 0 else "LINTER ARMED"
+	_update_batches()
 
 func laser_state(state: StringName) -> void:
-	if beams == null or _variant != &"timed" or state not in [&"ground", &"high", &"off"]:
-		return
+	if beams == null or _variant != &"timed" or state not in [&"ground",&"high",&"off"]: return
 	_state = state
 	beams.visible = state != &"off" and not _cleared
 	if state != &"off":
-		# Discrete contract state, never sweep dangerous geometry through the safe gap.
-		body.position.y = LASER_HIGH_Y if state == &"high" else _offset.y
-		if _glyphs != null: _glyphs.position.y = body.position.y
-	telegraph(0.0)
+		var elevation := LASER_HIGH_Y if state == &"high" else _offset.y
+		var shift := elevation-body.position.y
+		body.position.y = elevation
+		for label in _labels: label.position.y += shift
+		for plate in _plates: plate.position.y += shift
+	telegraph(0)
 	_update_batches()
 
 func advance(delta: float) -> void:
+	update_view_distance()
 	_t += delta
+	if _pit_mouth != null: _pit_mouth.material_override.set_shader_parameter("clock",_t)
 	_reaction += delta
-	for material in _seams:
-		material.emission_energy_multiplier = 1.2 + 0.5 * sin(_t * 6.0)
-	for material in _fades:
-		material.albedo_color.a = maxf(0.0, 1.0 - _reaction * 2.5)
-	if _core != null and (_hit or _cleared):
-		var pop := (1.0 + 0.15 * sin(minf(_reaction * 8.0, PI))) * maxf(0.0, 1.0 - _reaction * 2.5)
-		_core.scale = Vector3.ONE * pop
-	for i in _parts.size():
-		var part := _parts[i]
-		part.position = _rests[i]
-		part.scale = Vector3.ONE
-		var wave := sin(_t * 3.0 + float(i))
-		match _kind:
-			&"pr_backlog_low", &"pr_backlog_high": part.position.x += wave * 0.01
-			&"bug_swarm": part.position.y += wave * 0.015
-			&"merge_conflict": part.position.x += wave * 0.012
-			&"comment_flood": part.position.y = 0.34 - fmod(float(i) * 0.21 + _t * 0.15, 0.68)
-			&"build_shockwave": part.scale = Vector3.ONE * (0.94 + wave * 0.04)
-		if _hit:
-			var impact := minf(_reaction / 0.35, 1.0)
-			part.position.x += sin(float(i) * 2.0) * 0.018 * impact
-			if _kind == &"build_shockwave" and i > 0:
-				part.position.x *= 1.15
-				part.position.z *= 1.15
-			if _kind == &"pr_backlog_high":
-				part.position.y -= absf(sin(impact * PI)) * 0.04
-			if _kind in [&"pr_backlog_low", &"comment_flood"]:
-				part.position.z += sin(float(i) * 1.3) * 0.1 * impact
-				part.scale *= 1.0 - impact * 0.15
-		if _cleared:
-			part.scale *= maxf(0.0, 1.0 - _reaction * 3.0)
-	if _glyphs != null and (_hit or _cleared):
-		var color := Palette.MINT if _cleared else Palette.CREAM
-		color.a = maxf(0.0, 1.0 - _reaction * 1.5)
-		(_glyphs.process_material as ParticleProcessMaterial).color = color
-	if _kind == &"deprecated_pit" and not _hit and not _cleared:
-		tag.modulate.a = 0.75 + 0.25 * sin(_t * 8.0)
-	if beams != null:
-		beams.scale.x = maxf(0.0, 1.0 - _reaction * 4.0) if _cleared else 0.97 + 0.03 * sin(_t * 29.0)
+	for key: String in _materials:
+		var mat: ShaderMaterial = _materials[key]
+		mat.set_shader_parameter("clock",_t)
+		if mat.shader in [Surface, PitInterior]: mat.set_shader_parameter("hit",maxf(0,1-_reaction*8) if _hit else 0.0)
+	for item in _moving:
+		var node: Node3D = item.node
+		var phase: float = item.phase
+		node.position = item.rest
+		node.rotation = item.rotation
+		match item.style:
+			"card": node.position.x += sin(_t*2.5+phase)*0.005
+			"bug": node.position.y += sin(_t*5+phase)*0.025
+			"wing": node.rotation.z += sin(_t*38+phase)*0.24
+			"tornado":
+				var angle := _t*1.5+phase*2.399
+				node.position.x = sin(angle)*(0.18+(item.rest.y+0.4)*0.2)
+				node.position.z = cos(angle)*0.30
+				node.position.y += sin(_t*2+phase)*0.008
+			"debris": node.position.y += sin(_t*8+phase)*0.05
+			"trail": node.scale.z = 0.75+0.20*sin(_t*18+phase)
+	# Collapse rather than expand: impact and clear never breach collision bounds.
+	if _cleared:
+		body.scale = _size * maxf(0.001,1.0-_reaction*3)
+	elif _hit:
+		body.scale = _size * (1.0-0.04*sin(minf(_reaction*10,PI)))
 	_update_batches()
-	if _cleared and _kind == &"merge_conflict":
-		# Reveal one resolved slab after the two branch cards collapse.
-		if not body.has_node("Merged"):
-			var merged := box(body, Vector3(0, 0, -0.04), Vector3(0.85, 0.62, 0.5), Palette.MINT, true)
-			merged.name = "Merged"
-	if _hit and _reaction > 0.12 and not _overlay_removed:
-		_overlay_removed = true
-		for mesh in _geometry:
-			mesh.material_overlay = null
+
+func _sparks() -> void:
+	var sparks := GPUParticles3D.new()
+	sparks.name = "BoundedSparks"
+	sparks.process_mode = Node.PROCESS_MODE_PAUSABLE
+	sparks.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	sparks.position = _offset
+	sparks.amount = 12
+	sparks.lifetime = 0.6
+	sparks.preprocess = 0.6
+	sparks.visibility_aabb = AABB(-_size*0.45,_size*0.9)
+	sparks.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var motion := ParticleProcessMaterial.new()
+	motion.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	motion.emission_box_extents = _size*0.27
+	motion.gravity = Vector3.ZERO
+	motion.direction = Vector3.UP
+	motion.initial_velocity_min = 0.01
+	motion.initial_velocity_max = 0.04
+	motion.color = Palette.DANGER
+	motion.anim_offset_min = 0.25
+	motion.anim_offset_max = 0.25
+	sparks.process_material = motion
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE*0.025
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	mat.particles_anim_h_frames = 4
+	mat.albedo_texture = TextureForge.maps().albedo
+	mat.albedo_color = Color(Palette.DANGER,0.40)
+	quad.material = mat
+	sparks.draw_pass_1 = quad
+	add_child(sparks)
+
+func update_view_distance() -> void:
+	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
+	var distance := absf(global_position.z) if is_inside_tree() else 0.0
+	if camera != null: distance = camera.global_position.distance_to(global_position)
+	_distance_gain = clampf((distance-18.0)/42.0,0.0,1.0)*4.5
+	for material: ShaderMaterial in _materials.values():
+		if material.shader in [Surface,Energy,Trail]: material.set_shader_parameter("distance_gain",_distance_gain)
