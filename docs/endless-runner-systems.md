@@ -486,7 +486,10 @@ difficulty; frozen in `turn`, `boss`, `stage_clear`).
 as every other mount — instantiated only when the file exists, `bind(self)` when it has `bind`, freed with the scene
 — and is pinned to `PROCESS_MODE_PAUSABLE` on mount, because the arena inherits the facade's ALWAYS mode and effects
 must freeze with the pause menu. Giving the effects a home inside the arena is what keeps `ui/boss_hud.tscn` out of
-`World`.
+`World`. The `HUD` list also carries one more optional panel after `ui/stage_clear.tscn` — `ui/post_fx.tscn`, the
+frontend's single full-screen post-processing pass (CanvasLayer 9, PAUSABLE, idempotent `has_signal`-guarded
+`bind`, contract §11.8) — tolerated when absent exactly like the others, and asserted at most once by
+`runner_scaffold_check.gd` when the file is on disk.
 
 ### 10.1 `systems/stage_manager.gd` — phase state machine
 

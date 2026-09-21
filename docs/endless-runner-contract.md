@@ -334,6 +334,7 @@ mouse-hover failures on a clean `main`; the docs validated it on 4.7.1. New runn
 
 ## 10. Change log
 
+- 2.2 (2026-09-21): §11.3/§11.8 — `ui/post_fx.tscn` sanctioned as an optional HUD mount (CanvasLayer 9, PAUSABLE, idempotent `has_signal`-guarded `bind(game)`): one full-screen post pass for grade, grain, vignette, aberration, letterbox, speed streaks and Nitro lift, with the HUD keeping the pursuit vignette and corner bars unless the frontend hands them over via `post_fx.set_settings()`.
 - 2.1 (2026-09-21): §11.4 — `turn_incoming(direction, seconds)` announces the corner `turn_warning_seconds` (3.0) ahead of the bend on the direction `turn_started` then repeats, with `next_turn_direction` on the facade; `boss_intro(kind, name, seconds)` opens the fight immediately before `boss_spawned`. §11.9/§11.10 — the camera swing becomes a ramp–hold–return envelope (`turn_swing_in_fraction` / `turn_swing_out_fraction` 0.3) and is retuned to `turn_camera_yaw_degrees` 55 / `turn_camera_bank_degrees` 12 / `turn_seconds` 2.4; `boss_intro_seconds` 1.2 → 3.0.
 - 2.0 (2026-09-19): §11 v2 addendum — run phases (run → turn → boss → stage_clear), `StageManager`, `TurnRig`, boss encounters with telegraphed projectiles and auto-fire tool pickups, faster speed ramp (`time_to_max_speed` 100 s + per-stage bumps), pursuit alert signals, new facade signals/properties/result fields, boss visual hooks, projectile hitbox table, tool table, optional UI mounts (`pursuit_alert`, `boss_hud`, `stage_banner`, `stage_clear`), corridor `set_turn`, leaderboard `SCHEMA_VERSION` 2 with in-place migration of v1 boards.
 - 1.0 (2026-09-19): initial contract reconciled from the backend, procgen/tuning and frontend design passes.
@@ -392,7 +393,8 @@ World
 Systems
 └─ StageManager (systems/stage_manager.gd), inserted after Spawner, before Autopilot
 HUD mounts (optional, PAUSABLE, `bind(game)`): ui/pursuit_alert.tscn, ui/boss_hud.tscn,
-                                              ui/stage_banner.tscn, ui/stage_clear.tscn
+                                              ui/stage_banner.tscn, ui/stage_clear.tscn,
+                                              ui/post_fx.tscn (CanvasLayer 9, under the panels)
 ```
 
 Gameplay never rotates: chunks, hazards, projectiles, tools and the player stay in the unrotated frame, so every
@@ -503,7 +505,20 @@ than under `HUD`, and it is the sanctioned home for 3D fight effects, so no pane
 | `ui/boss_hud.tscn` | boss name plate, HP bar, phase pips | `boss_*` signals, `get_boss_info()` |
 | `ui/stage_banner.tscn` | `STAGE n / <boss name>` banner; deferred until `turn_finished` | `stage_started`, `turn_*` |
 | `ui/stage_clear.tscn` | stage-clear card (time, tools used, bonus) | `stage_cleared`, `boss_defeated`/`boss_retreated`, `get_stage_info()` |
+| `ui/post_fx.tscn` | one full-screen post-processing pass: colour grade, film grain, vignette, chromatic aberration on damage and tool hits, letterbox for `boss_intro` and the stage-clear card, speed streaks, Nitro lift | `run_started`, `damage_taken`, `boss_intro`, the stage-clear signals, `power_up_collected`/`power_up_expired`, `pursuit_started`/`pursuit_progress`/`pursuit_recovered`, `speed_changed`, `paused_changed`, and the tool/boss hit signals when they exist |
 | `boss/boss_fx.tscn` | 3D fight effects: telegraphs, tracers, damage numbers; never touches gameplay nodes | `boss_*` signals, `tool_collected`, `get_boss_info()` |
+
+`ui/post_fx.tscn` is a `CanvasLayer` at **layer 9** — below `runner_hud.tscn` (10) and every other panel, so the
+grade and the grain never wash out a gameplay-critical label — `PROCESS_MODE_PAUSABLE` like the rest, and its
+`bind(game)` must be **idempotent** (a second `bind` rebinds nothing and doubles no effect) and connect **only**
+signals it has confirmed with `game.has_signal(...)`, because the mount is sanctioned ahead of the signals some of
+its effects want. It reads state and never calls a mutating facade method.
+
+**Effect ownership.** The HUD keeps ownership of the pursuit vignette and the corner bars (§11.8 `pursuit_alert`
+/ the F7 legibility pass): `post_fx` must not draw a second pursuit vignette or a second set of corner bars unless
+the frontend explicitly hands them over through `post_fx.set_settings()` (the frontend-owned settings entry point;
+the backend never calls it). Absent that hand-over, `post_fx`'s pursuit response is limited to the grade and the
+aberration, so the two layers can never stack the same effect.
 
 The `HUD` mount point may carry additional frontend-owned children beyond the scenes in this table; the backend
 asserts only that its own contract mounts are present exactly once, never how many children the layer holds.

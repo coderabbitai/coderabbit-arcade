@@ -25,6 +25,14 @@ stage banners and stage-clear cards, new audio.** Branch `codex/endless-runner-s
   lint_rule, unit_test, auto_fix_patch` at `powerups/visuals/<kind>_visual.tscn`; projectile variants `orb, low,
   high, wide` at `hazards/visuals/projectile_visual.tscn`; `lane_mask` bits; UI scenes `ui/pursuit_alert.tscn`,
   `ui/boss_hud.tscn`, `ui/stage_banner.tscn`, `ui/stage_clear.tscn`).
+- Sanctioned as of contract 2.2: `ui/post_fx.tscn` (asset pass A9) is a fifth optional HUD mount — one full-screen
+  post-processing pass (colour grade, film grain, vignette, chromatic aberration on damage/tool hits, letterbox for
+  `boss_intro` and the stage-clear card, speed streaks, Nitro lift) on a `CanvasLayer` at **layer 9**, below
+  `runner_hud.tscn` (10) so it never washes out a gameplay-critical label, `PROCESS_MODE_PAUSABLE`, with an
+  idempotent `bind(game)` that connects only signals it confirms with `game.has_signal(...)`. The HUD keeps the
+  pursuit vignette and the corner bars (F7) unless the frontend hands them to `post_fx` through
+  `post_fx.set_settings()`; the backend never calls that. The mount is tolerated when absent, so the file landing
+  later changes nothing on the backend side (contract §11.3, §11.8).
 
 ## Milestones
 
