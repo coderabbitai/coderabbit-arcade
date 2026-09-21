@@ -492,6 +492,7 @@ run_test() {
   local f="hoppys-adventure-arcade/tests/$1" marker="$2" code noise
   [[ -f "$f" ]] || { echo "missing test script: $f" >&2; exit 1; }
   RUN_TEST_LOG="$RUN_TEST_DIR/$1.log"
+  mkdir -p "$(dirname "$RUN_TEST_LOG")"  # tests/assets/<id>_check.gd logs live one level down
   # tee keeps the output streaming while it is captured; PIPESTATUS[0] is the test's own status.
   set +e
   "$GODOT_BIN" --headless --path hoppys-adventure-arcade --script "res://tests/$1" 2>&1 | tee "$RUN_TEST_LOG"
@@ -543,6 +544,17 @@ if ! grep -qF 'RUNNER FULL LOOP: PASS' "$RUN_TEST_LOG" \
   echo "runner_visual_smoke must also print RUNNER FULL LOOP: PASS (the F6 hub -> menu -> play -> caught -> retry -> menu -> hub loop), the v2 markers HUD LEGIBILITY: PASS / PURSUIT ALERT: PASS / BOSS VISUALS: PASS / TOOLS AND PROJECTILES: PASS / TURN: PASS / STAGE SEAM: PASS / TURN WARNING: PASS / BOSS INTRO: PASS, and RUNNER DEV SCENES: PASS (every dev scene instantiated headless)" >&2
   exit 1
 fi
+
+# Asset pass A1-A9 (art bible `docs/agent-briefs/endless-runner-art-bible.md`, contract 2.2): every procedural asset
+# package ships its own headless check under tests/assets/ and prints `ASSET <ID>: PASS (n checks)`. run_test enforces
+# exit 0 and the marker for each. The graphical captures (`scenes/runner/<area>/dev/capture_<id>.gd`) are the
+# coordinator's host step, not part of this headless gate; their guards print `ASSET <ID> CAPTURE: PASS`.
+for asset in a1 a2 a3 a4 a5 a6 a7 a8 a9; do
+  run_test "assets/${asset}_check.gd" "ASSET $(printf '%s' "$asset" | tr '[:lower:]' '[:upper:]'): PASS"
+done
+# The integrator's prewarm (scenes/runner/environment/hifi/prewarm.gd, called once from corridor._ready) must keep
+# every lazily built procedural cache warm before gameplay; its check prints the cold/repeat timings.
+run_test assets/prewarm_check.gd 'PREWARM: PASS'
 
 # menu_smoke has exactly two documented mouse-hover failures on 4.7.0 (contract §9). A DIAGNOSTIC run
 # tolerates only that precise signature and must label it as such in docs/endless-runner.md; a
