@@ -163,8 +163,9 @@ frontend may use it for deterministic cosmetics).
 | `camera_rig.shake(strength: float, duration := 0.35)` / `camera_rig.punch_fov(degrees: float, seconds: float)` | Camera juice |
 
 `start_run(seed := 0)` (backend-initiated; the frontend restarts through `retry()`) unpauses first: it goes
-through `resume()`, so `paused`, `get_tree().paused` and `paused_changed(false)` all agree and a run started
-from a paused state never begins frozen. It also clears the player visual's power-up state — `show_aura(kind,
+through `resume()`, which is valid in every `state` and a no-op when the game is not paused (the "only while
+running" rule applies to the frontend's pause toggle, not to this internal call), so `paused`, `get_tree().paused`
+and `paused_changed(false)` all agree and a run started from a paused state never begins frozen. It also clears the player visual's power-up state — `show_aura(kind,
 false)` for every aura kind and `show_shield(false)` — so a fresh run never opens wearing the last one's glow.
 
 `result` fields: `run_id, mode ("runner"), outcome ("caught"), score:int, score_exact:float,
@@ -286,7 +287,7 @@ Actions: `move_left` (A, ←, D-pad ←, left stick −X), `move_right` (D, →,
 | Health | `max_hp 2`, `recovery_seconds 18`, `hit_iframes 0.8`, `caught_sequence_seconds 1.6` |
 | Score | `base_score_rate 10` pts/s × (Nitro ×2) × (Code Review ×1.5); `pickup_bonus 25`; `blast_bonus_per_hazard 10`; fractional accumulator, integer display |
 | Effects | `lgtm_duration 5`, `nitro_duration 8` (+1 s ease-down with i-frames), Super Jump invulnerable in flight + 0.5 s, Code Review Bonus lost on unblocked hit only, refresh-not-stack |
-| Spawner | `spawn_horizon_z −90`, `despawn_z 12`, `max_active_chunks 9`, `t_spacing(d) = lerp(1.2, 0.85, d)`, `gap = max(0, v × 1.02 × (t_spacing(d) + 0.15 if pursued else 0) − prev.exit_clear − next.entry_clear)` — the pursuit relief is inside the time term, not distance added after it; `v` is `max(speed, base_speed)`, `min_hazard_depth 1.2` (pits 3.0), `blast_range_z 60`, 50 % chunk X-mirroring, no immediate repeats |
+| Spawner | `spawn_horizon_z −90`, `despawn_z 12`, `max_active_chunks 9`, `t_spacing(d) = lerp(1.2, 0.85, d)`, `gap = max(0, v × 1.02 × (t_spacing(d) + (0.15 if pursued else 0)) − prev.exit_clear − next.entry_clear)` (parenthesised: `t_spacing(d)` always applies, the 0.15 s relief is added only while pursued) — the pursuit relief is inside the time term, not distance added after it; `v` is `max(speed, base_speed)`, `min_hazard_depth 1.2` (pits 3.0), `blast_range_z 60`, 50 % chunk X-mirroring, no immediate repeats |
 | Power-ups | chance per chunk `lerp(0.55, 0.35, d)`; cooldown 10 s + one chunk; weights shield 25, code_review 25, super_jump 15, nitro 15, auto_fix 10, lgtm 10; no same-kind repeat; sphere r 0.35 at y 1.0 (run) or 2.2 (jump) |
 | Camera | position (0, 4, 8), look at (0, 1, −8), `fov 60`, lateral follow 0.4, follows in `_physics_process` |
 | Pursuer | `retreat_z 12`, `approach_z 4.5`; threat = 0.7 · min(t_since_hit / 1.5, 1) + 0.3 · (1 − remaining / total) |
