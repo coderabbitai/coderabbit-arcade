@@ -392,14 +392,19 @@ check_only() {
   # output — Godot always emits the root cause first, so a cascade without it is a different failure —
   # AND the cascade itself names a script under res://scenes/runner/ or res://tests/, the two roots
   # whose scripts legitimately preload runner_game.gd / runner_menu.gd. A cascade from anywhere else
-  # is a real failure wearing the same words, so it is printed and fails the gate.
+  # is a real failure wearing the same words, so it is printed and fails the gate. Acceptance is
+  # scoped to ONE cascade as well: the `Failed to load script ... "Compilation failed"` line closes
+  # the cascade it belongs to and clears `accepted`, so a second, unrelated cascade later in the same
+  # output cannot inherit stale acceptance — it has to carry its own root cause.
+  # `seen` remembers for the shell that a documented diagnostic really was excused, because
+  # `accepted` is cleared at the end of every cascade and would be 0 by END.
   # The trailing __DOCUMENTED_CASCADE__ tells the shell an excused diagnostic was actually seen.
   out="$(printf '%s\n' "$raw" | awk '
     /^Godot Engine/ { next }
     /Compile Error: Identifier not found: AppRouter/ { pending = $0; next }
     pending != "" && /^[[:space:]]*at: / {
       if ($0 ~ /res:\/\/scenes\/runner\/runner_(game|menu)\.gd:[0-9]+\)/) {
-        accepted = 1; pending = ""; next
+        accepted = 1; seen = 1; pending = ""; next
       }
       print pending; print; pending = ""; next
     }
@@ -416,12 +421,18 @@ check_only() {
     }
     cascade != "" && /^[[:space:]]*at: / {
       excused = 0
+      # A "Failed to load script" line is the last line of its cascade (it is the one that carries a
+      # path); a depended-scripts line is not.
+      terminal = (cascade_path != "")
       if (accepted) {
-        if (cascade_path != "") {
+        if (terminal) {
           if (cascade_path ~ /^res:\/\/(scenes\/runner|tests)\//) excused = 1
         } else if ($0 ~ /res:\/\/(scenes\/runner|tests)\//) excused = 1
       }
-      if (excused) { cascade = ""; cascade_path = ""; next }
+      if (excused) {
+        if (terminal) accepted = 0
+        cascade = ""; cascade_path = ""; next
+      }
       print cascade; print; cascade = ""; cascade_path = ""; next
     }
     cascade != "" && NF { print cascade; cascade = ""; cascade_path = "" }
@@ -429,7 +440,7 @@ check_only() {
     END {
       if (pending != "") print pending
       if (cascade != "") print cascade
-      if (accepted) print "__DOCUMENTED_CASCADE__"
+      if (seen) print "__DOCUMENTED_CASCADE__"
     }
   ')"
   case "$out" in

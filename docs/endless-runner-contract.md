@@ -334,6 +334,7 @@ mouse-hover failures on a clean `main`; the docs validated it on 4.7.1. New runn
 
 ## 10. Change log
 
+- 2.1 (2026-09-21): §11.4 — `turn_incoming(direction, seconds)` announces the corner `turn_warning_seconds` (3.0) ahead of the bend on the direction `turn_started` then repeats, with `next_turn_direction` on the facade; `boss_intro(kind, name, seconds)` opens the fight immediately before `boss_spawned`. §11.9/§11.10 — the camera swing becomes a ramp–hold–return envelope (`turn_swing_in_fraction` / `turn_swing_out_fraction` 0.3) and is retuned to `turn_camera_yaw_degrees` 55 / `turn_camera_bank_degrees` 12 / `turn_seconds` 2.4; `boss_intro_seconds` 1.2 → 3.0.
 - 2.0 (2026-09-19): §11 v2 addendum — run phases (run → turn → boss → stage_clear), `StageManager`, `TurnRig`, boss encounters with telegraphed projectiles and auto-fire tool pickups, faster speed ramp (`time_to_max_speed` 100 s + per-stage bumps), pursuit alert signals, new facade signals/properties/result fields, boss visual hooks, projectile hitbox table, tool table, optional UI mounts (`pursuit_alert`, `boss_hud`, `stage_banner`, `stage_clear`), corridor `set_turn`, leaderboard `SCHEMA_VERSION` 2 with in-place migration of v1 boards.
 - 1.0 (2026-09-19): initial contract reconciled from the backend, procgen/tuning and frontend design passes.
 - 1.3 (2026-09-19): §4.3 — `result.leaderboard_error:int` added; a failed leaderboard write keeps `rank` 0 / `qualifies` false and emits no `leaderboard_saved`. A board whose `meta/version` is newer than the supported schema is one such failure: it reads as empty and `submit`/`rename` refuse to overwrite it, returning `ERR_FILE_UNRECOGNIZED`.
@@ -407,8 +408,10 @@ Signals (additive; §4.1 unchanged):
 | `phase_changed(phase: StringName)` | StageManager | on change only |
 | `stage_started(index: int, name: StringName, speed: float)` | StageManager | `name` is the stage's boss display name, e.g. `&"Flaky Test Swarm"`; `speed` = base speed for the stage |
 | `stage_cleared(index: int, bonus: int)` | StageManager | after `boss_defeated`/`boss_retreated`; bonus already added to score |
-| `turn_started(direction: int, seconds: float)` / `turn_finished()` | StageManager | `direction` −1 left, +1 right; the seam is hazard-, pickup- and tool-free |
-| `boss_spawned(kind: StringName, hp: int)` | BossEncounter | after `boss_intro_seconds` starts |
+| `turn_incoming(direction: int, seconds: float)` | StageManager | once per seam, `turn_warning_seconds` of travel before the bend (or at drain start when the drain is shorter than that); `seconds` = the estimated time to the turn; the direction is the one `turn_started` then repeats |
+| `turn_started(direction: int, seconds: float)` / `turn_finished()` | StageManager | `direction` −1 left, +1 right, and always the direction `turn_incoming` announced; the seam is hazard-, pickup- and tool-free |
+| `boss_intro(kind: StringName, name: String, seconds: float)` | BossEncounter | at the very start of the intro, immediately **before** `boss_spawned`; `seconds` = `boss_intro_seconds`, the entrance-card window in which no attack and no tool is spawned |
+| `boss_spawned(kind: StringName, hp: int)` | BossEncounter | right after `boss_intro`: the moment the boss is visible and armed. Attacks begin `seconds` later, when the intro `boss_intro` announced has run down |
 | `boss_health_changed(hp: int, max_hp: int)` | BossEncounter | |
 | `boss_phase_changed(phase: int)` | BossEncounter | 1-based; at 100 % / 66 % / 33 % HP |
 | `boss_attack_telegraph(lane_mask: int, kind: StringName, seconds: float)` | BossEncounter | `lane_mask` bit i = lane index i (§11.7); `kind` = projectile variant |
@@ -419,7 +422,9 @@ Signals (additive; §4.1 unchanged):
 | `pursuer_distance_changed(normalized: float)` | Pursuer | 0 retreated … 1 catching; epsilon-gated |
 
 Read-only properties: `phase`, `stage_index: int`, `stage_name: StringName`, `stage_distance: float`,
-`stage_distance_target: float`, `run_clock: float`, `boss: Node3D` (null outside a fight), `boss_kind`, `boss_hp`,
+`stage_distance_target: float`, `run_clock: float`, `next_turn_direction: int` (−1/+1 from the moment the drain
+window picks the seam's direction — so already set when `turn_incoming` fires — back to 0 once the bend ends;
+0 whenever no turn is pending), `boss: Node3D` (null outside a fight), `boss_kind`, `boss_hp`,
 `boss_max_hp`, `boss_phase: int`. Methods: `get_stage_info() -> Dictionary`
 (`index, name, phase, distance, target, speed_bonus, difficulty_floor`), `get_boss_info() -> Dictionary`
 (`kind, name, hp, max_hp, phase, phase_count, accepted_tools, pending_attacks`; `phase_count` is the fight's own
@@ -509,8 +514,13 @@ to p = 0), `set_phase(phase: StringName)`, `set_boss_arena(active: bool)`. When 
 the backend `TurnRig` rotates **itself** by `turn_yaw_degrees × smoothstep(progress)` (fallback only), so whatever
 environment is mounted under it turns with it — the frontend corridor when present, otherwise the graybox
 environment. Mounting a corridor still frees `GrayboxEnvironment` (§3); nothing is retained for the fallback. The camera swing
-(`turn_camera_yaw_degrees` 18, `turn_camera_bank_degrees` 6, returning to zero at p = 1) is backend-owned in
-`camera_rig.gd` and always applies.
+(`turn_camera_yaw_degrees` 55, `turn_camera_bank_degrees` 12, returning to zero at p = 1) is backend-owned in
+`camera_rig.gd` and always applies. Its envelope is **ramp–hold–return**, not a wave: the yaw and the bank
+smoothstep up to the peak over the first `turn_swing_in_fraction` (0.3) of the bend, **hold** there through the
+middle, and smoothstep back to zero over the last `turn_swing_out_fraction` (0.3). The profile is exactly 0 at
+p = 0 and p = 1 for any fractions, so the camera is never left displaced. Gameplay is unaffected: the treadmill
+frame stays unrotated, and the frontend corridor is expected to match the 55° with its own yaw so the bend and
+the camera agree.
 
 ### 11.10 RunConfig additions (single tuning source: the `@export` defaults in `run_config.gd`; `run_config.tres` stays an empty resource that may override them and is never mutated at runtime — this supersedes the §7 heading's wording)
 
@@ -520,8 +530,9 @@ Speed:     time_to_max_speed 100.0 (was 165), tail_speed_per_minute 1.0, hard_ca
 Stages:    stage_base_distance 900.0, stage_distance_step 250.0, stage_distance_max 2000.0, stage_difficulty_step 0.25
            stage_drain_distance 120.0, stage_drain_timeout 6.0, stage_clear_line_z 8.0, stage_clear_seconds 3.0
            stage_clear_bonus_base 400, stage_clear_bonus_per_stage 150
-Turn:      turn_seconds 2.5, turn_yaw_degrees 90.0 (graybox fallback), turn_camera_yaw_degrees 18.0, turn_camera_bank_degrees 6.0
-Boss:      boss_z -14.0, boss_sway_amplitude 2.4, boss_sway_period 3.2, boss_intro_seconds 1.2, boss_outro_seconds 1.0
+Turn:      turn_seconds 2.4, turn_warning_seconds 3.0, turn_yaw_degrees 90.0 (graybox fallback)
+           turn_camera_yaw_degrees 55.0, turn_camera_bank_degrees 12.0, turn_swing_in_fraction 0.3, turn_swing_out_fraction 0.3
+Boss:      boss_z -14.0, boss_sway_amplitude 2.4, boss_sway_period 3.2, boss_intro_seconds 3.0, boss_outro_seconds 1.0
            boss_timeout_seconds 55.0, boss_phase_thresholds [1.0, 0.66, 0.33]
            boss_hp_growth 1.35, boss_hp_scale 1.0 (test/tuning multiplier on the base HP), boss_projectile_speed_growth 1.08, boss_projectile_speed_max 34.0
            boss_telegraph_growth 0.88, boss_telegraph_min 0.60, boss_attack_interval_growth 0.90, boss_attack_interval_min 0.55

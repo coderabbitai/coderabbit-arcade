@@ -45,8 +45,8 @@ const SIGNALS := [
 	"run_finished", "leaderboard_saved", "score_changed", "bonus_awarded", "speed_changed",
 	"difficulty_changed", "power_up_collected", "power_up_expired", "hazard_cleared",
 	"hazards_blasted", "player_action", "chunk_spawned", "paused_changed",
-	"phase_changed", "stage_started", "stage_cleared", "turn_started", "turn_finished",
-	"boss_spawned", "boss_health_changed", "boss_phase_changed", "boss_attack_telegraph",
+	"phase_changed", "stage_started", "stage_cleared", "turn_incoming", "turn_started", "turn_finished",
+	"boss_intro", "boss_spawned", "boss_health_changed", "boss_phase_changed", "boss_attack_telegraph",
 	"boss_projectile_fired", "boss_defeated", "boss_retreated", "tool_collected",
 	"pursuit_alert", "pursuer_distance_changed"
 ]
@@ -64,6 +64,7 @@ const PROPERTIES := [
 	"normalized_speed", "difficulty", "hp", "score", "multiplier", "player", "camera_rig",
 	"cosmetic_rng",
 	"phase", "stage_index", "stage_name", "stage_distance", "stage_distance_target", "run_clock",
+	"next_turn_direction",
 	"boss", "boss_kind", "boss_hp", "boss_max_hp", "boss_phase",
 	"stage_manager", "turn_rig", "boss_encounter"
 ]
@@ -316,6 +317,10 @@ func _check_stage_scaffold(game: Node) -> void:
 		"stage 1 should name the Flaky Test Swarm, got %s" % game.stage_name)
 	check(game.stage_distance_target > 0.0, "stage 1 has no distance target")
 	check(game.run_clock >= 0.0, "run_clock must never be negative")
+	# Contract §11.4: the seam's direction is only picked once the stage drains, and a stage that has
+	# barely opened is nowhere near that.
+	check(int(game.next_turn_direction) == 0,
+		"next_turn_direction must read 0 with no turn pending, got %d" % int(game.next_turn_direction))
 	check(game.boss == null and game.boss_kind == &"" and game.boss_phase == 0,
 		"the boss block must read empty outside a fight")
 

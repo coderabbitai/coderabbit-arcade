@@ -67,6 +67,7 @@ var score_manager_script: GDScript
 var effect_manager_script: GDScript
 var speed_controller_script: GDScript
 var stage_manager_script: GDScript
+var camera_rig_script: GDScript
 var pursuer_script: GDScript
 var autopilot_script: GDScript
 ## Everything this test built, freed in _report().
@@ -94,6 +95,7 @@ func run() -> void:
 	effect_manager_script = load("res://scenes/runner/systems/effect_manager.gd") as GDScript
 	speed_controller_script = load("res://scenes/runner/systems/speed_controller.gd") as GDScript
 	stage_manager_script = load("res://scenes/runner/systems/stage_manager.gd") as GDScript
+	camera_rig_script = load("res://scenes/runner/systems/camera_rig.gd") as GDScript
 	pursuer_script = load("res://scenes/runner/pursuer/pursuer.gd") as GDScript
 	autopilot_script = load("res://scenes/runner/systems/autopilot.gd") as GDScript
 	real_hazard_script = load("res://scenes/runner/hazards/hazard.gd") as GDScript
@@ -108,7 +110,7 @@ func run() -> void:
 	if game_script == null or hazard_script == null or spawner_script == null \
 			or player_script == null or real_hazard_script == null or real_player_script == null \
 			or rig_script == null or caught_game_script == null or stage_manager_script == null \
-			or pursuer_script == null or projectile_script == null:
+			or camera_rig_script == null or pursuer_script == null or projectile_script == null:
 		check(false, "the test harness scripts failed to compile")
 		_report()
 		return
@@ -139,6 +141,8 @@ func run() -> void:
 	_test_caught_mid_boss()
 	_test_stage_speed_and_floor()
 	_test_leaderboard_migration()
+	_test_turn_camera_profile()
+	_test_boss_intro()
 	_report()
 
 # --- 1. HitManager: SAFE -> PURSUED -> DEAD ---
@@ -721,6 +725,22 @@ func _test_config_sanity() -> void:
 		and is_equal_approx(float(c.despawn_z), 12.0), "9: spawner tuning matches contract §7")
 	check(is_equal_approx(c.lane_x(0), -2.0) and is_equal_approx(c.lane_x(1), 0.0)
 		and is_equal_approx(c.lane_x(2), 2.0), "9: lane centres are -2 / 0 / +2")
+	# Contract §11.9/§11.10 v2.1: the corner is announced and then committed to — a 55 deg swing over
+	# 2.4 s, warned 3 s out, and a 3 s boss entrance.
+	check(is_equal_approx(float(c.turn_seconds), 2.4)
+		and is_equal_approx(float(c.turn_warning_seconds), 3.0),
+		"9: turn timing matches contract §11.10 (%.2f s bend, %.2f s warning)"
+			% [float(c.turn_seconds), float(c.turn_warning_seconds)])
+	check(is_equal_approx(float(c.turn_camera_yaw_degrees), 55.0)
+		and is_equal_approx(float(c.turn_camera_bank_degrees), 12.0),
+		"9: the camera swing is %.1f deg yaw / %.1f deg bank, expected 55 / 12"
+			% [float(c.turn_camera_yaw_degrees), float(c.turn_camera_bank_degrees)])
+	check(float(c.turn_swing_in_fraction) > 0.0 and float(c.turn_swing_out_fraction) > 0.0
+		and float(c.turn_swing_in_fraction) + float(c.turn_swing_out_fraction) < 1.0,
+		"9: the swing ramps must leave a hold window, got %.2f + %.2f"
+			% [float(c.turn_swing_in_fraction), float(c.turn_swing_out_fraction)])
+	check(is_equal_approx(float(c.boss_intro_seconds), 3.0),
+		"9: the boss entrance runs %.2f s, expected 3.0" % float(c.boss_intro_seconds))
 
 # --- 10. Autopilot planning (the half the chunk validator reuses) ---
 
@@ -1340,13 +1360,16 @@ func _test_player_reset_clears_visual_state() -> void:
 ## and the drain gate, the silent timeout clear, the turn signals and the rigs coming back to zero,
 ## `run_clock` freezing everywhere but `run`, and stage 2 opening with the next boss's name.
 func _test_stage_machine() -> void:
+	# turn_warning_seconds 1.0 at the 12 m/s base speed is a 12 m lead, well inside the 20 m drain, so
+	# this rig exercises the warning landing *after* the drain gate rather than on the same tick.
 	var rig := _stage_rig({
 		"stage_base_distance": 60.0,
 		"stage_distance_step": 20.0,
 		"stage_drain_distance": 20.0,
 		"stage_drain_timeout": 0.5,
 		"stage_clear_seconds": 0.5,
-		"turn_seconds": 0.4
+		"turn_seconds": 0.4,
+		"turn_warning_seconds": 1.0
 	})
 	var game: Node3D = rig["game"]
 	var stage: Node = rig["stage"]
@@ -1372,6 +1395,8 @@ func _test_stage_machine() -> void:
 	check(events["phase_changed"] == [&"run"], "17: idle -> run is the only phase change so far, got %s"
 		% [events["phase_changed"]])
 	check(spawner.spawn_calls == [true], "17: opening a stage turns the spawner on, got %s" % [spawner.spawn_calls])
+	check(int(game.next_turn_direction) == 0,
+		"17: no turn is pending at the top of a stage, got %d" % int(game.next_turn_direction))
 
 	# The drain gate: the spawner stops a drain's worth of metres before the target.
 	_tick(drivers, _ticks(1.0))
@@ -1384,6 +1409,13 @@ func _test_stage_machine() -> void:
 		% float(stage.stage_distance))
 	check(spawner.spawn_calls == [true, false], "17: the drain gate fires once, got %s" % [spawner.spawn_calls])
 	check(float(game.run_clock) > clock_before_drain, "17: the drain is still part of the run clock")
+	# The direction is drawn at the drain gate, a warning's worth of metres before it is announced.
+	var pending := int(game.next_turn_direction)
+	check(pending == -1 or pending == 1,
+		"17: the drain gate picks the seam's direction, got %d" % pending)
+	check(events["turn_incoming"].is_empty(),
+		"17: the warning waits for its 12 m lead, %.1f m in with 60 m asked for and %s"
+			% [float(stage.stage_distance), events["turn_incoming"]])
 
 	# A blocking hazard short of the clear line holds the stage open until the drain times out, and
 	# then it is taken out silently: no dodge, no bonus, no hazard_cleared.
@@ -1401,13 +1433,26 @@ func _test_stage_machine() -> void:
 	check(stage.phase == &"turn", "17: the drain timeout moves the stage on, got %s" % stage.phase)
 	check(events["bonus_awarded"].is_empty(), "17: a silent drain clear pays no bonus")
 
-	# The turn: one signal each way, both rigs swept and both back at square.
+	# The turn: announced once, one signal each way, both rigs swept and both back at square.
 	check(events["turn_started"].size() == 1, "17: turn_started fires once, got %d"
 		% events["turn_started"].size())
 	var direction := int(events["turn_started"][0][0])
 	check(direction == -1 or direction == 1, "17: the turn direction is -1 or +1, got %d" % direction)
 	check(is_equal_approx(float(events["turn_started"][0][1]), 0.4),
 		"17: turn_started carries turn_seconds, got %.2f" % float(events["turn_started"][0][1]))
+	check(events["turn_incoming"].size() == 1, "17: turn_incoming fires once per seam, got %d"
+		% events["turn_incoming"].size())
+	check(events["turn_log"] == [&"incoming", &"started"],
+		"17: the corner is announced before it is taken, got %s" % [events["turn_log"]])
+	check(int(events["turn_incoming"][0][0]) == direction and pending == direction,
+		"17: the warning, the pending direction and the bend disagree: %d / %d / %d"
+			% [int(events["turn_incoming"][0][0]), pending, direction])
+	var lead := float(events["turn_incoming"][0][1])
+	check(lead >= 0.0 and lead <= float(game.config.turn_warning_seconds) + 0.5,
+		"17: turn_incoming promised %.3f s, expected 0 .. %.1f"
+			% [lead, float(game.config.turn_warning_seconds) + 0.5])
+	check(int(game.next_turn_direction) == direction,
+		"17: next_turn_direction holds through the bend, got %d" % int(game.next_turn_direction))
 	var clock_at_turn := float(game.run_clock)
 	var turns_before: int = turn_rig.turns.size()
 	_tick_stage(drivers, game, _ticks(0.2))
@@ -1424,6 +1469,8 @@ func _test_stage_machine() -> void:
 		"17: the turn rig ends square, got %.3f / %d" % [float(turn_rig.turn_progress), int(turn_rig.turn_direction)])
 	check(is_zero_approx(float(camera.turn_progress)) and int(camera.turn_direction) == 0,
 		"17: the camera ends square, got %.3f / %d" % [float(camera.turn_progress), int(camera.turn_direction)])
+	check(int(game.next_turn_direction) == 0,
+		"17: no turn is pending once the bend is over, got %d" % int(game.next_turn_direction))
 	check(int(stage.turns_taken) == 1, "17: the turn is counted for the result, got %d" % int(stage.turns_taken))
 
 	# No arena is mounted here, so the boss phase is the documented fallback: it ends on the tick it
@@ -1957,6 +2004,105 @@ func _test_leaderboard_migration() -> void:
 	check(RunnerLeaderboard.SUPPORTED_VERSIONS == [1, 2],
 		"26: exactly versions 1 and 2 are readable, got %s" % [RunnerLeaderboard.SUPPORTED_VERSIONS])
 
+# --- 27. The camera turn swing is ramp-hold-return, not a wave (contract §11.9, systems §10.5) ---
+
+func _test_turn_camera_profile() -> void:
+	# The real camera_rig.gd, kept out of the tree on purpose: the profile is pure, and _ready() would
+	# go looking for a $Camera this bare Node3D does not have.
+	var rig := Node3D.new()
+	rig.set_script(camera_rig_script)
+	rig.config = base_config.duplicate()
+	var rise := float(rig.config.turn_swing_in_fraction)
+	var fall := float(rig.config.turn_swing_out_fraction)
+
+	check(is_zero_approx(rig.turn_swing_profile(0.0)) and is_zero_approx(rig.turn_swing_profile(1.0)),
+		"27: the swing is zero at both ends, got %.4f / %.4f"
+			% [rig.turn_swing_profile(0.0), rig.turn_swing_profile(1.0)])
+	# Out of range on either side is the same rest pose, so a caller that overshoots cannot displace
+	# the camera either.
+	check(is_zero_approx(rig.turn_swing_profile(-0.5)) and is_zero_approx(rig.turn_swing_profile(1.5)),
+		"27: a progress outside 0..1 still rests at zero")
+
+	# The hold: at the peak from the end of the ramp to the start of the return, which is where the
+	# corner reads as "you are turning LEFT" rather than as a wave through the middle.
+	for p in [rise, 0.5, 1.0 - fall]:
+		check(is_equal_approx(rig.turn_swing_profile(p), 1.0),
+			"27: the swing holds at the peak at p = %.2f, got %.4f" % [p, rig.turn_swing_profile(p)])
+	check(rig.turn_swing_profile(rise * 0.5) < 1.0 and rig.turn_swing_profile(1.0 - fall * 0.5) < 1.0,
+		"27: the ramps are below the peak, got %.4f / %.4f"
+			% [rig.turn_swing_profile(rise * 0.5), rig.turn_swing_profile(1.0 - fall * 0.5)])
+
+	# Monotone in and monotone out, sampled across each ramp.
+	var steps := 24
+	var previous := float(rig.turn_swing_profile(0.0))
+	var climbing := true
+	for i in range(1, steps + 1):
+		var value := float(rig.turn_swing_profile(rise * float(i) / float(steps)))
+		if value < previous - 0.0001:
+			climbing = false
+		previous = value
+	check(climbing, "27: the swing must never fall while it is ramping in")
+	previous = float(rig.turn_swing_profile(1.0 - fall))
+	var falling := true
+	for i in range(1, steps + 1):
+		var value := float(rig.turn_swing_profile(1.0 - fall + fall * float(i) / float(steps)))
+		if value > previous + 0.0001:
+			falling = false
+		previous = value
+	check(falling, "27: the swing must never rise while it is returning")
+
+	# The direction is a plain sign on top of the profile, and set_turn clamps both inputs.
+	rig.set_turn(1.4, -3)
+	check(is_equal_approx(float(rig.turn_progress), 1.0) and int(rig.turn_direction) == -1,
+		"27: set_turn clamps to 0..1 and to a sign, got %.2f / %d"
+			% [float(rig.turn_progress), int(rig.turn_direction)])
+	# A config with no hold window left still answers zero at the ends: the fractions are scaled to
+	# fit rather than allowed to overlap into a step.
+	var crowded: RunConfig = base_config.duplicate()
+	crowded.turn_swing_in_fraction = 0.9
+	crowded.turn_swing_out_fraction = 0.9
+	rig.config = crowded
+	check(is_zero_approx(rig.turn_swing_profile(0.0)) and is_zero_approx(rig.turn_swing_profile(1.0))
+		and is_equal_approx(rig.turn_swing_profile(0.5), 1.0),
+		"27: overlapping ramps are scaled to meet at the middle, got %.4f / %.4f / %.4f"
+			% [rig.turn_swing_profile(0.0), rig.turn_swing_profile(0.5), rig.turn_swing_profile(1.0)])
+	rig.free()
+
+# --- 28. The boss entrance: boss_intro opens the fight, boss_spawned follows (contract §11.4) ---
+
+func _test_boss_intro() -> void:
+	var intro_seconds := 1.5
+	var rig := _boss_rig({"boss_intro_seconds": intro_seconds, "boss_outro_seconds": 0.0})
+	var arena: Node3D = rig["arena"]
+	var events: Dictionary = rig["events"]
+	arena.start(1)
+	check(events["boss_log"] == [&"intro", &"spawned"],
+		"28: the entrance card precedes the boss, got %s" % [events["boss_log"]])
+	check(events["boss_intro"].size() == 1, "28: boss_intro fires once per fight, got %d"
+		% events["boss_intro"].size())
+	check(StringName(events["boss_intro"][0][0]) == &"flaky_test_swarm"
+		and String(events["boss_intro"][0][1]) == "Flaky Test Swarm",
+		"28: boss_intro names the boss, got %s" % [events["boss_intro"][0]])
+	check(is_equal_approx(float(events["boss_intro"][0][2]), intro_seconds),
+		"28: boss_intro carries boss_intro_seconds, got %.3f" % float(events["boss_intro"][0][2]))
+
+	# Nothing is thrown and nothing is dropped while the card is up (contract §11.4).
+	for i in _ticks(intro_seconds - 0.1):
+		arena.tick(TICK)
+	check(events["boss_attack_telegraph"].is_empty(),
+		"28: the intro telegraphed %d attack(s)" % events["boss_attack_telegraph"].size())
+	check(int(arena.tool_count()) == 0, "28: the intro dropped %d tool(s)" % int(arena.tool_count()))
+	check(events["boss_intro"].size() == 1, "28: the intro is announced once, not per tick")
+
+	# And once it is over the fight runs: the first beat is telegraphed on the authored interval.
+	for i in _ticks(2.2):
+		arena.tick(TICK)
+	check(not events["boss_attack_telegraph"].is_empty(),
+		"28: the fight never opened fire after the %.1f s intro" % intro_seconds)
+	check(events["boss_log"] == [&"intro", &"spawned"],
+		"28: neither entrance signal repeats, got %s" % [events["boss_log"]])
+	_free_rig(rig)
+
 func _has_run(entries: Array, run_id: String) -> bool:
 	for item in entries:
 		if String((item as Dictionary).get("run_id", "")) == run_id:
@@ -2239,8 +2385,15 @@ func _watch_stage(game: Node) -> Dictionary:
 		"phase_changed": [],
 		"stage_started": [],
 		"stage_cleared": [],
+		"turn_incoming": [],
 		"turn_started": [],
 		"turn_finished": 0,
+		## The order the seam's two turn signals actually arrived in, so "the warning came first" is
+		## proven rather than inferred from two independent counts (contract §11.4).
+		"turn_log": [],
+		"boss_intro": [],
+		## Same idea for the fight: boss_intro must precede boss_spawned.
+		"boss_log": [],
 		"boss_spawned": [],
 		"boss_health_changed": [],
 		"boss_phase_changed": [],
@@ -2256,12 +2409,20 @@ func _watch_stage(game: Node) -> Dictionary:
 		events["stage_started"].append([index, name, speed]))
 	game.stage_cleared.connect(func(index: int, bonus: int) -> void:
 		events["stage_cleared"].append([index, bonus]))
+	game.turn_incoming.connect(func(direction: int, seconds: float) -> void:
+		events["turn_incoming"].append([direction, seconds])
+		events["turn_log"].append(&"incoming"))
 	game.turn_started.connect(func(direction: int, seconds: float) -> void:
-		events["turn_started"].append([direction, seconds]))
+		events["turn_started"].append([direction, seconds])
+		events["turn_log"].append(&"started"))
 	game.turn_finished.connect(func() -> void:
 		events["turn_finished"] += 1)
+	game.boss_intro.connect(func(kind: StringName, name: String, seconds: float) -> void:
+		events["boss_intro"].append([kind, name, seconds])
+		events["boss_log"].append(&"intro"))
 	game.boss_spawned.connect(func(kind: StringName, hp: int) -> void:
-		events["boss_spawned"].append([kind, hp]))
+		events["boss_spawned"].append([kind, hp])
+		events["boss_log"].append(&"spawned"))
 	game.boss_health_changed.connect(func(hp: int, max_hp: int) -> void:
 		events["boss_health_changed"].append([hp, max_hp]))
 	game.boss_phase_changed.connect(func(phase: int) -> void:
