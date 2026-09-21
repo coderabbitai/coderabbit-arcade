@@ -451,7 +451,10 @@ Kinds: `flaky_test_swarm`, `merge_conflict_hydra`, `legacy_monolith`. Base vars 
 | `play_defeat()` / `play_retreat()` | fight end; the backend frees the boss after `boss_outro_seconds` |
 
 Envelope: a bounding box ≤ 7 m wide × 3 m deep with its vertical extent inside y ∈ [1.6, 6.1] (bottom edge never
-below y 1.6; 4.5 m of headroom), core nominally centred around y 2.6 at `hover_z`; ≤ 40 draw calls at peak. The boss has no hitbox. Graybox fallback: a tinted box with a Label3D name plate (backend).
+below y 1.6; 4.5 m of headroom), core nominally centred around y 2.6 at `hover_z`; ≤ 40 draw calls at peak.
+**Entrance exception (v2.1):** during the `boss_intro` window the visual may travel in from the far end, but at every
+frame its bounds must still satisfy x ∈ [−3.5, 3.5] and y ∈ [1.6, 6.1]; only z may extend beyond the box, and only
+toward the far end (never closer to the player than `hover_z + 3`). Nothing rises from under the floor. The boss has no hitbox. Graybox fallback: a tinted box with a Label3D name plate (backend).
 
 ### 11.6 Projectiles (extends §8) — `hazards/visuals/projectile_visual.tscn` extends `hazards/hazard_visual_base.gd`
 
