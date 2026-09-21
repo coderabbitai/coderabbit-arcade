@@ -9,6 +9,8 @@ var clock := 0.0
 var game: Node
 var values := {"strength": 0.0, "corner_bars": 0.0, "aberration": 0.0, "letterbox": 0.0, "speed": 0.0, "bloom_lift": 0.0}
 var transitions: Dictionary = {}
+# Only tweens observed running before our pause may be resumed.
+var suspended: Dictionary = {}
 var signal_handlers: Dictionary = {}
 var signal_paused := false
 var grain_seed := 17
@@ -86,6 +88,18 @@ func _cancel(key: String) -> void:
 		if old.is_valid():
 			old.kill()
 		transitions.erase(key)
+	suspended.erase(key)
+
+func _transition_finished(key: String, instance_id: int) -> void:
+	# A replaced tween must never erase the newer transition under the same key.
+	if transitions.has(key) and transitions[key].get_instance_id() == instance_id:
+		transitions.erase(key)
+		suspended.erase(key)
+
+func _suspend(key: String, tween: Tween) -> void:
+	if tween.is_valid() and tween.is_running():
+		suspended[key] = tween.get_instance_id()
+		tween.pause()
 
 func _animate(key: String, target: float, seconds: float = 0.18, hold: float = -1.0) -> void:
 	_cancel(key)
@@ -94,12 +108,13 @@ func _animate(key: String, target: float, seconds: float = 0.18, hold: float = -
 		return
 	var tween := create_tween().set_pause_mode(Tween.TWEEN_PAUSE_BOUND)
 	transitions[key] = tween
+	tween.finished.connect(_transition_finished.bind(key, tween.get_instance_id()), CONNECT_ONE_SHOT)
 	tween.tween_method(_write.bind(key), float(values[key]), target, maxf(seconds, 0.001)).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	if hold >= 0.0:
 		tween.tween_interval(hold)
 		tween.tween_method(_write.bind(key), target, 0.0, 0.22).set_trans(Tween.TRANS_SINE)
 	if signal_paused:
-		tween.pause()
+		_suspend(key, tween)
 
 func _reset() -> void:
 	for key: String in transitions.keys():
@@ -170,11 +185,18 @@ func _finished(_result: Dictionary) -> void:
 
 func _paused(value: bool) -> void:
 	signal_paused = value
-	for tween: Tween in transitions.values():
-		if tween.is_valid():
-			if value:
-				tween.pause()
-			else:
+	for key: String in transitions.keys():
+		var tween: Tween = transitions[key]
+		if not tween.is_valid():
+			transitions.erase(key)
+			suspended.erase(key)
+		elif value:
+			_suspend(key, tween)
+		elif suspended.get(key, 0) == tween.get_instance_id():
+			# pause() makes is_running() false. Resume only our recorded live pause,
+			# never an arbitrary non-running tween (which may already be finished).
+			suspended.erase(key)
+			if not tween.is_running():
 				tween.play()
 
 func _exit_tree() -> void:
