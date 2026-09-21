@@ -275,8 +275,9 @@ Three layers:
 Pillars: apply `x += bend * d * d` plus the local yaw to the 24 CPU instances. **Far glow / corner:** `FarGlow` fades out
 over `progress 0 → 0.3` sliding along the bend, back in `0.7 → 1.0`; a `CornerWall` 12 × 7 quad at z −52, yawed
 `direction * 55°`, `code_wall` duplicate at `intensity 0.4`, with a `TURN` chevron decal, fades in as FarGlow fades
-out. Draw budget, one consistent set of numbers: base corridor **10** draws (measured), turn peak **12** (the CornerWall ↔
-FarGlow crossfade adds at most **+1**, the bent pillars add none, the TURN chevron decal +1 while visible), documented
+out. Draw budget, one consistent set of numbers: base corridor **10** draws (measured), turn peak **13** (the CornerWall ↔
+FarGlow crossfade adds at most **+1**, the bent pillars add none, the outlined TURN chevron Label3D counts **+2** while
+visible under the census rule that an outlined Label3D is two draws), documented
 corridor budget raised from 15 to **18** so `capture_previews.gd` and `check_turn()` assert `≤ 18` during a turn and
 `≤ 14` at rest. Pause: PAUSABLE, all
 uniforms GDScript-driven, no `TIME`. `turn_whoosh` at `progress 0.05`; HUD dims non-essential widgets to α0.55;
@@ -396,7 +397,7 @@ recapture `endless-runner-hud.png` and `endless-runner-gameplay.png`. Fixtures i
 
 | Addition | Steady | Peak |
 |---|---|---|
-| Corridor turn (base 10; rest budget 14, turn budget 18) | +0 | +2 |
+| Corridor turn (base 10; rest budget 14, turn budget 18) | +0 | +3 (13 measured mid-turn) |
 | Boss visual (each) | ≤ 18 | ≤ 34 (defeat) |
 | Lane telegraph (3 max) | 3 | 9 |
 | Projectile (≤ 6 live) | 2–3 | 18 |
