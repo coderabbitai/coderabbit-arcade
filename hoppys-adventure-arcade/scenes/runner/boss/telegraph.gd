@@ -9,6 +9,7 @@ var seconds := 1.0
 var inset: MeshInstance3D
 var beam_material: ShaderMaterial
 var tag: Label3D
+var countdown_material: ShaderMaterial
 
 func _init() -> void:
 	# Cosmetic transforms are animated on render frames, not physics ticks.
@@ -18,11 +19,11 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
 	var floor_mesh := QuadMesh.new()
 	floor_mesh.size = Vector2(2, 30)
-	var floor_decal := Art.shape(self, floor_mesh, Vector3(0, 0.008, -14), Materials.additive(Palette.DANGER, 0.35))
-	floor_decal.rotation.x = -PI / 2
-	var inset_mesh := QuadMesh.new()
-	inset_mesh.size = Vector2(1.7, 29.5)
-	inset = Art.shape(self, inset_mesh, Vector3(0, 0.012, -14), Materials.additive(Palette.MATRIX, 0.4))
+	countdown_material = ShaderMaterial.new()
+	countdown_material.shader = Hologram
+	countdown_material.set_shader_parameter("floor_projection", true)
+	countdown_material.set_shader_parameter("color", Color(Palette.DANGER, 0.9))
+	inset = Art.shape(self, floor_mesh, Vector3(0, 0.025, -14), countdown_material)
 	inset.rotation.x = -PI / 2
 	var beam := QuadMesh.new()
 	beam.size = Vector2(1.9, 5)
@@ -30,6 +31,8 @@ func _ready() -> void:
 	beam_material.shader = Hologram
 	Art.shape(self, beam, Vector3(0, 2.5, -10), beam_material)
 	tag = Art.label(self, "ORB", Vector3(0, 2.4, -7), 0.006)
+	# Retain text metadata for the existing hook/smoke contract, without drawing it.
+	tag.hide()
 	hide()
 
 func start(lane: int, kind: StringName, duration: float) -> void:
@@ -49,7 +52,8 @@ func _process(delta: float) -> void:
 	if not active: return
 	remaining = maxf(0, remaining - delta)
 	var progress := 1 - remaining / seconds
-	inset.scale.y = maxf(1 - progress, 0.001)
+	countdown_material.set_shader_parameter("clock", seconds - remaining)
+	countdown_material.set_shader_parameter("progress", progress)
 	beam_material.set_shader_parameter("clock", seconds - remaining)
 	beam_material.set_shader_parameter("color", Color(Palette.DANGER, lerpf(0.15, 0.55, progress)))
 	if remaining <= 0: clear()
