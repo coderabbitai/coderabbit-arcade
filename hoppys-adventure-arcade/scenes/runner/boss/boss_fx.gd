@@ -10,6 +10,7 @@ var game: Node
 var connections: Dictionary = {}
 var cursor := 0
 var number_cursor := 0
+const MAX_ACTIVE_NUMBERS := 3
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -91,3 +92,15 @@ func _intro(_kind: StringName, _name: String, seconds: float) -> void:
 	if not is_instance_valid(boss): return
 	for visual in boss.get_children():
 		if visual.has_method("play_intro"): visual.play_intro(seconds)
+
+func limit_numbers(incoming: Node3D) -> void:
+	# Keep six reusable slots for the established smoke contract; only three draw.
+	var active: Array[Node3D] = []
+	for node in numbers:
+		if node != incoming and node.active: active.append(node)
+	while active.size() >= MAX_ACTIVE_NUMBERS:
+		var oldest := active[0]
+		for node in active:
+			if node.age > oldest.age: oldest = node
+		oldest.clear()
+		active.erase(oldest)
