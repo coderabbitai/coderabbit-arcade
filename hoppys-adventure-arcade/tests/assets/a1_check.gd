@@ -98,6 +98,78 @@ func sample(hoppy: Node3D, state: StringName, time: float) -> void:
 	check(Capture.pose_for_view(hoppy, state, time), "capture sampler selects " + state)
 	hoppy._process(0.0)
 
+func check_joints(hoppy: Node3D) -> void:
+	var sk: Skeleton3D = hoppy.skeleton
+	var player: AnimationPlayer = hoppy.animation_player
+	var values: Dictionary = {}
+	for state in STATES:
+		var ranges: Dictionary = {}
+		for name in ["forearm_L", "forearm_R", "shin_L", "shin_R"]:
+			ranges[name] = Vector2(INF, -INF)
+		for frame in 25:
+			Capture.pose_for_view(hoppy, state, player.get_animation(state).length * frame / 24.0)
+			sk.force_update_all_bone_transforms()
+			for name: String in ranges:
+				var bone := sk.find_bone(name)
+				var parent := sk.get_bone_parent(bone)
+				var rest := (sk.get_bone_global_rest(parent).affine_inverse() * sk.get_bone_global_rest(bone)).basis.orthonormalized()
+				var posed := sk.get_bone_global_pose(parent).affine_inverse() * sk.get_bone_global_pose(bone)
+				var direction := posed.basis.orthonormalized() * Vector3.UP
+				var angle := (rest * Vector3.UP).signed_angle_to(direction, rest * Vector3.RIGHT)
+				var flexion := angle * (-1.0 if name.begins_with("shin") else 1.0)
+				if state == &"run" and name.begins_with("shin"):
+					if frame in [0, 12, 24]:
+						check(flexion >= 0.34 and flexion <= 0.46, "contact-quarter knee absorption " + name + " frame " + str(frame))
+					if (name == "shin_R" and frame == 6) or (name == "shin_L" and frame == 18):
+						check(flexion >= 0.20 and flexion <= 0.26, "mid-stance knee extension " + name)
+				var span: Vector2 = ranges[name]
+				ranges[name] = Vector2(minf(span.x, flexion), maxf(span.y, flexion))
+		for name: String in ranges:
+			var span: Vector2 = ranges[name]
+			var knee := name.begins_with("shin")
+			check(span.x >= -0.01 and span.y <= (1.91 if knee else 1.76), "anatomical bend direction and clamp " + str(state) + " " + name)
+			if state == &"run":
+				check(span.y >= (1.4 if knee else 1.2), "run joint flexion " + name)
+				check(span.x >= (0.15 if knee else 1.19) and span.y <= (1.7 if knee else 1.61), "run flexion band " + name)
+				if knee:check(span.x >= 0.20 and span.x <= 0.26, "run shin minimum remains near 0.22 " + name)
+			if state == &"idle":
+				check(span.x >= (0.15 if knee else 0.25) and span.y <= (0.25 if knee else 0.4), "soft idle flexion " + name)
+			if state == &"jump":
+				check(span.y >= (1.2 if knee else 0.9), "jump tuck flexion " + name)
+			if state == &"fall":
+				check(span.x >= (0.4 if knee else 0.6) and span.y <= (0.7 if knee else 0.9), "fall relaxed extension " + name)
+			if state == &"roll":
+				check(span.x >= (1.8 if knee else 1.6), "full roll tuck " + name)
+			if state == &"hurt" and not knee:
+				check(span.y >= 1.0, "hurt elbow flinch " + name)
+			if state == &"dead":
+				check(span.x >= 0.3 and span.y <= 0.6, "relaxed dead joints " + name)
+		values[state] = ranges
+	print("A1 JOINTS: ", values)
+	for state in [&"idle", &"run"]:
+		for frame in 25:
+			Capture.pose_for_view(hoppy, state, player.get_animation(state).length * frame / 24.0)
+			var left := Capture.limb_bounds(hoppy, ["foot_L"])
+			var right := Capture.limb_bounds(hoppy, ["foot_R"])
+			check(left.position.y >= -0.003 and right.position.y >= -0.003 and absf(minf(left.position.y, right.position.y)) < 0.008, "planted sole %s frame %d: min_y=%.4f left_y=%.4f right_y=%.4f" % [state, frame, minf(left.position.y, right.position.y), left.position.y, right.position.y])
+	# Match the export rate; catch import resampling/optimization regressions too.
+	for state in [&"idle", &"run"]:
+		var low := INF
+		var high := -INF
+		var steps := int(round(player.get_animation(state).length * 120.0))
+		for frame in steps + 1:
+			Capture.pose_for_view(hoppy, state, player.get_animation(state).length * frame / steps)
+			var sole := Capture.limb_bounds(hoppy, ["foot_L", "foot_R"])
+			low = minf(low, sole.position.y)
+			high = maxf(high, sole.position.y)
+		print("A1 SOLE SWEEP %s: 120 Hz min_y=%.6f max_y=%.6f samples=%d" % [state, low, high, steps + 1])
+		check(low >= -0.002 and high <= 0.007, "120 Hz sole band " + state)
+	Capture.pose_for_view(hoppy, &"jump", 7.5 / 30.0)
+	var tuck := Capture.jump_tuck_metrics(hoppy)
+	print("A1 JUMP TUCK: ", tuck)
+	check(tuck["pass"], "jump skeleton heel lifts toward hips: " + str(tuck))
+	Capture.pose_for_view(hoppy, &"idle", 0.0)
+
 func run() -> void:
 	await process_frame
 	root.get_node("AudioService").music.stop()
@@ -113,6 +185,8 @@ func run() -> void:
 	check(report.script_sha256 == gltf.asset.extras.build_script_sha256, "sidecar matches embedded generator hash")
 	check(report.generator == gltf.asset.generator and report.blender == "5.2.2 LTS", "generator provenance")
 	check(FileAccess.get_sha256("res://tools/blender/build_hoppy.py") == report.script_sha256, "build script hash matches asset")
+	check(report.get("contact_revision", 0) == 16, "120 Hz contact recipe revision retained")
+	check(report.get("joint_revision", 0) == 14, "round-14 articulated limb bake required")
 	check(report.get("recipe_revision", 0) == 6, "round-6 bake required: palette and brace corrections")
 	if report.get("recipe_revision", 0) == 6:
 		var rgb: Array = report.hoodie_linear
@@ -224,7 +298,17 @@ func run() -> void:
 	check(not Guard.measure(synthetic, mask)["pass"], "synthetic blown highlights rejected")
 	check(hoppy._shield.visible, "shield request before ready")
 	check(player.get_animation_list().size() == 7, "exactly seven actions")
+	var import_settings := ConfigFile.new()
+	check(import_settings.load(BASE + "hoppy.glb.import") == OK and import_settings.get_value("params", "animation/fps") == 120, "import preserves 120 Hz animation sampling")
+	var root_position_keys := 0
+	var run_clip := player.get_animation(&"run")
+	for track in run_clip.get_track_count():
+		if run_clip.track_get_type(track) == Animation.TYPE_POSITION_3D and str(run_clip.track_get_path(track)).ends_with(":root"):
+			root_position_keys = run_clip.track_get_key_count(track)
+	check(root_position_keys >= 73, "import retains grounded run root keys")
+	var expected_lengths := {&"idle": 1.6, &"run": 0.6, &"jump": 0.5, &"fall": 0.8, &"roll": 0.8, &"hurt": 0.6, &"dead": 1.2}
 	for state in STATES:
+		check(is_equal_approx(player.get_animation(state).length, expected_lengths[state]), "clip duration preserved " + state)
 		check(player.has_animation(state), "action " + state)
 		var loop := Animation.LOOP_LINEAR if state in [&"idle", &"run", &"fall"] else Animation.LOOP_NONE
 		check(player.get_animation(state).loop_mode == loop, "loop flag " + state)
@@ -242,6 +326,8 @@ func run() -> void:
 	check(imported_tris == model_tris, "Godot imported triangle census matches sidecar")
 	census(hoppy)
 	check(draws <= 40 and triangles <= 40000 and textures.size() <= 8, "whole-visual budgets")
+	var budget: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://tools/blender/hoppy_budget.json"))
+	check(triangles - model_tris == int(budget.effect_triangles), "measured effects match shared Blender budget")
 	for texture: Texture2D in textures.values():
 		var limit := 1024 if texture.resource_path.contains("accessory") else 2048
 		check(texture.get_width() <= limit and texture.get_height() <= limit, "atlas-specific texture dimensions")
@@ -297,6 +383,7 @@ func run() -> void:
 	sample(hoppy, &"idle", 0.0)
 	var restored := skin_bounds(hoppy)
 	check(absf(restored.end.y - 1.8) < 0.004, "roll exit restores upright skeleton")
+	check_joints(hoppy)
 	for speed in [-1.0, 0.0, 0.5, 1.0, 2.0]:
 		hoppy.set_anim_state(&"run")
 		hoppy.set_run_speed(speed)

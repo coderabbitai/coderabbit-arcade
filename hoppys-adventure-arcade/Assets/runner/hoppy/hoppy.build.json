@@ -5,6 +5,29 @@
     0.25,
     0.067
   ],
+  "stance_revision": 17,
+  "effect_triangles": 1392,
+  "joint_revision": 14,
+  "contact_revision": 16,
+  "sole_sweeps": {
+    "idle": {
+      "hz": 120,
+      "samples": 193,
+      "min_y": -1.0238727554678917e-07,
+      "max_y": 7.191556505858898e-08
+    },
+    "run": {
+      "hz": 120,
+      "samples": 73,
+      "min_y": -4.5925844460725784e-08,
+      "max_y": 5.061156116425991e-08
+    }
+  },
+  "animation_sample_rate": 120,
+  "joint_bend_signs": {
+    "forearm": 1,
+    "shin": -1
+  },
   "brace_profile": [
     [
       0.02,
@@ -40,43 +63,43 @@
     0.162
   ],
   "back_mark_z": 0.268,
-  "script_sha256": "785b08a18476251e18ca0e65257edcd1b51d6fd5c770711a55c9c20d052a90a7",
+  "script_sha256": "5ff4a39aadeca3bda630400b0cf0e2e276ba7c1c97150c92c00ca8bca6d9c63a",
   "atlas_helper_sha256": "33cd94ba483671e156465bde7ea6e0aecf59ce6e7fa84d0cc189509b5d138675",
   "blender": "5.2.2 LTS",
   "seed": 41027,
-  "triangles": 37088,
+  "triangles": 38416,
   "image_report": [
     {
       "index": 0,
       "name": "accessory_emissive",
       "width": 1024,
       "height": 1024,
-      "bytes": 134839,
-      "sha256": "0167d7ad9d5a3ccee88d82753abeb318f7f09092fc91fb8e0a71dedf3a6579e8"
+      "bytes": 134728,
+      "sha256": "9298aae1a24af6e457c09406db51e0fb5d42e9df21fcfd9e4a32ebbc8effe1e8"
     },
     {
       "index": 1,
       "name": "accessory_normal",
       "width": 1024,
       "height": 1024,
-      "bytes": 593155,
-      "sha256": "7cceb1b7bb1b7f19d643a6dca9f83af5b11462aa3162381cc025ef43840a04f4"
+      "bytes": 592835,
+      "sha256": "27d2ac8f0a90b5bd7da76556b52bd7723887071f4474d20b0f7580fc8009b605"
     },
     {
       "index": 2,
       "name": "accessory_albedo",
       "width": 1024,
       "height": 1024,
-      "bytes": 845654,
-      "sha256": "5831f503853116c6f8c07b557b5be78a99d85d896f2a87976a78f9326fe7d61c"
+      "bytes": 845757,
+      "sha256": "333efd60a6b12d66b590133f80588afc3191a843cf3a32bd9bf227e0b3b64e1e"
     },
     {
       "index": 3,
       "name": "accessory_orm",
       "width": 1024,
       "height": 1024,
-      "bytes": 280018,
-      "sha256": "65326abc0e48bfa713fda5f02dde1590594fb25ecb7ccb01278a25bfff2f2a51"
+      "bytes": 279821,
+      "sha256": "094b84d6c80a0acc01e0f868af3cd8c55a9ac56f55cbb2bf86c09d24cf25c09d"
     },
     {
       "index": 4,
@@ -91,24 +114,24 @@
       "name": "body_normal",
       "width": 2048,
       "height": 2048,
-      "bytes": 3050608,
-      "sha256": "e775b8d39df62a7119433063d6eef540b0f363abac3388092e380d7348e9be4d"
+      "bytes": 2923775,
+      "sha256": "e661c1b86431eb3e35dc05562008fbaed94a4c2fcb39245ec2b76661a8655756"
     },
     {
       "index": 6,
       "name": "body_albedo",
       "width": 2048,
       "height": 2048,
-      "bytes": 3094436,
-      "sha256": "9a7c6f11af2a848b73d8e8d3631ecf922570c4d94832e9b714d11be7c5a393c6"
+      "bytes": 3043670,
+      "sha256": "fd5fe60971e825430f1e2cc3d6eff49778cfb783e632bf140d1577d127887d20"
     },
     {
       "index": 7,
       "name": "body_orm",
       "width": 2048,
       "height": 2048,
-      "bytes": 242272,
-      "sha256": "f367355b843249ae17da08363c3a253317f1553f82f906c843577d64ac648856"
+      "bytes": 254073,
+      "sha256": "7eed244c949b2f6ffa279d026171aefdc5c20c2517a1f3402423eba0c345bd41"
     }
   ],
   "textures": [
@@ -162,8 +185,8 @@
     "foot_R"
   ],
   "roll_bounds_y": [
-    0.12225532531738281,
-    0.7871978282928467
+    0.08456936478614807,
+    0.8154305219650269
   ],
   "height": 1.8,
   "forward": [

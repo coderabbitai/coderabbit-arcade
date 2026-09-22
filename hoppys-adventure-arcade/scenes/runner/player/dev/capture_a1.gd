@@ -50,9 +50,14 @@ func capture() -> void:
 	camera.current = true
 	var directory := ProjectSettings.globalize_path("res://../docs/previews/assets")
 	DirAccess.make_dir_recursive_absolute(directory)
+	hoppy.animation_player.stop()
+	hoppy.skeleton.reset_bone_poses()
+	var standing_leg := limb_bounds(hoppy, ["leg_R", "shin_R", "foot_R"])
 	var views := [
 		["close", Vector3(1.35, 1.4, -2.1), Vector3(0, 0.95, 0), &"idle", false],
 		["run", Vector3(1.35, 1.4, -2.1), Vector3(0, 0.95, 0), &"run", false],
+		["run-side", Vector3(2.5, 0.65, 0), Vector3(0, 0.65, 0), &"run", false],
+		["jump", Vector3(2.2, 1.0, -1.1), Vector3(0, 0.85, 0), &"jump", false],
 		["gameplay", Vector3(0, 4, 8), Vector3(0, 1, -8), &"run", false],
 		["shield", Vector3(-2.4, 1.7, -3.3), Vector3(0, 0.9, 0), &"run", true],
 		["roll", Vector3(1.2, 1.0, -1.9), Vector3(0, 0.45, 0), &"roll", false],
@@ -72,10 +77,24 @@ func capture() -> void:
 			print("A1 CAPTURE TIMING corridor=%d ms" % corridor_ms)
 		camera.position = view[1]
 		camera.look_at(view[2])
-		if not pose_for_view(hoppy, view[3], 0.0 if view[3] == &"roll" else 0.24):
+		var pose_time := 0.0 if view[3] == &"roll" else 0.24
+		if view[0] == "run-side":pose_time = 16.5 / 30.0
+		if view[0] == "jump":pose_time = 7.5 / 30.0
+		if not pose_for_view(hoppy, view[3], pose_time):
 			printerr("ASSET A1 CAPTURE: incorrect animation for " + str(view[0]))
 			await finish(stage, 1)
 			return
+		if view[0] in ["run-side", "jump"]:
+			var bent := limb_bounds(hoppy, ["leg_R", "shin_R", "foot_R"])
+			var extent_delta := bent.size.z - standing_leg.size.z
+			print("A1 KNEE SILHOUETTE %s: standing=%.4f posed=%.4f delta=%.4f m" % [view[0], standing_leg.size.z, bent.size.z, extent_delta])
+			if view[0] == "jump":
+				var tuck := jump_tuck_metrics(hoppy)
+				print("A1 JUMP TUCK: ", tuck)
+				if not tuck["pass"]:palette_ok = false
+			if extent_delta < 0.05:
+				printerr("ASSET A1 CAPTURE: knee silhouette does not extend beyond standing")
+				palette_ok = false
 		hoppy.show_shield(view[4])
 		hoppy.show_aura(&"lgtm", view[4])
 		hoppy.set_run_speed(1)
@@ -207,3 +226,50 @@ static func measure_goggle_band(image: Image) -> Dictionary:
 	mean /= 77.0 * 19.0
 	# Authored veil a9b48d has saturation 0.217; opaque r11 62a48c has 0.402.
 	return {"pass": mean.s < 0.30, "mean_color": mean.to_html(false), "saturation": mean.s}
+
+static func limb_bounds(hoppy: Node3D, names: Array) -> AABB:
+	# CPU skin bounds for one leg/sole, valid with the dummy headless renderer too.
+	var skeleton: Skeleton3D = hoppy.skeleton
+	skeleton.force_update_all_bone_transforms()
+	var first := true
+	var bounds := AABB()
+	for mesh: MeshInstance3D in hoppy._meshes:
+		var skin := mesh.skin
+		var transforms: Array[Transform3D] = []
+		var selected: Array[bool] = []
+		for bind in skin.get_bind_count():
+			var bone := skin.get_bind_bone(bind)
+			if bone < 0:bone = skeleton.find_bone(skin.get_bind_name(bind))
+			transforms.append(skeleton.global_transform * skeleton.get_bone_global_pose(bone) * skin.get_bind_pose(bind))
+			selected.append(str(skeleton.get_bone_name(bone)) in names)
+		for surface in mesh.mesh.get_surface_count():
+			var arrays := mesh.mesh.surface_get_arrays(surface)
+			var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+			var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
+			var stride := bones.size() / vertices.size()
+			for vertex in vertices.size():
+				var point := Vector3.ZERO
+				var membership := 0.0
+				for joint in stride:
+					var index := vertex * stride + joint
+					var bind := bones[index]
+					var weight := weights[index]
+					if weight <= 0.0:continue
+					point += transforms[bind] * vertices[vertex] * weight
+					if selected[bind]:membership += weight
+				if membership < 0.5:continue
+				bounds = AABB(point, Vector3.ZERO) if first else bounds.expand(point)
+				first = false
+	assert(not first, "No vertices for requested limb")
+	return bounds
+
+static func jump_tuck_metrics(hoppy: Node3D) -> Dictionary:
+	var skeleton: Skeleton3D = hoppy.skeleton
+	skeleton.force_update_all_bone_transforms()
+	var knee := skeleton.get_bone_global_pose(skeleton.find_bone("shin_R")).origin
+	var ankle := skeleton.get_bone_global_pose(skeleton.find_bone("foot_R")).origin
+	var hip := skeleton.get_bone_global_pose(skeleton.find_bone("leg_R")).origin
+	# +Z is toward the tail; measure real joint positions along the bend plane.
+	return {"pass": ankle.z - knee.z >= 0.16 and ankle.y - knee.y >= -0.07 and hip.y - ankle.y <= 0.30,
+		"heel_back": ankle.z - knee.z, "heel_vs_knee_y": ankle.y - knee.y, "hip_to_heel_drop": hip.y - ankle.y}
