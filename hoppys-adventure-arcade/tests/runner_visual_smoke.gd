@@ -40,6 +40,13 @@ func frames() -> void:
 	await process_frame
 	await process_frame
 
+# Poll the observable result; wall-clock deadlines only bound a failed wait.
+func wait_until(predicate: Callable, deadline_seconds: float) -> bool:
+	var deadline := Time.get_ticks_msec() + int(deadline_seconds * 1000)
+	while not predicate.call() and Time.get_ticks_msec() < deadline:
+		await process_frame
+	return predicate.call()
+
 func bounds(node: Node3D) -> AABB:
 	# Hoppy only: imported Mesh AABBs are rest bounds, so evaluate skin vertices.
 	var result := AABB()
@@ -189,20 +196,12 @@ func run() -> void:
 		await frames()
 		# A queued hurt method can briefly tint the materials after changing state.
 		# Settle against immutable imported colors, not an arbitrary render frame.
-		for poll in 30:
-			if hoppy_material_colors(private_materials) == base_colors:
-				break
-			await create_timer(0.01).timeout
+		await wait_until(func() -> bool: return hoppy_material_colors(private_materials) == base_colors, 5.0)
 		check(hoppy_material_colors(private_materials) == base_colors, "prior hurt flash settles")
 		var colors_before := base_colors
 		hoppy.on_hit()
 		check(hoppy_material_colors(private_materials) != colors_before, "hit flash")
-		var flash_cleared := false
-		for poll in 30:
-			await create_timer(0.01).timeout
-			if hoppy_material_colors(private_materials) == colors_before:
-				flash_cleared = true
-				break
+		var flash_cleared := await wait_until(func() -> bool: return hoppy_material_colors(private_materials) == colors_before, 5.0)
 		check(flash_cleared, "flash clears")
 		var hurt_length := player.get_animation(&"hurt").length
 		for locomotion in [&"idle", &"run", &"jump", &"fall", &"roll"]:
@@ -691,7 +690,7 @@ func check_runner_ui() -> void:
 	check(bonuses.size() == 4 and bonuses.all(func(value: Array) -> bool: return value == [25, &"pickup"]), "every demo pickup awards 25")
 	for action in [&"jump", &"land", &"roll", &"roll_end", &"lane_left", &"lane_right"]:
 		check(action in seen_actions, "demo action emitted: " + action)
-	await create_timer(0.2).timeout
+	await wait_until(func() -> bool: return hud.score_label.text == "%08d" % mock.score, 5.0)
 	check(not hud.get_ready.visible and hud.hp_row.get_child_count() == 2, "running HUD approvals")
 	check(hud.hp_row.get_child(0).filled and not hud.hp_row.get_child(1).filled, "hit updates approval pips")
 	check(hud.pursuit_warning.visible and hud.pursuit_remaining < float(mock.config.recovery_seconds), "demo pursuit")
@@ -989,7 +988,7 @@ func check_runner_audio() -> void:
 	check(audio.heartbeat.stream == Synth.sound(&"heartbeat") and is_equal_approx(audio.heartbeat.pitch_scale, 0.8), "same player switches stream with pitch drop")
 	check(counts.get(&"heartbeat", 0) == 2, "new pursuit resets heartbeat latch once")
 	mock.damage_taken.emit(&"bug_swarm", 1)
-	await create_timer(0.10).timeout
+	await wait_until(func() -> bool: return service.music.volume_db < -17.0, 5.0)
 	check(service.music.volume_db < -17.0, "damage ducks music six dB")
 	for kind in [&"jump", &"roll", &"lane_left", &"lane_right"]:
 		mock.player_action.emit(kind)
@@ -1076,7 +1075,7 @@ func check_runner_audio() -> void:
 	check(counts.get(&"jump", 0) <= jumps + 1, "same sound rate limited within 40 ms")
 	mock.pursuit_recovered.emit(&"timer")
 	check(not audio.heartbeat.playing, "recovery stops heartbeat")
-	await create_timer(0.4).timeout
+	await wait_until(func() -> bool: return not audio.drone.playing and is_equal_approx(service.music.volume_db, -12.0), 5.0)
 	check(not audio.drone.playing and is_equal_approx(service.music.volume_db, -12.0), "drone fades out and music duck recovers")
 	mock.pursuit_started.emit(18.0)
 	mock.pursuit_progress.emit(1.0, 18.0)
@@ -1088,7 +1087,7 @@ func check_runner_audio() -> void:
 	mock.boss_spawned.emit(&"flaky_test_swarm", 100)
 	mock.boss_spawned.emit(&"flaky_test_swarm", 100)
 	check(is_equal_approx(service.music_volume_db, -16.0), "boss holds baseline once")
-	await create_timer(0.7).timeout
+	await wait_until(func() -> bool: return service.duck == null and is_equal_approx(service.music.volume_db, -16.0), 5.0)
 	check(service.duck == null and is_equal_approx(service.music.volume_db, -16.0), "boss hold does not refresh duck tweens")
 	for i in 3: mock.tool_collected.emit(&"unit_test", 15)
 	for mask in [1, 4]: mock.boss_projectile_fired.emit(null, mask, &"orb", 34.0)
@@ -1149,10 +1148,7 @@ func _isolate_routed_game(node: Node) -> void:
 	, CONNECT_ONE_SHOT)
 
 func _wait_for(predicate: Callable, seconds: float, message: String) -> bool:
-	var deadline := Time.get_ticks_msec() + int(seconds * 1000)
-	while not predicate.call() and Time.get_ticks_msec() < deadline:
-		await process_frame
-	var success: bool = predicate.call()
+	var success := await wait_until(predicate, seconds)
 	check(success, message)
 	return success
 
@@ -1587,10 +1583,10 @@ func check_tools_and_projectiles() -> void:
 	paused = false
 	for node in fx.numbers + fx.telegraphs: node._process(1.0)
 	for node in fx.numbers + fx.telegraphs + fx.tracers: check(not node.active, "FX pool returns idle")
-	await create_timer(0.75).timeout
+	await wait_until(func() -> bool: return is_equal_approx(hud.hp.value, 60.0 / 140) and is_equal_approx(hud.chip.value, hud.hp.value), 5.0)
 	check(is_equal_approx(hud.hp.value, 60.0 / 140) and is_equal_approx(hud.chip.value, hud.hp.value), "HP and delayed chip converge")
 	mock.boss_defeated.emit(&"merge_conflict_hydra", 800)
-	await create_timer(1.0).timeout
+	await wait_until(func() -> bool: return not hud.visible, 5.0)
 	check(not hud.visible, "HUD exits on defeat")
 	mock.free()
 	await frames()
