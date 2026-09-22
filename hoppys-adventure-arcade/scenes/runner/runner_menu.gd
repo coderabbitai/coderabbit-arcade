@@ -72,6 +72,7 @@ func _ready() -> void:
 	card.add_child(controls)
 	controls.add_child(Style.label("KEEP THE BUILD MOVING", 26, Style.MINT))
 	controls.add_child(Style.label("A / D · ← →  Change lane\nW / SPACE / ↑  Jump\nS / CTRL / ↓  Roll\nESC / START  Pause", 22))
+	controls.add_child(Style.teaching_legend(true))
 	controls.add_child(Style.label("Two hits without recovery\nand the backlog catches you.", 18))
 	_label("↑ ↓ / D-PAD  SELECT    ENTER / A  CONFIRM    ESC / B  BACK", 12, Vector2(76, 670), Color("9baebc"))
 	buttons[0].grab_focus()

@@ -53,6 +53,12 @@ var pursuit_panel: PanelContainer
 var toast_remaining := 0.0
 var turn_alpha := 1.0
 var pulse_clock := 0.0
+var teaching_seen := {}
+var teaching_pending: Array[Dictionary] = []
+var teaching_block_seconds := 0.0
+var teaching_phase: StringName = &"run"
+var toast_duration := 1.5
+var toast_teaching := false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -127,7 +133,7 @@ func _ready() -> void:
 	nitro_banner.hide()
 	nitro_panel.hide()
 	var ready_box := VBoxContainer.new()
-	ready_panel = _back(ready_box, Control.PRESET_CENTER_BOTTOM, Vector2(-390, -180), Vector2(780, 150), Palette.MINT, 0.88)
+	ready_panel = _back(ready_box, Control.PRESET_CENTER_BOTTOM, Vector2(-500, -190), Vector2(1000, 160), Palette.MINT, 0.88)
 	get_ready = Style.label("GET READY", 34)
 	get_ready.name = "GetReady"
 	get_ready.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -136,6 +142,9 @@ func _ready() -> void:
 		var hint := Style.label(line, 22)
 		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		ready_box.add_child(hint)
+	ready_box.add_child(Style.teaching_legend())
+	ready_panel.visibility_changed.connect(_sync_ready_speed)
+	_sync_ready_speed()
 	hit_flash = ColorRect.new()
 	hit_flash.name = "HitFlash"
 	screen.add_child(hit_flash)
@@ -210,9 +219,15 @@ func bind(runner: Node) -> void:
 	game.caught.connect(_caught)
 	game.state_changed.connect(_state)
 	game.paused_changed.connect(_paused)
-	game.damage_taken.connect(_damage)
+	if game.has_signal("damage_taken"): game.damage_taken.connect(_damage)
 	game.damage_blocked.connect(_blocked)
-	game.power_up_collected.connect(_powerup)
+	if game.has_signal("power_up_collected"):
+		game.power_up_collected.connect(_powerup)
+		game.power_up_collected.connect(_first_powerup)
+	if game.has_signal("tool_collected"): game.tool_collected.connect(_first_tool)
+	if game.has_signal("run_started"): game.run_started.connect(_reset_teaching)
+	if game.has_signal("boss_intro"): game.boss_intro.connect(_teaching_intro)
+	if game.has_signal("stage_cleared"): game.stage_cleared.connect(_teaching_clear)
 	game.power_up_expired.connect(_expire)
 	game.shield_changed.connect(_shield)
 	game.hazards_blasted.connect(func(count: int) -> void: _toast("AUTO-FIX ×%d" % count))
@@ -234,6 +249,10 @@ func _process(delta: float) -> void:
 		return
 	if not _gameplay_visible:
 		return
+	teaching_block_seconds = maxf(0.0, teaching_block_seconds - delta)
+	if toast_remaining <= 0 and not _teaching_blocked() and not teaching_pending.is_empty():
+		var hint: Dictionary = teaching_pending.pop_front()
+		_toast(hint.text, 10, hint.accent, 2.4, true)
 	if turn_panel.visible:
 		warning_age += delta
 		_update_turn_warning()
@@ -249,6 +268,9 @@ func _process(delta: float) -> void:
 		pulse_clock += delta * lerpf(3, 12, 1 - pursuit_ring.fraction)
 		pursuit_warning.modulate.a = 0.75 + 0.25 * sin(pulse_clock)
 		vignette_material.set_shader_parameter("pulse", 0.5 + 0.5 * sin(pulse_clock))
+	var speed_panel: Control = speed_label.get_parent().get_parent()
+	if speed_panel.visible:
+		speed_panel.self_modulate.a = minf(1.0, speed_panel.self_modulate.a + delta / 0.18)
 	ready_age += delta
 	ready_panel.modulate.a = clampf(1.0 - (ready_age - 2.5) / 0.25, 0, 1)
 	if ready_age >= 2.75:
@@ -360,6 +382,13 @@ func _state(value: StringName) -> void:
 		toast_panel.hide()
 	elif value == &"caught" or value == &"finished":
 		_caught()
+	_sync_ready_speed()
+
+func _sync_ready_speed() -> void:
+	# GET READY shares the lower band with SPEED, but never its visible surface.
+	var panel: Control = speed_label.get_parent().get_parent()
+	panel.visible = _gameplay_visible and not ready_panel.visible
+	if not panel.visible: panel.self_modulate.a = 0.0
 
 func _paused(value: bool) -> void:
 	widgets.modulate.a = 0.35 if value else 1.0
@@ -368,6 +397,7 @@ func _paused(value: bool) -> void:
 
 func _damage(_kind: StringName, _hp: int) -> void:
 	_flash(Color(1, 1, 1, 0.55))
+	_teach(&"damage", "RED = AVOID \u2014 jump or roll past hazards", Palette.DANGER)
 
 func _blocked(_kind: StringName, _reason: StringName) -> void:
 	_flash(Color(Palette.MINT, 0.3))
@@ -380,17 +410,17 @@ func _flash(color: Color) -> void:
 	flash_tween = create_tween()
 	flash_tween.tween_property(hit_flash, "color:a", 0.0, 0.18)
 
-func _toast(message: String, priority: int = 0, accent: Color = Palette.MINT) -> void:
+func _toast(message: String, priority: int = 0, accent: Color = Palette.MINT, duration: float = 1.5, teaching: bool = false) -> void:
 	if message.begins_with("STAGE CLEAR") or message.begins_with("INCOMING"):
 		priority = maxi(priority, 100)
 		accent = Palette.DANGER if message.begins_with("INCOMING") else Palette.MATRIX
 	elif message.begins_with("BLOCKED") or message.begins_with("RECOVERED"):
 		priority = maxi(priority, 50)
 		accent = Palette.MATRIX if message.begins_with("RECOVERED") else Palette.MINT
-	var entry := {"text": message.left(26), "priority": priority, "accent": accent, "sequence": _next_toast_sequence}
+	var entry := {"text": message if teaching else message.left(26), "duration": duration, "teaching": teaching, "priority": priority, "accent": accent, "sequence": _next_toast_sequence}
 	_next_toast_sequence += 1
 	if toast_remaining > 0 and priority > toast_priority:
-		toast_queue.append({"text": toast.text, "priority": toast_priority, "accent": toast_accent, "sequence": toast_sequence})
+		toast_queue.append({"text": toast.text, "priority": toast_priority, "accent": toast_accent, "sequence": toast_sequence, "duration": toast_duration, "teaching": toast_teaching})
 		_show_toast(entry)
 	else:
 		toast_queue.append(entry)
@@ -402,7 +432,12 @@ func _show_toast(entry: Dictionary) -> void:
 	toast_priority = entry.priority
 	toast_accent = entry.accent
 	toast_sequence = entry.sequence
-	toast_remaining = 1.5
+	toast_duration = entry.get("duration", 1.5)
+	toast_teaching = entry.get("teaching", false)
+	toast_remaining = toast_duration
+	toast.add_theme_font_size_override("font_size", 18 if toast_teaching else 28)
+	toast.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART if toast_teaching else TextServer.AUTOWRAP_OFF
+	toast.custom_minimum_size.x = 640 if toast_teaching else 0
 	toast_age = 0.0
 	toast_panel.add_theme_stylebox_override("panel", Style.panel(entry.accent))
 	Style.polish(toast_panel, false)
@@ -468,6 +503,8 @@ func _turn_finished() -> void:
 	_dim_turn(1.0)
 
 func _turn_phase(value: StringName) -> void:
+	teaching_phase = value
+	if value in [&"boss_intro", &"stage_clear"]: _defer_teaching()
 	if value in [&"idle", &"run"]: _turn_finished()
 	if value != &"turn": _dim_turn(1.0)
 
@@ -477,6 +514,8 @@ func _dim_turn(alpha: float) -> void:
 		widget.modulate.a = alpha
 
 func _turn_incoming(direction: int, seconds: float) -> void:
+	ready_panel.hide()
+	get_ready.hide()
 	warning_direction = direction
 	warning_seconds = maxf(seconds, 0.001)
 	warning_age = 0.0
@@ -492,3 +531,43 @@ func _update_turn_warning() -> void:
 
 func _exit_tree() -> void:
 	if is_instance_valid(turn_fx): turn_fx.queue_free()
+
+func _reset_teaching(_seed: int = 0) -> void:
+	toast_teaching = false
+	teaching_seen.clear()
+	teaching_pending.clear()
+	teaching_block_seconds = 0.0
+	teaching_phase = &"run"
+
+func _first_powerup(kind: StringName, _duration: float) -> void:
+	_teach(&"powerup", "GRABBED: %s \u2014 mint and orange items help you" % String(kind).replace("_", " ").to_upper(), Palette.MINT)
+
+func _first_tool(kind: StringName, _damage: int) -> void:
+	_teach(&"tool", "CODERABBIT TOOL: %s \u2014 auto-fires at the boss" % String(kind).replace("_", " ").to_upper(), Palette.ORANGE)
+
+func _teach(category: StringName, message: String, accent: Color) -> void:
+	if teaching_seen.has(category): return
+	teaching_seen[category] = true
+	teaching_pending.append({"text": message, "accent": accent})
+
+func _teaching_blocked() -> bool:
+	return teaching_block_seconds > 0 or teaching_phase in [&"boss_intro", &"stage_clear"]
+
+func _teaching_intro(_kind: StringName, _name: String, seconds: float) -> void:
+	teaching_block_seconds = maxf(teaching_block_seconds, seconds)
+	_defer_teaching()
+
+func _teaching_clear(_index: int, _bonus: int) -> void:
+	teaching_block_seconds = maxf(teaching_block_seconds, 2.8)
+	_defer_teaching()
+
+func _defer_teaching() -> void:
+	if toast_teaching and toast_remaining > 0:
+		teaching_pending.push_front({"text": toast.text, "accent": toast_accent})
+		toast_remaining = 0
+		toast.text = ""
+		toast_priority = -1
+		toast_panel.hide()
+	for entry in toast_queue:
+		if entry.get("teaching", false): teaching_pending.append(entry)
+	toast_queue = toast_queue.filter(func(entry: Dictionary) -> bool: return not entry.get("teaching", false))

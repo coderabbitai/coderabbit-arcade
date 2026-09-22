@@ -100,3 +100,23 @@ static func bar(extent: Vector2, fill: Color, track: Color = Palette.SLATE) -> P
 	node.add_theme_stylebox_override("background", background)
 	node.add_theme_stylebox_override("fill", foreground)
 	return node
+
+# Shared teaching row: vector symbols carry the color rule without relying on color alone.
+static func teaching_legend(compact: bool = false) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.name = "TeachingLegend"
+	row.alignment = BoxContainer.ALIGNMENT_BEGIN if compact else BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 4)
+	row.add_child(label("HOW TO PLAY" if compact else "GRAB", 18))
+	var captions := ["grab", "tool", "avoid"] if compact else ["mint power-ups", "orange CodeRabbit tools", "red hazards"]
+	var kinds := [&"approve_shield", &"wrench", &"hazard"]
+	var colors := [Palette.MINT, Palette.ORANGE, Palette.DANGER]
+	for i in 3:
+		if i == 2 and not compact: row.add_child(label("    AVOID", 18))
+		var gap := Control.new()
+		gap.custom_minimum_size.x = 4
+		gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(gap)
+		row.add_child(icon(kinds[i], colors[i], Vector2(24, 24)))
+		row.add_child(label(captions[i], 18, colors[i]))
+	return row
