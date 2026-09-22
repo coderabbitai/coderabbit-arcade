@@ -1,0 +1,175 @@
+{
+  "recipe_revision": 6,
+  "hoodie_linear": [
+    0.93,
+    0.25,
+    0.067
+  ],
+  "brace_profile": [
+    [
+      0.02,
+      0.934
+    ],
+    [
+      0.043,
+      0.922
+    ],
+    [
+      0.044,
+      0.89
+    ],
+    [
+      0.061,
+      0.876
+    ],
+    [
+      0.044,
+      0.862
+    ],
+    [
+      0.043,
+      0.832
+    ],
+    [
+      0.02,
+      0.821
+    ]
+  ],
+  "sole_radii": [
+    0.108,
+    0.162
+  ],
+  "back_mark_z": 0.268,
+  "script_sha256": "785b08a18476251e18ca0e65257edcd1b51d6fd5c770711a55c9c20d052a90a7",
+  "atlas_helper_sha256": "33cd94ba483671e156465bde7ea6e0aecf59ce6e7fa84d0cc189509b5d138675",
+  "blender": "5.2.2 LTS",
+  "seed": 41027,
+  "triangles": 37088,
+  "image_report": [
+    {
+      "index": 0,
+      "name": "accessory_emissive",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 134839,
+      "sha256": "0167d7ad9d5a3ccee88d82753abeb318f7f09092fc91fb8e0a71dedf3a6579e8"
+    },
+    {
+      "index": 1,
+      "name": "accessory_normal",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 593155,
+      "sha256": "7cceb1b7bb1b7f19d643a6dca9f83af5b11462aa3162381cc025ef43840a04f4"
+    },
+    {
+      "index": 2,
+      "name": "accessory_albedo",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 845654,
+      "sha256": "5831f503853116c6f8c07b557b5be78a99d85d896f2a87976a78f9326fe7d61c"
+    },
+    {
+      "index": 3,
+      "name": "accessory_orm",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 280018,
+      "sha256": "65326abc0e48bfa713fda5f02dde1590594fb25ecb7ccb01278a25bfff2f2a51"
+    },
+    {
+      "index": 4,
+      "name": "body_emissive",
+      "width": 2048,
+      "height": 2048,
+      "bytes": 55235,
+      "sha256": "5630edf42913f842e57308503a7e0977e721d09027a12c453b8878c22108cd37"
+    },
+    {
+      "index": 5,
+      "name": "body_normal",
+      "width": 2048,
+      "height": 2048,
+      "bytes": 3050608,
+      "sha256": "e775b8d39df62a7119433063d6eef540b0f363abac3388092e380d7348e9be4d"
+    },
+    {
+      "index": 6,
+      "name": "body_albedo",
+      "width": 2048,
+      "height": 2048,
+      "bytes": 3094436,
+      "sha256": "9a7c6f11af2a848b73d8e8d3631ecf922570c4d94832e9b714d11be7c5a393c6"
+    },
+    {
+      "index": 7,
+      "name": "body_orm",
+      "width": 2048,
+      "height": 2048,
+      "bytes": 242272,
+      "sha256": "f367355b843249ae17da08363c3a253317f1553f82f906c843577d64ac648856"
+    }
+  ],
+  "textures": [
+    "accessory_albedo.png",
+    "accessory_emissive.png",
+    "accessory_normal.png",
+    "accessory_orm.png",
+    "body_albedo.png",
+    "body_emissive.png",
+    "body_normal.png",
+    "body_orm.png"
+  ],
+  "exported_texture_count": 8,
+  "quick": false,
+  "animations": [
+    "idle",
+    "run",
+    "jump",
+    "fall",
+    "roll",
+    "hurt",
+    "dead"
+  ],
+  "bones": [
+    "root",
+    "hips",
+    "spine",
+    "chest",
+    "neck",
+    "head",
+    "ear_L",
+    "ear_tip_L",
+    "eye_L",
+    "ear_R",
+    "ear_tip_R",
+    "eye_R",
+    "shoulder_L",
+    "arm_L",
+    "forearm_L",
+    "hand_L",
+    "shoulder_R",
+    "arm_R",
+    "forearm_R",
+    "hand_R",
+    "tail",
+    "leg_L",
+    "shin_L",
+    "foot_L",
+    "leg_R",
+    "shin_R",
+    "foot_R"
+  ],
+  "roll_bounds_y": [
+    0.12225532531738281,
+    0.7871978282928467
+  ],
+  "height": 1.8,
+  "forward": [
+    0,
+    0,
+    -1
+  ],
+  "generator": "Khronos glTF Blender I/O v5.2.40"
+}

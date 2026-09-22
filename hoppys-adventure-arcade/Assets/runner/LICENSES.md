@@ -11,3 +11,4 @@ No external downloads. F5 reuses the existing bundled music package.
 | Palette | scenes/runner/environment/runner_palette.gd | Project contributors | Frontend brief and existing menu palette | Project source terms | Centralized constants |
 | Procedural runner SFX | scenes/runner/audio/sfx_synth.gd | Project contributors | Original deterministic PCM recipes | Project source terms; no third-party asset licence | Original |
 | Cyberpunk Street BGM | res://Assets/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg | Luis Zuno / ansimuz | Assets/cyberpunk-street-files/public-license.pdf | CC0 | none; the PDF does not name the music's composer |
+| Blender Hoppy mascot | Assets/runner/hoppy/** | Project contributors | generated in-repo by tools/blender/build_hoppy.py (Blender 5.2.2) | Project licence | Original work |
