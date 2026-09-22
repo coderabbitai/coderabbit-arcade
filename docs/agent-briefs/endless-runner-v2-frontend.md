@@ -33,6 +33,10 @@ stage banners and stage-clear cards, new audio.** Branch `codex/endless-runner-s
   pursuit vignette and the corner bars (F7) unless the frontend hands them to `post_fx` through
   `post_fx.set_settings()`; the backend never calls that. The mount is tolerated when absent, so the file landing
   later changes nothing on the backend side (contract §11.3, §11.8).
+- Contract 2.3, **banner duration is load-bearing**: the backend holds the corridor hazard-free for
+  `stage_banner_clear_seconds` (3.5) after every `stage_started`, so `ui/stage_banner.tscn` must be fully off
+  screen within `stage_banner_clear_seconds − stage_banner_reaction_seconds` (2.5 s at the defaults) — a banner
+  that lingers past that is covering lanes the player has to read again (contract §11.1, §11.8).
 
 ## Milestones
 

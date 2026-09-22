@@ -34,8 +34,11 @@ const FAKE_HAZARD_SOURCE := "extends Node3D\nvar kind: StringName = &\"pr_backlo
 ## A boss shot: the same surface as the hazard stand-in plus the `closing_speed` that makes the bot
 ## read it as a projectile and plan its trigger from its own speed (systems spec §10.6).
 const FAKE_PROJECTILE_SOURCE := "extends Node3D\nvar kind: StringName = &\"projectile\"\nvar variant: StringName = &\"orb\"\nvar dodge_hint: StringName = &\"JUMP_OR_LANE\"\nvar closing_speed := 26.0\nvar box := Vector3(1.6, 0.9, 1.2)\nvar center_y := 0.45\nvar blocking := true\nfunc is_blocking() -> bool:\n\treturn blocking\nfunc occupies_lane(index: int) -> bool:\n\treturn absf((float(index) - 1.0) * 2.0 - global_position.x) < box.x * 0.5 + 0.39\nfunc get_world_aabb() -> AABB:\n\treturn AABB(global_position + Vector3(0.0, center_y, 0.0) - box * 0.5, box)\n"
-## Spawner stand-in for Auto-Fix (systems spec §5.2) and for the stage drain gate (§10.6).
-const FAKE_SPAWNER_SOURCE := "extends Node\nvar cleared := 0\nvar calls := 0\nvar spawning := true\nvar spawn_calls: Array = []\nfunc clear_hazards_in_range() -> int:\n\tcalls += 1\n\treturn cleared\nfunc set_spawning(on: bool) -> void:\n\tspawning = on\n\tspawn_calls.append(on)\n"
+## Spawner stand-in for Auto-Fix (systems spec §5.2), the stage drain gate (§10.6) and the
+## stage-entrance window (contract §11.1). `call_log` keeps the two gates in one ordered list, so a
+## window opened after the corridor was already topped up is visible; `spawn_calls` stays exactly
+## what the drain checks have always read.
+const FAKE_SPAWNER_SOURCE := "extends Node\nvar cleared := 0\nvar calls := 0\nvar spawning := true\nvar spawn_calls: Array = []\nvar clear_road_calls: Array = []\nvar call_log: Array = []\nfunc clear_hazards_in_range() -> int:\n\tcalls += 1\n\treturn cleared\nfunc set_spawning(on: bool) -> void:\n\tspawning = on\n\tspawn_calls.append(on)\n\tcall_log.append(&\"spawning_on\" if on else &\"spawning_off\")\nfunc begin_clear_road(seconds: float) -> void:\n\tclear_road_calls.append(seconds)\n\tcall_log.append(&\"clear_road\")\n"
 ## TurnRig / CameraRig stand-in: set_turn is the only hook the StageManager drives (systems §10.5),
 ## and shake() is what the catch cinematic reaches for on the camera.
 const FAKE_RIG_SOURCE := "extends Node3D\nvar turns: Array = []\nvar turn_progress := 0.0\nvar turn_direction := 0\nvar shakes: Array = []\nfunc set_turn(progress: float, direction: int) -> void:\n\tturn_progress = progress\n\tturn_direction = direction\n\tturns.append([progress, direction])\nfunc shake(strength: float, _duration := 0.35) -> void:\n\tshakes.append(strength)\n"
@@ -58,6 +61,8 @@ var real_hazard_script: GDScript
 ## The real runner_player.gd (CharacterBody3D), used by section 12; also loaded at runtime.
 var real_player_script: GDScript
 var spawner_script: GDScript
+## The real chunk_spawner.gd, used by section 29; loaded at runtime like every other system script.
+var real_spawner_script: GDScript
 var player_script: GDScript
 var projectile_script: GDScript
 var rig_script: GDScript
@@ -100,6 +105,7 @@ func run() -> void:
 	autopilot_script = load("res://scenes/runner/systems/autopilot.gd") as GDScript
 	real_hazard_script = load("res://scenes/runner/hazards/hazard.gd") as GDScript
 	real_player_script = load("res://scenes/runner/player/runner_player.gd") as GDScript
+	real_spawner_script = load("res://scenes/runner/systems/chunk_spawner.gd") as GDScript
 	game_script = _compile(FAKE_GAME_SOURCE)
 	caught_game_script = _compile(FAKE_CAUGHT_GAME_SOURCE)
 	hazard_script = _compile(FAKE_HAZARD_SOURCE)
@@ -110,7 +116,8 @@ func run() -> void:
 	if game_script == null or hazard_script == null or spawner_script == null \
 			or player_script == null or real_hazard_script == null or real_player_script == null \
 			or rig_script == null or caught_game_script == null or stage_manager_script == null \
-			or camera_rig_script == null or pursuer_script == null or projectile_script == null:
+			or camera_rig_script == null or pursuer_script == null or projectile_script == null \
+			or real_spawner_script == null:
 		check(false, "the test harness scripts failed to compile")
 		_report()
 		return
@@ -143,6 +150,9 @@ func run() -> void:
 	_test_leaderboard_migration()
 	_test_turn_camera_profile()
 	_test_boss_intro()
+	# Last: this is the only section that drives a real chunk_spawner.gd, and the hazards it sweeps
+	# are the whole runner_hazards group, so nothing else may still be leaning on it.
+	_test_stage_banner_window()
 	_report()
 
 # --- 1. HitManager: SAFE -> PURSUED -> DEAD ---
@@ -741,6 +751,15 @@ func _test_config_sanity() -> void:
 			% [float(c.turn_swing_in_fraction), float(c.turn_swing_out_fraction)])
 	check(is_equal_approx(float(c.boss_intro_seconds), 3.0),
 		"9: the boss entrance runs %.2f s, expected 3.0" % float(c.boss_intro_seconds))
+	# Contract §11.1/§11.10 v2.3: the stage banner covers the lanes, so the corridor stays clear
+	# across it and still owes the player a reaction once it lifts.
+	check(is_equal_approx(float(c.stage_banner_clear_seconds), 3.5)
+		and is_equal_approx(float(c.stage_banner_reaction_seconds), 1.0),
+		"9: the stage-entrance window is %.2f s with %.2f s of reaction, expected 3.5 / 1.0"
+			% [float(c.stage_banner_clear_seconds), float(c.stage_banner_reaction_seconds)])
+	check(float(c.stage_banner_clear_seconds) > float(c.stage_banner_reaction_seconds),
+		"9: the banner has to fit inside stage_banner_clear_seconds minus the reaction time, got %.2f / %.2f"
+			% [float(c.stage_banner_clear_seconds), float(c.stage_banner_reaction_seconds)])
 
 # --- 10. Autopilot planning (the half the chunk validator reuses) ---
 
@@ -2103,6 +2122,255 @@ func _test_boss_intro() -> void:
 		"28: neither entrance signal repeats, got %s" % [events["boss_log"]])
 	_free_rig(rig)
 
+# --- 29. The stage-entrance window: nothing blocking while the banner is up (contract §11.1) ---
+
+## The `STAGE n` banner covers the lanes for a couple of seconds after every `stage_started`, so a
+## corridor that hands the player a hazard across it costs them a run they could not see coming.
+## Five things are pinned here. The StageManager opens the window *before* it switches placement
+## back on, for every stage. A frontier left stale by a drained corridor is clamped off the
+## player's feet instead of parking the first chunk underfoot. Every chunk laid down while the
+## window is open is hazard-free or too far out to arrive before the window and the reaction time
+## have both run down — and the corridor is still filled to the spawn horizon, not left empty. The
+## window burns run time only, never wall time through a pause. And the promise survives a speed
+## change made after it was given: Nitro mid-window re-opens the question every tick.
+func _test_stage_banner_window() -> void:
+	_check_banner_window_gate()
+	_check_banner_window_placement()
+	_check_banner_window_pause()
+	_check_banner_window_sweep()
+	_check_banner_window_speed_up()
+
+## The StageManager end: every stage entry asks for a window, with the configured length, before
+## the fill that follows it.
+func _check_banner_window_gate() -> void:
+	var rig := _stage_rig({
+		"stage_base_distance": 40.0,
+		"stage_distance_step": 20.0,
+		"stage_drain_distance": 15.0,
+		"stage_drain_timeout": 0.2,
+		"stage_clear_seconds": 0.2,
+		"turn_seconds": 0.2,
+		"turn_warning_seconds": 0.5
+	})
+	var game: Node3D = rig["game"]
+	var stage: Node = rig["stage"]
+	var spawner: Node = rig["spawner"]
+	var drivers: Array = [rig["speed"], stage]
+	var window := float(game.config.stage_banner_clear_seconds)
+	stage.begin()
+	check(spawner.clear_road_calls.size() == 1,
+		"29: stage 1 opened %d clear-road window(s), expected exactly one"
+			% spawner.clear_road_calls.size())
+	check(not spawner.clear_road_calls.is_empty()
+		and is_equal_approx(float(spawner.clear_road_calls[0]), window),
+		"29: the window asked for %s s, expected stage_banner_clear_seconds %.2f"
+			% [spawner.clear_road_calls, window])
+	check(spawner.call_log == [&"clear_road", &"spawning_on"],
+		"29: the window has to be open before the corridor is topped up, got %s" % [spawner.call_log])
+	var guard := 0
+	while int(stage.stage_index) < 2 and guard < _ticks(40.0):
+		_tick_stage(drivers, game, 1)
+		guard += 1
+	check(int(stage.stage_index) == 2,
+		"29: the rig never reached stage 2 (stage %d, phase %s)" % [int(stage.stage_index), stage.phase])
+	check(spawner.clear_road_calls.size() == 2,
+		"29: every stage entry opens a window, got %d across two stages" % spawner.clear_road_calls.size())
+	check(spawner.call_log.slice(spawner.call_log.size() - 2) == [&"clear_road", &"spawning_on"],
+		"29: stage 2 opened its window before its first fill, got %s" % [spawner.call_log])
+	_free_rig(rig)
+
+## The spawner end, on the corridor a stage seam actually leaves behind: no chunks and a frontier
+## that scrolled past the player while the turn, the boss and the clear card ran.
+func _check_banner_window_placement() -> void:
+	for stale in [8.0, -3.0]:
+		var rig := _spawner_rig({})
+		if rig.is_empty():
+			return
+		var game: Node3D = rig["game"]
+		var spawner: Node = rig["spawner"]
+		var tag := "29: stale frontier %+.0f m" % stale
+		var reaction := float(game.config.stage_banner_reaction_seconds)
+		var window := float(game.config.stage_banner_clear_seconds)
+		spawner.frontier_z = stale
+		spawner.begin_clear_road(window)
+		check(float(spawner.frontier_z) <= -6.0 + 0.001,
+			"%s: the frontier was left at %.2f, expected at least 6 m ahead of the player"
+				% [tag, float(spawner.frontier_z)])
+		spawner.set_spawning(true)
+		var chunks: Array[Node3D] = spawner.get_active_chunks()
+		check(not chunks.is_empty(), "%s: the window left the corridor empty" % tag)
+		if chunks.is_empty():
+			_free_rig(rig)
+			return
+		check(float(chunks[0].global_position.z) <= -6.0 + 0.001,
+			"%s: the first chunk entered at z %.2f, expected at most -6" % [tag, float(chunks[0].global_position.z)])
+		check(float(spawner.frontier_z) <= float(game.config.spawn_horizon_z)
+			or chunks.size() >= int(game.config.max_active_chunks),
+			"%s: the corridor stopped %d chunk(s) short at frontier %.1f, the horizon is %.1f"
+				% [tag, chunks.size(), float(spawner.frontier_z), float(game.config.spawn_horizon_z)])
+
+		# The invariant, tick by tick: while the window is open the soonest hazard in the corridor
+		# is always at least the remaining window plus the reaction time away. Both sides fall at
+		# one second per second, so a chunk that was admitted stays admissible, and the moment the
+		# window shuts the margin is exactly the reaction the contract promises.
+		var violations := 0
+		var worst := INF
+		var ticks_run := 0
+		while float(spawner.clear_road_remaining()) > 0.0 and ticks_run < _ticks(10.0):
+			_tick([spawner], 1)
+			ticks_run += 1
+			if float(spawner.clear_road_remaining()) <= 0.0:
+				break
+			var margin := _nearest_arrival(spawner, game) \
+				- float(spawner.clear_road_remaining()) - reaction
+			worst = minf(worst, margin)
+			if margin < -0.001:
+				violations += 1
+		check(violations == 0,
+			"%s: %d tick(s) had a hazard inside the window, worst by %.3f s" % [tag, violations, worst])
+		check(ticks_run > 0 and ticks_run <= _ticks(window) + 2,
+			"%s: the window ran %d ticks, expected about %d" % [tag, ticks_run, _ticks(window)])
+		var closing := _nearest_arrival(spawner, game)
+		check(closing >= reaction - 0.001,
+			"%s: the window shut with the nearest hazard %.3f s out, the player is owed %.2f"
+				% [tag, closing, reaction])
+		check(closing < INF,
+			"%s: the window shut on a corridor with no hazard in it at all — the pacing went slack" % tag)
+		# ...and the corridor goes back to normal chunks as soon as it may.
+		_tick([spawner], _ticks(6.0))
+		check(_nearest_arrival(spawner, game) < INF,
+			"%s: six seconds past the window the corridor still carries no hazard" % tag)
+		_free_rig(rig)
+
+## The window is run time, not wall time: a paused game must not burn it.
+func _check_banner_window_pause() -> void:
+	var rig := _spawner_rig({})
+	if rig.is_empty():
+		return
+	var game: Node3D = rig["game"]
+	var spawner: Node = rig["spawner"]
+	spawner.begin_clear_road(2.0)
+	var opened := float(spawner.clear_road_remaining())
+	check(is_equal_approx(opened, 2.0), "29: begin_clear_road(2.0) opened %.3f s" % opened)
+	game.paused = true
+	_tick([spawner], _ticks(1.0))
+	check(is_equal_approx(float(spawner.clear_road_remaining()), opened),
+		"29: a paused second burned %.3f s of the window" % (opened - float(spawner.clear_road_remaining())))
+	game.paused = false
+	_tick([spawner], _ticks(1.0))
+	var left := float(spawner.clear_road_remaining())
+	check(left > 0.0 and is_equal_approx(left, 1.0),
+		"29: one unpaused second should leave 1.0 s of the window, got %.3f" % left)
+	# A second call while one is open keeps the longer of the two rather than cutting it short.
+	spawner.begin_clear_road(0.25)
+	check(is_equal_approx(float(spawner.clear_road_remaining()), left),
+		"29: a shorter re-entry shortened the window to %.3f s" % float(spawner.clear_road_remaining()))
+	_tick([spawner], _ticks(2.0))
+	check(is_zero_approx(float(spawner.clear_road_remaining())),
+		"29: the window never closed, %.3f s left" % float(spawner.clear_road_remaining()))
+	_free_rig(rig)
+
+## The sweep is housekeeping, not Auto-Fix: a hazard already inbound when the window opens is taken
+## out silently — no hazard_cleared, no hazards_blasted, no bonus, no score and no dodge counted.
+func _check_banner_window_sweep() -> void:
+	var rig := _spawner_rig({})
+	if rig.is_empty():
+		return
+	var game: Node3D = rig["game"]
+	var spawner: Node = rig["spawner"]
+	var score: Node = score_manager_script.new()
+	junk.append(score)
+	game.score_manager = score
+	score.setup(game)
+	var events := _watch(game)
+	var cleared_signals := 0
+	game.hazard_cleared.connect(func(_hazard: Area3D) -> void:
+		cleared_signals += 1)
+	var reach := float(game.speed) * (float(game.config.stage_banner_clear_seconds)
+		+ float(game.config.stage_banner_reaction_seconds))
+	var inbound := _hazard(&"pr_backlog_low")
+	inbound.add_to_group(&"runner_hazards")
+	inbound.position = Vector3(0.0, 0.0, -reach * 0.5)
+	var beyond := _hazard(&"pr_backlog_low")
+	beyond.add_to_group(&"runner_hazards")
+	beyond.position = Vector3(0.0, 0.0, -reach - 20.0)
+	var score_before := int(game.score)
+	var dodged_before := int(game.hazards_dodged)
+	spawner.begin_clear_road(float(game.config.stage_banner_clear_seconds))
+	check(int(inbound.cleared) == 1,
+		"29: the sweep cleared the inbound hazard %d time(s), expected once" % int(inbound.cleared))
+	check(int(beyond.cleared) == 0,
+		"29: the sweep reached %.1f m out, past the %.1f m the window covers"
+			% [absf(beyond.position.z), reach])
+	check(cleared_signals == 0, "29: the sweep emitted hazard_cleared %d time(s)" % cleared_signals)
+	check(events["hazards_blasted"].is_empty(),
+		"29: the sweep reported a blast: %s" % [events["hazards_blasted"]])
+	check(events["bonus_awarded"].is_empty(), "29: the sweep paid a bonus: %s" % [events["bonus_awarded"]])
+	check(int(game.score) == score_before and int(game.hazards_dodged) == dodged_before,
+		"29: the sweep moved the score (%d -> %d) or the dodge count (%d -> %d)"
+			% [score_before, int(game.score), dodged_before, int(game.hazards_dodged)])
+	_free_rig(rig)
+
+## The promise has to hold for the whole window, not only for the tick it was made on. Admission is
+## measured at the speed of the moment, so Nitro (x1.25) or the difficulty ramp landing mid-window
+## shortens every arrival already in the corridor. The tick after the speed rises has to notice and
+## sweep what it just pulled inside the window — still silently, and still only that far out.
+func _check_banner_window_speed_up() -> void:
+	var rig := _spawner_rig({})
+	if rig.is_empty():
+		return
+	var game: Node3D = rig["game"]
+	var spawner: Node = rig["spawner"]
+	var events := _watch(game)
+	var cleared_signals := 0
+	game.hazard_cleared.connect(func(_hazard: Area3D) -> void:
+		cleared_signals += 1)
+	var window := float(game.config.stage_banner_clear_seconds)
+	var reaction := float(game.config.stage_banner_reaction_seconds)
+	var base_v := float(game.speed)
+	# Nitro at the top of the ramp, the fastest the corridor legitimately closes (contract §7).
+	var nitro_v := minf(float(game.config.max_speed) * float(game.config.nitro_speed_multiplier),
+		float(game.config.nitro_speed_cap))
+	check(nitro_v > base_v,
+		"29: the rig needs a speed the corridor can actually rise to, got %.1f over %.1f"
+			% [nitro_v, base_v])
+	# One metre beyond what the window reaches at the base speed: admissible when the window opens,
+	# by a margin a single Nitro erases...
+	var thin := _hazard(&"pr_backlog_low")
+	thin.add_to_group(&"runner_hazards")
+	thin.position = Vector3(0.0, 0.0, -(base_v * (window + reaction) + 1.0))
+	# ...and one far enough out to still clear the window at Nitro speed.
+	var distant := _hazard(&"pr_backlog_low")
+	distant.add_to_group(&"runner_hazards")
+	distant.position = Vector3(0.0, 0.0, -(nitro_v * (window + reaction) + 10.0))
+	var score_before := int(game.score)
+	var dodged_before := int(game.hazards_dodged)
+	spawner.begin_clear_road(window)
+	check(int(thin.cleared) == 0 and int(distant.cleared) == 0,
+		"29: the entrance sweep at %.1f m/s took a hazard it could not reach (%d / %d cleared)"
+			% [base_v, int(thin.cleared), int(distant.cleared)])
+	# Nitro lands while the banner is still up.
+	game.speed = nitro_v
+	_tick([spawner], 1)
+	var left := float(spawner.clear_road_remaining())
+	check(left > 0.0, "29: the window closed on the first tick, %.3f s left" % left)
+	check(int(thin.cleared) == 1,
+		"29: the speed increase pulled a hazard %.1f m out inside the %.1f m the window now covers, and it was swept %d time(s)"
+			% [absf(thin.position.z), nitro_v * (left + reaction), int(thin.cleared)])
+	check(int(distant.cleared) == 0,
+		"29: the re-validation reached %.1f m out at %.1f m/s, past the %.1f m the window covers"
+			% [absf(distant.position.z), nitro_v, nitro_v * (left + reaction)])
+	check(cleared_signals == 0,
+		"29: the re-validation emitted hazard_cleared %d time(s)" % cleared_signals)
+	check(events["hazards_blasted"].is_empty(),
+		"29: the re-validation reported a blast: %s" % [events["hazards_blasted"]])
+	check(events["bonus_awarded"].is_empty(),
+		"29: the re-validation paid a bonus: %s" % [events["bonus_awarded"]])
+	check(int(game.score) == score_before and int(game.hazards_dodged) == dodged_before,
+		"29: the re-validation moved the score (%d -> %d) or the dodge count (%d -> %d)"
+			% [score_before, int(game.score), dodged_before, int(game.hazards_dodged)])
+	_free_rig(rig)
+
 func _has_run(entries: Array, run_id: String) -> bool:
 	for item in entries:
 		if String((item as Dictionary).get("run_id", "")) == run_id:
@@ -2311,6 +2579,57 @@ func _stage_rig(overrides: Dictionary, with_arena := false, real_catch := false)
 		"camera_rig": camera, "events": events}
 	rig.merge(systems)
 	return rig
+
+## A live chunk_spawner.gd on a facade inside the tree, with World/Chunks where runner_game.tscn
+## puts it and a non-null stage_manager to arm the phase gate. The corridor opens empty on purpose:
+## `reset()` runs against an `idle` phase, so the fill it ends with places nothing and section 29
+## starts from exactly the corridor a drained stage seam leaves behind. The spawner never ticks
+## itself — the engine runs no frames inside run(), and every advance is a hand-driven
+## _physics_process.
+func _spawner_rig(overrides: Dictionary) -> Dictionary:
+	var game := _tree_game()
+	for key in overrides:
+		game.config.set(key, overrides[key])
+	game.state = &"running"
+	game.speed = float(game.config.base_speed)
+	game.difficulty = 0.0
+	game.phase = &"idle"
+	var world := Node3D.new()
+	world.name = "World"
+	game.add_child(world)
+	var chunks := Node3D.new()
+	chunks.name = "Chunks"
+	world.add_child(chunks)
+	game.world = world
+	game.chunks = chunks
+	game.stage_manager = Node.new()
+	game.add_child(game.stage_manager)
+	var spawner: Node = real_spawner_script.new()
+	game.add_child(spawner)
+	spawner.set_physics_process(false)
+	spawner.setup(game)
+	game.spawner = spawner
+	spawner.reset(20260922)
+	var empty: bool = spawner.get_active_chunks().is_empty()
+	check(empty, "29: the spawner rig should open on an empty corridor, got %d chunk(s)"
+		% spawner.get_active_chunks().size())
+	if not empty:
+		_free_rig({"game": game})
+		return {}
+	game.phase = &"run"
+	return {"game": game, "spawner": spawner, "chunks": chunks}
+
+## Seconds until the soonest hazard in the active corridor reaches the player, at the speed the
+## spawner plans against. INF when no active chunk carries one.
+func _nearest_arrival(spawner: Node, game: Node3D) -> float:
+	var speed := maxf(maxf(float(game.speed), float(game.config.base_speed)), 1.0)
+	var soonest := INF
+	for chunk in spawner.get_active_chunks():
+		var node := chunk as Node3D
+		if node == null or not is_instance_valid(node) or node.get_hazards().is_empty():
+			continue
+		soonest = minf(soonest, -(float(node.global_position.z) - float(node.entry_clear())) / speed)
+	return soonest
 
 ## A boss_arena.tscn on its own facade, for the fight rules that need no stage machine.
 func _boss_rig(overrides: Dictionary) -> Dictionary:
