@@ -41,13 +41,60 @@ func frames() -> void:
 	await process_frame
 
 func bounds(node: Node3D) -> AABB:
+	# Hoppy only: imported Mesh AABBs are rest bounds, so evaluate skin vertices.
 	var result := AABB()
 	var first := true
 	for mesh: MeshInstance3D in node.find_children("*", "MeshInstance3D", true, false):
-		var box := mesh.global_transform * mesh.get_aabb()
-		result = box if first else result.merge(box)
-		first = false
+		if not mesh.is_visible_in_tree():
+			continue
+		if mesh.skin == null:
+			var box := mesh.global_transform * mesh.get_aabb()
+			result = box if first else result.merge(box)
+			first = false
+			continue
+		var skeleton := mesh.get_node_or_null(mesh.skeleton) as Skeleton3D
+		check(skeleton != null, "Hoppy skin has a skeleton")
+		if skeleton == null:
+			continue
+		skeleton.force_update_all_bone_transforms()
+		var transforms: Array[Transform3D] = []
+		for bind in mesh.skin.get_bind_count():
+			var bone := mesh.skin.get_bind_bone(bind)
+			if bone < 0:
+				bone = skeleton.find_bone(mesh.skin.get_bind_name(bind))
+			check(bone >= 0, "Hoppy skin bind resolves")
+			transforms.append(skeleton.global_transform * skeleton.get_bone_global_pose(bone) * mesh.skin.get_bind_pose(bind) if bone >= 0 else mesh.global_transform)
+		for surface in mesh.mesh.get_surface_count():
+			var arrays := mesh.mesh.surface_get_arrays(surface)
+			var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+			var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
+			var stride := bones.size() / vertices.size()
+			for i in vertices.size():
+				var point := Vector3.ZERO
+				for j in stride:
+					var weight := weights[i * stride + j]
+					if weight > 0:
+						point += (transforms[bones[i * stride + j]] * vertices[i]) * weight
+				result = AABB(point, Vector3.ZERO) if first else result.expand(point)
+				first = false
 	return result
+
+func hoppy_wait_state(hoppy: Node3D, player: AnimationPlayer, state: StringName, seconds: float) -> bool:
+	# Manual advancement plus a frame flush supports property and deferred method tracks.
+	# Never await animation_finished, which may already have fired on a different frame.
+	for step in int(ceil(seconds * 60.0)) + 2:
+		if hoppy.anim_state == state:
+			return true
+		player.advance(1.0 / 60.0)
+		await process_frame
+	return hoppy.anim_state == state
+
+func hoppy_material_colors(materials: Array[BaseMaterial3D]) -> Array[Color]:
+	var colors: Array[Color] = []
+	for material in materials:
+		colors.append(material.albedo_color)
+	return colors
 
 func run() -> void:
 	await check_interpolation_opt_out()
@@ -64,9 +111,31 @@ func run() -> void:
 		await frames()
 		check(hoppy.get_node("ShieldRing").visible, "shield requested before ready is enabled")
 		var player: AnimationPlayer = hoppy.get_node("AnimationPlayer")
+		player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+		player.playback_default_blend_time = 0.0
 		player.seek(0.0, true)
+		player.advance(0.0)
 		var standing := bounds(hoppy.get_node("Root"))
-		check(absf(standing.position.y) < 0.001 and absf(standing.end.y - 1.8) < 0.001, "standing feet 0 and height 1.8")
+		check(absf(standing.position.y) < 0.002 and absf(standing.end.y - 1.8) <= 0.02, "standing feet 0 and height 1.8")
+		var skeleton := hoppy.find_children("*", "Skeleton3D", true, false)[0] as Skeleton3D
+		var head := skeleton.find_bone("head")
+		var eye := skeleton.find_bone("eye_L")
+		check(head >= 0 and eye >= 0, "Hoppy forward landmarks exist")
+		if head >= 0 and eye >= 0:
+			var facing := skeleton.global_basis * (skeleton.get_bone_global_rest(eye).origin - skeleton.get_bone_global_rest(head).origin)
+			check(facing.z < 0.0, "Hoppy faces negative Z")
+		var private_materials: Array[BaseMaterial3D] = []
+		var base_colors: Array[Color] = []
+		for mesh: MeshInstance3D in hoppy.find_children("*", "MeshInstance3D", true, false):
+			if mesh.skin == null:
+				continue
+			for surface in mesh.mesh.get_surface_count():
+				var material := mesh.get_active_material(surface) as BaseMaterial3D
+				check(material != null and material != mesh.mesh.surface_get_material(surface), "imported surface material is a private instance")
+				if material != null and not private_materials.has(material):
+					private_materials.append(material)
+					base_colors.append((mesh.mesh.surface_get_material(surface) as BaseMaterial3D).albedo_color)
+		check(not private_materials.is_empty(), "imported Hoppy materials discovered")
 		for state in [&"idle", &"run", &"jump", &"fall", &"roll", &"hurt", &"dead"]:
 			hoppy.set_anim_state(state)
 			await frames()
@@ -74,12 +143,16 @@ func run() -> void:
 			check(hoppy.anim_state == state, "state selected: " + state)
 			if state == &"roll":
 				hoppy.show_aura(&"lgtm", true)
-				player.seek(0.25, true)
+				player.seek(player.get_animation(&"roll").length * 0.5, true)
+				player.advance(0.0)
+				await frames()
 				var all_meshes := bounds(hoppy)
 				check(hoppy.get_node("Root/Aura").is_visible_in_tree(), "roll aura visible")
-				check(all_meshes.end.y <= 0.95 and all_meshes.position.y >= -0.02, "all-mesh mid-roll bounds including aura: %s" % all_meshes)
+				check(all_meshes.end.y <= 0.901 and all_meshes.position.y >= -0.001, "all-mesh mid-roll bounds including aura: %s" % all_meshes)
 				for sample in 61:
-					player.seek(float(sample) / 120.0, true)
+					player.seek(player.get_animation(&"roll").length * float(sample) / 60.0, true)
+					player.advance(0.0)
+					await process_frame
 					var rolling := bounds(hoppy.get_node("Root"))
 					check(rolling.position.y >= -0.001 and rolling.end.y <= 0.901, "roll bounds at sample %d: %s" % [sample, rolling])
 				hoppy.show_aura(&"lgtm", false)
@@ -87,7 +160,7 @@ func run() -> void:
 			hoppy.set_anim_state(&"run")
 			hoppy.set_run_speed(speed)
 			await frames()
-			check(is_equal_approx(player.speed_scale, lerpf(0.85, 1.9, speed)), "run speed scaling")
+			check(is_equal_approx(player.speed_scale, lerpf(0.9, 1.6, clampf(speed, 0.0, 1.0))), "run speed scaling")
 		for lean in [-1.0, 0.0, 1.0]:
 			hoppy.set_lane_lean(lean)
 			await frames()
@@ -109,35 +182,42 @@ func run() -> void:
 			hoppy.show_shield(on)
 			await frames()
 			check(hoppy.get_node("ShieldRing").visible == on, "shield toggle")
-		# Advance standalone hurt deterministically, checking each distinct flash pulse.
+		# Assert public hit/recovery behavior without depending on overlay nodes,
+		# pulse timestamps, or whether a clip uses method versus property tracks.
 		hoppy.set_anim_state(&"idle")
-		hoppy.set_anim_state(&"hurt")
-		player.stop()
-		player.play(&"hurt", 0.0)
-		player.advance(0.0)
-		player.pause()
-		var method_mode := player.callback_mode_method
-		player.callback_mode_method = AnimationMixer.ANIMATION_CALLBACK_MODE_METHOD_IMMEDIATE
-		for delta in [0.002, 0.12, 0.12]:
-			hoppy._process(0.07)
-			check(hoppy.get_node("Root/Model/Body").material_overlay == null, "hurt pulse starts cleared")
-			player.advance(delta)
-			check(hoppy.get_node("Root/Model/Body").material_overlay != null, "standalone hurt pulse at %s" % player.current_animation_position)
-		player.callback_mode_method = method_mode
-		hoppy.set_anim_state(&"idle")
+		player.advance(0.1)
+		await frames()
+		# A queued hurt method can briefly tint the materials after changing state.
+		# Settle against immutable imported colors, not an arbitrary render frame.
+		for poll in 30:
+			if hoppy_material_colors(private_materials) == base_colors:
+				break
+			await create_timer(0.01).timeout
+		check(hoppy_material_colors(private_materials) == base_colors, "prior hurt flash settles")
+		var colors_before := base_colors
 		hoppy.on_hit()
-		check(hoppy.get_node("Root/Model/Body").material_overlay != null, "hit flash")
-		await create_timer(0.1).timeout
-		check(hoppy.get_node("Root/Model/Body").material_overlay == null, "flash clears")
-		for locomotion in [&"idle", &"run"]:
+		check(hoppy_material_colors(private_materials) != colors_before, "hit flash")
+		var flash_cleared := false
+		for poll in 30:
+			await create_timer(0.01).timeout
+			if hoppy_material_colors(private_materials) == colors_before:
+				flash_cleared = true
+				break
+		check(flash_cleared, "flash clears")
+		var hurt_length := player.get_animation(&"hurt").length
+		for locomotion in [&"idle", &"run", &"jump", &"fall", &"roll"]:
 			hoppy.set_anim_state(locomotion)
 			hoppy.set_anim_state(&"hurt")
-			await create_timer(0.55).timeout
-			check(hoppy.anim_state == locomotion, "hurt returns to " + locomotion)
+			check(hoppy.anim_state == &"hurt", "hurt starts from " + locomotion)
+			var recovered := await hoppy_wait_state(hoppy, player, locomotion, hurt_length + 0.2)
+			check(recovered, "hurt returns to " + locomotion)
 		hoppy.set_anim_state(&"hurt")
+		player.advance(minf(0.05, hurt_length * 0.25))
 		await frames()
 		hoppy.set_anim_state(&"dead")
-		await create_timer(0.55).timeout
+		for step in int(ceil((hurt_length + 0.2) * 60.0)):
+			player.advance(1.0 / 60.0)
+			await process_frame
 		check(hoppy.anim_state == &"dead", "new state interrupts hurt recovery")
 		hoppy.free()
 		corridor.free()

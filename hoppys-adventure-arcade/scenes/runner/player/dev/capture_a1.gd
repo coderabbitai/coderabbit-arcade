@@ -19,18 +19,7 @@ func capture() -> void:
 	var stage := Node3D.new()
 	stage.process_mode = Node.PROCESS_MODE_PAUSABLE
 	root.add_child(stage)
-	var environment := WorldEnvironment.new()
-	environment.environment = Environment.new()
-	environment.environment.background_mode = Environment.BG_COLOR
-	environment.environment.background_color = Palette.NAVY_BG
-	environment.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.environment.ambient_light_color = Palette.CREAM
-	environment.environment.ambient_light_energy = 0.45
-	stage.add_child(environment)
-	var light := DirectionalLight3D.new()
-	light.rotation_degrees = Vector3(-35, -30, 0)
-	light.light_energy = 1.4
-	stage.add_child(light)
+	configure_lighting(stage)
 	var floor_mesh := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(8, 60)
@@ -55,6 +44,7 @@ func capture() -> void:
 	DirAccess.make_dir_recursive_absolute(directory)
 	var views := [
 		["close", Vector3(1.35, 1.4, -2.1), Vector3(0, 0.95, 0), &"idle", false],
+		["run", Vector3(1.35, 1.4, -2.1), Vector3(0, 0.95, 0), &"run", false],
 		["gameplay", Vector3(0, 4, 8), Vector3(0, 1, -8), &"run", false],
 		["shield", Vector3(-2.4, 1.7, -3.3), Vector3(0, 0.9, 0), &"run", true],
 		["roll", Vector3(1.2, 1.0, -1.9), Vector3(0, 0.45, 0), &"roll", false],
@@ -65,7 +55,7 @@ func capture() -> void:
 	for view: Array in views:
 		camera.position = view[1]
 		camera.look_at(view[2])
-		if not pose_for_view(hoppy, view[3], 0.24):
+		if not pose_for_view(hoppy, view[3], 0.0 if view[3] == &"roll" else 0.24):
 			printerr("ASSET A1 CAPTURE: incorrect animation for " + str(view[0]))
 			await finish(stage, 1)
 			return
@@ -89,15 +79,40 @@ func capture() -> void:
 	print("ASSET A1 CAPTURE: PASS")
 	await finish(stage, 0)
 
+static func configure_lighting(stage: Node3D) -> void:
+	var environment := WorldEnvironment.new()
+	environment.environment = Environment.new()
+	environment.environment.background_mode = Environment.BG_COLOR
+	environment.environment.background_color = Palette.NAVY_BG
+	environment.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	environment.environment.ambient_light_color = Palette.CREAM
+	environment.environment.ambient_light_energy = 0.8
+	stage.add_child(environment)
+	var light := DirectionalLight3D.new()
+	light.rotation_degrees = Vector3(-35, -30, 0)
+	light.light_energy = 1.4
+	stage.add_child(light)
+	# Match the corridor's rear-side player key, lighting gameplay/rear views.
+	var key := OmniLight3D.new()
+	key.name = "CorridorKey"
+	key.position = Vector3(0, 1.8, 1)
+	key.light_color = Palette.MINT
+	key.light_energy = 0.65
+	key.omni_range = 3.2
+	key.shadow_enabled = false
+	stage.add_child(key)
+
 static func pose_for_view(hoppy: Node3D, state: StringName, time: float) -> bool:
 	var player: AnimationPlayer = hoppy.animation_player
 	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	player.playback_default_blend_time = 0.0
 	hoppy.set_anim_state(state)
+	# Runtime uses an explicit cross-fade; setting the default alone cannot cancel it.
 	player.play(state, 0.0)
 	player.advance(0.0)
 	player.seek(time, true)
-	return player.current_animation == state
+	player.advance(0.0)
+	return player.assigned_animation == state
 
 func finish(stage: Node3D, code: int) -> void:
 	root.get_node("AudioService").shutdown()
