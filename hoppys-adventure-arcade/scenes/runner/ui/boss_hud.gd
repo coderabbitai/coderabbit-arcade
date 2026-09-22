@@ -41,10 +41,10 @@ func _ready() -> void:
 	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	offset_left = -380
-	offset_right = 380
-	offset_top = 236
-	offset_bottom = 262
+	offset_left = -340
+	offset_right = 340
+	offset_top = 8
+	offset_bottom = 64
 	panel = PanelContainer.new()
 	add_child(panel)
 	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -56,19 +56,20 @@ func _ready() -> void:
 	var column := VBoxContainer.new()
 	panel.add_child(column)
 	var row := HBoxContainer.new()
+	column.add_theme_constant_override("separation", 2)
 	column.add_child(row)
-	tool_glyph = Style.icon(&"review_comment", Palette.ORANGE)
+	tool_glyph = Style.icon(&"review_comment", Palette.ORANGE, Vector2(28, 28))
 	row.add_child(tool_glyph)
 	tool_glyph.hide()
-	title = Style.label("BOSS", 26)
+	title = Style.label("BOSS", 22)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(title)
 	phase_row = row
 	var bars := Control.new()
-	bars.custom_minimum_size = Vector2(720, 22)
+	bars.custom_minimum_size = Vector2(652, 10)
 	column.add_child(bars)
-	chip = Style.bar(Vector2(720, 22), Palette.SLATE, Palette.NAVY_2)
-	hp = Style.bar(Vector2(720, 22), Palette.DANGER, Color.TRANSPARENT)
+	chip = Style.bar(Vector2(652, 10), Palette.SLATE, Palette.NAVY_2)
+	hp = Style.bar(Vector2(652, 10), Palette.DANGER, Color.TRANSPARENT)
 	for bar in [chip, hp]:
 		bar.step = 0.0
 		bars.add_child(bar)
@@ -226,22 +227,27 @@ func _build_intro() -> void:
 	get_parent().add_child(intro_card)
 	intro_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	intro_card.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	intro_card.offset_left = -450
-	intro_card.offset_right = 450
-	intro_card.offset_top = 236
-	intro_card.offset_bottom = 380
+	intro_card.offset_left = -340
+	intro_card.offset_right = 340
+	# Clear the existing 6.5% cinematic letterbox while staying above y=130.
+	intro_card.offset_top = 48
+	intro_card.offset_bottom = 128
 	intro_card.add_theme_stylebox_override("panel", Style.panel(Palette.DANGER, 0.95))
 	Style.polish(intro_card, false)
 	var column := VBoxContainer.new()
 	intro_card.add_child(column)
-	var eyebrow := Style.label("WARNING · BUG DETECTED", 24, Palette.DANGER)
-	intro_name = Style.label("", 52)
-	intro_taunt = Style.label("", 26, Palette.ORANGE)
+	var row := HBoxContainer.new()
+	column.add_child(row)
+	var eyebrow := Style.label("WARNING · BUG DETECTED", 18, Palette.DANGER)
+	intro_name = Style.label("", 24)
+	intro_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	intro_taunt = Style.label("", 18, Palette.ORANGE)
 	intro_taunt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	for label in [eyebrow, intro_name, intro_taunt]:
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		column.add_child(label)
+		if label == intro_taunt: column.add_child(label)
+		else: row.add_child(label)
 	intro_card.hide()
 
 func _intro(kind: StringName, boss_name: String, seconds: float) -> void:

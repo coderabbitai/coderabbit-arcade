@@ -126,25 +126,55 @@ func run() -> void:
 		check(label.get_theme_font_size("font_size") >= 34, "R7 warning type minimum")
 		check((label.size.x-text_width)*0.5 >= mock.hud.turn_icon.position.x+mock.hud.turn_icon.size.x+6, "R7 vector arrow clears centered copy")
 		check(mock.hud.turn_icon.tint == mock.hud.turn_label.get_theme_color("font_color"), "R7 arrow and turn copy share hue")
-		var boss_rect: Rect2 = mock.boss_overlay.panel.get_global_rect()
-		var pursuit_rect: Rect2 = mock.hud.pursuit_panel.get_global_rect()
-		check(not mock.boss_overlay.intro_card.get_global_rect().intersects(pursuit_rect), "B7 intro/pursuit panels separated at " + str(extent))
-		check(not boss_rect.intersects(pursuit_rect), "B7 boss/pursuit panels separated at " + str(extent))
-		for warning in [mock.hud.turn_panel, mock.hud.toast_panel]:
-			check(not boss_rect.intersects(warning.get_global_rect()), "R3 boss/warning nonintersection")
-			check(not mock.boss_overlay.intro_card.get_global_rect().intersects(warning.get_global_rect()), "R3 intro/warning nonintersection")
-		for other in [mock.hud.pursuit_alert, mock.boss_overlay.panel, mock.boss_overlay.intro_card, mock.hud.toast_panel, mock.hud.speed_label.get_parent().get_parent(), mock.hud.pursuit_panel]:
-			check(not mock.hud.turn_panel.get_global_rect().intersects(other.get_global_rect()), "R5 turn clear of " + other.name + " at " + str(extent))
-		check(mock.hud.turn_panel.get_global_rect().position.y >= 530, "R4 turn warning below hazard read zone")
-		check(not mock.hud.turn_panel.get_global_rect().intersects(mock.hud.speed_label.get_parent().get_parent().get_global_rect()), "R4 turn and speed panels separated")
-		check(not mock.hud.turn_panel.get_global_rect().intersects(mock.hud.toast_panel.get_global_rect()), "R3 turn/toast nonintersection")
-		check(boss_rect.end.x <= extent.x and boss_rect.position.x >= 0, "B7 boss fits viewport")
+		# Boss cards deliberately share one slot, but must never be visible together.
+		var panels := {
+			"approvals": mock.hud.hp_row.get_parent().get_parent(),
+			"timer": mock.hud.time_label.get_parent(),
+			"score": mock.hud.score_label.get_parent().get_parent(),
+			"pursuit countdown": mock.hud.pursuit_panel,
+			"boss plate": mock.boss_overlay.panel,
+			"intro card": mock.boss_overlay.intro_card,
+			"turn plate": mock.hud.turn_panel,
+			"toast": mock.hud.toast_panel,
+			"pursuit alert": mock.hud.pursuit_alert,
+		}
+		var scale_xy := Vector2(extent) / Vector2(1280, 720)
+		var top_band := Rect2(Vector2.ZERO, Vector2(extent.x, 130 * scale_xy.y))
+		var viewing_region := Rect2(Vector2(300, 130) * scale_xy, Vector2(680, 350) * scale_xy)
+		# Lay out the longest authored intro while it is visible, then verify handover.
+		mock.boss_intro.emit(mock.boss_kind, "Merge Conflict Hydra", 3.0)
+		mock.boss_overlay._process(1.0)
+		await frames()
+		check(not mock.boss_overlay.visible and mock.boss_overlay.intro_card.visible, "intro replaces boss plate")
+		for card in [mock.boss_overlay.panel, mock.boss_overlay.intro_card]:
+			var rect: Rect2 = card.get_global_rect()
+			check(top_band.encloses(rect), "boss card inside top band at " + str(extent) + ": " + str(rect))
+			check(not viewing_region.intersects(rect), "boss card clears viewing region at " + str(extent))
+		check(mock.boss_overlay.hp.size.y <= 14, "compact boss HP track")
+		var names := panels.keys()
+		for i in names.size():
+			var rect: Rect2 = panels[names[i]].get_global_rect()
+			print("A7 HUD RECT %s %s: %s" % [extent, names[i], rect])
+			for j in range(i + 1, names.size()):
+				if names[i] == "boss plate" and names[j] == "intro card":
+					check(not (panels[names[i]].is_visible_in_tree() and panels[names[j]].is_visible_in_tree()), "shared boss slot is exclusive")
+					continue
+				check(not rect.intersects(panels[names[j]].get_global_rect()), "%s / %s separated at %s" % [names[i], names[j], extent])
+		mock.boss_overlay._process(3.0)
+		mock.boss_spawned.emit(mock.boss_kind, 140)
+		await create_timer(0.35).timeout
+		check(mock.boss_overlay.visible and not mock.boss_overlay.intro_card.visible, "spawned boss owns top slot after intro")
+		check(mock.hud.turn_panel.get_global_rect().position.y >= 530, "turn warning below hazard read zone")
+		check(not mock.hud.turn_panel.get_global_rect().intersects(mock.hud.speed_label.get_parent().get_parent().get_global_rect()), "turn and speed separated")
+
 	root.size = Vector2i(1280,720)
 	root.content_scale_size = Vector2i(1280,720)
 	await frames()
 	for kind in [&"review_comment", &"lint_rule", &"unit_test", &"auto_fix_patch"]:
 		mock.tool_collected.emit(kind, 10)
 		check(mock.boss_overlay.tool_glyph.visible and mock.boss_overlay.tool_glyph.kind == kind and mock.boss_overlay.tool_glyph.tint == Palette.ORANGE, "B6 collected tool visible and orange")
+		await frames()
+		check(Rect2(300, 8, 680, 56).encloses(mock.boss_overlay.panel.get_global_rect()), "tool pickup keeps compact boss plate")
 		var icon := Style.icon(kind)
 		mock.hud.widgets.add_child(icon)
 	mock.boss_defeated.emit(mock.boss_kind, 550)
@@ -382,12 +412,15 @@ func check_centered_titles(mock: Node) -> void:
 		visibility.append(card.visible)
 		card.show()
 	await frames()
-	for pair in [[mock.boss_overlay.intro_card,mock.boss_overlay.intro_name], [mock.stage_banner.panel,mock.stage_banner.title], [mock.stage_banner.panel,mock.stage_banner.subtitle], [mock.stage_clear.panel,mock.stage_clear.title], [mock.stage_clear.panel,mock.stage_clear.subtitle]]:
+	for pair in [[mock.stage_banner.panel,mock.stage_banner.title], [mock.stage_banner.panel,mock.stage_banner.subtitle], [mock.stage_clear.panel,mock.stage_clear.title], [mock.stage_clear.panel,mock.stage_clear.subtitle]]:
 		var panel: Control = pair[0]
 		var title: Label = pair[1]
 		var box: StyleBoxFlat = panel.get_theme_stylebox("panel")
 		check(is_equal_approx(box.content_margin_left,box.content_margin_right), "R5 symmetric title margins")
 		check(absf(title.get_global_rect().get_center().x-panel.get_global_rect().get_center().x) <= 2, "R5 title horizontally centered: " + title.text)
+	var intro: Label = mock.boss_overlay.intro_name
+	check(mock.boss_overlay.intro_card.get_global_rect().encloses(intro.get_global_rect()), "intro title fits top-band card")
+	check(not intro.get_global_rect().intersects(intro.get_parent().get_child(0).get_global_rect()), "intro title clears warning eyebrow")
 	for card: Control in cards: check_panel_decorations(card)
 	check_panel_decorations(mock.boss_overlay)
 	for index in cards.size():

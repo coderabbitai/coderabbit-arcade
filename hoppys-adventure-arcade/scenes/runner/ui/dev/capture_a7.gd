@@ -40,6 +40,7 @@ func shot(view: String) -> bool:
 	return true
 func run() -> void:
 	root.size = Vector2i(1280, 720)
+	root.content_scale_size = Vector2i(1280, 720)
 	output = ProjectSettings.globalize_path("res://../docs/previews/assets")
 	if DirAccess.make_dir_recursive_absolute(output) != OK:
 		printerr("ASSET A7 CAPTURE: FAIL (output directory)")
@@ -67,6 +68,8 @@ func run() -> void:
 	fixture.boss_overlay._process(1.2)
 	if not await shot("boss-intro"): return
 	fixture.boss_overlay._process(3.0)
+	fixture.boss_spawned.emit(fixture.boss_kind, 140)
+	await create_timer(0.35).timeout
 	fixture.turn_incoming.emit(1, 3.0)
 	fixture.hud._process(0.2)
 	if not await shot("turn-warning"): return
@@ -80,6 +83,8 @@ func run() -> void:
 	frame_closeup(alert)
 	if not await shot("portrait-closeup"): return
 	alert.hide()
+	# Restore gameplay panels so stage captures include the reflowed side stacks.
+	fixture.hud.widgets.show()
 	fixture.phase_changed.emit(&"run")
 	fixture.stage_started.emit(2, &"Merge Conflict Hydra", 26.0)
 	fixture.stage_banner._process(0.6)

@@ -83,21 +83,21 @@ func _ready() -> void:
 	left.add_child(powerups)
 	time_label = Style.label("00:00.0", 30)
 	time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_back(time_label, Control.PRESET_CENTER_TOP, Vector2(-100, 28), Vector2(200, 56), Palette.SLATE, 0.70)
+	_back(time_label, Control.PRESET_TOP_RIGHT, Vector2(-228, 140), Vector2(200, 56), Palette.SLATE, 0.70)
 	pursuit_warning = HBoxContainer.new()
 	pursuit_warning.name = "PursuitWarning"
 	pursuit_warning.alignment = BoxContainer.ALIGNMENT_CENTER
-	pursuit_panel = _back(pursuit_warning, Control.PRESET_CENTER_TOP, Vector2(-160, 92), Vector2(320, 72), Palette.DANGER)
+	pursuit_panel = _back(pursuit_warning, Control.PRESET_TOP_RIGHT, Vector2(-280, 208), Vector2(252, 64), Palette.DANGER)
 	pursuit_ring = Glyph.new()
 	pursuit_ring.ring = true
-	pursuit_ring.custom_minimum_size = Vector2(56, 56)
+	pursuit_ring.custom_minimum_size = Vector2(36, 36)
 	pursuit_warning.add_child(pursuit_ring)
-	pursuit_label = Style.label("", 22)
+	pursuit_label = Style.label("", 18)
 	pursuit_warning.add_child(pursuit_label)
 	pursuit_warning.hide()
 	pursuit_panel.hide()
 	var right := VBoxContainer.new()
-	_back(right, Control.PRESET_TOP_RIGHT, Vector2(-328, 28), Vector2(300, 100), Palette.MINT)
+	_back(right, Control.PRESET_TOP_RIGHT, Vector2(-280, 28), Vector2(252, 100), Palette.MINT)
 	score_label = Style.label("00000000", 36, Palette.MINT)
 	score_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	right.add_child(score_label)
