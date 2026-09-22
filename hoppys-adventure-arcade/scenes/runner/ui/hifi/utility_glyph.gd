@@ -3,6 +3,8 @@ const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 const STROKE := 3.0
 # Normalized paths are the drawing source and the headless silhouette-test source.
 const GLYPHS := {
+	&"wrench": {"lines": [[Vector2(-0.7,0.9),Vector2(0.25,-0.05),Vector2(0.7,-0.05),Vector2(0.95,-0.5),Vector2(0.45,-0.25),Vector2(0.15,-0.55),Vector2(0.4,-1),Vector2(-0.1,-0.75),Vector2(-0.1,-0.3),Vector2(-0.95,0.6),Vector2(-0.7,0.9)]], "fills": []},
+	&"hazard": {"lines": [[Vector2(0,-1),Vector2(1,0.9),Vector2(-1,0.9),Vector2(0,-1)], [Vector2(-0.55,0.55),Vector2(-0.15,0.15)], [Vector2(-0.15,0.65),Vector2(0.3,0.2)], [Vector2(0.3,0.7),Vector2(0.6,0.4)]], "fills": []},
 	&"approve_shield": {"lines": [[Vector2(0,-1),Vector2(0.8,-0.6),Vector2(0.6,0.4),Vector2(0,1),Vector2(-0.6,0.4),Vector2(-0.8,-0.6),Vector2(0,-1)], [Vector2(-0.4,0),Vector2(-0.1,0.35),Vector2(0.45,-0.3)]], "fills": [[Vector2(-0.35,-0.6),Vector2(0,-0.8),Vector2(0,-0.35)]]},
 	&"lgtm": {"lines": [[Vector2(-0.5,-0.85),Vector2(0.5,-0.85),Vector2(0.9,-0.4),Vector2(0.9,0.4),Vector2(0.5,0.85),Vector2(-0.5,0.85),Vector2(-0.9,0.4),Vector2(-0.9,-0.4),Vector2(-0.5,-0.85)]], "fills": [[Vector2(-0.6,0),Vector2(-0.2,0.5),Vector2(0.65,-0.4),Vector2(0.4,-0.6),Vector2(-0.2,0.1),Vector2(-0.4,-0.2)]]},
 	&"nitro": {"lines": [], "fills": [[Vector2(0.2,-1),Vector2(-0.75,0.15),Vector2(-0.1,0.15),Vector2(-0.2,1),Vector2(0.75,-0.15),Vector2(0.1,-0.15)]]},

@@ -50,6 +50,11 @@ func run() -> void:
 	fixture.autoplay = false
 	root.add_child(fixture)
 	fixture.start_run()
+	if not await shot("get-ready"): return
+	fixture.power_up_collected.emit(&"approve_shield", 8.0)
+	fixture.hud._process(0.01)
+	fixture.hud._process(0.15)
+	if not await shot("toast-grab"): return
 	fixture.hud._process(3.0)
 	seed_capture_values(fixture)
 	fixture.collect(&"nitro", 8.0)

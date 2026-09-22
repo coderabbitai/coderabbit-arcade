@@ -59,6 +59,8 @@ func run() -> void:
 	root.add_child(mock)
 	mock.start_run()
 	await frames()
+	await check_real_startup()
+	await check_teaching(mock)
 	check_round2_static(mock)
 	check_overlay_fonts(mock)
 	check_tally_cleanup()
@@ -114,7 +116,8 @@ func run() -> void:
 		root.size = extent
 		root.content_scale_size = extent
 		await frames()
-		mock.hud._toast("+25 BONUS")
+		mock.hud._state(&"running")
+		mock.hud._toast("CODERABBIT TOOL: REVIEW COMMENT \u2014 auto-fires at the boss", 10, Palette.ORANGE, 2.4, true)
 		mock.hud._process(0.01)
 		mock.hud.turn_label.text = "TURN RIGHT 3"
 		mock.hud.turn_panel.show()
@@ -136,6 +139,7 @@ func run() -> void:
 			"intro card": mock.boss_overlay.intro_card,
 			"turn plate": mock.hud.turn_panel,
 			"toast": mock.hud.toast_panel,
+			"speed": mock.hud.speed_label.get_parent().get_parent(),
 			"pursuit alert": mock.hud.pursuit_alert,
 		}
 		var scale_xy := Vector2(extent) / Vector2(1280, 720)
@@ -154,6 +158,7 @@ func run() -> void:
 		var names := panels.keys()
 		for i in names.size():
 			var rect: Rect2 = panels[names[i]].get_global_rect()
+			if names[i] not in ["toast", "turn plate"]: check(not viewing_region.intersects(rect), "persistent panel clears centre: " + names[i])
 			print("A7 HUD RECT %s %s: %s" % [extent, names[i], rect])
 			for j in range(i + 1, names.size()):
 				if names[i] == "boss plate" and names[j] == "intro card":
@@ -236,6 +241,9 @@ func run() -> void:
 	await frames()
 	check(menu.ui.get_theme_default_font() == Style.theme().default_font, "R4 runner menu shared font")
 	check(menu.buttons.size() == 4, "menu buttons preserved")
+	var menu_legend: Node = menu.ui.find_child("TeachingLegend", true, false)
+	check(menu_legend != null, "menu teaching legend exists")
+	check_legend(menu_legend, true)
 	menu._toggle_leaderboard()
 	await frames()
 	check(menu.modal != null and menu.board.get_child_count() == 10, "leaderboard rows and medals")
@@ -459,3 +467,162 @@ func check_bracket_occupancy() -> void:
 	unknown.free()
 	check(finish.bracket_rect().has_area(), "R6 removed child invalidates occupancy")
 	panel.free()
+
+func check_legend(row: Node, compact: bool = false) -> void:
+	var copy := ""
+	var glyphs: Array[Node] = []
+	for child in row.get_children():
+		if child is Label: copy += child.text + " "
+		if child.get_script() == Glyph:
+			glyphs.append(child)
+			copy += "▲ " if child.kind == &"hazard" else "◆ "
+	check(copy.strip_edges() == ("HOW TO PLAY ◆ grab ◆ tool ▲ avoid" if compact else "GRAB ◆ mint power-ups ◆ orange CodeRabbit tools     AVOID ▲ red hazards"), "exact legend copy")
+	check(glyphs.size() == 3, "three vector teaching glyphs")
+	check(row.alignment == (BoxContainer.ALIGNMENT_BEGIN if compact else BoxContainer.ALIGNMENT_CENTER), "legend alignment matches parent copy")
+	for glyph in glyphs:
+		var gap: Control = row.get_child(glyph.get_index() - 1)
+		check(gap.custom_minimum_size.x + 2 * row.get_theme_constant("separation") >= 10, "glyph leading space >=10")
+	for i in glyphs.size():
+		check(glyphs[i].kind == [&"approve_shield", &"wrench", &"hazard"][i], "legend silhouette")
+		check(glyphs[i].tint == [Palette.MINT, Palette.ORANGE, Palette.DANGER][i], "legend color")
+	census(row)
+
+func check_teaching(mock: Node) -> void:
+	var hud: Node = mock.hud
+	hud.set_process(false)
+	var row: Node = hud.ready_panel.find_child("TeachingLegend", true, false)
+	check(row != null, "GET READY teaching row exists")
+	check_legend(row)
+	for extent in [Vector2i(1280,720), Vector2i(1440,900)]:
+		root.size = extent
+		root.content_scale_size = extent
+		hud._state(&"ready")
+		await frames()
+		check(hud.ready_panel.get_global_rect().encloses(row.get_global_rect()), "legend fits ready backing")
+		check(Rect2(Vector2.ZERO, Vector2(extent)).encloses(hud.ready_panel.get_global_rect()), "ready fits viewport")
+		print("A7 GET READY RECT %s: %s" % [extent, hud.ready_panel.get_global_rect()])
+		var speed: Control = hud.speed_label.get_parent().get_parent()
+		check(not speed.is_visible_in_tree(), "GET READY hides speed at " + str(extent))
+		mock.stage_started.emit(1, &"Merge Conflict Hydra", 24.0)
+		mock.stage_banner._process(0.5)
+		await frames()
+		check(mock.stage_banner.visible, "stage banner exercised alongside GET READY")
+		check_ready_separation(mock, extent)
+		mock.run_started.emit(4704)
+		check(hud.ready_panel.visible and not speed.is_visible_in_tree(), "run_started preserves GET READY and hides speed")
+		check_ready_separation(mock, extent)
+		hud._state(&"ready")
+		mock.pursuit_started.emit(18.0)
+		mock.pursuit_alert.emit(&"critical", 4.0)
+		hud.pursuit_alert._process(0.4)
+		check(hud.pursuit_alert.visible and not hud.ready_panel.visible, "pursuit replaces GET READY")
+		check_ready_separation(mock, extent)
+		mock.pursuit_recovered.emit(&"timer")
+		hud.pursuit_alert._process(1.5)
+		hud._state(&"ready")
+		mock.turn_incoming.emit(1, 3.0)
+		check(hud.turn_panel.visible and not hud.ready_panel.visible, "turn replaces GET READY")
+		check_ready_separation(mock, extent)
+		mock.turn_finished.emit()
+		hud._state(&"ready")
+		hud._state(&"running")
+		hud._process(3.0)
+		check(not row.is_visible_in_tree(), "legend disappears with ready card")
+	root.size = Vector2i(1280,720)
+	root.content_scale_size = root.size
+	for blocked_phase in [&"boss_intro", &"stage_clear"]:
+		mock.start_run()
+		mock.set_demo_phase(blocked_phase)
+		if blocked_phase == &"boss_intro": mock.boss_intro.emit(mock.boss_kind, "Test", 3.0)
+		else: mock.stage_cleared.emit(1, 100)
+		mock.damage_blocked.emit(&"hazard", &"shield")
+		check(not hud.teaching_seen.has(&"damage"), "blocked damage does not teach avoid")
+		for i in 2:
+			mock.power_up_collected.emit(&"approve_shield", 8.0)
+			mock.tool_collected.emit(&"review_comment", 10)
+			mock.damage_taken.emit(&"hazard", 1)
+		hud._process(0.1)
+		check(hud.teaching_pending.size() == 3 and not hud.toast_teaching, "three hints deferred once during " + blocked_phase)
+		hud._process(4.0)
+		check(not hud.toast_panel.visible, "phase suppresses hints even after card timer")
+		mock.set_demo_phase(&"run")
+		mock.stage_clear._process(3.0)
+		mock.boss_overlay._process(4.0)
+		var expected := ["GRABBED: APPROVE SHIELD \u2014 mint and orange items help you", "CODERABBIT TOOL: REVIEW COMMENT \u2014 auto-fires at the boss", "RED = AVOID \u2014 jump or roll past hazards"]
+		for i in 3:
+			hud._process(0.01)
+			check(hud.toast.text == expected[i], "full first-contact copy " + str(i))
+			check(is_equal_approx(hud.toast_remaining, 2.4), "teaching duration 2.4 seconds")
+			check(hud.toast_panel.get_theme_stylebox("panel").border_color == [Palette.MINT, Palette.ORANGE, Palette.DANGER][i], "kind-colored toast border")
+			await frames()
+			check(hud.toast_panel.get_global_rect().size.x <= 680, "teaching toast fits between side stacks")
+			hud._process(2.39)
+			check(hud.toast_panel.visible, "toast holds full duration")
+			hud._process(0.02)
+		check(hud.teaching_pending.is_empty() and hud.toast_queue.is_empty() and not hud.toast_panel.visible, "all three shown exactly once")
+	# Signal-only facades suppress an already visible teaching toast immediately.
+	mock.start_run()
+	mock.power_up_collected.emit(&"nitro", 8.0)
+	hud._process(0.01)
+	mock.boss_intro.emit(mock.boss_kind, "Test", 3.0)
+	check(not hud.toast_panel.visible and hud.teaching_pending.size() == 1, "intro interrupts and defers active hint")
+	hud._process(3.1)
+	check(hud.toast.text.begins_with("GRABBED:"), "deferred hint resumes after signal-only intro")
+	mock.stage_cleared.emit(1,100)
+	check(not hud.toast_panel.visible, "stage clear interrupts active hint")
+	mock.stage_clear._process(3.0)
+	mock.boss_overlay._process(4.0)
+	mock.start_run()
+	check(hud.teaching_seen.is_empty() and hud.teaching_pending.is_empty(), "new run resets teaching")
+	hud.toast_teaching = false
+	hud.set_process(true)
+
+func check_ready_separation(mock: Node, extent: Vector2i) -> void:
+	var ready: Control = mock.hud.ready_panel
+	var panels := {
+		"speed": mock.hud.speed_label.get_parent().get_parent(),
+		"stage banner": mock.stage_banner.panel,
+		"pursuit alert": mock.hud.pursuit_alert,
+		"turn plate": mock.hud.turn_panel,
+	}
+	for title in panels:
+		var panel: Control = panels[title]
+		check(not (ready.is_visible_in_tree() and panel.is_visible_in_tree()) or not ready.get_global_rect().intersects(panel.get_global_rect()), "GET READY / %s visible surfaces separated at %s" % [title, extent])
+
+func check_real_startup() -> void:
+	for extent in [Vector2i(1280,720), Vector2i(1440,900)]:
+		root.size = extent
+		root.content_scale_size = extent
+		# Fresh fixture binds the HUD while state is ready, like menu Play and retry.
+		var fresh := Mock.new()
+		fresh.autoplay = false
+		root.add_child(fresh)
+		var hud: Node = fresh.hud
+		hud.set_process(false)
+		var legend: Control = hud.ready_panel.find_child("TeachingLegend", true, false)
+		var speed: Control = hud.speed_label.get_parent().get_parent()
+		check(fresh.state == &"ready" and hud.ready_panel.visible, "fresh binding begins ready")
+		fresh.start_run() # state_changed(running), then run_started.
+		await frames()
+		check(hud.ready_panel.is_visible_in_tree() and legend.is_visible_in_tree(), "real startup renders legend across frames")
+		check(hud.ready_panel.modulate.a == 1.0 and not speed.visible, "real startup keeps opaque card and hides speed")
+		check_ready_separation(fresh, extent)
+		hud._process(2.5)
+		check(hud.ready_panel.visible and hud.ready_panel.modulate.a == 1.0, "startup card holds 2.5 seconds")
+		hud._process(0.125)
+		check(legend.is_visible_in_tree() and is_equal_approx(hud.ready_panel.modulate.a, 0.5), "startup legend fades through 2.75-second window")
+		hud._process(0.125)
+		check(not hud.ready_panel.visible and not legend.is_visible_in_tree(), "startup legend hides at 2.75 seconds")
+		check(speed.visible and is_zero_approx(speed.self_modulate.a), "speed starts transparent after card closes")
+		hud._process(0.09)
+		check(is_equal_approx(speed.self_modulate.a, 0.5), "speed fades in over 0.18 seconds")
+		fresh.paused = true
+		hud._process(1.0)
+		check(is_equal_approx(speed.self_modulate.a, 0.5), "speed fade freezes on pause")
+		fresh.paused = false
+		hud._process(0.09)
+		check(is_equal_approx(speed.self_modulate.a, 1.0), "speed fade finishes")
+		check_ready_separation(fresh, extent)
+		fresh.free()
+	root.size = Vector2i(1280,720)
+	root.content_scale_size = root.size
