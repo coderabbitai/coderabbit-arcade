@@ -657,6 +657,41 @@ never left displaced; gameplay is untouched, because only the camera and the cor
 != &"run"`; movement/despawn continue in every phase; breather weighting/pursuit relief unchanged.
 `clear_hazards_in_range()` also clears projectiles (they are in `runner_hazards`).
 
+**Stage-entrance window (contract §11.1).** `begin_clear_road(seconds)` + `clear_road_remaining()`, called by
+`stage_manager._enter_run()` through `has_method` guards immediately **before** `set_spawning(true)`, on every
+stage entry including stage 1. `_clear_road_remaining` is decremented in `_physics_process` on the same delta the
+corridor scrolls on, after the `state` and `game.paused` guards, so a pause holds the window.
+
+1. **Clamp the frontier.** `frontier_z` is only ever re-read from the last active chunk, so a corridor that
+   emptied during the drain, the turn, the boss and the clear card leaves it scrolled to at or behind the player.
+   When `active.is_empty()`, `frontier_z = min(frontier_z, −ENTRY_CLEAR_DISTANCE)` (6.0, the authored entry
+   clearance every chunk carries and the validator's `MIN_CLEAR`). Without this the first `_fill()` of the stage
+   parks a chunk at `frontier_z − gap`, i.e. underfoot, and its hazards land while the banner is still up.
+2. **Sweep.** Every blocking hazard in `runner_hazards` whose `game.track_z()` is in
+   `[−v × (seconds + reaction), BLAST_NEAR_Z]` gets `clear()`, where `v = max(game.speed, base_speed, 1)`.
+   Silently: **no** `hazard_cleared`, **no** `hazards_blasted`, no bonus, no score, no `hazards_dodged`. This is
+   housekeeping, not Auto-Fix. Boss projectiles are in `runner_hazards`, so leftovers go the same way.
+   The promise is re-validated every tick — `_physics_process` re-runs the same sweep with
+   `_clear_road_remaining + stage_banner_reaction_seconds` right after the decrement, while the window is still
+   open — so a mid-window speed increase (Nitro's ×1.25 or the ramp) sweeps the hazards it just pulled inside
+   the window instead of leaving a promise that was only true when it was made.
+3. **Gate placement.** `_place_next()` draws, instantiates, measures and only then decides —
+   `entry_clear()` needs the instance. With the chunk parked at `frontier_z − gap`, its nearest hazard's leading
+   edge is at `chunk.global_position.z − entry_clear()`, and it is admitted only when
+   `−(that z) / v ≥ _clear_road_remaining + stage_banner_reaction_seconds`. A chunk with no hazards is always
+   admitted. A rejected draw is `remove_child`ed (so its hazards leave `runner_hazards` on the frame they joined
+   it) and `queue_free`d before `setup()` ever runs, and `_pick_index(d, true)` redraws among `breather`-tagged
+   chunks only — out-of-range breathers included, because a rest beat still beats a hazard. The no-repeat rule
+   already relaxes itself when one candidate is left, so two breathers alternate and one repeats. A library with
+   no breather at all places nothing that tick and warns once.
+
+   Both sides of the test fall at one second per second *while the speed holds*, so an admitted chunk stays
+   admissible and the margin at the moment the window shuts is exactly `stage_banner_reaction_seconds`; when the
+   speed rises instead, the per-tick sweep in step 2 is what takes the difference. The corridor still fills to
+   `spawn_horizon_z` with breathers (and the power-ups they carry), so the pacing never goes slack.
+
+`stage_banner_clear_seconds` ≤ 0 makes `begin_clear_road()` a no-op — the v1 behaviour, opt-in.
+
 `autopilot.gd`: each planned slice carries `closing_v` (`closing_speed` when present, else `game.speed`) and its
 trigger distance is computed from it; projectile entries never merge with chunk-hazard entries. While
 `phase == &"boss"`: subscribe to `boss_attack_telegraph`, plan from the telegraph (arrival = telegraph + travel at

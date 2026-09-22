@@ -52,6 +52,9 @@ var events := {}
 var restore_steps := 8
 var restore_ticks := 60
 var restore_scale := 1.0
+## True while stage-entrance windows are still worth watching: the reckless and catch phases take
+## damage on purpose, so they close the watch before they start (contract §11.1).
+var banner_watch := true
 ## Throwaway board for this run, deleted in _report(): a smoke run must never write entries to the
 ## player's real user://leaderboard.cfg.
 var leaderboard_path := "user://smoke_leaderboard_%d.cfg" % (randi() % 1000000)
@@ -91,6 +94,9 @@ func run() -> void:
 	root.add_child(game)
 	await process_frame
 	_watch()
+	# The stage-entrance windows are read on the physics tick they end on, which no `await` in the
+	# phases below lands on; the sampler is what catches that exact moment.
+	physics_frame.connect(_sample_banner_windows)
 	game.start_run(SEED)
 	check(game.state == &"running", "start_run did not go live")
 	check(game.seed == SEED, "the run did not take the seed it was given")
@@ -106,6 +112,7 @@ func run() -> void:
 	await _pause_phase()
 	await _pursuit_phase()
 	await _catch_phase()
+	_banner_phase()
 	_leaderboard_phase()
 	game.free()
 	game = null
@@ -310,6 +317,7 @@ func _input_phase() -> void:
 
 ## Reckless autopilot takes a hit, the pursuit starts, and a clean stretch wins it back.
 func _pursuit_phase() -> void:
+	_close_banner_watch()
 	game.set_autopilot(true)
 	# One ignored slice at a time, and never two in flight: arm the bot, wait until it has burned
 	# the slice, then give that slice time to reach the player before arming again. Two overlapping
@@ -383,6 +391,91 @@ func _catch_phase() -> void:
 	await _wait_run_seconds(0.5)
 	check(events["run_finished"] == 1, "run_finished fired %d times" % events["run_finished"])
 	check(game.state == &"finished", "the run did not end in the finished state")
+
+## Contract §11.1: the `STAGE n` banner covers the lanes, so for `stage_banner_clear_seconds` after
+## every `stage_started` nothing blocking may reach the player, and the moment the window ends the
+## nearest blocking hazard is still a full `stage_banner_reaction_seconds` of travel away. Checked
+## over every stage the run opened before the phases that take damage on purpose — which is at
+## least the two the seam itself produced.
+func _banner_phase() -> void:
+	var windows: Array = events["stage_windows"]
+	check(windows.size() >= 2,
+		"only %d stage-entrance window(s) were watched, expected one per stage across the seam" % windows.size())
+	# The window must not have cost the seam its boss: this is the same run _stage_phase() drove.
+	check(not events["boss_spawned"].is_empty() and events["stage_started"].size() >= 2,
+		"the clear-road window broke the seam: %d boss spawn(s), %d stage(s)"
+			% [events["boss_spawned"].size(), events["stage_started"].size()])
+	var reaction := float(game.config.stage_banner_reaction_seconds)
+	for item in windows:
+		var window: Dictionary = item
+		var index := int(window["index"])
+		check(bool(window["closed"]), "stage %d's banner window never closed inside the run" % index)
+		if not bool(window["closed"]):
+			continue
+		var hits := 0
+		for stamp in events["damage_times"]:
+			if float(stamp) >= float(window["opened"]) and float(stamp) <= float(window["ends"]):
+				hits += 1
+		check(hits == 0,
+			"stage %d took %d hit(s) while the banner was still covering the lanes: %s"
+				% [index, hits, events["hit_log"]])
+		var limit := -reaction * float(window["speed"])
+		check(float(window["nearest_z"]) <= limit + 0.01,
+			"stage %d's banner lifted with a blocking hazard at track z %.2f; at %.1f m/s it must be at most %.2f"
+				% [index, float(window["nearest_z"]), float(window["speed"]), limit])
+
+## One window per stage_started, closed by the physics sampler once it has run its course.
+func _open_banner_window(index: int) -> void:
+	if not banner_watch or game == null or not is_instance_valid(game):
+		return
+	events["stage_windows"].append({
+		"index": index,
+		"opened": float(game.elapsed),
+		"ends": float(game.elapsed) + float(game.config.stage_banner_clear_seconds),
+		"closed": false,
+		"speed": maxf(float(game.speed), 1.0),
+		"nearest_z": -INF
+	})
+
+## Read the corridor on the tick a window runs out. `game.elapsed` is the run clock, so a pause
+## holds the window open exactly as the spawner's own countdown does.
+func _sample_banner_windows() -> void:
+	if game == null or not is_instance_valid(game):
+		return
+	for item in events.get("stage_windows", []):
+		var window: Dictionary = item
+		if bool(window["closed"]) or float(game.elapsed) < float(window["ends"]):
+			continue
+		window["closed"] = true
+		window["speed"] = maxf(float(game.speed), 1.0)
+		window["nearest_z"] = _nearest_blocking_z()
+
+## Stop watching before the phases that take damage on purpose, and drop any window still open: a
+## hit the test went looking for inside one would be the test's doing, not the corridor's.
+func _close_banner_watch() -> void:
+	banner_watch = false
+	var kept: Array = []
+	for item in events["stage_windows"]:
+		var window: Dictionary = item
+		if bool(window["closed"]):
+			kept.append(window)
+	events["stage_windows"] = kept
+
+## Track z of the blocking hazard closest to the player without having passed them; -INF when the
+## corridor holds none. Boss projectiles are in runner_hazards too, so they count here.
+func _nearest_blocking_z() -> float:
+	var nearest := -INF
+	for node in get_nodes_in_group(&"runner_hazards"):
+		var hazard := node as Node3D
+		if hazard == null or not is_instance_valid(hazard):
+			continue
+		if hazard.has_method("is_blocking") and not hazard.is_blocking():
+			continue
+		var z: float = game.track_z(hazard)
+		if z > 1.0:
+			continue
+		nearest = maxf(nearest, z)
+	return nearest
 
 ## The result reached the board, and the name can still be set afterwards.
 func _leaderboard_phase() -> void:
@@ -631,7 +724,11 @@ func _routing_phase() -> void:
 func _watch() -> void:
 	events = {
 		"damage_taken": [],
+		# `game.elapsed` at each hit, so a hit can be placed inside or outside a banner window.
+		"damage_times": [],
 		"hit_log": [],
+		# One entry per stage_started: {index, opened, ends, closed, speed, nearest_z}.
+		"stage_windows": [],
 		"damage_blocked": [],
 		"pursuit_started": [],
 		"pursuit_progress": [],
@@ -658,7 +755,8 @@ func _watch() -> void:
 		"leaderboard_saved": 0
 	}
 	game.stage_started.connect(func(index: int, name: StringName, speed: float) -> void:
-		events["stage_started"].append([index, name, speed]))
+		events["stage_started"].append([index, name, speed])
+		_open_banner_window(index))
 	game.stage_cleared.connect(func(index: int, bonus: int) -> void:
 		events["stage_cleared"].append([index, bonus]))
 	game.turn_incoming.connect(func(direction: int, seconds: float) -> void:
@@ -679,6 +777,7 @@ func _watch() -> void:
 		events["tool_collected"].append([kind, damage]))
 	game.damage_taken.connect(func(kind: StringName, hp: int) -> void:
 		events["damage_taken"].append(kind)
+		events["damage_times"].append(float(game.elapsed))
 		events["hit_log"].append(_hit_context(kind, hp)))
 	game.damage_blocked.connect(func(kind: StringName, reason: StringName) -> void:
 		events["damage_blocked"].append([kind, reason]))

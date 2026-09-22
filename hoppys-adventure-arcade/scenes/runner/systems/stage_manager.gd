@@ -34,6 +34,7 @@ const DEFAULT_STAGE_CLEAR_LINE_Z := 8.0
 const DEFAULT_STAGE_CLEAR_SECONDS := 3.0
 const DEFAULT_STAGE_CLEAR_BONUS_BASE := 400
 const DEFAULT_STAGE_CLEAR_BONUS_PER_STAGE := 150
+const DEFAULT_STAGE_BANNER_CLEAR_SECONDS := 3.5
 
 var game: RunnerGame
 var config: RunConfig
@@ -236,6 +237,11 @@ func _enter_run() -> void:
 			controller.set_stage_bonus(StageDefs.speed_bonus(stage_index, config))
 		if controller.has_method("set_difficulty_floor"):
 			controller.set_difficulty_floor(StageDefs.difficulty_floor(stage_index, config))
+	# The stage banner goes up on the stage_started below and covers the lanes, so the corridor is
+	# held hazard-free across it (contract §11.1). This has to precede _set_spawning(true): switching
+	# placement on tops the corridor up on the same tick, and the window is what those first chunks
+	# are measured against. Every stage entry opens one, stage 1 included.
+	_begin_clear_road()
 	_set_spawning(true)
 	game.stage_started.emit(stage_index, stage_name, _stage_base_speed())
 
@@ -384,6 +390,16 @@ func _set_spawning(on: bool) -> void:
 	if spawner != null and is_instance_valid(spawner) and spawner.has_method("set_spawning"):
 		spawner.set_spawning(on)
 
+## Ask the spawner for a hazard-free run-in the banner can sit over (contract §11.1). Defensive like
+## every other collaborator call: a spawner stub without the method simply keeps the v1 behaviour.
+func _begin_clear_road() -> void:
+	if game == null:
+		return
+	var spawner: Node = game.spawner
+	if spawner == null or not is_instance_valid(spawner) or not spawner.has_method("begin_clear_road"):
+		return
+	spawner.begin_clear_road(_banner_clear_seconds())
+
 func _boss_encounter() -> Node:
 	if game == null:
 		return null
@@ -484,6 +500,9 @@ func _stage_clear_line_z() -> float:
 
 func _stage_clear_seconds() -> float:
 	return maxf(_float_config(&"stage_clear_seconds", DEFAULT_STAGE_CLEAR_SECONDS), 0.0)
+
+func _banner_clear_seconds() -> float:
+	return maxf(_float_config(&"stage_banner_clear_seconds", DEFAULT_STAGE_BANNER_CLEAR_SECONDS), 0.0)
 
 func _float_config(property: StringName, fallback: float) -> float:
 	if config == null or not (property in config):

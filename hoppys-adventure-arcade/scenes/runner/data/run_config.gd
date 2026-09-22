@@ -109,6 +109,13 @@ extends Resource
 @export var stage_clear_seconds := 3.0
 @export var stage_clear_bonus_base := 400
 @export var stage_clear_bonus_per_stage := 150
+## Seconds after every `stage_started` in which no blocking hazard may reach the player, because the
+## stage banner is covering the lanes (contract §11.1). The banner itself must be gone by
+## `stage_banner_clear_seconds − stage_banner_reaction_seconds`.
+@export var stage_banner_clear_seconds := 3.5
+## Seconds of reaction the player is owed the moment the window above ends: the nearest blocking
+## hazard is still this much travel away (contract §11.1).
+@export var stage_banner_reaction_seconds := 1.0
 
 @export_group("Turn")
 @export var turn_seconds := 2.4

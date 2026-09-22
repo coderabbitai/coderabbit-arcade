@@ -22,6 +22,13 @@ const DIFFICULTY_EPSILON := 0.0001
 const BLAST_NEAR_Z := 1.0
 ## Hard stop so a degenerate library (zero-length chunks) can never spin _fill().
 const FILL_GUARD := 64
+## The authored entry clearance every chunk carries (systems spec §5.1, the validator's MIN_CLEAR).
+## A stale frontier is clamped no closer to the player than this, so a stage that opens on an empty
+## corridor can never park its first chunk underfoot.
+const ENTRY_CLEAR_DISTANCE := 6.0
+## Contract §11.10 fallback, used only when the config predates the stage-entrance fields. The
+## window's own length is not one: begin_clear_road() is always told how long it is.
+const DEFAULT_STAGE_BANNER_REACTION_SECONDS := 1.0
 ## Newest-first cap on the debug log the smoke test prints when it fails.
 const CHUNK_LOG_LIMIT := 256
 
@@ -43,10 +50,16 @@ var chunks_spawned := 0
 ## False while the stage drains, and through turn, boss and stage_clear (systems spec §10.6).
 ## Movement and despawn carry on regardless; only new placements stop.
 var spawning := true
+## Seconds left in the stage-entrance window opened by begin_clear_road() (contract §11.1). While it
+## is above zero the corridor may only take chunks whose hazards arrive after it, plus the reaction
+## time; it counts down with the scroll, so a paused game never burns it.
+var _clear_road_remaining := 0.0
 
 var _chunk_log := PackedStringArray()
 var _power_up_scene: PackedScene
 var _power_up_scene_checked := false
+## One warning per spawner when the library holds no breather to fall back on.
+var _breather_warned := false
 
 func setup(runner: RunnerGame) -> void:
 	game = runner
@@ -81,6 +94,9 @@ func reset(run_seed: int) -> void:
 			child.queue_free()
 	_chunk_log.clear()
 	spawning = true
+	# start_run() resets the spawner before the StageManager opens stage 1, so the window the first
+	# stage_started asks for is always opened after this line, never wiped by it.
+	_clear_road_remaining = 0.0
 	spawn_rng.seed = run_seed
 	powerup_rng.seed = run_seed ^ 0x9E3779B9
 	last_index = -1
@@ -103,6 +119,32 @@ func set_spawning(on: bool) -> void:
 	if not spawning:
 		return
 	_fill()
+
+## Open the stage-entrance window (contract §11.1): for `seconds` the stage banner is covering the
+## lanes, so nothing the player would have to dodge may reach them. The StageManager calls this on
+## every stage entry, stage 1 included, immediately before it switches placement back on.
+##
+## Three things happen here. The window itself starts counting down in _physics_process, which also
+## re-runs the sweep below on every tick of it, at the speed of that tick. A corridor
+## that has already emptied has a stale `frontier_z` — it is only ever re-read from the last active
+## chunk, so after a drain, a turn, a boss and a stage-clear card it has scrolled to somewhere at or
+## behind the player — and is clamped back to at least ENTRY_CLEAR_DISTANCE ahead, so the first
+## chunk of the stage can never be parked underfoot. Finally anything already inbound inside the
+## window is swept away.
+##
+## Re-entering while a window is still open keeps the longer of the two.
+func begin_clear_road(seconds: float) -> void:
+	var window := maxf(seconds, 0.0)
+	if window <= 0.0:
+		return
+	_clear_road_remaining = maxf(_clear_road_remaining, window)
+	if active.is_empty():
+		frontier_z = minf(frontier_z, -ENTRY_CLEAR_DISTANCE)
+	_sweep_clear_road(_clear_road_remaining + _reaction_seconds())
+
+## Seconds left in the stage-entrance window; 0 when none is open.
+func clear_road_remaining() -> float:
+	return _clear_road_remaining
 
 ## Newest-last log of every placement: "%.1fs d=%.2f <name>[ mirrored] gap=%.1f".
 func get_chunk_log() -> PackedStringArray:
@@ -133,11 +175,55 @@ func clear_hazards_in_range() -> int:
 			game.hazard_cleared.emit(hazard)
 	return count
 
+## Housekeeping, not Auto-Fix: every blocking hazard that could still reach the player inside the
+## stage-entrance window is removed silently. No hazard_cleared, no hazards_blasted, no score and no
+## result field moves — the player neither dodged these nor blasted them, they were simply never
+## theirs to meet. Boss projectiles left over from the fight are in runner_hazards too, so they go
+## the same way (contract §11.6); the z test uses the rig-local accessor, like Auto-Fix does.
+##
+## Called on entry by begin_clear_road() and again on every tick of the window by _physics_process,
+## because `reach_seconds` is measured at the speed of the moment: the same hazard is outside the
+## reach at the base speed and inside it once Nitro lands. Straight-line work over a group that
+## holds at most the corridor's own hazards, and no await — the physics step must not yield.
+func _sweep_clear_road(reach_seconds: float) -> void:
+	var tree := get_tree()
+	if tree == null:
+		return
+	var far_z := -absf(_clear_road_speed() * maxf(reach_seconds, 0.0))
+	for node in tree.get_nodes_in_group(&"runner_hazards"):
+		var hazard := node as Node3D
+		if hazard == null or not is_instance_valid(hazard):
+			continue
+		if not hazard.has_method("is_blocking") or not hazard.is_blocking():
+			continue
+		if not hazard.has_method("clear"):
+			continue
+		var z := game.track_z(hazard) if game != null else hazard.global_position.z
+		if z < far_z or z > BLAST_NEAR_Z:
+			continue
+		hazard.clear()
+
+## Scroll the corridor, despawn what is behind the player, top the frontier back up — and, while a
+## stage-entrance window is open, count it down and re-validate its promise (contract §11.1).
+## Admission is measured once, at the speed of the tick that placed the chunk, so a mid-window
+## speed increase — Nitro's ×1.25 or the difficulty ramp — shortens every arrival already in the
+## corridor and can pull a hazard that was admitted back inside the window. Re-sweeping each tick
+## at the current speed is what keeps the promise true rather than true-when-made.
 func _physics_process(delta: float) -> void:
 	if game == null or config == null:
 		return
 	if game.state != &"running" and game.state != &"caught":
 		return
+	# The window rides the same delta the corridor scrolls on. The Systems node is PAUSABLE, so this
+	# never runs while the tree is frozen; the explicit guard keeps a hand-driven rig honest too.
+	if bool(game.paused):
+		return
+	if _clear_road_remaining > 0.0:
+		_clear_road_remaining = maxf(_clear_road_remaining - delta, 0.0)
+		# Both sides of the admission test fall at one second per second while the speed holds, so
+		# this clears nothing on a steady corridor; it only bites when the speed went up under it.
+		if _clear_road_remaining > 0.0:
+			_sweep_clear_road(_clear_road_remaining + _reaction_seconds())
 	var dz := float(game.speed) * delta
 	frontier_z += dz
 	for chunk in active:
@@ -172,22 +258,32 @@ func _fill() -> void:
 			return
 
 func _place_next(root: Node3D) -> bool:
-	var index := _pick_index(float(game.difficulty))
+	var index := _pick_index(float(game.difficulty), false)
 	if index < 0:
 		return false
-	var meta := metas[index]
-	var scene: PackedScene = meta["scene"]
-	var chunk := scene.instantiate() as Node3D
+	var chunk := _build_chunk(index, root)
 	if chunk == null:
-		push_warning("Runner chunk %s did not instantiate as a Node3D" % meta["name"])
 		return false
-	last_index = index
-	# Park the chunk on the frontier before it enters the tree, so its hazards never spend a frame
-	# at the origin; the exact z follows once entry_clear() can be measured.
-	chunk.position = Vector3(0.0, 0.0, frontier_z)
-	root.add_child(chunk)
 	var gap := _gap_for(chunk)
 	chunk.position.z = frontier_z - gap
+	# Stage-entrance window (contract §11.1): a chunk whose first hazard could arrive while the
+	# banner is still up — or inside the reaction time the player is owed straight after it — is
+	# swapped for a hazard-free breather. The measurement needs the instance, so the draw is made,
+	# measured and only then rejected; the reject leaves the tree before its hazards are ever seen.
+	if not _clear_road_admits(chunk):
+		var breather := _pick_index(float(game.difficulty), true)
+		_discard_chunk(chunk)
+		if breather < 0:
+			_warn_missing_breather()
+			return false
+		index = breather
+		chunk = _build_chunk(index, root)
+		if chunk == null:
+			return false
+		gap = _gap_for(chunk)
+		chunk.position.z = frontier_z - gap
+	var meta := metas[index]
+	last_index = index
 	var mirrored := bool(meta["mirror_x"]) and spawn_rng.randf() < float(config.chunk_mirror_chance)
 	chunk.setup(game, mirrored)
 	active.append(chunk)
@@ -216,15 +312,86 @@ func _gap_for(chunk: Node3D) -> float:
 			previous_exit = previous.exit_clear()
 	return maxf(0.0, v_eff * float(config.gap_safety) * spacing - previous_exit - chunk.entry_clear())
 
+## Instantiate one library chunk and park it on the frontier, inside the tree. The exact z follows
+## once entry_clear() can be measured, so its hazards never spend a frame at the origin.
+func _build_chunk(index: int, root: Node3D) -> Node3D:
+	var meta := metas[index]
+	var scene: PackedScene = meta["scene"]
+	var chunk := scene.instantiate() as Node3D
+	if chunk == null:
+		push_warning("Runner chunk %s did not instantiate as a Node3D" % meta["name"])
+		return null
+	chunk.position = Vector3(0.0, 0.0, frontier_z)
+	root.add_child(chunk)
+	return chunk
+
+## Drop a chunk that was drawn, measured and rejected. It leaves the tree before it is freed, so its
+## hazards are out of runner_hazards on the same frame they joined it; setup() never ran, so nothing
+## else in the run ever saw it.
+func _discard_chunk(chunk: Node3D) -> void:
+	if chunk == null or not is_instance_valid(chunk):
+		return
+	var parent := chunk.get_parent()
+	if parent != null:
+		parent.remove_child(chunk)
+	chunk.queue_free()
+
+## May this chunk be placed where it now stands? Outside the stage-entrance window everything may;
+## inside it, only a chunk whose nearest hazard cannot reach the player before the window and the
+## reaction time have both run out. A chunk with no hazards always may.
+func _clear_road_admits(chunk: Node3D) -> bool:
+	if _clear_road_remaining <= 0.0:
+		return true
+	if chunk.get_hazards().is_empty():
+		return true
+	# The player sits at z = 0 and the corridor closes on them, so the nearest hazard's leading edge
+	# is entry_clear() beyond the chunk front and its arrival is that distance over the speed.
+	var nearest_z := chunk.global_position.z - float(chunk.entry_clear())
+	var arrival := -nearest_z / _clear_road_speed()
+	return arrival >= _clear_road_remaining + _reaction_seconds()
+
+## The speed the window's arithmetic is done at: the corridor's own, floored at the base speed (as
+## the seam rule floors it) and never zero, so a stalled facade cannot promise an infinite lead.
+func _clear_road_speed() -> float:
+	var current := float(game.speed) if game != null else 0.0
+	var base := float(config.base_speed) if config != null else 0.0
+	return maxf(maxf(current, base), 1.0)
+
+func _reaction_seconds() -> float:
+	if config == null or not (&"stage_banner_reaction_seconds" in config):
+		return DEFAULT_STAGE_BANNER_REACTION_SECONDS
+	return maxf(float(config.stage_banner_reaction_seconds), 0.0)
+
+## Said once per spawner: a library with no breather has nothing safe to lay down while the banner
+## is up, so the corridor stays empty until the window closes rather than risk a blind hit.
+func _warn_missing_breather() -> void:
+	if _breather_warned:
+		return
+	_breather_warned = true
+	push_warning("Runner chunk library has no `%s` chunk; the stage-entrance window has nothing safe to place"
+		% BREATHER_TAG)
+
 ## Weighted pick among the chunks whose difficulty range covers `d`, never repeating the previous
 ## chunk while an alternative exists. Breathers double their weight while the pursuer is close.
-func _pick_index(d: float) -> int:
+## `breathers_only` is the stage-entrance window's fallback: it narrows the draw to the rest beats,
+## and because the no-repeat rule only bites while an alternative is left, two breathers alternate
+## and a library with one simply repeats it rather than coming back empty-handed.
+func _pick_index(d: float, breathers_only: bool) -> int:
 	var candidates: Array[int] = []
 	for i in metas.size():
 		var meta := metas[i]
+		if breathers_only and not bool(meta["breather"]):
+			continue
 		if d >= float(meta["min_difficulty"]) - DIFFICULTY_EPSILON \
 				and d <= float(meta["max_difficulty"]) + DIFFICULTY_EPSILON:
 			candidates.append(i)
+	if candidates.is_empty() and breathers_only:
+		# Out-of-range breathers still beat a hazard while the banner is up.
+		for i in metas.size():
+			if bool(metas[i]["breather"]):
+				candidates.append(i)
+		if candidates.is_empty():
+			return -1
 	if candidates.is_empty():
 		push_warning("Runner spawner found no chunk for difficulty %.2f; falling back to the whole library" % d)
 		for i in metas.size():

@@ -22,6 +22,8 @@ const LANE_COUNT := 3
 const SPAWN_SEED := 4242
 ## Phases the spawner must stay quiet in (contract §11.1, systems spec §10.6).
 const IDLE_PHASES: Array[StringName] = [&"turn", &"boss", &"stage_clear", &"idle"]
+## chunk_spawner.gd's BREATHER_TAG: the rest beats it falls back to when nothing may block.
+const BREATHER_TAG := "breather"
 ## Tool draws the no-repeat / height rules are sampled over.
 const TOOL_DRAWS := 40
 ## Where the lane checks park a live projectile: well down the corridor, between the boss and the
@@ -402,7 +404,8 @@ func _validate(path: String, mirrored: bool) -> Dictionary:
 		"min_difficulty": float(chunk.min_difficulty),
 		"max_difficulty": float(chunk.max_difficulty),
 		"mirror_x": bool(chunk.mirror_x),
-		"hazards": infos.size()
+		"hazards": infos.size(),
+		"breather": (chunk.tags as PackedStringArray).has(BREATHER_TAG)
 	}
 	_check_exports(tag, chunk, meta)
 	_check_hazards(tag, infos, meta)
@@ -499,6 +502,13 @@ func _check_exports(tag: String, chunk: Node3D, meta: Dictionary) -> void:
 		"%s: difficulty range %.2f..%.2f is not inside 0..1" % [tag, low, high])
 	check(chunk.get_hazards().size() > 0 or String(chunk.name).to_lower().contains("breather"),
 		"%s: only breathers may be empty" % tag)
+	# The spawner falls back to a `breather`-tagged chunk whenever it may not lay down a hazard —
+	# the stage-entrance window most of all (systems spec §10.6) — so the tag is a promise that the
+	# chunk carries nothing the player has to dodge. A tagged chunk with a hazard would let one
+	# through the stage banner.
+	check(not bool(meta["breather"]) or int(meta["hazards"]) == 0,
+		"%s: tagged `%s` but carries %d hazard(s); the spawner places breathers where nothing may block"
+			% [tag, BREATHER_TAG, int(meta["hazards"])])
 	chunk_log.append("len %.0f d %.2f-%.2f w %.1f hazards %d" % [length, low, high, float(meta["weight"]), int(meta["hazards"])])
 
 ## V1 lane bounds and declared lanes, V2 depth and dodge_hint against geometry.

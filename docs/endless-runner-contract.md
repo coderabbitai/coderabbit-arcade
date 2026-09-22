@@ -334,6 +334,7 @@ mouse-hover failures on a clean `main`; the docs validated it on 4.7.1. New runn
 
 ## 10. Change log
 
+- 2.3 (2026-09-22): §11.1/§11.8/§11.10 — the stage-entrance guarantee. The `STAGE n` banner covers the lanes, so for `stage_banner_clear_seconds` (3.5) after every `stage_started`, stage 1 included, no blocking hazard may reach the player, and when that window ends the nearest one is still `stage_banner_reaction_seconds` (1.0) × speed metres away. `chunk_spawner.gd` gains `begin_clear_road(seconds)`, which the StageManager calls immediately before switching placement back on: it clamps a frontier left stale by a drained corridor to at least 6 m ahead (so the first chunk of a stage is never parked at the player's feet), sweeps anything already inbound **silently** (no `hazard_cleared`, no `hazards_blasted`, no bonus, no score, no `hazards_dodged`), and restricts placement to hazard-free `breather` chunks until a hazard-bearing one would arrive late enough. `breather`-tagged chunks are now required to carry zero hazards. `ui/stage_banner.tscn` must be off screen within `stage_banner_clear_seconds − stage_banner_reaction_seconds`.
 - 2.2 (2026-09-21): §11.3/§11.8 — `ui/post_fx.tscn` sanctioned as an optional HUD mount (CanvasLayer 9, PAUSABLE, idempotent `has_signal`-guarded `bind(game)`): one full-screen post pass for grade, grain, vignette, aberration, letterbox, speed streaks and Nitro lift, with the HUD keeping the pursuit vignette and corner bars unless the frontend hands them over via `post_fx.set_settings()`.
 - 2.1 (2026-09-21): §11.4 — `turn_incoming(direction, seconds)` announces the corner `turn_warning_seconds` (3.0) ahead of the bend on the direction `turn_started` then repeats, with `next_turn_direction` on the facade; `boss_intro(kind, name, seconds)` opens the fight immediately before `boss_spawned`. §11.9/§11.10 — the camera swing becomes a ramp–hold–return envelope (`turn_swing_in_fraction` / `turn_swing_out_fraction` 0.3) and is retuned to `turn_camera_yaw_degrees` 55 / `turn_camera_bank_degrees` 12 / `turn_seconds` 2.4; `boss_intro_seconds` 1.2 → 3.0.
 - 2.0 (2026-09-19): §11 v2 addendum — run phases (run → turn → boss → stage_clear), `StageManager`, `TurnRig`, boss encounters with telegraphed projectiles and auto-fire tool pickups, faster speed ramp (`time_to_max_speed` 100 s + per-stage bumps), pursuit alert signals, new facade signals/properties/result fields, boss visual hooks, projectile hitbox table, tool table, optional UI mounts (`pursuit_alert`, `boss_hud`, `stage_banner`, `stage_clear`), corridor `set_turn`, leaderboard `SCHEMA_VERSION` 2 with in-place migration of v1 boards.
@@ -362,6 +363,19 @@ lose), **tools auto-fire on pickup** (no fire button). Frontend design detail li
 | `turn` | run drained | `turn_seconds` | idle | frozen |
 | `boss` | turn finished | boss HP 0 (`boss_defeated`) or `boss_timeout_seconds` (`boss_retreated`), then `boss_outro_seconds` | idle | frozen |
 | `stage_clear` | boss resolved | `stage_clear_seconds` | idle | frozen |
+
+**Stage-entrance guarantee (v2.3).** The `STAGE n` banner covers the lanes, so the corridor is held clear across
+it: for `stage_banner_clear_seconds` after **every** `stage_started` (stage 1 included) no blocking hazard may
+reach the player, and when that window ends the nearest blocking hazard is still at least
+`stage_banner_reaction_seconds × speed` metres away. The StageManager opens the window on `spawner
+.begin_clear_road(stage_banner_clear_seconds)` immediately before it switches placement back on, so the first
+chunks of the stage are already measured against it. Inside the window the spawner may only place a chunk whose
+nearest hazard arrives after the window plus the reaction time; anything else is swapped for a hazard-free
+`breather` chunk, and `breather`-tagged chunks therefore carry no hazards at all. The road still fills to
+`spawn_horizon_z` — breathers and power-ups keep the pacing — it is never simply left empty. Anything already
+inbound when the window opens (a leftover boss projectile included) is cleared **silently**: this is
+housekeeping, not Auto-Fix, so no `hazard_cleared`, no `hazards_blasted`, no bonus, no score and no
+`hazards_dodged`. The window counts down with the corridor, so a pause holds it.
 
 `elapsed` still counts every unpaused second (result `duration`, timed-laser phase). `run_clock` counts RUN-phase
 seconds only and drives speed and difficulty. Stage index starts at 1 and never resets; boss slot
@@ -503,7 +517,7 @@ than under `HUD`, and it is the sanctioned home for 3D fight effects, so no pane
 |---|---|---|
 | `ui/pursuit_alert.tscn` | Star Fox-style incoming-transmission panel with radar/pulse; states the catch rule | `pursuit_started`, `pursuit_progress`, `pursuit_alert`, `pursuit_recovered`, `damage_blocked`, `caught` |
 | `ui/boss_hud.tscn` | boss name plate, HP bar, phase pips | `boss_*` signals, `get_boss_info()` |
-| `ui/stage_banner.tscn` | `STAGE n / <boss name>` banner; deferred until `turn_finished` | `stage_started`, `turn_*` |
+| `ui/stage_banner.tscn` | `STAGE n / <boss name>` banner; deferred until `turn_finished`. It covers the lanes, so it must be **fully off screen** within `stage_banner_clear_seconds − stage_banner_reaction_seconds` (2.5 s at the defaults) of the `stage_started` that raised it — the backend only holds the corridor clear for `stage_banner_clear_seconds` (§11.1), and the reaction time is the player's, not the banner's | `stage_started`, `turn_*` |
 | `ui/stage_clear.tscn` | stage-clear card (time, tools used, bonus) | `stage_cleared`, `boss_defeated`/`boss_retreated`, `get_stage_info()` |
 | `ui/post_fx.tscn` | one full-screen post-processing pass: colour grade, film grain, vignette, chromatic aberration on damage and tool hits, letterbox for `boss_intro` and the stage-clear card, speed streaks, Nitro lift | `run_started`, `damage_taken`, `boss_intro`, the stage-clear signals, `power_up_collected`/`power_up_expired`, `pursuit_started`/`pursuit_progress`/`pursuit_recovered`, `speed_changed`, `paused_changed`, and the tool/boss hit signals when they exist |
 | `boss/boss_fx.tscn` | 3D fight effects: telegraphs, tracers, damage numbers; never touches gameplay nodes | `boss_*` signals, `tool_collected`, `get_boss_info()` |
@@ -551,6 +565,10 @@ Speed:     time_to_max_speed 100.0 (was 165), tail_speed_per_minute 1.0, hard_ca
 Stages:    stage_base_distance 900.0, stage_distance_step 250.0, stage_distance_max 2000.0, stage_difficulty_step 0.25
            stage_drain_distance 120.0, stage_drain_timeout 6.0, stage_clear_line_z 8.0, stage_clear_seconds 3.0
            stage_clear_bonus_base 400, stage_clear_bonus_per_stage 150
+           stage_banner_clear_seconds 3.5   seconds after every stage_started in which no blocking hazard may reach
+                                            the player, because the stage banner is covering the lanes (§11.1)
+           stage_banner_reaction_seconds 1.0 seconds of travel the nearest blocking hazard is still away the moment
+                                            that window ends; must stay below stage_banner_clear_seconds
 Turn:      turn_seconds 2.4, turn_warning_seconds 3.0, turn_yaw_degrees 90.0 (graybox fallback)
            turn_camera_yaw_degrees 55.0, turn_camera_bank_degrees 12.0, turn_swing_in_fraction 0.3, turn_swing_out_fraction 0.3
 Boss:      boss_z -14.0, boss_sway_amplitude 2.4, boss_sway_period 3.2, boss_intro_seconds 3.0, boss_outro_seconds 1.0

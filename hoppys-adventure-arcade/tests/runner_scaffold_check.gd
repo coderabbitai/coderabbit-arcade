@@ -174,6 +174,7 @@ func run() -> void:
 		check(property in game, "missing property: " + property)
 
 	check(game.config != null, "RunnerGame.config is null")
+	_check_banner_config(game.config)
 	check(game.player != null and game.camera_rig != null, "player / camera_rig references are null")
 
 	var floor_body: StaticBody3D = game.get_node("World/Floor")
@@ -322,12 +323,36 @@ func _check_hud_mounts(game: Node) -> void:
 		else:
 			check(count == 0, "%s is absent from disk, so nothing may be mounted for it, found %d" % [path, count])
 
+## Contract §11.1/§11.10: the stage-entrance window the corridor is held clear for, and the reaction
+## time the player is owed the moment it ends. The banner has to fit inside the difference, so the
+## window must be the larger of the two.
+func _check_banner_config(config: Resource) -> void:
+	if config == null:
+		return
+	check(&"stage_banner_clear_seconds" in config,
+		"RunConfig is missing stage_banner_clear_seconds (contract §11.10)")
+	check(&"stage_banner_reaction_seconds" in config,
+		"RunConfig is missing stage_banner_reaction_seconds (contract §11.10)")
+	if not (&"stage_banner_clear_seconds" in config) or not (&"stage_banner_reaction_seconds" in config):
+		return
+	var window := float(config.stage_banner_clear_seconds)
+	var reaction := float(config.stage_banner_reaction_seconds)
+	check(is_equal_approx(window, 3.5),
+		"stage_banner_clear_seconds is %.2f, the contract §11.10 default is 3.5" % window)
+	check(is_equal_approx(reaction, 1.0),
+		"stage_banner_reaction_seconds is %.2f, the contract §11.10 default is 1.0" % reaction)
+	check(window > reaction,
+		"the stage banner needs room inside the window: %.2f s window, %.2f s reaction" % [window, reaction])
+
 ## Contract §11.1-§11.4: the stage machine is live, the phases line up with the state, the rig
 ## accessors resolve and the boss block reads empty outside a fight.
 func _check_stage_scaffold(game: Node) -> void:
 	check(game.stage_manager != null and is_instance_valid(game.stage_manager),
 		"Systems/StageManager is missing from the facade")
 	check(game.turn_rig != null and is_instance_valid(game.turn_rig), "World/TurnRig is missing from the facade")
+	check(game.spawner != null and is_instance_valid(game.spawner)
+		and game.spawner.has_method("begin_clear_road"),
+		"Systems/Spawner must expose begin_clear_road() for the stage-entrance window (contract §11.1)")
 	check(game.phase == &"run", "a running game should be in the run phase, not %s" % game.phase)
 	check(game.stage_index == 1, "the first stage should be index 1, got %d" % game.stage_index)
 	check(game.stage_name == &"Flaky Test Swarm",
