@@ -19,6 +19,7 @@ static func warm() -> Dictionary:
 	if runs > 0: return _census
 	var started := Time.get_ticks_usec()
 	_record("environment", "shaders/glyph_atlas.gd", "texture")
+	_record("wall_atlas", "environment/hifi/wall_atlas.gd", "texture")
 	_record("environment", "environment/runner_materials.gd", "font")
 	# Finite shared material variants used by player, corridor, turns and hazards.
 	for color in [Palette.SLATE, Palette.CREAM, Color.WHITE]:
@@ -147,3 +148,14 @@ static func shutdown() -> void:
 	for job in jobs: WorkerThreadPool.wait_for_task_completion(job.task_id)
 	jobs.clear()
 	deferred.clear()
+
+## Terminal fixture teardown only, after all scene users have been freed.
+## Runtime menu/retry transitions must retain the shared cache.
+static func release_fixture_cache(tree: SceneTree) -> void:
+	shutdown()
+	if tree.process_frame.is_connected(poll): tree.process_frame.disconnect(poll)
+	_census.clear()
+	_scripts.clear()
+	timings.clear()
+	async_timings.clear()
+	runs = 0

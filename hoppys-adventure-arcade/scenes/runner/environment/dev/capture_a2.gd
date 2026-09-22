@@ -1,5 +1,6 @@
 extends SceneTree
 ## Coordinator-only graphical capture. Never accepts a headless renderer.
+const Prewarm = preload("res://scenes/runner/environment/hifi/prewarm.gd")
 const Cleanup = preload("res://scenes/runner/environment/hifi/fixture_cleanup.gd")
 const Metrics = preload("res://scenes/runner/environment/hifi/capture_metrics.gd")
 const Corridor = preload("res://scenes/runner/environment/corridor.tscn")
@@ -16,6 +17,7 @@ func run() -> void:
 	root.size = Vector2i(1280, 720)
 	var corridor := Corridor.instantiate()
 	root.add_child(corridor)
+	while not Prewarm.is_complete(): await process_frame
 	corridor.set_scroll_speed(24.0)
 	var camera := Camera3D.new()
 	root.add_child(camera)
@@ -46,9 +48,12 @@ func run() -> void:
 		print("ASSET A2 CAPTURE: %s draw_calls=%d save_error=%d" % [view, calls, error])
 		if view == "close-up" and error == OK:
 			var saved := Image.load_from_file(output + "/a2-close-up.png")
-			var stats := Metrics.frame_stats(saved)
-			print("ASSET A2 FRAME: mean=%.3f std=%.3f lit_fraction=%.3f %s" % [stats.mean, stats.std, stats.lit_fraction, "PASS" if stats["pass"] else "FAIL"])
+			var stats := Metrics.restored_frame_stats(saved)
+			print("ASSET A2 FRAME: rect=%s mean=%.3f std=%.3f lit_fraction=%.3f %s" % [Metrics.FRAME_REGION, stats.mean, stats.std, stats.lit_fraction, "PASS" if stats["pass"] else "FAIL"])
 			if not stats["pass"]: failures += 1
+			var detail := Metrics.wall_stats(saved)
+			print("ASSET A2 WALL-DETAIL: rect=%s detail=%.3f edge_density=%.4f mean=%.3f std=%.3f dark_fraction=%.3f dx=%.3f dy=%.3f axis_ratio=%.3f %s" % [Metrics.WALL_DETAIL_REGION, detail.detail, detail.edge_density, detail.mean, detail.std, detail.dark_fraction, detail.dx, detail.dy, detail.axis_ratio, "PASS" if detail["pass"] else "FAIL"])
+			if not detail["pass"]: failures += 1
 		if view == "gameplay" and error == OK:
 			var saved := Image.load_from_file(output + "/a2-gameplay.png")
 			var stats := Metrics.floor_stats(saved)
@@ -57,6 +62,18 @@ func run() -> void:
 			var ceiling := Metrics.ceiling_stats(saved)
 			print("ASSET A2 CEILING: mean=%.3f %s" % [ceiling.mean, "PASS" if ceiling["pass"] else "FAIL"])
 			if not ceiling["pass"]: failures += 1
+		if view in ["close-up", "gameplay"] and error == OK:
+			var saved := Image.load_from_file(output + "/a2-" + view + ".png")
+			var region: Rect2i = Metrics.SCREEN_REGION if view == "close-up" else Metrics.GAMEPLAY_SCREEN_REGION
+			var ink := Metrics.screen_stats(saved, region)
+			print("ASSET A2 SCREEN-INK: view=%s rect=%s p95=%.3f edge=%.3f %s" % [view, region, ink.p95, ink.edge, "PASS" if ink["pass"] else "FAIL"])
+			if not ink["pass"]: failures += 1
+		if view == "turn" and error == OK:
+			var saved := Image.load_from_file(output + "/a2-turn.png")
+			for sample_index in Metrics.END_WALL_REGIONS.size():
+				var wall := Metrics.end_wall_stats(saved, sample_index)
+				print("ASSET A2 END-WALL: rect=%s mean=%.3f minimum=%.2f %s" % [Metrics.END_WALL_REGIONS[sample_index], wall.mean, Metrics.END_WALL_MIN_MEANS[sample_index], "PASS" if wall["pass"] else "FAIL"])
+				if not wall["pass"]: failures += 1
 		if error != OK or calls > (18 if view == "turn" else 14): failures += 1
 
 	await Cleanup.release(self, [corridor, camera])

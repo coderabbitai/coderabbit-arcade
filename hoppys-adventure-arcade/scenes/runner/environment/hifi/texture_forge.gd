@@ -8,11 +8,25 @@ static func maps() -> Dictionary:
 ## Worker-safe: local Images only, no shared caches or rendering resources.
 static func generate_maps() -> Dictionary:
 	var n := 1024
+	var fine := PackedFloat32Array()
+	var coarse := PackedFloat32Array()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 0xA209
+	fine.resize(16 * n)
+	coarse.resize(8 * n / 2)
+	for i in fine.size(): fine[i] = rng.randf_range(-1.0, 1.0)
+	for i in coarse.size(): coarse[i] = rng.randf_range(-1.0, 1.0)
 	var height := PackedFloat32Array()
 	height.resize(n * n)
 	for y in n:
 		for x in n:
-			var brush := sin(float(y) * 2.17) * 0.022 + sin(float(x) * 0.19 + float(y) * 4.7) * 0.012
+			var fx := x / 64
+			var cx := x / 128
+			var f := smoothstep(0.0, 1.0, float(x % 64) / 64.0)
+			var c := smoothstep(0.0, 1.0, float(x % 128) / 128.0)
+			var streak_fine := lerpf(fine[y * 16 + fx], fine[y * 16 + (fx + 1) % 16], f)
+			var streak_coarse := lerpf(coarse[(y / 2) * 8 + cx], coarse[(y / 2) * 8 + (cx + 1) % 8], c)
+			var brush := streak_fine * 0.018 + streak_coarse * 0.008
 			var edge := minf(float(x % 256), float(y % 256))
 			var seam := 0.12 * (1.0 - smoothstep(1.0, 6.0, edge))
 			var rivet_distance := Vector2(float(x % 256 - 18), float(y % 256 - 18)).length()
@@ -33,7 +47,8 @@ static func generate_maps() -> Dictionary:
 			var v := Vector3(-gx * 2.0, -gy * 2.0, 1).normalized() * 0.5 + Vector3.ONE * 0.5
 			normal.set_pixel(x, y, Color(v.x, v.y, v.z))
 			var value := height[y * n + x]
-			albedo.set_pixel(x, y, Color(value + 0.35, value + 0.35, value + 0.35))
+			var plate := clampf(0.78 + (value - 0.5) * 3.2, 0.18, 1.0)
+			albedo.set_pixel(x, y, Color(plate, plate, plate))
 			rough.set_pixel(x, y, Color(0.28 + (1.0 - value) * 0.2, 0, 0))
 	# Build mip chains only after every pixel has been authored.
 	albedo.generate_mipmaps()

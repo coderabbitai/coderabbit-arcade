@@ -7,9 +7,11 @@ const Materials = preload("res://scenes/runner/environment/runner_materials.gd")
 const Textures = preload("res://scenes/runner/environment/hifi/texture_forge.gd")
 const Racks = preload("res://scenes/runner/environment/hifi/rack_module.gd")
 var _rack_poses: Array[Transform3D] = []
+var _rack_data: Array[Color] = []
 var _pillar_material: ShaderMaterial
+var _rack_batches: Array[MultiMesh] = []
 var _racks: MultiMesh
-const Atlas = preload("res://scenes/runner/shaders/glyph_atlas.gd")
+const Atlas = preload("res://scenes/runner/environment/hifi/wall_atlas.gd")
 @export_range(0.25, 1.0, 0.05) var retro_scale := 0.5
 # Mirror RunConfig defaults. Keep these fractions and yaw in sync with the backend camera.
 const TURN_SWING_IN := 0.3
@@ -93,6 +95,7 @@ func _ready() -> void:
 	_plane("Ceiling", Vector2(8, 100), Vector3(0, 6.6, -40), Vector3(PI, 0, 0), ceiling)
 	var wall := _shader(preload("res://scenes/runner/shaders/code_wall.gdshader"))
 	wall.set_shader_parameter("atlas", Atlas.texture())
+	wall.set_shader_parameter("wall_atlas", Atlas.texture())
 	wall.set_shader_parameter("panel_period", 8.0)
 	_scroll_materials.append(wall)
 	_plane("WallL", Vector2(6, 100), Vector3(-Racks.SCREEN_X, 3, -40), Vector3(0, 0, -PI / 2), wall)
@@ -104,8 +107,11 @@ func _ready() -> void:
 	_quad("FarGlow", Vector2(8, 8), Vector3(0, 3, -88), Vector3.ZERO, _far_material)
 	_corner_material = _shader(preload("res://scenes/runner/shaders/code_wall_fade.gdshader"))
 	_corner_material.set_shader_parameter("atlas", Atlas.texture())
+	_corner_material.set_shader_parameter("wall_atlas", Atlas.texture())
 	_corner_material.set_shader_parameter("horizontal_axis", Vector3.RIGHT)
 	_corner_material.set_shader_parameter("intensity", 0.4)
+	_corner_material.set_shader_parameter("panel_period", 8.0)
+	_corner_material.set_shader_parameter("full_face", true)
 	_quad("CornerWall", Vector2(18, 8), Vector3(0, 3, -30), Vector3.ZERO, _corner_material)
 	_corner = get_node("CornerWall") as MeshInstance3D
 	var sign := Materials.label(self, "TURN ►", 104, Palette.MINT)
@@ -118,6 +124,7 @@ func _ready() -> void:
 	_build_pillars()
 	_build_racks()
 	_rain = Materials.glyph_particles(64, Vector3(3.9, 0.2, 45))
+	(_rain.draw_pass_1.material as StandardMaterial3D).albedo_texture = Atlas.texture()
 	_rain.name = "Rain"
 	_rain.position = Vector3(0, 6.2, -44)
 	# Particle AABBs are local to the emitter; global Z coverage is -96..+12.
@@ -190,6 +197,7 @@ func _metal() -> ShaderMaterial:
 	var material := _shader(preload("res://scenes/runner/environment/hifi/rack_metal.gdshader"))
 	for key in Textures.maps(): material.set_shader_parameter(key, Textures.maps()[key])
 	material.set_shader_parameter("frame_metallic", 0.28)
+	material.set_shader_parameter("atlas", Atlas.texture())
 	material.set_shader_parameter("base_tint", Palette.SLATE)
 	material.set_shader_parameter("baked_gain", 0.85)
 	material.set_shader_parameter("rim_gain", 0.10)
@@ -200,20 +208,25 @@ func _build_racks() -> void:
 	var material := _metal()
 	material.set_shader_parameter("module_mode", true)
 	_metal_bend_materials.append(material)
-	_racks = MultiMesh.new()
-	_racks.transform_format = MultiMesh.TRANSFORM_3D
-	_racks.use_custom_data = true
-	_racks.mesh = Racks.mesh()
-	_racks.instance_count = 12
-	var instance := MultiMeshInstance3D.new()
-	instance.name = "ServerRacks"
-	instance.multimesh = _racks
-	instance.material_override = material
-	instance.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
-	instance.process_mode = Node.PROCESS_MODE_PAUSABLE
-	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	instance.extra_cull_margin = 85.0
-	add_child(instance)
+	for batch_index in Racks.BATCH_COUNT:
+		var batch := MultiMesh.new()
+		batch.transform_format = MultiMesh.TRANSFORM_3D
+		batch.use_custom_data = true
+		batch.mesh = Racks.batch_mesh(batch_index)
+		batch.instance_count = 0
+		for variant in Racks.PATTERN:
+			if Racks.BATCH_FOR_VARIANT[variant] == batch_index: batch.instance_count += 1
+		_rack_batches.append(batch)
+		var instance := MultiMeshInstance3D.new()
+		instance.name = "ServerRacks" if batch_index == 0 else "ServerRacks%d" % batch_index
+		instance.multimesh = batch
+		instance.material_override = material
+		instance.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+		instance.process_mode = Node.PROCESS_MODE_PAUSABLE
+		instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		instance.extra_cull_margin = 85.0
+		add_child(instance)
+	_racks = _rack_batches[0]
 
 func pillar_z_positions() -> PackedFloat32Array:
 	return _pillar_z.duplicate()
@@ -222,14 +235,21 @@ func _update_pillars() -> void:
 	_pillar_z.resize(24)
 	if _racks != null:
 		_rack_poses.resize(12)
+		_rack_data.resize(12)
+		var slots := [0, 0, 0]
 		for i in 12:
 			var z := 12.0 - fposmod(float(i) * 8.0 - _offset, 96.0)
 			var d := maxf(0.0, -z - 6.0)
 			var yaw := -atan(2.0 * bend * d)
 			var x := bend * d * d
 			_rack_poses[i] = Transform3D(Basis(Vector3.UP, yaw), Vector3(x, 0, z))
-			_racks.set_instance_custom_data(i, Color(z, x, cos(yaw), sin(yaw)))
-			_racks.set_instance_transform(i, _rack_poses[i])
+			var variant: int = Racks.PATTERN[i]
+			var batch_index: int = Racks.BATCH_FOR_VARIANT[variant]
+			var batch := _rack_batches[batch_index]
+			_rack_data[i] = Color(z, x, cos(yaw), Racks.instance_tag(i))
+			batch.set_instance_custom_data(slots[batch_index], _rack_data[i])
+			batch.set_instance_transform(slots[batch_index], _rack_poses[i])
+			slots[batch_index] += 1
 	for i in 24:
 		var z := 8.0 - fposmod(float(i % 12) * 8.0 - _offset, 96.0)
 		_pillar_z[i] = z
@@ -245,7 +265,11 @@ func _simple_particles(node_name: String, count: int, size_: Vector2, alpha: flo
 	quad.size = size_
 	var material := Materials.additive(Palette.MINT, alpha).duplicate() as StandardMaterial3D
 	material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	quad.material = material
+	if node_name == "SpeedLines":
+		var screen_safe := _shader(preload("res://scenes/runner/environment/hifi/speed_lines.gdshader"))
+		quad.material = screen_safe
+	else:
+		quad.material = material
 	particles.draw_pass_1 = quad
 	add_child(particles)
 	return particles
@@ -340,6 +364,7 @@ func _apply_turn() -> void:
 		material.set_shader_parameter("bend_frame", global_transform)
 	for material in _metal_bend_materials:
 		material.set_shader_parameter("bend", bend)
+	_speed_lines.draw_pass_1.material.set_shader_parameter("corridor_frame", global_transform)
 	var sweep := float(turn_direction) * turn_progress * 48.0 if wave > 0.0 else 0.0
 	_scroll_materials[2].set_shader_parameter("lateral_scroll", sweep)
 	var blend := wave
