@@ -19,6 +19,9 @@ if not args.glb.is_file():
     raise RuntimeError('[render] Missing GLB: ' + str(args.glb))
 args.out.mkdir(parents=True, exist_ok=True)
 bpy.ops.wm.read_factory_settings(use_empty=True)
+# glTF import converts seconds to frames using the current scene rate.
+# Set it before import, so --frame is truly a 30 fps action-relative frame.
+bpy.context.scene.render.fps = 30
 bpy.ops.import_scene.gltf(filepath=str(args.glb.resolve()))
 scene = bpy.context.scene
 scene.render.fps = 30

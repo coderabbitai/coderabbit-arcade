@@ -19,6 +19,11 @@ from glb_atlas import consolidate_atlases, inspect_images
 
 SEED = 41027
 RECIPE_REVISION = 6
+JOINT_REVISION = 14
+CONTACT_REVISION = 16
+EFFECT_TRIANGLES = int(json.loads(Path(__file__).with_name("hoppy_budget.json").read_text())["effect_triangles"])
+assert EFFECT_TRIANGLES > 0
+ACTION_SAMPLE_RATE = 4  # 120 Hz export, unchanged durations in seconds.
 HOODIE_LINEAR = (0.930, 0.250, 0.067)
 # Tips face inward; cusp faces outward: left { and right }.
 BRACE_PROFILE = ((.020, .934), (.043, .922), (.044, .890), (.061, .876),
@@ -106,7 +111,11 @@ def material(name, color, kind='cloth', metallic=0.0, glow=0.0):
     height = n.new('ShaderNodeMixRGB'); height.blend_type = 'ADD'
     height.inputs[0].default_value = .22 if kind == 'cloth' else 0
     l.new(mix.outputs[0], height.inputs[1]); l.new(folds.outputs['Color'], height.inputs[2])
-    l.new(height.outputs[0], bump.inputs['Height']); l.new(bump.outputs[0], p.inputs['Normal'])
+    # A geometry attribute puts a faint baked crease at elbow/knee rings only.
+    joint = n.new('ShaderNodeAttribute'); joint.attribute_name = 'joint_crease'
+    crease_height = n.new('ShaderNodeMath'); crease_height.operation = 'ADD'
+    l.new(height.outputs[0], crease_height.inputs[0]); l.new(joint.outputs['Fac'], crease_height.inputs[1])
+    l.new(crease_height.outputs[0], bump.inputs['Height']); l.new(bump.outputs[0], p.inputs['Normal'])
     p.inputs['Roughness'].default_value = .84 if kind in ('fur', 'cloth') else .32
     p.inputs['Metallic'].default_value = metallic
     p.inputs['Emission Color'].default_value = tuple(color) + (1,)
@@ -202,7 +211,7 @@ def box(name, at, size, mat, bone, atlas='accessory'):
     return finish(object_named(object_name, 'MESH'), name, mat, bone, atlas)
 
 def loft(name, rows, mat, bone, sides=12, atlas='body', crease=0.0):
-    """Continuous quad rings, Catmull-Clark subdivision, no overlapping limb balls.
+    """Continuous quad rings with Catmull-Clark subdivision; joint cores fill bends.
     Rows: (centre_x, height_y, centre_z, radius_x, radius_z).
     """
     vertices, faces = [], []
@@ -234,10 +243,26 @@ def blend_joint(object_name, upper, lower, joint_y, width):
     obj = object_named(object_name, 'MESH')
     if obj.vertex_groups.get(lower) is None: obj.vertex_groups.new(name=lower)
     for vertex in obj.data.vertices:
-        weight = max(0, min(1, (joint_y + width - vertex.co.z) / (2*width)))
+        weight = max(0, min(1, (joint_y + width - (obj.matrix_world @ vertex.co).z) / (2*width)))
         weight = weight * weight * (3-2*weight)
         obj.vertex_groups[upper].add([vertex.index], 1-weight, 'REPLACE')
         obj.vertex_groups[lower].add([vertex.index], weight, 'REPLACE')
+
+
+def joint_crease(object_name, joint_y):
+    obj = object_named(object_name, 'MESH')
+    attribute = obj.data.attributes.new('joint_crease', 'FLOAT', 'POINT')
+    for vertex in obj.data.vertices:
+        y = (obj.matrix_world @ vertex.co).z
+        attribute.data[vertex.index].value = -.18 * math.exp(-((y-joint_y)/.012)**2)
+
+
+def joint_core(side, name, at, radius, mat, upper, lower):
+    # 140 triangles each; reuse body atlas/material. No extra draw surfaces.
+    object_name = ellipsoid(name+' joint core '+side, at, (radius, radius*.88, radius),
+                            mat, upper, segments=10, rings=8)
+    blend_joint(object_name, upper, lower, at[1], .035)
+    joint_crease(object_name, at[1])
 
 
 stage('model geometry')
@@ -280,9 +305,12 @@ for side, sign in [('L', -1), ('R', 1)]:
     ellipsoid('Goggle lens '+side, (x*.113,1.423,-.171), (.081,.051,.009), glass, 'head', 'accessory')
     sleeve = loft('Continuous sleeve '+side, [(x*cx,y,z,rx,rz) for cx,y,z,rx,rz in [
         (.244,1.032,.012,.067,.066),(.257,1.015,.012,.084,.085),(.276,.95,.01,.083,.082),
-        (.292,.85,0,.078,.077),(.30,.79,-.008,.074,.074),(.302,.75,-.019,.073,.075),
+        (.292,.85,0,.078,.077),(.30,.795,-.008,.077,.077),
+        (.30,.78,-.008,.0792,.0792),(.301,.765,-.013,.077,.078),(.302,.75,-.019,.073,.075),
         (.30,.67,-.025,.066,.068),(.30,.606,-.029,.061,.061)]], orange,'arm_'+side,crease=.045)
-    blend_joint(sleeve,'arm_'+side,'forearm_'+side,.78,.085)
+    blend_joint(sleeve,'arm_'+side,'forearm_'+side,.78,.055)
+    joint_crease(sleeve,.78)
+    joint_core(side,'Elbow',(x*.3,.78,0),.075,orange,'arm_'+side,'forearm_'+side)
     loft('Cuff '+side,[(x*.3,y,-.029,.066,.066) for y in (.59,.594,.63,.634)],slate,'forearm_'+side)
     tube('Sleeve piping '+side,[(x*.30,.97,-.064),(x*.327,.9,-.062),(x*.353,.83,-.025)],.004,mint,'arm_'+side)
     tube('Forearm piping '+side,[(x*.357,.77,-.025),(x*.358,.7,-.04),(x*.348,.633,-.05)],.004,mint,'forearm_'+side)
@@ -292,14 +320,17 @@ for side, sign in [('L', -1), ('R', 1)]:
         ellipsoid('Finger %s %d'%(side,finger),(x*(.264+finger*.033),.512,-.045),(.021,.043,.032),cream,'hand_'+side,segments=12,rings=10)
     leg = loft('Continuous leg '+side,[(x*cx,y,z,rx,rz) for cx,y,z,rx,rz in [
         (.126,.54,.015,.075,.085),(.126,.515,.015,.097,.104),(.128,.44,.01,.096,.1),
-        (.129,.35,0,.078,.079),(.129,.31,-.012,.073,.075),(.13,.25,-.007,.072,.073),
+        (.129,.35,0,.078,.079),(.129,.335,-.004,.079,.08),
+        (.129,.32,-.008,.0803,.0825),(.129,.31,-.012,.077,.079),(.13,.25,-.007,.072,.073),
         (.131,.16,0,.061,.064),(.131,.115,0,.058,.062)]],cream,'leg_'+side,crease=.012)
     leg_obj = object_named(leg, 'MESH')
     leg_obj.data.materials.append(slate)
     for polygon in leg_obj.data.polygons:
         if sum(leg_obj.data.vertices[i].co.z for i in polygon.vertices) / len(polygon.vertices) > .39:
             polygon.material_index = 1
-    blend_joint(leg,'leg_'+side,'shin_'+side,.32,.065)
+    blend_joint(leg,'leg_'+side,'shin_'+side,.32,.05)
+    joint_crease(leg,.32)
+    joint_core(side,'Knee',(x*.129,.32,0),.079,cream,'leg_'+side,'shin_'+side)
     loft('Shoe sole '+side, [(x*.131,y,-.064,SOLE_RADII[0],SOLE_RADII[1])
          for y in (0.0,.006,.052,.058)], mint, 'foot_'+side, sides=16, atlas='accessory')
     ellipsoid('Runner shoe '+side, (x*.131,.099,-.061), (.1,.074,.154), slate, 'foot_'+side, 'accessory')
@@ -336,7 +367,7 @@ stage('geometry census before baking')
 model_triangles = sum(sum(len(face.vertices)-2 for face in object_named(name, 'MESH').data.polygons)
                       for name, _atlas in parts)
 print('[hoppy] model triangles=' + str(model_triangles), flush=True)
-require(model_triangles <= 40000, 'Pre-bake triangle budget exceeded: ' + str(model_triangles))
+require(model_triangles + EFFECT_TRIANGLES <= 40000, 'Whole-visual pre-bake triangle budget exceeded: ' + str(model_triangles + EFFECT_TRIANGLES))
 
 # Store only names across destructive operators. Joining one atlas invalidates its
 # source objects, so never inspect those objects while collecting the next atlas.
@@ -486,12 +517,51 @@ for mesh_name in mesh_names:
                     w=max(0,min(1,(v.co.z-1.51)/.17))
                     base.add([v.index],1-w,'REPLACE');tip.add([v.index],w,'REPLACE')
     mod=obj.modifiers.new('Hoppy skin','ARMATURE');mod.object=rig;obj.parent=rig
+# Names/indices survive evaluation; never retain evaluated mesh references.
+foot_vertices = {}
+for mesh_name in mesh_names:
+    obj = object_named(mesh_name, 'MESH')
+    groups = {obj.vertex_groups[n].index for n in ('foot_L','foot_R') if n in obj.vertex_groups}
+    foot_vertices[mesh_name] = [v.index for v in obj.data.vertices
+                               if any(g.group in groups and g.weight > .99 for g in v.groups)]
+
+
+def sole_low():
+    bpy.context.view_layer.update()
+    deps = bpy.context.evaluated_depsgraph_get()
+    low = float('inf')
+    for mesh_name, indices in foot_vertices.items():
+        if not indices: continue
+        evaluated = object_named(mesh_name, 'MESH').evaluated_get(deps)
+        mesh = evaluated.to_mesh()
+        try:
+            low = min(low, min((evaluated.matrix_world @ mesh.vertices[i].co).z for i in indices))
+        finally:
+            evaluated.to_mesh_clear()
+        del mesh, evaluated
+    require(math.isfinite(low), 'No weighted shoe vertices for grounding')
+    return low
+
+
+def foot_pitch(side, pitch):
+    # Solve in the parent space so a contact sole keeps its authored world pitch.
+    bpy.context.view_layer.update()
+    rig = object_named(rig_name, 'ARMATURE')
+    foot = rig.pose.bones['foot_'+side]
+    parent = foot.parent
+    pre = parent.matrix @ parent.bone.matrix_local.inverted() @ foot.bone.matrix_local
+    from mathutils import Matrix
+    desired = Matrix.Rotation(pitch, 3, 'X') @ foot.bone.matrix_local.to_3x3()
+    foot.rotation_euler = (pre.to_3x3().normalized().inverted() @ desired).to_euler('XYZ')
+
 rig.animation_data_create()
 lengths={'idle':48,'run':18,'jump':15,'fall':24,'roll':24,'hurt':18,'dead':36}
 for name,duration in lengths.items():
     stage('action ' + name)
     action=bpy.data.actions.new(name);rig.animation_data.action=action
-    for f in range(0,duration+1,3):
+    for step in range(duration * ACTION_SAMPLE_RATE + 1):
+        f = step / ACTION_SAMPLE_RATE
+        scene.frame_set(math.floor(f), subframe=f % 1)
         t=f/duration;phase=t*math.tau
         for p in rig.pose.bones:
             p.rotation_mode='XYZ';p.location=(0,0,0);p.rotation_euler=(0,0,0);p.scale=(1,1,1)
@@ -508,21 +578,51 @@ for name,duration in lengths.items():
             arm=rig.pose.bones['arm_'+side];leg=rig.pose.bones['leg_'+side]
             ear=rig.pose.bones['ear_'+side]
             rig.pose.bones['ear_tip_'+side].rotation_euler.x=.07*math.sin(phase+.4)
-            if name=='idle':ear.rotation_euler.z=s*.04*math.sin(phase)
+            forearm=rig.pose.bones['forearm_'+side];shin=rig.pose.bones['shin_'+side]
+            # Positive flexion uses +X at elbows, -X at knees: no backwards knee.
+            elbow=.35;knee=.45
+            if name=='idle':
+                ear.rotation_euler.z=s*.04*math.sin(phase)
+                elbow=.32+.04*math.sin(phase);knee=.20+.02*math.sin(phase)
+                leg.rotation_euler.x=knee*.5
             if name=='run':
                 leg.rotation_euler.x=s*.65*math.cos(phase);arm.rotation_euler.x=-s*.62*math.cos(phase)
-                rig.pose.bones['forearm_'+side].rotation_euler.x=-.3
-                rig.pose.bones['shin_'+side].rotation_euler.x=max(0,-s*math.cos(phase))*.6
+                elbow=1.2+.4*math.cos(phase)**2
+                # Recovery peaks at frame 4.5 (L) / 13.5 (R); other leg supports.
+                knee=.22+1.4*max(0,-s*math.sin(phase))**2
+                # Smooth contact absorption at 0/pi. The recovery curve above
+                # stays intact; this short overlay also smooths the handoff.
+                contact_distance=abs((phase+math.pi/2) % math.pi-math.pi/2)
+                if contact_distance < math.pi/6:
+                    knee += .09*(1+math.cos(6*contact_distance))
                 ear.rotation_euler.x=.16+.13*math.sin(phase*2)
-            if name in ('jump','fall'):arm.rotation_euler.x=-.8;leg.rotation_euler.x=-.4;ear.rotation_euler.x=.18
+            if name in ('jump','fall'):
+                arm.rotation_euler.x=-.8;leg.rotation_euler.x=.4;ear.rotation_euler.x=.18
+                elbow=.75;knee=.55
+            if name=='jump':
+                elbow=.95+.2*math.sin(math.pi*t);knee=1.2+.25*math.sin(math.pi*t)
+                # Avoid cancelling the knee bend: heel folds backward/up, not vertically down.
+                leg.rotation_euler.x=-.15
             if name=='jump':
                 ear.rotation_euler.x=.2+.48*math.sin(math.pi*t)
                 rig.pose.bones['ear_tip_'+side].rotation_euler.x=-.25*math.sin(math.pi*t)
             if name=='roll':
-                arm.rotation_euler.x=-1.42;leg.rotation_euler.x=-1.25
-                rig.pose.bones['shin_'+side].rotation_euler.x=1.8
+                arm.rotation_euler.x=-1.0;leg.rotation_euler.x=1.25
+                elbow=1.7;knee=1.85
                 ear.rotation_euler.x=2.5;rig.pose.bones['ear_tip_'+side].rotation_euler.x=.45
                 rig.pose.bones['head'].rotation_euler.x=.4
+            if name=='hurt':
+                elbow=1.1 if t <= 1/3 else .4+.7*(1-t)*1.5
+                knee=.45
+            if name=='dead':elbow=.4;knee=.45
+            # Clamp signed bends; arm abduction gives the large paws torso clearance.
+            forearm.rotation_euler.x=max(.0,min(1.75,elbow))
+            shin.rotation_euler.x=-max(.0,min(1.9,knee))
+            arm.rotation_euler.z=-s*.18
+            if name in ('idle','run'):
+                foot_pitch(side, -.3*max(0,(knee-.3)/1.32))
+            elif name=='jump':foot_pitch(side,-.65)
+            elif name=='fall':foot_pitch(side,-.35)
         if name=='roll':
             # Uniform scale and a centred spin keep the entire tuck inside 90 cm.
             root.scale=(.47,.47,.47);root.rotation_euler.x=-phase
@@ -530,8 +630,40 @@ for name,duration in lengths.items():
             root.location=Vector((0,0,.45))-rot@(centre*.47)
         # Pose locations are bone-local; root's local Y points along world Z.
         root.location = rig.data.bones['root'].matrix_local.to_3x3().inverted() @ root.location
+        if name in ('idle','run'):
+            # Lower/raise the body by the evaluated lowest sole, including squash.
+            bpy.context.view_layer.update()
+            correction=Vector((0,0,-sole_low()))
+            root.location += rig.data.bones['root'].matrix_local.to_3x3().inverted() @ correction
+            require(abs(sole_low()) < .0005, 'Grounding failed '+name+' frame '+str(f))
         for p in rig.pose.bones:
             for prop in ('location','rotation_euler','scale'):p.keyframe_insert(prop,frame=f,group=p.name)
+    # Dense linear keys avoid Bezier overshoot through the anatomical limits.
+    for layer in action.layers:
+        for strip in layer.strips:
+            for bag in strip.channelbags:
+                for curve in bag.fcurves:
+                    for key in curve.keyframe_points:key.interpolation='LINEAR'
+    if name in ('idle','run'):
+        # Re-evaluate the completed action, rather than trust incremental authoring.
+        # This also samples every time used by the 25-frame Godot guard.
+        stage('final-curve sole grounding '+name+' at 120 Hz')
+        for step in range(duration * ACTION_SAMPLE_RATE + 1):
+            f = step / ACTION_SAMPLE_RATE
+            scene.frame_set(math.floor(f), subframe=f % 1)
+            low = sole_low()
+            root = object_named(rig_name, 'ARMATURE').pose.bones['root']
+            root.location += root.bone.matrix_local.to_3x3().inverted() @ Vector((0,0,-low))
+            root.keyframe_insert('location', frame=f, group='root')
+            scene.frame_set(math.floor(f), subframe=f % 1)
+            require(abs(sole_low()) < .0005, 'Final-curve grounding failed '+name+' frame '+str(f))
+        lows=[]
+        for sample in range(25):
+            f=duration*sample/24
+            scene.frame_set(math.floor(f), subframe=f % 1)
+            lows.append(sole_low())
+        require(min(lows) >= -.001 and max(lows) <= .001, 'Contact samples failed '+name+': '+str(lows))
+        stage('contact samples '+name+' min/max='+str((min(lows),max(lows))))
     require(len(action.slots) == 1, 'Expected one armature action slot: ' + name)
     rig.animation_data.action=None
     track=rig.animation_data.nla_tracks.new();track.name=name
@@ -540,13 +672,57 @@ for name,duration in lengths.items():
     track.mute=True
     action['loop']=name in ('idle','run','fall')
 
+# The glTF exporter force-samples integer scene frames. Retiming to 120 fps
+# retains quarter-frame contact corrections while keeping the seven clip lengths.
+stage('retime dense actions for 120 Hz glTF sampling')
+for action_name in lengths:
+    action=bpy.data.actions[action_name]
+    for layer in action.layers:
+        for strip in layer.strips:
+            for bag in strip.channelbags:
+                for curve in bag.fcurves:
+                    for key in curve.keyframe_points:
+                        key.co.x *= ACTION_SAMPLE_RATE
+                        key.handle_left.x *= ACTION_SAMPLE_RATE
+                        key.handle_right.x *= ACTION_SAMPLE_RATE
+                        key.interpolation='LINEAR'
+                    curve.update()
+for track in rig.animation_data.nla_tracks:
+    for strip in track.strips:
+        strip.action_frame_end=lengths[track.name]*ACTION_SAMPLE_RATE
+        strip.frame_end=lengths[track.name]*ACTION_SAMPLE_RATE
+scene.render.fps=30*ACTION_SAMPLE_RATE
+
+# Verify the final retimed curves at every exported key, without changing poses.
+# Godot must import at the same 120 Hz with optimizer/enabled=false; otherwise
+# its default 30 Hz bake/key reduction discards these sole corrections.
+sole_sweeps = {}
+for action_name in ('idle','run'):
+    stage('verify final 120 Hz sole sweep '+action_name)
+    rig = object_named(rig_name, 'ARMATURE')
+    action = bpy.data.actions[action_name]
+    rig.animation_data.action = action
+    rig.animation_data.action_slot = action.slots[0]
+    lows = []
+    for frame in range(lengths[action_name]*ACTION_SAMPLE_RATE+1):
+        scene.frame_set(frame)
+        lows.append(sole_low())
+    minimum, maximum = min(lows), max(lows)
+    require(minimum >= -.002 and maximum <= .007,
+            '120 Hz sole sweep outside [-.002,.007]: '+action_name+' '+str((minimum,maximum)))
+    sole_sweeps[action_name] = {'hz':scene.render.fps, 'samples':len(lows),
+                               'min_y':minimum, 'max_y':maximum}
+    print('[hoppy] SOLE SWEEP %s: 120 Hz min_y=%.6f max_y=%.6f samples=%d' %
+          (action_name, minimum, maximum, len(lows)), flush=True)
+rig.animation_data.action = None
+
 # Evaluate actual deformed vertices across the roll action, independent of exporter.
 stage('validate sampled roll bounds')
 rig = object_named(rig_name, 'ARMATURE')
 rig.animation_data.action=bpy.data.actions['roll']
 rig.animation_data.action_slot=bpy.data.actions['roll'].slots[0]
 lo=1e9;hi=-1e9
-for f in range(lengths['roll']+1):
+for f in range(lengths['roll']*ACTION_SAMPLE_RATE+1):
     scene.frame_set(f);deps=bpy.context.evaluated_depsgraph_get()
     for mesh_name in mesh_names:
         evaluated=object_named(mesh_name, 'MESH').evaluated_get(deps)
@@ -613,7 +789,7 @@ for mesh in payload.get('meshes', []):
         count = payload['accessors'][accessor]['count']
         require(count % 3 == 0, 'Invalid triangle index count')
         exported_triangles += count // 3
-require(0 < exported_triangles <= 40000, 'Exported triangle budget exceeded: ' + str(exported_triangles))
+require(0 < exported_triangles and exported_triangles + EFFECT_TRIANGLES <= 40000, 'Exported whole-visual triangle budget exceeded: ' + str(exported_triangles + EFFECT_TRIANGLES))
 triangles = exported_triangles
 exported_texture_count = len(payload.get('textures', []))
 require(exported_texture_count == 0 if opts.quick else 0 < exported_texture_count <= 8,
@@ -624,6 +800,8 @@ body=b''.join(struct.pack('<II',len(data),kind)+data for kind,data in chunks)
 out.write_bytes(struct.pack('<III',0x46546c67,2,len(body)+12)+body)
 textures=sorted(texture_files)
 report={'recipe_revision':RECIPE_REVISION,'hoodie_linear':HOODIE_LINEAR,
+        'stance_revision':17,'effect_triangles':EFFECT_TRIANGLES,
+        'joint_revision':JOINT_REVISION,'contact_revision':CONTACT_REVISION,'sole_sweeps':sole_sweeps,'animation_sample_rate':scene.render.fps,'joint_bend_signs':{'forearm':1,'shin':-1},
         'brace_profile':BRACE_PROFILE,'sole_radii':SOLE_RADII,'back_mark_z':.268,
         'script_sha256':script_hash,'atlas_helper_sha256':helper_hash,'blender':bpy.app.version_string,'seed':SEED,'triangles':triangles,
         'image_report':image_report,'textures':textures,'exported_texture_count':exported_texture_count,'quick':opts.quick,'animations':list(lengths),'bones':[b.name for b in object_named(rig_name, 'ARMATURE').data.bones],
