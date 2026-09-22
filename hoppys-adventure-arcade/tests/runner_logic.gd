@@ -2126,19 +2126,21 @@ func _test_boss_intro() -> void:
 
 ## The `STAGE n` banner covers the lanes for a couple of seconds after every `stage_started`, so a
 ## corridor that hands the player a hazard across it costs them a run they could not see coming.
-## Five things are pinned here. The StageManager opens the window *before* it switches placement
+## Six things are pinned here. The StageManager opens the window *before* it switches placement
 ## back on, for every stage. A frontier left stale by a drained corridor is clamped off the
 ## player's feet instead of parking the first chunk underfoot. Every chunk laid down while the
 ## window is open is hazard-free or too far out to arrive before the window and the reaction time
 ## have both run down — and the corridor is still filled to the spawn horizon, not left empty. The
-## window burns run time only, never wall time through a pause. And the promise survives a speed
-## change made after it was given: Nitro mid-window re-opens the question every tick.
+## window burns run time only, never wall time through a pause. The promise survives a speed
+## change made after it was given: Nitro mid-window re-opens the question every tick. And the
+## rejected draws the substitution leaves in its wake are gone the instant they are rejected.
 func _test_stage_banner_window() -> void:
 	_check_banner_window_gate()
 	_check_banner_window_placement()
 	_check_banner_window_pause()
 	_check_banner_window_sweep()
 	_check_banner_window_speed_up()
+	_check_banner_window_discards()
 
 ## The StageManager end: every stage entry asks for a window, with the configured length, before
 ## the fill that follows it.
@@ -2370,6 +2372,150 @@ func _check_banner_window_speed_up() -> void:
 		"29: the re-validation moved the score (%d -> %d) or the dodge count (%d -> %d)"
 			% [score_before, int(game.score), dodged_before, int(game.hazards_dodged)])
 	_free_rig(rig)
+
+## A draw the window rejects has to be gone before the next line of code runs, not at the end of the
+## frame. The reject spends a moment inside the tree — `entry_clear()` cannot be measured anywhere
+## else — which is long enough for its hazards to run `_ready()`, join `runner_hazards` and queue
+## their deferred visual mount. `queue_free()` would then leave that instance alive and parentless
+## until the frame ends, and every global-transform read in between (the deferred mount itself, the
+## autopilot, `game.track_z()`, the frontend visuals) fires `Condition "!is_inside_tree()" is true`.
+## The run never gets a quiet frame to hide that in either: the accelerated visual smoke drives
+## several physics ticks per rendered frame, so the ticks below stand in for exactly that — many
+## rejections, no frame boundary anywhere between them.
+func _check_banner_window_discards() -> void:
+	# Control first: with no window open the rigged draw is placed, not substituted. Without this
+	# the run below could be passing because it only ever drew breathers.
+	var control := _spawner_rig({})
+	if control.is_empty():
+		return
+	var control_spawner: Node = control["spawner"]
+	if not _rig_rejectable_library(control_spawner):
+		_free_rig(control)
+		return
+	control_spawner.set_spawning(true)
+	var control_chunks: Array[Node3D] = control_spawner.get_active_chunks()
+	check(not control_chunks.is_empty() and not _is_breather(control_chunks[0]),
+		"29: the rigged draw has to place the hazard chunk with no window open, got %s"
+			% ("an empty corridor" if control_chunks.is_empty() else String(control_chunks[0].name)))
+	_free_rig(control)
+
+	var rig := _spawner_rig({})
+	if rig.is_empty():
+		return
+	var spawner: Node = rig["spawner"]
+	var chunks: Node3D = rig["chunks"]
+	if not _rig_rejectable_library(spawner):
+		_free_rig(rig)
+		return
+	# Every chunk that is ever parked in the corridor, kept by id so a freed one can be asked about
+	# without touching it. child_entered_tree fires for direct children only, so this is the chunks
+	# and nothing they carry.
+	var drawn: Array[int] = []
+	chunks.child_entered_tree.connect(func(node: Node) -> void:
+		drawn.append(node.get_instance_id()))
+	# A window no hazard chunk can clear: 30 s at the base speed reaches 360 m, four times past
+	# spawn_horizon_z, so every draw that carries a hazard at all is rejected and substituted.
+	spawner.begin_clear_road(30.0)
+	spawner.set_spawning(true)
+	var report := _discard_report(spawner, chunks, drawn)
+	check(int(report["discarded"]) > 0,
+		"29: the entrance fill rejected no draw at all, so the discard path was never reached")
+	_check_discard_report(report, "29: the entrance fill")
+	# ...and again across a run of physics ticks with no frame between them, which is where a
+	# queued-but-not-freed reject would pile its zombies up. Three seconds is long enough to scroll
+	# the frontier back inside the spawn horizon a couple of times and short enough that nothing has
+	# reached despawn_z yet, so every discard in the count below is a rejection and not a despawn.
+	var ticks := _ticks(3.0)
+	var before: int = report["discarded"]
+	_tick([spawner], ticks)
+	report = _discard_report(spawner, chunks, drawn)
+	check(int(report["discarded"]) > before,
+		"29: %d tick(s) of scrolling rejected no further draw (%d total), so the run proves nothing"
+			% [ticks, int(report["discarded"])])
+	_check_discard_report(report, "29: %d ticks in one frame" % ticks)
+	_free_rig(rig)
+
+## Assert one _discard_report(). Split out so the same four invariants read identically before and
+## after the tick run.
+func _check_discard_report(report: Dictionary, tag: String) -> void:
+	check(int(report["zombies"]) == 0,
+		"%s: %d rejected draw(s) are still alive out of the tree; a reject must be freed on the spot"
+			% [tag, int(report["zombies"])])
+	check(int(report["stray_hazards"]) == 0,
+		"%s: runner_hazards carries %d member(s) that left the tree or are queued for deletion"
+			% [tag, int(report["stray_hazards"])])
+	check(int(report["orphans"]) == 0,
+		"%s: World/Chunks holds %d node(s) the spawner does not count as active"
+			% [tag, int(report["orphans"])])
+	check(int(report["hazard_chunks"]) == 0,
+		"%s: %d chunk(s) placed inside the window carry hazards; only the breather substitute may"
+			% [tag, int(report["hazard_chunks"])])
+
+## What a rejected draw must not leave behind, measured without yielding a frame:
+## `discarded` — chunks that entered the corridor and are no longer active (rejects, plus despawns);
+## `zombies` — of those, the ones still alive that never ran `setup()`, i.e. rejects that were only
+## queued for deletion (a despawned chunk did run `setup()` and is allowed to be queued);
+## `stray_hazards` — members of `runner_hazards` that are out of the tree or queued for deletion;
+## `orphans` — nodes still parented under World/Chunks that the spawner does not count as active;
+## `hazard_chunks` — active chunks that are not the hazard-free substitute.
+func _discard_report(spawner: Node, chunks: Node3D, drawn: Array[int]) -> Dictionary:
+	var active: Array[Node3D] = spawner.get_active_chunks()
+	var live := {}
+	for chunk in active:
+		if is_instance_valid(chunk):
+			live[chunk.get_instance_id()] = true
+	var report := {"discarded": 0, "zombies": 0, "stray_hazards": 0, "orphans": 0, "hazard_chunks": 0}
+	for id in drawn:
+		if live.has(id):
+			continue
+		report["discarded"] += 1
+		if not is_instance_id_valid(id):
+			continue
+		var ghost := instance_from_id(id) as Node
+		if ghost != null and not bool(ghost.get(&"_setup_done")):
+			report["zombies"] += 1
+	for node in get_nodes_in_group(&"runner_hazards"):
+		var hazard := node as Node
+		if hazard == null:
+			continue
+		if not hazard.is_inside_tree() or hazard.is_queued_for_deletion():
+			report["stray_hazards"] += 1
+	report["orphans"] = maxi(chunks.get_child_count() - active.size(), 0)
+	for chunk in active:
+		if is_instance_valid(chunk) and not _is_breather(chunk):
+			report["hazard_chunks"] += 1
+	return report
+
+## Narrow a live spawner's library to one hazard chunk plus one breather, and point `last_index` at
+## the breather. The no-repeat rule in `_pick_index()` then hands back the hazard chunk with no roll
+## involved, and because `_place_next()` records the substituted breather as the last index, every
+## following placement draws it again: the rejection path is reached on purpose rather than by luck
+## of a seed, and the weights are left alone so `rand_weighted()` is never handed a zero sum.
+func _rig_rejectable_library(spawner: Node) -> bool:
+	var hazard_meta := {}
+	var breather_meta := {}
+	for entry in spawner.metas:
+		var meta: Dictionary = entry
+		if bool(meta["breather"]):
+			if breather_meta.is_empty():
+				breather_meta = meta
+		elif hazard_meta.is_empty() and float(meta["min_difficulty"]) <= 0.0 \
+				and float(meta["max_difficulty"]) >= 0.0:
+			hazard_meta = meta
+	if hazard_meta.is_empty() or breather_meta.is_empty():
+		check(false, "29: the library needs a difficulty-0 hazard chunk and a breather to reject a draw")
+		return false
+	spawner.metas.clear()
+	spawner.metas.append(hazard_meta)
+	spawner.metas.append(breather_meta)
+	spawner.last_index = 1
+	return true
+
+## The authored tag, read off the instance, so these checks do not depend on which scenes the
+## library happens to hold or on how the spawner names them.
+func _is_breather(chunk: Node3D) -> bool:
+	var tags: PackedStringArray = chunk.tags
+	return tags.has("breather")
 
 func _has_run(entries: Array, run_id: String) -> bool:
 	for item in entries:
