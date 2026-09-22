@@ -164,6 +164,10 @@ func clear_hazards_in_range() -> int:
 		var hazard := node as Area3D
 		if hazard == null or not is_instance_valid(hazard):
 			continue
+		# A hazard on its way out is nobody's to clear, and reading a global transform off one that
+		# has already left the tree only earns an engine error (see _discard_chunk).
+		if hazard.is_queued_for_deletion() or not hazard.is_inside_tree():
+			continue
 		if not hazard.has_method("is_blocking") or not hazard.is_blocking():
 			continue
 		var z := game.track_z(hazard) if game != null else hazard.global_position.z
@@ -193,6 +197,10 @@ func _sweep_clear_road(reach_seconds: float) -> void:
 	for node in tree.get_nodes_in_group(&"runner_hazards"):
 		var hazard := node as Node3D
 		if hazard == null or not is_instance_valid(hazard):
+			continue
+		# Same guard as Auto-Fix: a hazard that has left the tree, or is only waiting to be deleted,
+		# is swept by nothing and read by nothing (see _discard_chunk).
+		if hazard.is_queued_for_deletion() or not hazard.is_inside_tree():
 			continue
 		if not hazard.has_method("is_blocking") or not hazard.is_blocking():
 			continue
@@ -325,16 +333,29 @@ func _build_chunk(index: int, root: Node3D) -> Node3D:
 	root.add_child(chunk)
 	return chunk
 
-## Drop a chunk that was drawn, measured and rejected. It leaves the tree before it is freed, so its
-## hazards are out of runner_hazards on the same frame they joined it; setup() never ran, so nothing
-## else in the run ever saw it.
+## Drop a chunk that was drawn, measured and rejected: out of the tree, then freed on the spot.
+##
+## Not `queue_free()`. A queued chunk stays alive, and out of the tree, until the end of the frame,
+## and its hazards ran `_ready()` the moment they were added — which, for a hazard whose config has
+## not arrived yet, leaves a deferred `_mount_visual()` in the message queue. That callable is
+## flushed at the end of the frame, on a node that is by then parentless, and everything it touches
+## (`lanes_mask()` -> `global_position`, a frontend visual's `on_spawned()`) reads a global transform
+## off a node that is no longer in the tree: `Condition "!is_inside_tree()" is true`. The same window
+## is open to anything else that walks `runner_hazards` before the frame ends, and the accelerated
+## visual smoke runs several physics ticks per rendered frame, so the window is hundreds of reads
+## wide, not one.
+##
+## Freeing immediately closes it: the instance is destroyed here, so the pending deferred call is
+## dropped with it. That is safe because this chunk was instantiated a few lines ago in this same
+## `_place_next()` — `setup()` never ran, it was never appended to `active`, nothing in the run
+## holds a reference to it, and we are not inside one of its own callbacks.
 func _discard_chunk(chunk: Node3D) -> void:
 	if chunk == null or not is_instance_valid(chunk):
 		return
 	var parent := chunk.get_parent()
 	if parent != null:
 		parent.remove_child(chunk)
-	chunk.queue_free()
+	chunk.free()
 
 ## May this chunk be placed where it now stands? Outside the stage-entrance window everything may;
 ## inside it, only a chunk whose nearest hazard cannot reach the player before the window and the

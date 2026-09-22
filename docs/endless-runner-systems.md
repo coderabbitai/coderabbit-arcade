@@ -679,8 +679,14 @@ corridor scrolls on, after the `state` and `game.paused` guards, so a pause hold
    `entry_clear()` needs the instance. With the chunk parked at `frontier_z − gap`, its nearest hazard's leading
    edge is at `chunk.global_position.z − entry_clear()`, and it is admitted only when
    `−(that z) / v ≥ _clear_road_remaining + stage_banner_reaction_seconds`. A chunk with no hazards is always
-   admitted. A rejected draw is `remove_child`ed (so its hazards leave `runner_hazards` on the frame they joined
-   it) and `queue_free`d before `setup()` ever runs, and `_pick_index(d, true)` redraws among `breather`-tagged
+   admitted. A rejected draw is `remove_child`ed and then **freed synchronously** (`free()`, never `queue_free()`)
+   before `setup()` ever runs, so the hazard group never carries an out-of-tree node: a queued reject would stay
+   alive and parentless until the end of the frame, and its hazards' deferred `_mount_visual()` — plus anything
+   else that reads a hazard transform in the meantime — would then fire
+   `Condition "!is_inside_tree()" is true` once per read, hundreds of times over a smoke run that ticks physics
+   several times per rendered frame. Freeing on the spot is safe because the instance was built moments earlier in
+   the same `_place_next()`, was never appended to `active`, and nothing holds a reference to it.
+   `_pick_index(d, true)` redraws among `breather`-tagged
    chunks only — out-of-range breathers included, because a rest beat still beats a hazard. The no-repeat rule
    already relaxes itself when one candidate is left, so two breathers alternate and one repeats. A library with
    no breather at all places nothing that tick and warns once.

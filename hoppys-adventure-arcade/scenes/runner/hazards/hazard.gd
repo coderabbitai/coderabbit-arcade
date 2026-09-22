@@ -249,6 +249,13 @@ func _apply_laser_state() -> void:
 func _mount_visual() -> void:
 	if is_instance_valid(visual):
 		return
+	if not is_inside_tree():
+		# The deferred fallback from _ready() is flushed at the end of the frame, by which time the
+		# chunk this hazard came in may have been taken back out of the tree — the spawner rejects a
+		# draw that way (chunk_spawner._discard_chunk). Mounting from out there would read a global
+		# transform that does not exist yet (`lanes_mask()`, and whatever `on_spawned()` measures),
+		# so nothing is mounted: a hazard nobody can see is a hazard nobody has to draw.
+		return
 	if not active:
 		# Auto-Fix cleared the hazard before anything was mounted: a removed hazard never puts a
 		# visual on screen, so the pending fallback mount stops here.
