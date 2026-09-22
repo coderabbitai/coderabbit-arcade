@@ -2,6 +2,8 @@ extends "res://scenes/runner/player/runner_visual_base.gd"
 ## Imported Blender mascot. Cosmetic transforms never drive player physics.
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 const Materials = preload("res://scenes/runner/environment/runner_materials.gd")
+const Glass = preload("res://scenes/runner/player/hifi/hoppy_glass.gdshader")
+const Surface = preload("res://scenes/runner/player/hifi/hoppy_surface.gdshader")
 const Hologram = preload("res://scenes/runner/player/hifi/energy.gdshader")
 const LaneLook = preload("res://scenes/runner/player/hifi/lane_look.gd")
 const STATES: Array[StringName] = [&"idle", &"run", &"jump", &"fall", &"roll", &"hurt", &"dead"]
@@ -62,7 +64,7 @@ func _ready() -> void:
 		for index in mesh.mesh.get_surface_count():
 			var source := mesh.get_active_material(index)
 			if not copies.has(source):
-				copies[source] = source.duplicate()
+				copies[source] = _surface_material(source as BaseMaterial3D)
 			mesh.set_surface_override_material(index, copies[source])
 	_look = LaneLook.new()
 	_look.name = "LaneLook"
@@ -76,6 +78,40 @@ func _ready() -> void:
 	_update_aura()
 	show_shield(_shield_requested)
 	_process(0.0)
+
+func _surface_material(source: BaseMaterial3D) -> ShaderMaterial:
+	assert(source != null, "Hoppy expects imported PBR materials")
+	assert(source.ao_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_RED, "ORM occlusion must be R")
+	assert(source.roughness_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_GREEN, "ORM roughness must be G")
+	assert(source.metallic_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_BLUE, "ORM metallic must be B")
+	var material := ShaderMaterial.new()
+	if source.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
+		# Godot imports this GLB's BLEND lens as alpha with a depth prepass.
+		assert(source.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS, "Hoppy glass requires alpha depth prepass; scissor/hash are unsupported")
+		# Explicit back-culled glass variant requested by the round-12 art review.
+		material.shader = Glass
+	else:
+		assert(source.albedo_color.a == 1.0, "Opaque Hoppy imports must have full albedo alpha")
+		material.shader = Surface
+	material.set_shader_parameter("albedo_map", source.get_texture(BaseMaterial3D.TEXTURE_ALBEDO))
+	material.set_shader_parameter("albedo_color", source.albedo_color)
+	material.set_shader_parameter("orm_map", source.get_texture(BaseMaterial3D.TEXTURE_METALLIC))
+	material.set_shader_parameter("roughness_factor", source.roughness)
+	material.set_shader_parameter("metallic_factor", source.metallic)
+	material.set_shader_parameter("normal_map", source.get_texture(BaseMaterial3D.TEXTURE_NORMAL))
+	material.set_shader_parameter("normal_scale", source.normal_scale)
+	material.set_shader_parameter("has_normal", source.normal_enabled)
+	material.set_shader_parameter("emission_map", source.get_texture(BaseMaterial3D.TEXTURE_EMISSION))
+	material.set_shader_parameter("emission_color", source.emission)
+	material.set_shader_parameter("emission_energy", source.emission_energy_multiplier)
+	material.set_shader_parameter("has_emission", source.emission_enabled)
+	material.set_shader_parameter("has_emission_map", source.get_texture(BaseMaterial3D.TEXTURE_EMISSION) != null)
+	material.set_shader_parameter("chroma_lock", 1.0)
+	material.set_shader_parameter("ambient_fill", Palette.CREAM)
+	material.set_shader_parameter("ambient_energy", 0.34)
+	material.set_shader_parameter("light_gain", 0.5)
+	material.set_shader_parameter("flash", 0.0)
+	return material
 
 func _configure_cosmetics(node: Node) -> void:
 	node.process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -154,11 +190,11 @@ func on_hit() -> void:
 
 func flash() -> void:
 	_flash_remaining = 0.06
-	# Tint a private material, avoiding another full-character overlay draw pass.
+	# Flash private uniforms without a full-character overlay draw pass.
 	for mesh in _meshes:
 		for i in mesh.mesh.get_surface_count():
-			var material := mesh.get_surface_override_material(i) as BaseMaterial3D
-			material.albedo_color = Color(1.8, 1.8, 1.8, material.albedo_color.a)
+			var material := mesh.get_surface_override_material(i) as ShaderMaterial
+			material.set_shader_parameter("flash", 1.0)
 
 func _bone_point(bone_name: String, rest_point: Vector3) -> Vector3:
 	var bone := skeleton.find_bone(bone_name)
@@ -194,8 +230,8 @@ func _process(delta: float) -> void:
 		if _flash_remaining <= 0.0:
 			for mesh in _meshes:
 				for i in mesh.mesh.get_surface_count():
-					var material := mesh.get_surface_override_material(i) as BaseMaterial3D
-					material.albedo_color = Color(1, 1, 1, material.albedo_color.a)
+					var material := mesh.get_surface_override_material(i) as ShaderMaterial
+					material.set_shader_parameter("flash", 0.0)
 
 func _particles(id: String, count: int, one_shot: bool) -> GPUParticles3D:
 	var node := GPUParticles3D.new()
