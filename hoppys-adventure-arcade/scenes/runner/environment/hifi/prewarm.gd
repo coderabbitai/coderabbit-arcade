@@ -53,8 +53,6 @@ static func warm() -> Dictionary:
 			for mask in 8:
 				_record("whooshes", "audio/sfx_synth.gd", "panned_whoosh", [mask, kind])
 	# Queue CPU-only images after urgent work, avoiding contention during warm().
-	for kind in ["fur", "cloth"]:
-		_queue_images("player", "player/hifi/forge.gd", "maps", [kind])
 	for method in ["maps", "floor_maps"]:
 		var environment := _script("environment/hifi/texture_forge.gd")
 		environment.call("prepare_async", method)
@@ -97,8 +95,6 @@ static func _queue_images(package: String, path: String, method: String, args: A
 	if package == "environment":
 		# bind() appends arguments; a closure keeps install's method argument first.
 		job.finalizer = func(images: Variant) -> Variant: return script.call("install_async", method, images)
-	elif package == "player":
-		job.finalizer = func(images: Variant) -> Variant: return script.call("finish_maps", args[0], images)
 	else:
 		job.finalizer = Callable(script, "finish_" + method)
 	job.task_id = WorkerThreadPool.add_task(job.generate, false, "Runner " + package + " " + method)

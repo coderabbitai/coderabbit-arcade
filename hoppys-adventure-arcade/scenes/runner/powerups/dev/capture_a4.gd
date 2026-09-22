@@ -3,6 +3,7 @@ extends SceneTree
 const KINDS := [&"approve_shield",&"auto_fix",&"lgtm",&"nitro",&"super_jump",&"code_review",&"review_comment",&"lint_rule",&"unit_test",&"auto_fix_patch"]
 const CORRIDOR = preload("res://scenes/runner/environment/corridor.tscn")
 const CorridorMaterials = preload("res://scenes/runner/environment/runner_materials.gd")
+const Prewarm = preload("res://scenes/runner/environment/hifi/prewarm.gd")
 var stage: Node3D
 var pickups: Node3D
 var camera: Camera3D
@@ -25,8 +26,13 @@ func capture() -> void:
 	# environment, lights and the shipped retro render scale.
 	var corridor := CORRIDOR.instantiate()
 	stage.add_child(corridor)
-	corridor._process(0.5)
-	corridor.set_process(false)
+	while not Prewarm.is_complete(): await process_frame
+	# Pin the same phase regardless of how many frames resource setup needed.
+	corridor.set_scroll_speed(0.0)
+	corridor._offset = 0.0
+	corridor._clock = 0.5
+	corridor._process(0.0)
+	freeze_subtree(corridor)
 	camera = Camera3D.new()
 	camera.fov = 60
 	stage.add_child(camera)
@@ -106,6 +112,20 @@ func capture() -> void:
 		print("ASSET A4 CAPTURE %s: %d measured scene draw calls" % [view,draws])
 	print("ASSET A4 CAPTURE: %s" % ("PASS" if passed else "FAIL"))
 	quit(0 if passed else 1)
+
+static func freeze_subtree(node: Node) -> void:
+	# Explicit child process modes override their parent's mode.
+	node.process_mode = Node.PROCESS_MODE_DISABLED
+	if node is GPUParticles3D:
+		# Discard the variable warmup history and stop render-server simulation too.
+		node.use_fixed_seed = true
+		node.seed = 1
+		node.restart()
+		node.emitting = false
+		node.speed_scale = 0.0
+	elif node is AnimationPlayer:
+		node.stop(true)
+	for child in node.get_children(): freeze_subtree(child)
 
 func rendered_image() -> Image:
 	for frame in 8: await process_frame

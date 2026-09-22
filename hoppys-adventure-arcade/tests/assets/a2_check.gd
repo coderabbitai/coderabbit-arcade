@@ -374,7 +374,7 @@ func check_walls(corridor: Node3D) -> void:
 	check(antialiased, "walls fractional stroke coverage")
 	check(atlas.RAIN_LAYERS == 3, "walls three rain layers")
 	var wall: ShaderMaterial = corridor.get_node("WallR").material_override
-	check(wall.get_shader_parameter("atlas") == texture, "walls new atlas bound")
+	check(wall.get_shader_parameter("wall_atlas") == texture, "walls new atlas bound")
 	for shader_name in ["code_wall", "code_wall_fade"]:
 		var source := FileAccess.get_file_as_string("res://scenes/runner/shaders/" + shader_name + ".gdshader")
 		check(source.count("= rain(") == atlas.RAIN_LAYERS and source.contains("float listing ="), "walls rain and persistent listing " + shader_name)

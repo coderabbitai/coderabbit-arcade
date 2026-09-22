@@ -32,7 +32,6 @@ func identities(value: Variant) -> Array:
 func cache_ids() -> Array:
 	var result: Array = []
 	for entry in [
-		["player/hifi/forge.gd", "cache"],
 		["environment/hifi/texture_forge.gd", "cache", "floor_cache"],
 		["environment/runner_materials.gd", "_materials", "_fonts"],
 		["shaders/glyph_atlas.gd", "_texture"],
@@ -115,7 +114,7 @@ func run() -> void:
 		var deferred_ms := float(Prewarm.timings[package]) - float(sync_timings.get(package, 0.0))
 		if deferred_ms > 0.0: print("PREWARM deferred main %s: %.3f ms" % [package, deferred_ms])
 	var census: Dictionary = Prewarm._census
-	var expected := {"player": 6, "environment": 9, "materials": 11, "hazards": 4,
+	var expected := {"environment": 9, "materials": 11, "hazards": 4,
 		"hazard_meshes": 16, "pickups": 4, "pickup_templates": 3,
 		"boss": 4, "boss_meshes": 42, "boss_fx": 2, "pursuer": 3,
 		"ui": 1, "audio": 32, "footsteps": 6, "whooshes": 16}
