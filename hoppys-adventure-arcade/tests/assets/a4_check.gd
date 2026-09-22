@@ -1,5 +1,6 @@
 extends SceneTree
 const Art = preload("res://scenes/runner/powerups/visuals/power_up_art.gd")
+const Grab = preload("res://scenes/runner/powerups/visuals/hifi/grab_affordance.gd")
 const Forge = preload("res://scenes/runner/powerups/visuals/hifi/mesh_forge.gd")
 const Finish = preload("res://scenes/runner/powerups/visuals/hifi/pickup_materials.gd")
 const Textures = preload("res://scenes/runner/powerups/visuals/hifi/texture_forge.gd")
@@ -147,6 +148,10 @@ func material_checks() -> void:
 	check(a.shader == b.shader and glass.shader == other_glass.shader and a.shader != glass.shader,"exactly two surface shader variants")
 	check(pool.shader == other_pool.shader,"pool shader is cached")
 	check(Finish.cache.size() == 3,"two surface templates plus one pool template")
+	var emission_baseline: Variant = Finish.template("opaque").get_shader_parameter("emission_tint")
+	a.set_shader_parameter("emission_tint",Art.BODY_MINT)
+	check(b.get_shader_parameter("emission_tint") == Palette.ORANGE and Finish.template("opaque").get_shader_parameter("emission_tint") == emission_baseline,"R7 emission tint never mutates another instance or cache")
+	check(Grab.TOOL_GLYPH_TINT.is_equal_approx(Palette.ORANGE.darkened(0.08)),"R9 tool glyph tint is derived from palette ORANGE")
 	var baseline: Variant = Finish.template("opaque").get_shader_parameter("clock")
 	a.set_shader_parameter("clock",19.0)
 	a.set_shader_parameter("tint",Palette.DANGER)
@@ -173,7 +178,7 @@ func material_checks() -> void:
 	var environment := Capture.fixture_environment()
 	check(environment.glow_enabled and is_equal_approx(environment.glow_hdr_threshold,0.75),"capture glow enabled at 0.75")
 	check(environment.background_color == Palette.NAVY_BG and environment.ambient_light_color == Palette.NAVY_2,"capture uses corridor darkness")
-	check(Capture.FILL_ENERGY <= 0.2,"capture fill energy bounded")
+	check(Capture.CORRIDOR.resource_path == "res://scenes/runner/environment/corridor.tscn","capture mounts shipping corridor")
 
 func attachment_checks(art: Art, kind: StringName) -> void:
 	var bounds: Array[AABB] = []
@@ -192,27 +197,35 @@ func attachment_checks(art: Art, kind: StringName) -> void:
 	var frame_parts: Array = frame.mesh.get_meta("panel_bounds")
 	if kind == &"code_review":
 		check(art._core_node.mesh.get_meta("panel_bounds").size() == 2,"two broad REVIEW rows")
-		check(frame.material_override.get_shader_parameter("tint") == Palette.SLATE and frame.material_override.get_shader_parameter("energy") > 0.0,"SLATE magnifier with low rim fill")
+		check(frame.material_override.get_shader_parameter("tint") == Art.FRAME_MINT.lightened(0.10).lerp(Palette.MINT,0.12) and is_equal_approx(frame.material_override.get_shader_parameter("energy"),0.55),"R12 lighter mint magnifier plating without extra emission")
 		var colors: PackedColorArray = frame.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
 		var has_dark_card := false
 		for color in colors:
 			if color.r < 0.2: has_dark_card = true
 		check(has_dark_card,"dark card vertex color preserves contrast without another draw")
 	if kind == &"lgtm":
-		check(frame_parts.size() == 2 and frame_parts[0].intersects(frame_parts[1]),"LGTM cuff overlaps hand, including within merged metal mesh")
+		check(frame_parts.size() >= 3 and frame_parts[0].intersects(frame_parts[1]),"LGTM cuff overlaps hand, including within merged metal mesh")
 	if kind == &"auto_fix_patch":
 		var parts: Array = art._core_node.mesh.get_meta("panel_bounds")
 		check(parts.size() == 2,"PATCH has two attached inlays")
 		for part: AABB in parts:
 			var transformed: AABB = art._core_node.transform*part
 			var attached := false
-			var gem: MeshInstance3D = art._pivot.get_node("Gem")
-			var glass_parts: Array = gem.mesh.get_meta("panel_bounds")
+			var gem: MeshInstance3D = art._pivot.get_node("Ring")
+			var glass_parts: Array = gem.mesh.get_meta("inlay_bounds")
 			for glass_part: AABB in glass_parts:
 				if transformed.intersects(gem.transform*glass_part): attached = true
 			check(attached,"PATCH inlay overlaps a chevron through the entire idle")
 
 func run() -> void:
+	root.size = Vector2i(1280,720)
+	var camera := Camera3D.new()
+	root.add_child(camera)
+	camera.position = Vector3(0,4,8)
+	camera.look_at(Vector3(0,1,-8))
+	camera.fov = 60
+	camera.make_current()
+	round5_fixture_checks()
 	forge_checks()
 	material_checks()
 	var backend := FileAccess.get_file_as_string("res://scenes/runner/powerups/power_up.gd")
@@ -231,20 +244,28 @@ func run() -> void:
 		visual.set("kind",kind)
 		visual.on_spawned()
 		var art: Art = visual._art
+		affordance_checks(art, camera, kind)
 		var count := visual.find_children("*","",true,false).size()
 		visual.on_spawned()
 		check(count == visual.find_children("*","",true,false).size(),"idempotent spawn " + kind)
 		silhouettes[kind] = silhouette(art)
-		check(art._tag.billboard == BaseMaterial3D.BILLBOARD_FIXED_Y and art._tag.outline_size >= 6,"Y-billboard tag with outline")
+		check(art._tag.billboard == BaseMaterial3D.BILLBOARD_FIXED_Y and art._tag.outline_size >= 6,"outlined Y-billboard tag over real grid")
 		var tag_pose := art._tag.transform
-		var plate: MeshInstance3D = art.get_node("TagPlate")
-		var plate_pose := plate.transform
+		var plate_pose := art._tag_plate.transform
+		check(art.has_node("TagPlate") and art._tag_plate.get_parent() == art,"R9 plate is independent of spinning sculpture")
+		check(art._tag_plate.material_override.get_shader_parameter("tint") == Palette.NAVY_2 and art._tag_plate.material_override.get_shader_parameter("energy") == 0.0,"R9 opaque unlit NAVY_2 backing")
+		check(not art._tag_plate.material_override.shader.code.contains("ALPHA ="),"R9 plate uses opaque surface shader")
 		var tag_font: Font = art._tag.font if art._tag.font != null else ThemeDB.fallback_font
 		var text_width := (tag_font.get_string_size(art._tag.text,HORIZONTAL_ALIGNMENT_LEFT,-1,art._tag.font_size).x+art._tag.outline_size*2)*art._tag.pixel_size
-		check(text_width <= 0.77 and plate.mesh.get_aabb().size.x <= 0.77,"tag and backing horizontal footprint")
+		check(text_width <= 0.72,"tag fits enlarged backing")
+		check(is_equal_approx(art._tag.pixel_size,0.0045),"R10 readable tag pixel size")
+		check(art._tag_plate.mesh.get_aabb().size.is_equal_approx(Vector3(0.72,0.16,0.025)),"R10 enlarged tag backing bounds")
 		var draws := 0
 		var tris := 48
 		for node in visual.find_children("*","",true,false):
+			check(node.physics_interpolation_mode == Node.PHYSICS_INTERPOLATION_MODE_OFF,"interpolation OFF " + node.name)
+			if node is GeometryInstance3D and node.material_override is ShaderMaterial:
+				check(node.material_override.get_shader_parameter("tint") in [Palette.MINT,Palette.MATRIX,Palette.ORANGE,Palette.CREAM,Palette.SLATE,Palette.NAVY_2,Grab.TOOL_GLYPH_TINT,Art.FRAME_MINT,Art.FRAME_ORANGE,Art.FRAME_REVIEW],"friendly or neutral material, never DANGER " + kind)
 			check(node.process_mode == Node.PROCESS_MODE_PAUSABLE,"pausable " + node.name)
 			check(not node is CollisionObject3D and not node is CollisionShape3D,"cosmetic only")
 			if node is MeshInstance3D:
@@ -281,16 +302,23 @@ func run() -> void:
 					min_y = minf(min_y,p.y)
 					max_y = maxf(max_y,p.y)
 				check(max_radius <= 0.385,"horizontal 110 percent footprint " + kind)
-				check(min_y >= -0.46 and max_y <= 0.46,"authored vertical idle bound " + kind)
-		check(art._tag.transform == tag_pose and plate.transform == plate_pose,"tag and plate never follow sculpture spin")
+				check(min_y >= -0.52 and max_y <= 0.52,"authored vertical idle bound " + kind)
+		check(art._tag.transform == tag_pose and art._tag_plate.transform == plate_pose,"R9 label and restored plate remain fixed through sculpture spin")
 		check(is_equal_approx(art._pool.global_position.y,0.012),"pool at floor")
+		var glyph_pose := art._glyph.transform
+		var beacon_clock: Variant = art._pool.material_override.get_shader_parameter("clock")
+		var fade := art._rear_mix
+		var offset := art._beam_offset
 		var t := art._t
 		paused = true
 		await process_frame
 		await process_frame
 		check(art._t == t,"pause freezes clock")
+		check(art._rear_mix == fade and art._beam_offset == offset,"R6 pause freezes fade and stagger")
+		check(art._glyph.transform == glyph_pose and art._pool.material_override.get_shader_parameter("clock") == beacon_clock,"pause freezes glyph and beacon")
 		paused = false
 		visual.on_collected()
+		check(not art._pool.visible and not art._glyph.visible,"collection removes beacon and glyph")
 		visual.on_collected()
 		var bursts := scene.find_children("A4CollectBurst*","GPUParticles3D",false,false)
 		check(bursts.size() == 1,"one scene-owned burst per collection")
@@ -299,7 +327,7 @@ func run() -> void:
 		art._process(0.251)
 		check(not visual.visible,"collection hides")
 		visual.on_spawned()
-		check(visual.visible and art._collect_time < 0.0,"reuse resets collection")
+		check(visual.visible and art._collect_time < 0.0 and art._pool.visible and art._glyph.visible,"reuse resets collection")
 		pickup.free()
 		if not bursts.is_empty(): check(is_instance_valid(bursts[0]),"burst survives pickup removal")
 		scene.free()
@@ -325,3 +353,233 @@ func run() -> void:
 	await create_timer(0.2).timeout
 	print("ASSET A4: %s (%d checks)" % ["PASS" if failures == 0 else "FAIL",checks])
 	quit(0 if failures == 0 else 1)
+
+func affordance_checks(art: Art, camera: Camera3D, kind: StringName) -> void:
+	var hue := Palette.ORANGE if art._is_tool else Palette.MINT
+	check(art.has_node("BeaconRingHalo") and art.has_node("HologramGlyph"),"beam ring halo and glyph exist " + kind)
+	check(art._pool.mesh.get_aabb().size.is_equal_approx(Vector3(2.4,3.2,2.4)),"beacon height and halo bounds")
+	check(art._pool.get_meta("ring_diameter") >= 1.2 and art._pool.get_meta("ring_diameter") <= 1.6,"ring diameter")
+	for node in [art._pool,art._glyph]:
+		check(node.material_override.get_shader_parameter("tint") == (Grab.TOOL_GLYPH_TINT if node == art._glyph and art._is_tool else hue),"friendly hue " + kind)
+		check(not node.material_override.shader.code.contains("TIME"),"pausable affordance shader")
+	round5_affordance_checks(art,camera,kind)
+	var frame: MeshInstance3D = art._pivot.get_node("Ring")
+	check(triangles(frame.mesh) == frame.mesh.get_meta("expected_triangles"),"R9 merged surface retains every frame, backing and inlay triangle")
+	var frame_colors: PackedColorArray = frame.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+	var has_inlay := false
+	var has_frame := false
+	for color in frame_colors:
+		has_inlay = has_inlay or color.a < 0.75
+		has_frame = has_frame or color.a >= 0.75
+	check(has_inlay and has_frame,"R9 per-face frame and inlay shading retained")
+	check(kind in Art.BACKED_KINDS,"R9 every kind receives the same small closed core")
+	if kind in Art.BACKED_KINDS:
+		var backing_found := false
+		for bounds: AABB in frame.mesh.get_meta("panel_bounds"):
+			if bounds.size.is_equal_approx(Vector3(0.3,0.3,0.26)) and bounds.position.is_equal_approx(Vector3(-0.15,-0.15,-0.22)): backing_found = true
+		check(backing_found,"R8 closed 0.30m backing is merged behind thin silhouette " + kind)
+	check(is_equal_approx(art._pool.material_override.get_shader_parameter("beam_core_gain"),1.12 if art._is_tool else 1.0),"R8 twelve percent boost isolated to tool beam cores")
+	check(is_equal_approx(frame.material_override.get_shader_parameter("energy"),0.55),"R7 equal power-up/tool frame emission energy")
+	if not art._is_tool:
+		for node in art._pivot.get_children():
+			check(node.material_override.get_shader_parameter("emission_tint") == Art.BODY_MINT,"R7 every MINT body surface emits deeper mint")
+	check(is_equal_approx(art._glyph.material_override.get_shader_parameter("glyph_gain"),0.675 if art._is_tool else 0.75),"R7 isolated ten percent tool glyph reduction")
+	var expected_frame := Palette.ORANGE.lerp(Palette.CREAM,0.15) if art._is_tool else Palette.SLATE.lerp(Palette.MINT,0.45).lightened(0.18)
+	if kind == &"code_review":
+		expected_frame = expected_frame.lightened(0.10).lerp(Palette.MINT,0.12)
+		check(expected_frame.s >= 0.25,"R12 magnifier plating retains mint saturation")
+		check(Capture.luminance(expected_frame) > Capture.luminance(Art.FRAME_MINT),"R12 magnifier diffuse plating is brighter")
+	check(frame.material_override.get_shader_parameter("tint") == expected_frame,"R12 per-kind diffuse frame palette pin")
+	check(Finish.CODE.contains("METALLIC = mix(0.32, 0.18, glassness);"),"R10 diffuse response retained without reflection probe")
+	check(Finish.CODE.contains("max(texture(plating, UV).rgb, vec3(0.55))"),"R10 plating cannot eat diffuse lift")
+	check(Finish.CODE.contains("mix(min(texture(roughness_map, UV).r, 0.62), 0.19, glassness)"),"R10 roughness ceiling")
+	var pose: Vector3 = art.get_parent().position
+	# Sixty metres ahead of the player, camera at the actual contract pose.
+	art.get_parent().position = Vector3(0,1,-60)
+	art._update_affordance()
+	check(float(frame.material_override.get_shader_parameter("range_boost")) <= 3.0,"R9 body range gain capped at three")
+	var projected := Capture.projected_body_rect(camera,art._pivot)
+	var contains_body := true
+	for node in art._pivot.get_children():
+		for point in mesh_points(node):
+			var pixel := camera.unproject_position(art._pivot.to_global(point))
+			contains_body = contains_body and pixel.x >= projected.position.x+1 and pixel.y >= projected.position.y+1 and pixel.x <= projected.end.x-1 and pixel.y <= projected.end.y-1
+	check(contains_body,"R8 projected animated sculpture bounds include one-pixel dilation")
+	var center := art._glyph.global_position
+	var up := camera.global_basis.y*art._glyph.scale.y*art._glyph_coverage*0.5
+	var pixels := camera.unproject_position(center+up).distance_to(camera.unproject_position(center-up))
+	print("A4 GLYPH %s: %.2f visible pixels at 60m" % [kind,pixels])
+	check(pixels >= 23.0 and pixels <= 36.0,"60m bounded attached vector glyph 23..36px: %.2f " % pixels + kind)
+	check(is_equal_approx(art._near_fade,1.0),"far beam full intensity")
+	# Compare projected quad area for the same glyph, so its alpha coverage is constant.
+	for lane in [-2.0,0.0,2.0]:
+		var previous_area := INF
+		for distance in [20.0,40.0,60.0]:
+			art.get_parent().position = Vector3(lane,1,-distance)
+			art._update_affordance()
+			var corners := PackedVector2Array()
+			for corner in [Vector3(-0.5,-0.5,0),Vector3(0.5,-0.5,0),Vector3(0.5,0.5,0),Vector3(-0.5,0.5,0)]:
+				corners.append(camera.unproject_position(art._glyph.to_global(corner)))
+			var screen_area := polygon_area(corners)
+			check(screen_area <= previous_area+0.01,"R10 glyph area decreases with depth " + kind)
+			previous_area = screen_area
+
+	for distance in [0.0,3.0,6.0,15.0]:
+		# Test forward depth independent of the camera's pitch.
+		art.global_position = camera.to_global(Vector3(0,0,-8.0-distance))
+		art._update_affordance()
+		check(is_equal_approx(art._near_fade,smoothstep(0.0,6.0,distance)),"last six metres beam fade")
+		check(art._glyph.scale.x > 0.0 and art._glyph.scale.x <= 3.8,"R10 near glyph keeps corridor clamp")
+	art.position = Vector3.ZERO
+	art.get_parent().position = pose
+	art._update_affordance()
+	var area := Vector2.ZERO
+	for node in art._pivot.get_children():
+		var shape: Mesh = node.mesh if node is MeshInstance3D else node.multimesh.mesh
+		var measured := emission_area(shape,float(node.material_override.get_shader_parameter("emission_inset")))
+		if node is MultiMeshInstance3D: measured *= node.multimesh.instance_count
+		if float(node.material_override.get_shader_parameter("energy")) <= 0.0: measured.y = 0.0
+		area += measured
+	var coverage := area.y/area.x
+	print("A4 EMISSIVE %s: %.2f percent sculpture area" % [kind,coverage*100.0])
+	check(coverage <= 0.4 and Finish.CODE.contains("emission_mask * glow_tint"),"masked emissive surface below forty percent")
+
+func polygon_area(points: PackedVector2Array) -> float:
+	var area := 0.0
+	for i in points.size(): area += points[i].cross(points[(i+1)%points.size()])
+	return absf(area)*0.5
+
+func emission_area(mesh: Mesh, inset: float) -> Vector2:
+	# Exact UV polygon clipping weighted by each triangle's real surface area.
+	var result := Vector2.ZERO
+	var interior := PackedVector2Array([Vector2(inset,inset),Vector2(1.0-inset,inset),Vector2(1.0-inset,1.0-inset),Vector2(inset,1.0-inset)])
+	for surface in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(surface)
+		var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+		for i in range(0,indices.size(),3):
+			var a := indices[i]
+			var b := indices[i+1]
+			var c := indices[i+2]
+			var area := (points[b]-points[a]).cross(points[c]-points[a]).length()*0.5
+			var triangle := PackedVector2Array([uvs[a],uvs[b],uvs[c]])
+			var unlit := 0.0
+			for clipped in Geometry2D.intersect_polygons(triangle,interior): unlit += polygon_area(clipped)
+			result.x += area
+			result.y += area*clampf(unlit/polygon_area(triangle),0.0,1.0)
+	return result
+
+func round5_fixture_checks() -> void:
+	var corridor := Capture.CORRIDOR.instantiate()
+	root.add_child(corridor)
+	for title in ["Floor","Ceiling","WallL","WallR","LaneGlow","FarGlow","Rain","Sun","KeyLight"]:
+		check(corridor.has_node(title),"shipping capture fixture includes " + title)
+	check(corridor.get_node("Floor").material_override.shader.resource_path.ends_with("floor_grid.gdshader"),"capture includes emissive shipping floor")
+	corridor.free()
+	var source := FileAccess.get_file_as_string("res://scenes/runner/powerups/dev/capture_a4.gd")
+	check(source.contains("backdrop+0.15") and source.contains("percentile(region_values(background,rect),0.5)"),"paired same-region shipping backdrop median plus 0.15")
+	check(source.contains('"stacked-tools"') and source.contains("visual.position.x = 0.0"),"capture includes stacked lane views")
+	check(source.contains("body_image_guard(body,background,visual)"),"body-only guard cannot pass on a detached glyph")
+	for code in [Grab.BEAM_CODE,Grab.GLYPH_CODE]:
+		check(not code.contains("TIME") and not code.contains("cull_disabled"),"affordance clock and explicit front/back faces")
+	check(Grab.BEAM_CODE.contains("a*near_fade"),"beam ring and halo all fade near player")
+	check(Grab.BEAM_CODE.contains("clock*0.65") and Grab.BEAM_CODE.contains("ribbons"),"slow ribbon pair motif")
+	var beam_arrays := Grab.mesh().surface_get_arrays(0)
+	var beam_colors: PackedColorArray = beam_arrays[Mesh.ARRAY_COLOR]
+	var beam_normals: PackedVector3Array = beam_arrays[Mesh.ARRAY_NORMAL]
+	for i in beam_colors.size():
+		if beam_colors[i].r > 0.5: check(beam_normals[i].y > 0.99,"back-face culled floor ring faces up")
+	check(Grab.BEAM_CODE.contains("depth_test_disabled"),"R6 B2 beam cannot be bitten by sculpture depth")
+	check(Grab.BEAM_CODE.contains("pow(max(0.0,1.0-pow(UV.x*2.0-1.0,2.0)),2.0)"),"R6 B2 smooth radial profile reaches zero at edges")
+	check(Grab.GLYPH_CODE.contains("ALBEDO = tint.rgb*glyph_gain") and Grab.BEAM_CODE.contains("ALBEDO = tint.rgb*0.85"),"R6 B5 subunit hue-preserving tint gains")
+	check(source.contains("beacon_image_guard(beam,background,visual)") and source.contains('set_shader_parameter("beam_only",1.0)'),"R6 isolated beam guard excludes body ring halo glyph")
+	check(source.contains("glyph_color_guard(image,visual)") and source.contains("stacked_peak_guard(image,background"),"R6 color and stacked pixel guards wired")
+	var mint_quality := Capture.color_quality([Palette.MINT,Palette.MINT])
+	var white_quality := Capture.color_quality([Color.WHITE,Color.WHITE])
+	check(mint_quality.x >= 0.25 and mint_quality.y <= 0.05,"R6 B5 saturation accepts mint")
+	check(white_quality.x < 0.25 and white_quality.y > 0.05,"R6 B5 rejects white glyphs")
+	check(Capture.separated_peaks([0.0,0.3,0.2,0.02,0.1,0.35,0.0],1,5),"R6 B4 accepts two separated lane peaks")
+	check(not Capture.separated_peaks([0.0,0.3,0.3,0.3,0.3,0.35,0.0],1,5),"R6 B4 rejects merged lane blob")
+	check(source.contains('views.append("distance-"+str(kind))') and source.contains("selection = [kind,kind,kind]"),"R7 every kind captured at all three distances")
+	check(source.contains("kind=%s %dm") and source.contains('"tools" if visual._art._is_tool else "powerups"'),"R7 self-describing per-kind family measurements")
+	var ramp: Array[float] = []
+	for i in 100: ramp.append(float(i)/100.0)
+	check(is_equal_approx(Capture.brightest_body_p75(ramp),0.84),"R8 p75 of brightest sixty percent uses documented order statistic")
+	check(is_equal_approx(Capture.percentile(ramp,0.75),0.74),"R8 whole-box p75 is distinct from retained-body p75")
+	check(Capture.brightest_body_p75([0.0,0.0,0.0]) == 0.0 and Capture.brightest_body_p75([]) == 0.0,"R8 empty/dark masks cannot fabricate light")
+	check(source.contains("projected_body_rect(camera,visual._art._pivot)") and source.contains("brightest_body_p75(values)") and source.contains("maxf(0.16,backdrop+0.08)"),"R11 actual sculpture bbox and sampler use coordinator calibration")
+	check(Finish.CODE.contains("min(0.65,energy*clamp(range_boost,1.0,3.0)"),"R9 complete emissive product capped, not just one factor")
+	check(is_equal_approx(Capture.body_threshold(40.0,0.10),0.18) and is_equal_approx(Capture.body_threshold(40.01,0.10),0.13),"R11 exact forty-metre decision boundary")
+	check(is_equal_approx(Capture.body_threshold(20.0,0.02),0.16),"R11 near brightness floor remains 0.16")
+	check(Capture.body_accepts(60.0,0.10,0.13,3,Vector2(0.30,0.03)),"R11 three hue-true pixels pass distant presence")
+	check(not Capture.body_accepts(60.0,0.10,0.13,2,Vector2(0.30,0.03)),"R11 two distant pixels cannot pass")
+	check(not Capture.body_accepts(60.0,0.10,0.129,3,Vector2(0.30,0.03)),"R11 distant brightness must clear backdrop plus 0.03")
+	for distance in [20.0,40.0]:
+		check(not Capture.body_accepts(distance,0.164,0.204,23,Vector2(0.30,0.03)),"R11 dark nearby body at backdrop plus 0.04 fails")
+	check(Capture.body_accepts(20.0,0.164,0.250,23,Vector2(0.30,0.03)),"R11 measured APPROVE 0.250 versus 0.164 passes")
+	check(Capture.body_accepts(60.0,0.062,0.098,3,Vector2(0.30,0.03)),"R11 measured stacked PATCH presence passes")
+	check(source.contains("brightness_min=%.3f lit_pixels_min=%d saturation_min=0.25 white_ratio_max=0.05"),"R11 guard logs all acceptance thresholds")
+	check(not Capture.body_accepts(60.0,0.10,1.0,60,Vector2(0.01,1.0)),"R9 white blowout fails despite brightness")
+	check(not Capture.body_accepts(20.0,0.10,0.60,60,Vector2(0.30,0.06)),"R9 white fraction above five percent fails")
+	var clipped: Array[Color] = []
+	for i in 80: clipped.append(Color.BLACK)
+	for i in 20: clipped.append(Color.WHITE)
+	check(Capture.body_color_quality(clipped) == Vector2(0,1),"R9 brightest twenty-percent hue detects white hidden by a dark bbox")
+	var first := Grab.material(Palette.MINT,&"approve_shield")
+	var second := Grab.material(Palette.MINT,&"approve_shield")
+	first.set_shader_parameter("depth_alpha",0.1)
+	check(first != second and first.shader == second.shader,"private affordance uniforms share shader")
+	check(second.get_shader_parameter("depth_alpha") != 0.1,"cached material isolation")
+	var texture: Texture2D = first.get_shader_parameter("glyph")
+	check(texture == second.get_shader_parameter("glyph") and texture.get_image().has_mipmaps(),"glyph texture shared with mipmaps")
+
+func round5_affordance_checks(art: Art, camera: Camera3D, kind: StringName) -> void:
+	check(art._pool.custom_aabb.size.is_equal_approx(Vector3(3.8,3.2,2.4)),"B2 shader-expanded beam culling bound")
+	var visual := art.get_parent() as Node3D
+	var original := visual.position
+	for distance in [20.0,40.0,60.0,90.0]:
+		for lane in [-2.0,0.0,2.0]:
+			for altitude in [1.0,2.2]:
+				visual.position = Vector3(lane,altitude,-distance)
+				art._update_affordance()
+				check(art._glyph.position.y <= 1.2,"B1 attached world-height glyph " + kind)
+				var gem: MeshInstance3D = art._pivot.get_node("Ring")
+				check(float(gem.material_override.get_shader_parameter("range_boost")) <= 3.0,"R9 bounded body gain " + kind)
+				check(Finish.CODE.contains("step(emission_inset,UV.x)") and not Finish.CODE.contains("edge_distance"),"B1 broad patch replaces subpixel edge")
+				for x in [-0.5,0.5]:
+					for y in [-0.5,0.5]:
+						var corner := art._glyph.to_global(Vector3(x,y,0))
+						check(absf(corner.x) <= 4.0001 and corner.y <= 6.4001 and corner.y >= 0.0499,"B5 whole quad inside shipping corridor at %dm" % distance)
+				var beam_center := Vector3(lane,1.0,-distance)
+				var beam_edge := camera.global_basis.x*art._beam_width*0.31
+				var pixels := camera.unproject_position(beam_center+beam_edge).distance_to(camera.unproject_position(beam_center-beam_edge))
+				check(art._beam_width <= 0.9 and pixels > 0.0,"R6 B2 lane-safe capped soft sheath")
+	visual.position = Vector3(0,1,-60)
+	art._update_affordance()
+	var full_size := art._glyph.scale.x
+	var peer := Art.new()
+	root.add_child(peer)
+	peer.build(kind)
+	peer.position = Vector3(0,1,-40)
+	peer._update_affordance()
+	art._update_affordance()
+	var before := art._depth_alpha
+	art._process(0.10)
+	check(art._glyph.visible and art._depth_alpha < before and art._depth_alpha > 0.45,"R6 B3 gradual fade, never binary hide")
+	art._process(0.41)
+	peer._process(0.51)
+	check(art._glyph.scale.x <= full_size*0.33 and art._depth_alpha >= 0.44,"R6 B3 rear glyph shrinks with readable residual alpha")
+	check(art._glyph.visible and peer._glyph.visible,"R6 B3 both glyphs retained")
+	check(art._beam_offset > 0.6 and peer._beam_offset < -0.4,"R6 B4 separated same-lane beam centers")
+	peer.position.x = 2.0
+	art._rear_mix = 0.0
+	art._process(0.51)
+	check(art._rear_mix > 0.99 and art._glyph.visible,"R6 B3 cross-lane rear also shrinks without disappearing")
+	peer._collect_time = 0.0
+	art._process(0.51)
+	check(art._glyph.visible and is_equal_approx(art._glyph.scale.x,full_size),"R6 B3 smooth promotion after collection")
+	peer.free()
+	check(get_nodes_in_group(Art.PICKUP_GROUP).size() == 1,"B4 freed pickup leaves sorting group")
+	visual.position = original
+	art._update_affordance()
