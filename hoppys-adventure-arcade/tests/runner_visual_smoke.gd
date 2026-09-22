@@ -90,10 +90,10 @@ func hoppy_wait_state(hoppy: Node3D, player: AnimationPlayer, state: StringName,
 		await process_frame
 	return hoppy.anim_state == state
 
-func hoppy_material_colors(materials: Array[BaseMaterial3D]) -> Array[Color]:
-	var colors: Array[Color] = []
+func hoppy_material_flashes(materials: Array[ShaderMaterial]) -> Array[float]:
+	var colors: Array[float] = []
 	for material in materials:
-		colors.append(material.albedo_color)
+		colors.append(float(material.get_shader_parameter("flash")))
 	return colors
 
 func run() -> void:
@@ -124,17 +124,17 @@ func run() -> void:
 		if head >= 0 and eye >= 0:
 			var facing := skeleton.global_basis * (skeleton.get_bone_global_rest(eye).origin - skeleton.get_bone_global_rest(head).origin)
 			check(facing.z < 0.0, "Hoppy faces negative Z")
-		var private_materials: Array[BaseMaterial3D] = []
-		var base_colors: Array[Color] = []
+		var private_materials: Array[ShaderMaterial] = []
+		var base_colors: Array[float] = []
 		for mesh: MeshInstance3D in hoppy.find_children("*", "MeshInstance3D", true, false):
 			if mesh.skin == null:
 				continue
 			for surface in mesh.mesh.get_surface_count():
-				var material := mesh.get_active_material(surface) as BaseMaterial3D
+				var material := mesh.get_active_material(surface) as ShaderMaterial
 				check(material != null and material != mesh.mesh.surface_get_material(surface), "imported surface material is a private instance")
 				if material != null and not private_materials.has(material):
 					private_materials.append(material)
-					base_colors.append((mesh.mesh.surface_get_material(surface) as BaseMaterial3D).albedo_color)
+					base_colors.append(0.0)
 		check(not private_materials.is_empty(), "imported Hoppy materials discovered")
 		for state in [&"idle", &"run", &"jump", &"fall", &"roll", &"hurt", &"dead"]:
 			hoppy.set_anim_state(state)
@@ -188,19 +188,19 @@ func run() -> void:
 		player.advance(0.1)
 		await frames()
 		# A queued hurt method can briefly tint the materials after changing state.
-		# Settle against immutable imported colors, not an arbitrary render frame.
+		# Settle against the zero flash uniform, not an arbitrary render frame.
 		for poll in 30:
-			if hoppy_material_colors(private_materials) == base_colors:
+			if hoppy_material_flashes(private_materials) == base_colors:
 				break
 			await create_timer(0.01).timeout
-		check(hoppy_material_colors(private_materials) == base_colors, "prior hurt flash settles")
+		check(hoppy_material_flashes(private_materials) == base_colors, "prior hurt flash settles")
 		var colors_before := base_colors
 		hoppy.on_hit()
-		check(hoppy_material_colors(private_materials) != colors_before, "hit flash")
+		check(hoppy_material_flashes(private_materials) != colors_before, "hit flash")
 		var flash_cleared := false
 		for poll in 30:
 			await create_timer(0.01).timeout
-			if hoppy_material_colors(private_materials) == colors_before:
+			if hoppy_material_flashes(private_materials) == colors_before:
 				flash_cleared = true
 				break
 		check(flash_cleared, "flash clears")

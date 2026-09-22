@@ -1,4 +1,5 @@
 extends SceneTree
+const Guard = preload("res://scenes/runner/player/hifi/palette_guard.gd")
 const Capture = preload("res://scenes/runner/player/dev/capture_a1.gd")
 const Hoppy = preload("res://scenes/runner/player/hoppy_runner_visual.tscn")
 const Cleanup = preload("res://scenes/runner/environment/hifi/fixture_cleanup.gd")
@@ -26,6 +27,12 @@ func material_textures(material: Material) -> void:
 			var texture: Texture2D = material.get_texture(slot)
 			if texture != null:
 				textures[texture.get_instance_id()] = texture
+
+	elif material is ShaderMaterial:
+		for uniform: Dictionary in material.shader.get_shader_uniform_list():
+			var value: Variant = material.get_shader_parameter(uniform.name)
+			if value is Texture2D:
+				textures[value.get_instance_id()] = value
 
 func mesh_census(mesh: Mesh, count: int = 1) -> void:
 	for surface in mesh.get_surface_count():
@@ -145,6 +152,76 @@ func run() -> void:
 	var player: AnimationPlayer = hoppy.animation_player
 	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	player.playback_default_blend_time = 0.0
+	check(hoppy.find_children("*", "Light3D", true, false).is_empty(), "palette uses no clipping fill light")
+	var surface_shader := preload("res://scenes/runner/player/hifi/hoppy_surface.gdshader")
+	var glass_shader := preload("res://scenes/runner/player/hifi/hoppy_glass.gdshader")
+	var shared := FileAccess.get_file_as_string("res://scenes/runner/player/hifi/hoppy_surface.gdshaderinc")
+	check(not (surface_shader.code + glass_shader.code + shared).contains("TIME"), "surface shaders have no global time")
+	check(shared.contains("ambient_energy * orm.r"), "ambient fill weighted by baked occlusion")
+	check(glass_shader.code.contains("blend_mix, depth_prepass_alpha, cull_back") and shared.contains("ALPHA = albedo_color.a * texel.a"), "glass preserves alpha with reviewed render modes")
+	check(surface_shader.code.contains("cull_back, depth_draw_opaque") and not surface_shader.code.contains("#define HOPPY_GLASS"), "body remains opaque and back culled")
+	var glass_count := 0
+	var mask_source := FileAccess.get_file_as_string("res://scenes/runner/player/hifi/palette_mask.gdshader")
+	check(mask_source.contains("texel.a * albedo_color.a < 0.5") and mask_source.contains("discard"), "guard excludes transparent glass")
+	check(mask_source.contains("> 1.12"), "fur mask excludes neutral whites")
+	var band := Image.create(1280, 720, false, Image.FORMAT_RGB8)
+	band.fill(Color("a9b48d"))
+	check(Capture.measure_goggle_band(band)["pass"], "studio guard accepts authored mint veil")
+	band.fill(Color("62a48c"))
+	check(not Capture.measure_goggle_band(band)["pass"], "studio guard rejects opaque lens regression")
+	for mesh: MeshInstance3D in hoppy._meshes:
+		for surface in mesh.mesh.get_surface_count():
+			var material := mesh.get_active_material(surface) as ShaderMaterial
+			var source := mesh.mesh.surface_get_material(surface) as BaseMaterial3D
+			if source.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
+				glass_count += 1
+				check(material != null and material.shader == glass_shader, "goggles use transparent glass variant")
+				var tint: Color = material.get_shader_parameter("albedo_color")
+				check(is_equal_approx(tint.a, 0.22) and tint == source.albedo_color, "goggle alpha preserves authored 0.22")
+			else:
+				check(material != null and material.shader == surface_shader, "body uses opaque hue-preserving shader")
+			check(material.get_shader_parameter("chroma_lock") >= 0.75, "chroma lock preserved")
+			var gain: float = material.get_shader_parameter("light_gain")
+			var ambient: float = material.get_shader_parameter("ambient_energy")
+			check(gain >= 0.4 and gain <= 0.7, "compressed direct lighting gain")
+			check(ambient >= 0.25 and ambient <= 0.45, "lifted ambient budget")
+			check(source.ao_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_RED and source.roughness_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_GREEN and source.metallic_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_BLUE, "glTF ORM channels RGB")
+			check(source.get_texture(BaseMaterial3D.TEXTURE_METALLIC) == source.get_texture(BaseMaterial3D.TEXTURE_ROUGHNESS) and source.get_texture(BaseMaterial3D.TEXTURE_AMBIENT_OCCLUSION) == material.get_shader_parameter("orm_map"), "one shared ORM image")
+	check(glass_count == 1, "exactly one goggle glass surface")
+	var synthetic := Image.create(16, 2, false, Image.FORMAT_RGB8)
+	var mask := Image.create(16, 2, false, Image.FORMAT_RGB8)
+	for x in 16:
+		synthetic.set_pixel(x, 0, Capture.Palette.ORANGE)
+		synthetic.set_pixel(x, 1, Capture.Palette.CREAM * 0.8)
+		mask.set_pixel(x, 0, Color.RED)
+		mask.set_pixel(x, 1, Color.GREEN)
+	check(Guard.measure(synthetic, mask)["pass"], "synthetic palette accepted")
+	var full_image := Image.create(1280, 720, false, Image.FORMAT_RGB8)
+	var full_mask := Image.create(1280, 720, false, Image.FORMAT_RGB8)
+	full_image.blit_rect(synthetic, Rect2i(0, 0, 16, 2), Vector2i(600, 300))
+	full_mask.blit_rect(mask, Rect2i(0, 0, 16, 2), Vector2i(600, 300))
+	var guard_started := Time.get_ticks_msec()
+	check(Guard.measure(full_image, full_mask)["pass"], "full viewport byte guard retains small masks")
+	print("A1 GUARD CPU: %d ms for 1280x720" % (Time.get_ticks_msec() - guard_started))
+	# Keep hue valid while varying exposure independently for each class.
+	var measured := Guard.measure(synthetic, mask)
+	var cream := Capture.Palette.CREAM * 0.8
+	check(absf(measured.fur_luma - (0.2126 * cream.r + 0.7152 * cream.g + 0.0722 * cream.b)) < 0.005, "Rec709 luma on saved sRGB bytes")
+	for row in 2:
+		var color: Color = Capture.Palette.ORANGE if row == 0 else Capture.Palette.CREAM
+		for factor: float in [0.2, 1.0]:
+			var exposed := color * factor
+			if row == 0 and factor == 1.0:
+				exposed = color.lerp(Color.WHITE, 0.65)
+			for x in 16:
+				synthetic.set_pixel(x, row, exposed)
+			check(not Guard.measure(synthetic, mask)["pass"], "reject class %d exposure %s with valid hue" % [row, factor])
+		for x in 16:
+			synthetic.set_pixel(x, row, color if row == 0 else color * 0.8)
+	synthetic.fill(Color(0.45, 0.55, 0.2))
+	check(not Guard.measure(synthetic, mask)["pass"], "synthetic khaki rejected independently of mask")
+	synthetic.fill(Color.WHITE)
+	check(not Guard.measure(synthetic, mask)["pass"], "synthetic blown highlights rejected")
 	check(hoppy._shield.visible, "shield request before ready")
 	check(player.get_animation_list().size() == 7, "exactly seven actions")
 	for state in STATES:
@@ -261,11 +338,14 @@ func run() -> void:
 	root.add_child(other)
 	var ours: Material = hoppy._meshes[0].get_surface_override_material(0)
 	var theirs: Material = other._meshes[0].get_surface_override_material(0)
+	for mesh: MeshInstance3D in hoppy._meshes:
+		for surface in mesh.mesh.get_surface_count():
+			check(mesh.get_active_material(surface) != mesh.mesh.surface_get_material(surface), "cached GLB material remains private")
 	check(ours != theirs, "private imported material copies")
 	hoppy.on_hit()
-	check(ours.albedo_color.r > 1.0 and theirs.albedo_color.r == 1.0, "isolated hit flash")
-	hoppy._process(0.1)
-	check(ours.albedo_color.r == 1.0, "flash clears")
+	check(ours.get_shader_parameter("flash") == 1.0 and theirs.get_shader_parameter("flash") == 0.0, "isolated hit flash")
+	hoppy._process(0.07)
+	check(ours.get_shader_parameter("flash") == 0.0, "flash clears")
 	hoppy.set_anim_state(&"run")
 	hoppy.set_process(true)
 	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_IDLE
