@@ -25,8 +25,8 @@ void fragment() {
 	vec2 uv = vec2((clamp(UV.x,0.008,0.992)+tile)*0.25, UV.y);
 	vec4 plate = texture(atlas,uv);
 	ALBEDO = tint.rgb * (0.7 + plate.rgb);
-	METALLIC = 0.78;
-	ROUGHNESS = texture(rough_atlas,uv).r;
+	METALLIC = 0.28;
+	ROUGHNESS = clamp(texture(rough_atlas,uv).r,0.42,0.75);
 	NORMAL_MAP = texture(normal_atlas,uv).rgb;
 	NORMAL_MAP_DEPTH = 0.5;
 	float mask = plate.a;
@@ -45,7 +45,8 @@ void fragment() {
 		ALBEDO = mix(ALBEDO,diff_color.rgb,diff_mark);
 
 	}
-	float pulse = 1.0 + 0.22*sin(clock*6.28318);
+	// Broad atlas accents stay visible at distance without washing the entire object red.
+	float pulse = 1.0 + 0.12*sin(clock*6.28318);
 	ALBEDO = mix(ALBEDO,accent.rgb*0.55,mask*min(emission_gain,0.7));
 	EMISSION = accent.rgb * mask * (emission_gain+charge*0.35+min(emission_gain,0.65)*distance_gain) * pulse + accent.rgb*mask*hit*0.20;
 }

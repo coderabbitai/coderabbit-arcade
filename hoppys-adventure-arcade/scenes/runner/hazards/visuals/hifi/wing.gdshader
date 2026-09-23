@@ -12,5 +12,5 @@ void fragment() {
 	METALLIC = 0.15;
 	ROUGHNESS = 0.3;
 	EMISSION = membrane_color.rgb*(rim*0.35+vein*0.18);
-	ALPHA = 0.18+rim*0.25+vein*0.28;
+	ALPHA = 0.30+rim*0.25+vein*0.28;
 }

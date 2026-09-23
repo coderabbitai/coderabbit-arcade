@@ -145,3 +145,45 @@ static func diff_marks() -> Array[Vector4]:
 		Vector4(0.10, 0.285, 0.18, 0.315), Vector4(0.13, 0.25, 0.15, 0.35),
 		Vector4(0.10, 0.465, 0.18, 0.495), Vector4(0.10, 0.645, 0.18, 0.675), Vector4(0.13, 0.61, 0.15, 0.71),
 		Vector4(0.67, 0.83, 0.87, 0.88), Vector4(0.12, 0.11, 0.38, 0.12), Vector4(0.62, 0.11, 0.88, 0.12)]
+
+## One surface for a continuous chassis, inset sensor sockets, vents and fasteners.
+## Vertex colors separate painted armor, rubber recesses and machined edges.
+static func chassis() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var armor := Color("728592")
+	var edge := Color("b4c3c8")
+	var dark := Color("17242e")
+	var warning := Color("bb5542")
+	chassis_part(st, Vector3(5.18,1.82,0.44), Vector3(0,1.06,-0.20), armor, 0.13)
+	for side in [-1.0,1.0]:
+		chassis_part(st, Vector3(0.38,1.94,0.62), Vector3(side*2.46,1.10,-0.01), armor, 0.10)
+		chassis_part(st, Vector3(0.13,1.34,0.06), Vector3(side*2.48,1.06,0.33), dark, 0.018)
+		for row in 7:
+			chassis_part(st, Vector3(0.22,0.035,0.075), Vector3(side*2.48,0.55+row*0.16,0.37), edge, 0.01)
+		chassis_part(st, Vector3(0.40,0.26,0.12), Vector3(side*2.42,0.25,0.32), warning, 0.04)
+		chassis_part(st, Vector3(0.40,0.26,0.12), Vector3(side*2.42,1.96,0.32), warning, 0.04)
+		# Deep solid sockets under the original emissive lens, with a broad brow.
+		chassis_part(st, Vector3(0.96,0.25,0.22), Vector3(side*0.48,1.80,0.015), edge, 0.045, side*0.19)
+		chassis_part(st, Vector3(0.86,0.15,0.06), Vector3(side*0.48,1.80,0.14), dark, 0.025, side*0.19)
+		chassis_part(st, Vector3(1.10,0.12,0.22), Vector3(side*0.52,2.01,0.12), armor, 0.035, side*0.12)
+		for y in [0.27,1.94]:
+			chassis_part(st, Vector3(0.065,0.065,0.035), Vector3(side*2.42,y,0.40), edge, 0.015)
+	# Cross rails tie the modules into one manufactured object.
+	for y in [0.16,0.73,1.24,2.09]:
+		chassis_part(st, Vector3(4.62,0.075,0.16), Vector3(0,y,0.10), edge, 0.024)
+	chassis_part(st, Vector3(0.22,0.44,0.24), Vector3(0,1.83,0.04), armor, 0.05)
+	for side in [-1.0,1.0]:
+		for row in 3:
+			chassis_part(st, Vector3(0.42,0.045,0.045), Vector3(side*1.67,1.72+row*0.10,0.23), dark, 0.013)
+	return st.commit()
+
+static func chassis_part(st: SurfaceTool, size: Vector3, position: Vector3, tint: Color, bevel: float, angle := 0.0) -> void:
+	var mesh := bevel_box(size, bevel)
+	var arrays := mesh.surface_get_arrays(0)
+	var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+	colors.fill(tint)
+	arrays[Mesh.ARRAY_COLOR] = colors
+	var painted := ArrayMesh.new()
+	painted.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	st.append_from(painted, 0, Transform3D(Basis(Vector3.BACK,angle),position))

@@ -13,6 +13,7 @@ var anim_state: StringName = &"idle"
 var _return_state: StringName = &"idle"
 var _speed := 0.0
 var _lean := 0.0
+var _contact_shadow: MeshInstance3D
 var _look: SkeletonModifier3D
 var _meshes: Array[MeshInstance3D] = []
 var _auras: Dictionary = {}
@@ -69,6 +70,7 @@ func _ready() -> void:
 	_look = LaneLook.new()
 	_look.name = "LaneLook"
 	skeleton.add_child(_look)
+	_build_contact_shadow()
 	_build_effects()
 	_configure_cosmetics(self)
 	animation_player.play(anim_state, 0.0)
@@ -78,6 +80,18 @@ func _ready() -> void:
 	_update_aura()
 	show_shield(_shield_requested)
 	_process(0.0)
+
+func _build_contact_shadow() -> void:
+	_contact_shadow = MeshInstance3D.new()
+	_contact_shadow.name = "ContactShadow"
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(0.90,0.75)
+	_contact_shadow.mesh = plane
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://scenes/runner/player/hifi/contact_shadow.gdshader")
+	_contact_shadow.material_override = material
+	_contact_shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_contact_shadow)
 
 func _surface_material(source: BaseMaterial3D) -> ShaderMaterial:
 	assert(source != null, "Hoppy expects imported PBR materials")
@@ -202,6 +216,10 @@ func _bone_point(bone_name: String, rest_point: Vector3) -> Vector3:
 	return to_local(skeleton.to_global(pose * rest_point))
 
 func _process(delta: float) -> void:
+	if is_instance_valid(_contact_shadow):
+		var height := maxf(global_position.y,0.0)
+		_contact_shadow.global_transform = Transform3D(Basis.from_scale(Vector3(1.0+height*0.2,1,1.0+height*0.2)),Vector3(global_position.x,0.016,global_position.z))
+		_contact_shadow.material_override.set_shader_parameter("height",height)
 	_clock += delta
 	var rolling := anim_state == &"roll"
 	var center := Vector3(0, 0.45, 0) if rolling else _bone_point("chest", Vector3(0, 0.9, 0))

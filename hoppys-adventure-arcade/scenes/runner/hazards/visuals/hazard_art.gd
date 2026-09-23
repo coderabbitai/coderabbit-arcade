@@ -52,13 +52,17 @@ func _material(key: String) -> ShaderMaterial:
 	var maps := TextureForge.maps()
 	mat.shader = Trail if key == "trail" else Wing if key == "glass" else Energy if key in ["halo", "glyph"] else PitInterior if key in ["pit_bottom", "pit_wall"] else Surface
 	mat.set_shader_parameter("atlas", maps.albedo)
-	mat.set_shader_parameter("accent", Palette.MATRIX if key in ["eyes", "glass"] else Palette.LILAC if key.begins_with("lilac") else Palette.DANGER)
-	if key == "glass": mat.set_shader_parameter("membrane_color",Palette.MATRIX)
+	mat.set_shader_parameter("accent", Palette.CREAM if key == "eyes" else Palette.DANGER if key == "glass" else Palette.LILAC if key.begins_with("lilac") else Palette.DANGER)
+	if key == "glass": mat.set_shader_parameter("membrane_color",Palette.DANGER)
 	if mat.shader == Surface: mat.set_shader_parameter("diff_color",Palette.CREAM)
 	if mat.shader in [Surface, PitInterior]:
 		mat.set_shader_parameter("normal_atlas", maps.normal)
 		mat.set_shader_parameter("rough_atlas", maps.roughness)
 		mat.set_shader_parameter("tint", Palette.SLATE if key in ["metal", "housing", "pit_wall", "wheel"] else Palette.NAVY_BG if key == "pit_bottom" else Palette.NAVY_2)
+		if key in ["metal", "housing", "wheel"]: mat.set_shader_parameter("tint",Color("8b9ca9"))
+		if key == "shell": mat.set_shader_parameter("tint",Color("bd5545"))
+		if key == "carapace" and _kind == &"bug_swarm": mat.set_shader_parameter("tint",Color("b7a69a"))
+		if key == "eyes": mat.set_shader_parameter("tint",Palette.CREAM)
 		if key in ["edge", "wheel_edge", "threat"]: mat.set_shader_parameter("tint",Palette.DANGER*0.55)
 		if key.begins_with("lilac"): mat.set_shader_parameter("tint",Palette.LILAC*0.45)
 		mat.set_shader_parameter("tile", 1.0 if key in ["screen", "lilac_screen"] else 2.0 if key == "stripe" else 3.0 if key == "lilac" else 0.0)
@@ -132,10 +136,11 @@ func _floor_marker(title: String, size: Vector3, elevation: float, color: Color,
 	node.position = Vector3(_offset.x, elevation, _offset.z)
 	node.rotation.x = -PI/2.0
 	var mat := Materials.additive(color, opacity).duplicate() as StandardMaterial3D
-	# Fine striped footprint, not a solid emissive rectangle. Keep smoke's color contract.
-	mat.albedo_texture = TextureForge.maps().albedo
-	mat.uv1_scale = Vector3(0.25,1,1)
-	mat.uv1_offset = Vector3(0.5,0,0)
+	# A bounded border locates the occupied lane without covering its floor.
+	mat.albedo_texture = TextureForge.marker_border()
+	mat.emission_enabled = true
+	mat.emission = color
+	mat.emission_energy_multiplier = 0.9
 	node.material_override = mat
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(node)
@@ -144,6 +149,9 @@ func _floor_marker(title: String, size: Vector3, elevation: float, color: Color,
 	if _kind == &"pr_backlog_high" and title == "FloorMarker":
 		var border := Materials.additive(color,opacity).duplicate() as StandardMaterial3D
 		border.albedo_texture = TextureForge.marker_border()
+		border.emission_enabled = true
+		border.emission = color
+		border.emission_energy_multiplier = 0.9
 		node.material_override = border
 
 func _label(text: String, pos: Vector3, width: float, height: float) -> Label3D:
@@ -153,7 +161,8 @@ func _label(text: String, pos: Vector3, width: float, height: float) -> Label3D:
 	label.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	label.text = text
 	label.font_size = 64
-	label.outline_size = 0
+	label.outline_size = 3
+	label.outline_modulate = Palette.NAVY_BG
 	label.modulate = Palette.CREAM
 	var width_m := width*_size.x
 	var height_m := minf(maxf(height*_size.y,0.17),_size.y*0.65)
@@ -169,32 +178,48 @@ func _label(text: String, pos: Vector3, width: float, height: float) -> Label3D:
 
 func _backlog() -> void:
 	var high := _kind == &"pr_backlog_high"
-	for col in 3:
-		for row in (2 if high else 3):
-			var card := _pivot(body, Vector3((col-1)*0.31, (row-0.5)*0.40 if high else (row-1)*0.30, (row-1)*-0.055))
-			_animate(card, "card", float(col+row*3))
-			var height := 0.36 if high else 0.26
-			_piece(card, Vector3.ZERO, Vector3(0.285,height,0.55), "metal")
-			_piece(card, Vector3(0,0,0.286), Vector3(0.24,height*0.70,0.018), "screen")
-			_piece(card, Vector3(0,height*0.43,0.294), Vector3(0.255,0.055,0.024), "edge")
-			_piece(card, Vector3(0.10,-height*0.34,0.295), Vector3(0.033,0.028,0.028), "edge")
+	# Collision-normalized geometry: all solids remain in the occupied volume.
 	if high:
-		_piece(body, Vector3(0,0.47,-0.07), Vector3(0.98,0.035,0.24), "metal")
-		for col in 3: _piece(body, Vector3((col-1)*0.31,0.39,-0.07), Vector3(0.014,0.16,0.04), "metal")
-	tag = _label("CI FAILING" if high else "NEEDS REVIEW", Vector3(0,0.03,0.41),0.68,0.13)
+		# Suspended merge scanner: a heavy overhead bridge with downward sensors.
+		_piece(body,Vector3(0,0.26,0),Vector3(0.97,0.42,0.72),"metal")
+		_piece(body,Vector3(0,0.23,0.38),Vector3(0.78,0.20,0.08),"screen")
+		for side in [-1,1]:
+			_piece(body,Vector3(side*0.42,-0.08,0),Vector3(0.14,0.78,0.80),"shell")
+			_piece(body,Vector3(side*0.30,-0.06,0.22),Vector3(0.12,0.33,0.30),"metal")
+			_piece(body,Vector3(side*0.30,-0.25,0.27),Vector3(0.11,0.06,0.34),"edge")
+		# Lower scanning beam coincides with the actual underside of the hitbox.
+		_piece(body,Vector3(0,-0.44,0.28),Vector3(0.82,0.075,0.10),"edge")
+	else:
+		# A jammed merge conduit: two branch pipes converge into a raised lock.
+		_piece(body,Vector3(0,-0.35,0),Vector3(0.97,0.25,0.85),"metal")
+		for side in [-1,1]:
+			var branch := _piece(body,Vector3(side*0.28,-0.05,0.04),Vector3(0.43,0.35,0.55),"shell")
+			branch.rotation.z = side*0.16
+			for x in [0.14,0.27,0.40]:
+				_piece(body,Vector3(side*x,-0.04,0.34),Vector3(0.028,0.31,0.04),"metal")
+		_piece(body,Vector3(0,0.08,0),Vector3(0.25,0.79,0.74),"metal")
+		_piece(body,Vector3(0,0.10,0.40),Vector3(0.18,0.48,0.10),"screen")
+		# A physical split-arrow on the cap makes the jump crest legible.
+		for side in [-1,1]:
+			var arrow := _piece(body,Vector3(side*0.05,0.33,0.46),Vector3(0.13,0.07,0.035),"edge")
+			arrow.rotation.z = -side*0.6
+	# End caps and interrupted red status strips distinguish blocked equipment.
+	for side in [-1,1]:
+		_piece(body,Vector3(side*0.44,0.31 if high else -0.32,0.43),Vector3(0.10,0.10,0.06),"edge")
+	tag = _label("ROLL" if high else "JUMP",Vector3(0,0.26 if high else -0.28,0.48),0.28,0.13)
 
 func _bugs() -> void:
 	# Three curved 32-ring beetles replace seven boxes without exceeding 6000 tris.
 	for i in 3:
 		var insect := _pivot(body,Vector3((i-1)*0.24,0.08 if i == 1 else -0.12,-0.10 if i == 1 else 0.10))
 		_animate(insect,"bug",float(i))
-		var shell := _piece(insect,Vector3.ZERO,Vector3(0.23,0.29,0.33),"carapace",MeshForge.carapace())
+		var shell := _piece(insect,Vector3.ZERO,Vector3(0.29,0.34,0.38),"shell",MeshForge.carapace())
 		shell.name = "Carapace%d" % i
-		_piece(insect,Vector3(0,0.135,0),Vector3(0.06,0.025,0.27),"edge")
-		var head := _piece(insect,Vector3(0,0,0.20),Vector3(0.16,0.13,0.16),"carapace",MeshForge.wedge())
+		_piece(insect,Vector3(0,0.135,0),Vector3(0.075,0.032,0.31),"edge")
+		var head := _piece(insect,Vector3(0,0,0.20),Vector3(0.19,0.16,0.18),"shell",MeshForge.wedge())
 		head.rotation.x = -0.18
 		for side in [-1,1]:
-			_piece(insect,Vector3(side*0.048,0.035,0.275),Vector3(0.048,0.045,0.025),"eyes")
+			_piece(insect,Vector3(side*0.048,0.035,0.275),Vector3(0.060,0.065,0.025),"eyes")
 			for leg in 3:
 				var limb := _piece(insect,Vector3(side*0.16,-0.09,(leg-1)*0.105),Vector3(0.20,0.20,0.03),"carapace",MeshForge.jointed_leg())
 				limb.rotation.y = PI if side < 0 else 0.0
@@ -203,7 +228,7 @@ func _bugs() -> void:
 			wing.name = "Wing%d_%d" % [i,side]
 			wing.rotation.x = -0.8
 			_animate(wing,"wing",float(i)+side)
-	tag = _label("BUG SWARM",Vector3(0,-0.32,0.48),0.68,0.20)
+	tag = _label("BUGS",Vector3(0,-0.32,0.48),0.68,0.20)
 
 func _merge() -> void:
 	# Staggered fragments form a jagged physical fracture, with recessed branch light.
@@ -217,7 +242,7 @@ func _merge() -> void:
 		_animate(glyph,"card",float(side))
 	_label("<<<<<<<",Vector3(-0.25,-0.18,0.40),0.35,0.12)
 	_label(">>>>>>>",Vector3(0.25,-0.18,0.40),0.35,0.12)
-	tag = _label("MERGE CONFLICT",Vector3(0,0.42,0.39),0.64,0.10)
+	tag = _label("CONFLICT",Vector3(0,0.42,0.39),0.64,0.10)
 
 func _pit() -> void:
 	# Physical well below the floor, with a normally depth-tested parallax mouth.
@@ -235,6 +260,10 @@ func _pit() -> void:
 		for bolt in 6:
 			_piece(body,Vector3(side*0.46,0.035,(bolt-2.5)*0.14),Vector3(0.014,0.020,0.018),"metal")
 		_piece(body,Vector3(side*0.45,0.030,0.38),Vector3(0.035,0.035,0.09),"edge")
+	# The red mouth rim marks the exact opening without painting over its depth.
+	for side in [-1.0,1.0]:
+		_piece(self,Vector3(side*_size.x*0.46,0.011,0),Vector3(0.045,0.018,_size.z*0.94),"edge")
+		_piece(self,Vector3(0,0.011,side*_size.z*0.46),Vector3(_size.x*0.94,0.018,0.055),"edge")
 	tag = _label("@deprecated",Vector3.ZERO,0.46,0.30)
 	tag.position = Vector3(0,0.028,1.38)
 	tag.pixel_size = minf(_size.x*0.42/440.0,0.006)
@@ -287,7 +316,13 @@ func _laser() -> void:
 	_piece(scanner,Vector3(0,0,0.40),Vector3(0.83,0.32,0.08),"halo")
 	scanner.hide()
 	_state = &"high" if _variant == &"high" else &"ground"
-	tag = _label("LINTER ARMED",Vector3(0,0,0.50),0.38,0.48)
+	tag = _label(_laser_hint(),Vector3(0,0,0.50),0.38,0.48)
+
+func _laser_hint() -> String:
+	if _variant == &"timed" and _state == &"off": return "OFF"
+	if _variant == &"high" or (_variant == &"timed" and _state == &"high"): return "ROLL"
+	if _variant == &"mid": return "DUCK / JUMP"
+	return "JUMP"
 
 func _comments() -> void:
 	# Opaque panel layers resolve depth; their glyph faces follow the helix.
@@ -299,7 +334,7 @@ func _comments() -> void:
 			_piece(card,Vector3.ZERO,Vector3(0.26,0.095,0.06),"metal")
 			_piece(card,Vector3(0,0,0.036),Vector3(0.23,0.072,0.009),"screen")
 			_piece(card,Vector3(-0.09,-0.049,0),Vector3(0.035,0.02,0.05),"metal")
-	tag = _label("BLOCKING // TODO",Vector3(0,0.43,0.43),0.72,0.06)
+	tag = _label("BLOCKED",Vector3(0,0.43,0.43),0.72,0.06)
 
 func _shockwave() -> void:
 	# One 64-segment crest spans all lanes, clipped to a low circular arc.
@@ -312,7 +347,7 @@ func _shockwave() -> void:
 		shard.name = "Shard%d" % i
 		shard.rotation.z = sin(float(i))*0.20
 		_animate(shard,"debris",float(i))
-	tag = _label("BUILD FAILED",Vector3(0,-0.20,0.51),0.35,0.35)
+	tag = _label("JUMP",Vector3(0,-0.20,0.51),0.35,0.35)
 
 func _projectile() -> void:
 	match _variant:
@@ -380,6 +415,7 @@ func react(cleared: bool) -> void:
 		if marker != null:
 			var mat := marker.material_override.duplicate() as StandardMaterial3D
 			mat.albedo_color = Color(Palette.MINT,0.35)
+			mat.emission = Palette.MINT
 			marker.material_override = mat
 		if tag != null:
 			tag.text = "AUTO-FIXED"
@@ -395,7 +431,7 @@ func telegraph(t: float) -> void:
 	scanner.scale.x = lerpf(0.15,1.0,amount)
 	_material("housing").set_shader_parameter("charge",amount)
 	_material("halo").set_shader_parameter("charge",amount)
-	if tag != null: tag.text = "CHARGING" if amount > 0 else "LINTER ARMED"
+	if tag != null: tag.text = "CHARGING" if amount > 0 else _laser_hint()
 	_update_batches()
 
 func laser_state(state: StringName) -> void:

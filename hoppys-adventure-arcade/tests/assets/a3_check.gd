@@ -136,6 +136,8 @@ func _run() -> void:
 			await process_frame
 			var art: Node3D = visual.get_node("Artwork")
 			if action != "idle": visual.call(action)
+			if action == "on_cleared" and art.has_node("FloorMarker"):
+				check(art.get_node("FloorMarker").material_override.emission == art.Palette.MINT,"cleared footprint emission changes to friendly mint")
 			for frame in 90:
 				visual._process(1.0/30.0)
 				if visual.visible: _bounds(visual,title+" "+action)
@@ -312,11 +314,11 @@ func _round_three(visual: Base) -> void:
 		for vertex: Vector3 in vertices:
 			if vertex.z < -0.499: check(absf(vertex.x)+absf(vertex.y) < 0.001,"R3 B4 zero-width aft tip")
 	if visual.kind == &"bug_swarm":
-		check(art._materials.glass.get_shader_parameter("membrane_color").is_equal_approx(art.Palette.MATRIX),"R3 B5 MATRIX membranes")
+		check(art._materials.glass.get_shader_parameter("membrane_color").is_equal_approx(art.Palette.DANGER),"hostile wings use DANGER, distinct from friendly pickups")
 		check(not art.Wing.code.contains("0.68,0.76,0.79"),"R3 B5 no pale-grey wing color")
 		for vertex: Vector3 in MeshForge.wing().get_faces():
 			if absf(vertex.y) > 0.49: check(absf(vertex.x) < 0.01,"R3 B5 tapered wing ends")
-		check(art._materials.carapace.get_shader_parameter("tint").is_equal_approx(art.Palette.NAVY_2),"R3 B5 dark carapace")
+		check(art._materials.carapace.get_shader_parameter("tint").is_equal_approx(Color("b7a69a")),"contrasting articulated legs preserve the bug silhouette")
 		var jointed := 0
 		for batch: Dictionary in art._batches:
 			if batch.mesh == MeshForge.jointed_leg(): jointed += batch.instances.size()

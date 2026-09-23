@@ -222,6 +222,12 @@ func run() -> void:
 	hoppy.show_shield(true)
 	root.add_child(hoppy)
 	hoppy.set_process(false)
+	hoppy.position.y = 1.2
+	hoppy._process(0.0)
+	check(is_equal_approx(hoppy.get_node("ContactShadow").global_position.y,0.016), "contact shadow stays on deck during a jump")
+	check(is_equal_approx(hoppy.get_node("ContactShadow").material_override.get_shader_parameter("height"),1.2), "jump height softens contact shadow")
+	hoppy.position.y = 0.0
+	hoppy._process(0.0)
 	hoppy._look.active = false
 	var player: AnimationPlayer = hoppy.animation_player
 	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL

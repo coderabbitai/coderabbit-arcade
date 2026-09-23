@@ -29,7 +29,7 @@ void fragment(){
  float wave = cos(world_height*5.23598776-clock*1.2);
  float aa = max(fwidth(wave),0.03);
  float scan = smoothstep(0.72-aa,0.96+aa,wave);
- ALBEDO = surface_tint * COLOR.rgb * map * (1.0-glassness*0.55);
+ ALBEDO = surface_tint * COLOR.rgb * map * (1.0-glassness*0.30);
  METALLIC = mix(0.32, 0.18, glassness);
  ROUGHNESS = mix(min(texture(roughness_map, UV).r, 0.62), 0.19, glassness);
  NORMAL_MAP = texture(normals,UV).rgb;
@@ -40,6 +40,13 @@ void fragment(){
  float strength = min(0.65,energy*clamp(range_boost,1.0,3.0)*(emission_fill+0.10*rim+0.12*scan)*(1.0+0.30*sin(clock*4.0)));
  vec3 glow_tint = mix(emission_tint.rgb,inlay_tint.rgb,inlay);
  EMISSION = emission_mask * glow_tint * strength;
+}
+void light(){
+ // Neutral fill preserves collectible hue under coloured ship lights.
+ float light_luma = dot(LIGHT_COLOR,vec3(0.2126,0.7152,0.0722));
+ vec3 illumination = mix(LIGHT_COLOR,vec3(light_luma),0.7);
+ float wrapped = max(dot(NORMAL,LIGHT),0.0)*0.8+0.2;
+ DIFFUSE_LIGHT += illumination*ATTENUATION*wrapped;
 }
 """
 const POOL := """shader_type spatial;

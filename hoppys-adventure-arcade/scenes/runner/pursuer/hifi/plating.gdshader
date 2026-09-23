@@ -22,10 +22,10 @@ float aa_rect(vec2 uv, vec4 rect, vec2 aa) {
 void fragment() {
 	vec2 uv = UV;
 	vec2 aa = clamp(fwidth(uv), vec2(0.001), vec2(0.02));
-	vec3 metal = texture(plating, uv).rgb;
+	vec3 metal = texture(plating, uv).rgb * 2.2 + vec3(0.055, 0.070, 0.08);
 	NORMAL_MAP = texture(normals, uv).rgb;
-	ROUGHNESS = mix(texture(roughness_map, uv).r, 0.25, lens);
-	METALLIC = mix(0.78, 0.6, lens);
+	ROUGHNESS = mix(max(texture(roughness_map, uv).r, 0.48), 0.25, lens);
+	METALLIC = mix(0.30, 0.6, lens);
 	float glyph = 0.0;
 	vec2 depth_uv = uv + VIEW.xy * 0.008;
 	for (int i = 0; i < 11; i++) {

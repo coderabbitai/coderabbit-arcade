@@ -22,6 +22,12 @@ void fragment() {
 	ALPHA = albedo_color.a * texel.a;
 #endif
 	vec3 base = texel.rgb * albedo_color.rgb;
+	// Distance-filtered cloth weave on orange fabric, absent on fur and goggles.
+	float fabric = step(base.g*1.25,base.r)*step(base.b*1.3,base.g);
+	vec2 weave_uv = UV*460.0;
+	float resolved = 1.0-smoothstep(0.15,0.6,max(fwidth(weave_uv.x),fwidth(weave_uv.y)));
+	float weave = sin(weave_uv.x*6.283)*sin(weave_uv.y*6.283);
+	base *= 1.0+fabric*weave*resolved*0.055;
 	ALBEDO = mix(base, vec3(1.0), flash * 0.7);
 	vec3 orm = texture(orm_map, UV).rgb;
 	AO = orm.r;
@@ -42,7 +48,7 @@ void fragment() {
 void light() {
 	float luma = dot(LIGHT_COLOR, vec3(0.2126, 0.7152, 0.0722));
 	vec3 lc = mix(LIGHT_COLOR, vec3(luma), chroma_lock) * light_gain;
-	float ndl = dot(NORMAL, LIGHT) * 0.5 + 0.5;
+	float ndl = max(dot(NORMAL, LIGHT),0.0) * 0.72 + 0.14;
 	DIFFUSE_LIGHT += ndl * ATTENUATION * lc;
 	vec3 halfway = normalize(LIGHT + VIEW);
 	float exponent = mix(64.0, 4.0, ROUGHNESS);

@@ -44,7 +44,7 @@ func build(kind: StringName) -> void:
 	_kind = kind if TAGS.has(kind) else &"approve_shield"
 	var is_tool := kind in [&"review_comment",&"lint_rule",&"unit_test",&"auto_fix_patch"]
 	_is_tool = is_tool
-	_accent = Palette.MATRIX if is_tool else Palette.MINT
+	_accent = Palette.ORANGE if is_tool else Palette.MINT
 	_pivot = Node3D.new()
 	_pivot.name = "Pivot"
 	add_child(_pivot)
@@ -74,17 +74,17 @@ func build(kind: StringName) -> void:
 	var frame_mesh := metal.finish()
 	frame_mesh.set_meta("expected_triangles",metal.vertex_count/3)
 	frame_mesh.set_meta("inlay_bounds",glass.panel_bounds.duplicate())
-	var frame_tint := FRAME_ORANGE if is_tool else FRAME_MINT
+	var frame_tint := Palette.CREAM
 	# Lift only the magnifier diffuse plating; mint mix retains saturation.
-	if _kind == &"code_review": frame_tint = FRAME_REVIEW
-	var frame_material := Finish.material(frame_tint,0.55)
-	frame_material.set_shader_parameter("inlay_tint",Palette.MATRIX if is_tool else BODY_MINT)
+	if _kind == &"code_review": frame_tint = Palette.CREAM
+	var frame_material := Finish.material(frame_tint,0.12)
+	frame_material.set_shader_parameter("inlay_tint",Palette.ORANGE if is_tool else BODY_MINT)
 	_add_mesh("Ring",frame_mesh,frame_material,_pivot)
 	if kind == &"auto_fix": frame_material.set_shader_parameter("emission_inset",0.26)
 	if core.vertex_count > 0:
 		_core_node = _add_mesh("InnerCore",core.finish(),Finish.material(_accent,4.8),_pivot)
 		_core_node.material_override.set_shader_parameter("emission_fill",0.65)
-	if kind == &"lint_rule": _build_teeth()
+	# Filter prongs are part of the solid cartridge core.
 	if not is_tool:
 		# Opaque frame contributes the same broad patch as ORANGE tool frames.
 		# Diffuse frame and all sculpture emission remain in the MINT family.
@@ -176,72 +176,96 @@ func _build_teeth() -> void:
 	teeth.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_pivot.add_child(teeth)
 
+func _equipment_box(forge: RefCounted, center: Vector3, size: Vector3, angle := 0.0) -> void:
+	forge.bar(center,Vector2(size.x,size.y),angle,size.z)
+
+func _equipment_hex(forge: RefCounted, center: Vector3, radius: float, depth: float) -> void:
+	var points := PackedVector2Array()
+	for i in 8: points.append(Vector2(cos(TAU*i/8.0+PI/8),sin(TAU*i/8.0+PI/8))*radius)
+	forge.panel(points,depth,0.015,center)
+
 func _build_icon(kind: StringName, metal: RefCounted, glass: RefCounted, core: RefCounted) -> void:
+	# Tangible equipment, with depth and attached working parts, not floating UI icons.
 	match kind:
 		&"approve_shield":
-			_framed_polygon(metal,glass,[Vector2(0,-0.24),Vector2(0.21,-0.08),Vector2(0.21,0.16),Vector2(0,0.24),Vector2(-0.21,0.16),Vector2(-0.21,-0.08)])
-			_check(core,Vector3(0,0,0.028),1.3)
+			_framed_polygon(metal,glass,[Vector2(0,-0.29),Vector2(0.27,-0.08),Vector2(0.25,0.20),Vector2(-0.25,0.20),Vector2(-0.27,-0.08)],Vector2.ONE,0.24)
+			for side in [-1,1]:
+				_equipment_box(metal,Vector3(side*0.16,0.26,-0.03),Vector3(0.10,0.28,0.18),-side*0.18)
+			_check(core,Vector3(0,0,0.09),1.7)
 		&"auto_fix":
-			_framed_polygon(metal,glass,[Vector2(-0.16,-0.21),Vector2(-0.10,-0.24),Vector2(0.08,0.04),Vector2(0.17,0.07),Vector2(0.20,0.17),Vector2(0.13,0.12),Vector2(0.07,0.17),Vector2(0.09,0.23),Vector2(-0.01,0.19),Vector2(-0.02,0.09)])
-			core.bar(Vector3(-0.08,-0.11,0.10),Vector2(0.024,0.25),-0.6,0.025)
-			_polygon(core,[Vector2(0.21,-0.24),Vector2(0.23,-0.15),Vector2(0.30,-0.13),Vector2(0.23,-0.10),Vector2(0.21,-0.03),Vector2(0.19,-0.10),Vector2(0.12,-0.13),Vector2(0.19,-0.15)],0.035,0.10)
+			_equipment_box(metal,Vector3(-0.04,0.10,0),Vector3(0.44,0.21,0.26),0.12)
+			_equipment_box(metal,Vector3(-0.13,-0.12,0),Vector3(0.14,0.32,0.22),-0.22)
+			_equipment_box(metal,Vector3(0.23,0.13,0),Vector3(0.16,0.12,0.18))
+			_equipment_box(glass,Vector3(-0.10,0.10,0.145),Vector3(0.18,0.11,0.035))
+			for side in [-1,1]: _equipment_box(core,Vector3(0.27,0.13+side*0.075,0.02),Vector3(0.13,0.035,0.13))
 		&"lgtm":
-			_framed_polygon(metal,glass,[Vector2(-0.18,-0.12),Vector2(0.08,-0.12),Vector2(0.16,-0.07),Vector2(0.19,0.07),Vector2(0.06,0.07),Vector2(0.07,0.21),Vector2(0.015,0.22),Vector2(-0.07,0.08),Vector2(-0.18,0.06)])
-			metal.bar(Vector3(-0.225,-0.04,0),Vector2(0.09,0.32),0,0.15)
-			_check(core,Vector3(0,-0.025,0.035),0.85)
+			_equipment_hex(metal,Vector3(0,-0.19,0),0.29,0.25)
+			_equipment_box(metal,Vector3(0,0.05,0),Vector3(0.16,0.32,0.20))
+			for side in [-1,1]: _equipment_box(metal,Vector3(side*0.11,0.24,0),Vector3(0.11,0.24,0.20),-side*0.18)
+			_equipment_hex(glass,Vector3(0,-0.19,0.14),0.22,0.04)
+			_check(core,Vector3(0,-0.17,0.105),1.55)
 		&"nitro":
-			_framed_polygon(metal,glass,[Vector2(-0.09,-0.12),Vector2(0.09,-0.12),Vector2(0.105,0.12),Vector2(0.06,0.21),Vector2(0,0.24),Vector2(-0.06,0.21),Vector2(-0.105,0.12)],Vector2(1.6,1.7),0.18)
-			metal.bar(Vector3(0,-0.23,0),Vector2(0.33,0.08),0,0.20)
-			for side: float in [-1,1]:
-				metal.bar(Vector3(side*0.19,-0.10,0),Vector2(0.075,0.25),side*0.32,0.10)
-			core.bar(Vector3(0,0.095,0.12),Vector2(0.032,0.32),0,0.025)
-			_polygon(core,[Vector2(-0.09,-0.29),Vector2(0,-0.41),Vector2(0.09,-0.29)],0.06)
+			_equipment_box(metal,Vector3(0,0,0),Vector3(0.45,0.19,0.22))
+			for side in [-1,1]:
+				_equipment_hex(metal,Vector3(side*0.16,0.11,0),0.15,0.24)
+				_equipment_box(metal,Vector3(side*0.16,-0.07,0),Vector3(0.21,0.40,0.25))
+				_equipment_box(glass,Vector3(side*0.16,0.02,0.14),Vector3(0.10,0.28,0.035))
+				_equipment_box(core,Vector3(side*0.16,-0.32,0),Vector3(0.10,0.19,0.12))
 		&"super_jump":
-			var coil := PackedVector3Array()
-			# 32 path sections x 24 smooth sides, with both end caps, replaces 96 x 8.
-			for i in 33:
-				var angle := TAU*2.5*i/32.0
-				coil.append(Vector3(cos(angle)*0.19,-0.28+0.57*i/32.0,sin(angle)*0.095))
-			glass.tube(coil,0.026)
-			for y: float in [-0.33,0.34]: metal.bar(Vector3(0,y,0),Vector2(0.46,0.065),0,0.22)
-			for side: float in [-1,1]: metal.bar(Vector3(side*0.205,0,-0.07),Vector2(0.025,0.64),0,0.04)
-			core.bar(Vector3(0,0.02,0),Vector2(0.035,0.56),0,0.035)
+			for side in [-1,1]:
+				_equipment_box(metal,Vector3(side*0.17,-0.23,0.035),Vector3(0.24,0.15,0.34))
+				_equipment_box(metal,Vector3(side*0.17,0.03,-0.03),Vector3(0.15,0.44,0.20))
+				_equipment_box(glass,Vector3(side*0.17,0.10,0.08),Vector3(0.10,0.25,0.035))
+				for y in [-0.12,-0.05,0.02]: _equipment_box(core,Vector3(side*0.17,y,0.11),Vector3(0.20,0.025,0.05))
+			_equipment_box(metal,Vector3(0,0.18,-0.04),Vector3(0.25,0.075,0.15))
 		&"code_review":
-			var lens_center := Vector3(-0.075,0.115,0.025)
-			metal.ring(lens_center,0.175,0.025)
-			metal.bar(Vector3(0.14,-0.17,0.025),Vector2(0.075,0.29),0.64,0.085)
-			var lens := PackedVector2Array()
-			for i in 32:
-				var angle := TAU*i/32.0
-				lens.append(Vector2(cos(angle),sin(angle))*0.145)
-			glass.panel(lens,0.035,0.006,lens_center)
-			# Diff card and rows fit completely within the lens opening.
-			metal.color = Color(0.18,0.22,0.25)
-			metal.bar(lens_center+Vector3(0,0,0.0),Vector2(0.15,0.17),0,0.012)
-			metal.color = Color.WHITE
-			for y: float in [-0.042,0.042]: core.bar(lens_center+Vector3(0,y,0.018),Vector2(0.13,0.030),0,0.016)
+			_equipment_box(metal,Vector3(0,0.05,-0.05),Vector3(0.56,0.30,0.25))
+			_equipment_box(metal,Vector3(0,-0.19,-0.05),Vector3(0.16,0.23,0.20))
+			for side in [-1,1]:
+				_equipment_hex(metal,Vector3(side*0.16,0.06,0.08),0.16,0.20)
+				_equipment_hex(glass,Vector3(side*0.16,0.06,0.19),0.115,0.03)
+				_equipment_box(core,Vector3(side*0.16,0.06,0.21),Vector3(0.12,0.025,0.025))
 		&"review_comment":
-			_framed_polygon(metal,glass,[Vector2(-0.22,-0.07),Vector2(-0.14,-0.07),Vector2(-0.18,-0.24),Vector2(0.02,-0.07),Vector2(0.21,-0.04),Vector2(0.23,0.18),Vector2(-0.20,0.21)],Vector2(1.35,1.35))
-			for x: float in [-0.065,0.065]: core.bar(Vector3(x,0.075,0.095),Vector2(0.027,0.14),-0.35,0.025)
+			_equipment_box(metal,Vector3(0,-0.04,0),Vector3(0.38,0.45,0.27))
+			_equipment_box(metal,Vector3(-0.13,0.28,0),Vector3(0.075,0.26,0.12),-0.12)
+			_equipment_box(glass,Vector3(0,0.04,0.15),Vector3(0.29,0.19,0.035))
+			for x in [-0.085,0,0.085]: _equipment_box(core,Vector3(x,0.03,0.175),Vector3(0.028,0.08 if x != 0 else 0.14,0.025))
+			for y in [-0.13,-0.20]: _equipment_box(metal,Vector3(0,y,0.16),Vector3(0.27,0.025,0.025))
 		&"lint_rule":
-			metal.bar(Vector3(0,-0.22,0),Vector2(0.57,0.15),0,0.13)
-			glass.bar(Vector3(0,-0.22,0.076),Vector2(0.50,0.065),0,0.025)
-			# The separate MATRIX tooth MultiMesh is also this icon's illuminated core.
+			_equipment_box(metal,Vector3(0,-0.10,0),Vector3(0.56,0.25,0.25))
+			_equipment_box(glass,Vector3(0,-0.10,0.14),Vector3(0.46,0.13,0.035))
+			for x in [-0.23,0.23]: _equipment_box(metal,Vector3(x,0.11,0),Vector3(0.075,0.43,0.20))
+			for x in [-0.12,0,0.12]: _equipment_box(core,Vector3(x,0.12,0.01),Vector3(0.055,0.35,0.11))
 		&"unit_test":
-			for side: float in [-1,1]:
-				metal.bar(Vector3(side*0.255,0,0),Vector2(0.06,0.53),0,0.12)
-				metal.bar(Vector3(0,side*0.255,0),Vector2(0.53,0.06),0,0.12)
-				glass.bar(Vector3(side*0.255,0,0.07),Vector2(0.018,0.46),0,0.025)
-				glass.bar(Vector3(0,side*0.255,0.07),Vector2(0.46,0.018),0,0.025)
-			_check(core,Vector3(0,0,0.03),1.55)
+			_equipment_hex(metal,Vector3(0,0,0),0.32,0.32)
+			_equipment_hex(glass,Vector3(0,0,0.18),0.235,0.055)
+			for x in [-0.29,0.29]:
+				for y in [-0.17,0.17]: _equipment_box(metal,Vector3(x,y,0),Vector3(0.07,0.10,0.18))
+			_check(core,Vector3(0,0,0.15),1.55)
 		&"auto_fix_patch":
-			for x: float in [-0.13,0.13]:
-				var points := [Vector2(x-0.11,-0.24),Vector2(x+0.095,0),Vector2(x-0.11,0.24),Vector2(x-0.04,0.27),Vector2(x+0.18,0),Vector2(x-0.04,-0.27)]
-				# Ensure the concave chevron has consistent winding before offsetting.
-				points.reverse()
-				_framed_polygon(metal,glass,points,Vector2.ONE)
-			core.bar(Vector3(-0.18,-0.205,0.075),Vector2(0.09,0.023),0.82,0.025)
-			core.bar(Vector3(0.08,0.205,0.075),Vector2(0.09,0.023),-0.82,0.025)
+			_equipment_box(metal,Vector3(0,0,0),Vector3(0.43,0.55,0.24),0.16)
+			_equipment_box(glass,Vector3(0,0,0.14),Vector3(0.30,0.39,0.04),0.16)
+			for side in [-1,1]:
+				_equipment_box(metal,Vector3(side*0.25,0,0),Vector3(0.09,0.23,0.20))
+			_equipment_box(core,Vector3(0,0,0.17),Vector3(0.25,0.075,0.04))
+			_equipment_box(core,Vector3(0,0,0.17),Vector3(0.075,0.27,0.04))
+
+	# Dark rubber grips and service seams give the shells working surfaces.
+	metal.color = Color(0.22,0.29,0.34)
+	match kind:
+		&"auto_fix":
+			for y in [-0.08,-0.15,-0.22]: _equipment_box(metal,Vector3(-0.13,y,0.12),Vector3(0.11,0.022,0.025),-0.22)
+		&"nitro":
+			for side in [-1,1]: _equipment_box(metal,Vector3(side*0.16,-0.14,0.14),Vector3(0.20,0.05,0.025))
+		&"super_jump":
+			for side in [-1,1]: _equipment_box(metal,Vector3(side*0.17,-0.30,0.035),Vector3(0.24,0.035,0.34))
+		&"review_comment":
+			for y in [-0.13,-0.20]: _equipment_box(metal,Vector3(0,y,0.179),Vector3(0.25,0.015,0.015))
+		&"auto_fix_patch":
+			for y in [-0.20,0.20]: _equipment_box(metal,Vector3(0,y,0.18),Vector3(0.17,0.025,0.025))
+		&"code_review":
+			for y in [-0.15,-0.21]: _equipment_box(metal,Vector3(0,y,0.064),Vector3(0.15,0.03,0.025))
+	metal.color = Color.WHITE
 
 func _signature_idle() -> void:
 	if _teeth != null: _teeth.position.y = 0.012*pow(maxf(0.0,sin(_t*5.0)),6.0)
@@ -300,8 +324,8 @@ func _process(delta: float) -> void:
 	for material in _materials:
 		var phase := float(TAGS.keys().find(_kind))*0.37
 		material.set_shader_parameter("clock",_t*(1.0+phase*0.12)+phase)
-	# Preserve the tested power-up cadence; boss tools remain front-facing.
-	_pivot.rotation.y = 0.0 if _is_tool else _t * 1.6
+	# A bounded display-rock keeps each solid icon readable throughout its idle cycle.
+	_pivot.rotation.y = 0.0 if _is_tool else sin(_t * 1.6) * 0.28
 	_pivot.position.y = 0.06*sin(_t*(3.6 if _is_tool else 2.4))
 	# Ground projection follows actual backend spawn height, including jump tools.
 	_pool.global_position.y = 0.012
@@ -321,7 +345,7 @@ func _glyph_size(camera: Camera3D, center: Vector3) -> float:
 	var depth := maxf(0.1,-camera.to_local(center).z)
 	var height := maxf(1.0,get_viewport().get_visible_rect().size.y)
 	var distance := maxf(0.0,depth-8.0)
-	var pixels := lerpf(96.0,32.0,smoothstep(6.0,45.0,distance))
+	var pixels := lerpf(32.0,24.0,smoothstep(6.0,45.0,distance))
 	var metres := pixels/_glyph_coverage*2.0*depth*tan(deg_to_rad(camera.fov)*0.5)/height
 	var size := metres
 	# Entire quad, including transparent corners, stays inside the corridor.

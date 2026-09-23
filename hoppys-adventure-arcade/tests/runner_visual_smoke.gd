@@ -544,7 +544,7 @@ func check_powerups_and_pursuer() -> void:
 		check(visual.find_children("*", "CollisionObject3D", true, false).is_empty(), "%s cosmetic only" % kind)
 		check(visual.find_children("*", "Light3D", true, false).is_empty(), "%s no extra lights" % kind)
 		art._process(0.5)
-		check(is_equal_approx(art.get_node("Pivot").rotation.y, 0.8), "%s spin 1.6 rad/s" % kind)
+		check(is_equal_approx(art.get_node("Pivot").rotation.y, sin(0.8)*0.28), "%s bounded front-facing display rock" % kind)
 		check(absf(art.get_node("Pivot").position.y) <= 0.08, "%s bob bound" % kind)
 		visual.on_collected()
 		art._process(0.0875)
@@ -582,27 +582,16 @@ func check_powerups_and_pursuer() -> void:
 	await frames()
 	check(hazard_draw_count(pursuer, true) <= 14, "pursuer draw budget <= 14")
 	check(pursuer.find_children("*", "Light3D", true, false).size() == 1, "pursuer exactly one light")
-	check(pursuer.find_children("*", "Label3D", true, false).size() == 6, "pursuer six headlines")
+	check(pursuer.find_children("*", "Label3D", true, false).is_empty(), "hunter has no wall of headlines")
 	check(pursuer.find_children("*", "CollisionObject3D", true, false).is_empty(), "pursuer cosmetic only")
-	for threat in [0.0, 0.5, 1.0]:
+	for threat in [0.0,0.5,1.0]:
 		pursuer.set_threat(threat)
-		check(is_equal_approx(pursuer.get_node("Wall").scale.y, lerpf(0.35, 1.0, threat)), "pursuer threat height")
-		check(is_equal_approx(pursuer.get_node("RedLight").light_energy, threat * 2.5), "pursuer threat light")
-		check(is_equal_approx(pursuer.get_node("Wall/Glitch").amount_ratio, threat), "pursuer threat particles")
-	var shockwave := pursuer.get_node("Wall/Shockwave") as MeshInstance3D
-	check(is_equal_approx(shockwave.rotation.x, PI / 2), "shockwave ring faces player")
-	var merged := AABB()
+		check(pursuer.get_node("Hunter").scale.is_equal_approx(Vector3.ONE),"hunter keeps rigid proportions")
+		check(is_equal_approx(pursuer.get_node("RedLight").light_energy,threat*1.5),"hunter threat light")
 	for sample in 121:
-		pursuer._process(1.0 / 60.0)
-		# The expanding F7 ring has its own radius contract, separate from the wall.
-		var ring_box: AABB = shockwave.transform * shockwave.get_aabb()
-		check(ring_box.size.x <= 5.201 and ring_box.size.y <= 5.201, "shockwave maximum radius 2.6 m")
-		check(is_equal_approx(ring_box.get_center().y, 1.2), "shockwave centered at y=1.2")
-		var box := pursuer_bounds(pursuer, shockwave)
-		merged = box if sample == 0 else merged.merge(box)
-		check(box.size.x <= 6.0 and box.size.y <= 2.6 and box.position.y >= -0.001, "pursuer wall threat 1 visible AABB %s" % box)
-	check(merged.size.x <= 6.0 and merged.size.y <= 2.6, "pursuer wall merged motion envelope")
-	print("PURSUER WALL THREAT 1 MERGED VISIBLE AABB: ", merged)
+		pursuer._process(1.0/60.0)
+		var box := bounds(pursuer)
+		check(box.size.x <= 2.5 and box.size.y <= 2.6 and box.position.y >= 0,"compact hunter motion envelope")
 	var clock: float = pursuer._t
 	pursuer.set_process(true)
 	paused = true
@@ -610,25 +599,22 @@ func check_powerups_and_pursuer() -> void:
 	check(pursuer._t == clock, "pursuer pause freezes motion")
 	paused = false
 	pursuer.set_process(false)
-	var initial_scale: Vector3 = pursuer.get_node("Wall").scale
+	var initial_scale: Vector3 = pursuer.get_node("Hunter").scale
 	pursuer.play_catch()
 	pursuer._process(0.7)
 	pursuer.play_catch()
 	check(is_equal_approx(pursuer._reaction_time, 0.7), "catch idempotent")
 	pursuer._process(0.7)
-	check(pursuer.get_node("Wall").scale.is_equal_approx(initial_scale * 2.6), "catch 1.4s scale")
-	check(is_equal_approx(pursuer.get_node("RedLight").light_energy, 6.0), "catch light")
-	for label: Label3D in pursuer.find_children("*", "Label3D", true, false):
-		check(label.text == "CAUGHT", "caught headline")
+	check(pursuer.get_node("Hunter").scale.is_equal_approx(initial_scale), "catch 1.4s keeps compact scale")
+	check(is_equal_approx(pursuer.get_node("RedLight").light_energy, 3.0), "catch light")
 	# Reproduce the backend zero-threat update immediately before retreat.
 	pursuer.set_threat(1.0)
-	var retreat_pose: Transform3D = pursuer.get_node("Wall").transform
+	var retreat_pose: Transform3D = pursuer.get_node("Hunter").transform
 	pursuer.set_threat(0.0)
 	pursuer.play_retreat()
-	check(not pursuer._shockwave.visible, "retreat hides shockwave")
-	check(pursuer.get_node("Wall").transform.is_equal_approx(retreat_pose), "retreat restores last non-zero threat pose")
+	check(pursuer.get_node("Hunter").transform.is_equal_approx(retreat_pose), "retreat restores last non-zero threat pose")
 	pursuer._process(0.0)
-	check(pursuer.get_node("Wall").transform.is_equal_approx(retreat_pose), "retreat starts without height pop")
+	check(pursuer.get_node("Hunter").transform.is_equal_approx(retreat_pose), "retreat starts without height pop")
 	pursuer._process(0.35)
 	pursuer.play_retreat()
 	check(is_equal_approx(pursuer._reaction_time, 0.35), "retreat idempotent")
@@ -639,7 +625,7 @@ func check_powerups_and_pursuer() -> void:
 	pursuer.set_threat(0.0)
 	check(not pursuer.visible, "retreated zero remains hidden")
 	pursuer.set_threat(1.0)
-	check(pursuer.visible and pursuer.get_node("Wall").scale.is_equal_approx(Vector3.ONE), "pursuer resumes cleanly")
+	check(pursuer.visible and pursuer.get_node("Hunter").scale.is_equal_approx(Vector3.ONE), "pursuer resumes cleanly")
 	pursuer.free()
 	await frames()
 	print("PURSUER VISUAL: threat, catch, retreat, reuse and pause checked")

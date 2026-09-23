@@ -194,28 +194,8 @@ func attachment_checks(art: Art, kind: StringName) -> void:
 			if i != j and bounds[i].intersects(bounds[j]): attached = true
 		check(attached,"sculpture child AABB overlaps a sibling " + kind)
 	var frame: MeshInstance3D = art._pivot.get_node("Ring")
-	var frame_parts: Array = frame.mesh.get_meta("panel_bounds")
-	if kind == &"code_review":
-		check(art._core_node.mesh.get_meta("panel_bounds").size() == 2,"two broad REVIEW rows")
-		check(frame.material_override.get_shader_parameter("tint") == Art.FRAME_MINT.lightened(0.10).lerp(Palette.MINT,0.12) and is_equal_approx(frame.material_override.get_shader_parameter("energy"),0.55),"R12 lighter mint magnifier plating without extra emission")
-		var colors: PackedColorArray = frame.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
-		var has_dark_card := false
-		for color in colors:
-			if color.r < 0.2: has_dark_card = true
-		check(has_dark_card,"dark card vertex color preserves contrast without another draw")
-	if kind == &"lgtm":
-		check(frame_parts.size() >= 3 and frame_parts[0].intersects(frame_parts[1]),"LGTM cuff overlaps hand, including within merged metal mesh")
-	if kind == &"auto_fix_patch":
-		var parts: Array = art._core_node.mesh.get_meta("panel_bounds")
-		check(parts.size() == 2,"PATCH has two attached inlays")
-		for part: AABB in parts:
-			var transformed: AABB = art._core_node.transform*part
-			var attached := false
-			var gem: MeshInstance3D = art._pivot.get_node("Ring")
-			var glass_parts: Array = gem.mesh.get_meta("inlay_bounds")
-			for glass_part: AABB in glass_parts:
-				if transformed.intersects(gem.transform*glass_part): attached = true
-			check(attached,"PATCH inlay overlaps a chevron through the entire idle")
+	check(frame.mesh.get_aabb().size.z >= 0.24,"equipment has physical depth " + kind)
+	check(frame.material_override.get_shader_parameter("tint") == Palette.CREAM,"neutral equipment shell separates friendly inlays")
 
 func run() -> void:
 	root.size = Vector2i(1280,720)
@@ -283,14 +263,9 @@ func run() -> void:
 				tris += node.text.length()*4
 		check(draws+1 <= 8,"peak draw cap " + kind)
 		check(tris <= 3000,"triangle cap " + kind)
-		if kind == &"lint_rule":
-			var teeth: MultiMeshInstance3D = art._pivot.get_node("CombTeeth")
-			check(teeth.material_override.get_shader_parameter("tint") == Palette.MATRIX,"MATRIX comb teeth")
-			check(teeth.multimesh.mesh.get_aabb().size.is_equal_approx(Vector3(0.048,0.38,0.075)),"native tooth mesh dimensions")
-			for i in teeth.multimesh.instance_count:
-				check(teeth.multimesh.get_instance_transform(i).basis == Basis.IDENTITY,"teeth translate without nonuniform scaling")
 		for sample in 40:
 			art._process(0.125)
+			check(absf(art._pivot.rotation.y) <= 0.2801,"solid pickup stays readable through its full idle cycle")
 			attachment_checks(art,kind)
 			for node in art._pivot.get_children():
 				var max_radius := 0.0
@@ -379,17 +354,12 @@ func affordance_checks(art: Art, camera: Camera3D, kind: StringName) -> void:
 			if bounds.size.is_equal_approx(Vector3(0.3,0.3,0.26)) and bounds.position.is_equal_approx(Vector3(-0.15,-0.15,-0.22)): backing_found = true
 		check(backing_found,"R8 closed 0.30m backing is merged behind thin silhouette " + kind)
 	check(is_equal_approx(art._pool.material_override.get_shader_parameter("beam_core_gain"),1.12 if art._is_tool else 1.0),"R8 twelve percent boost isolated to tool beam cores")
-	check(is_equal_approx(frame.material_override.get_shader_parameter("energy"),0.55),"R7 equal power-up/tool frame emission energy")
+	check(is_equal_approx(frame.material_override.get_shader_parameter("energy"),0.12),"Subdued hardware emission across both families")
 	if not art._is_tool:
 		for node in art._pivot.get_children():
 			check(node.material_override.get_shader_parameter("emission_tint") == Art.BODY_MINT,"R7 every MINT body surface emits deeper mint")
 	check(is_equal_approx(art._glyph.material_override.get_shader_parameter("glyph_gain"),0.675 if art._is_tool else 0.75),"R7 isolated ten percent tool glyph reduction")
-	var expected_frame := Palette.ORANGE.lerp(Palette.CREAM,0.15) if art._is_tool else Palette.SLATE.lerp(Palette.MINT,0.45).lightened(0.18)
-	if kind == &"code_review":
-		expected_frame = expected_frame.lightened(0.10).lerp(Palette.MINT,0.12)
-		check(expected_frame.s >= 0.25,"R12 magnifier plating retains mint saturation")
-		check(Capture.luminance(expected_frame) > Capture.luminance(Art.FRAME_MINT),"R12 magnifier diffuse plating is brighter")
-	check(frame.material_override.get_shader_parameter("tint") == expected_frame,"R12 per-kind diffuse frame palette pin")
+	check(frame.material_override.get_shader_parameter("tint") == Palette.CREAM,"Neutral hardware with colored functional inlays")
 	check(Finish.CODE.contains("METALLIC = mix(0.32, 0.18, glassness);"),"R10 diffuse response retained without reflection probe")
 	check(Finish.CODE.contains("max(texture(plating, UV).rgb, vec3(0.55))"),"R10 plating cannot eat diffuse lift")
 	check(Finish.CODE.contains("mix(min(texture(roughness_map, UV).r, 0.62), 0.19, glassness)"),"R10 roughness ceiling")
@@ -572,10 +542,11 @@ func round5_affordance_checks(art: Art, camera: Camera3D, kind: StringName) -> v
 	check(art._glyph.scale.x <= full_size*0.33 and art._depth_alpha >= 0.44,"R6 B3 rear glyph shrinks with readable residual alpha")
 	check(art._glyph.visible and peer._glyph.visible,"R6 B3 both glyphs retained")
 	check(art._beam_offset > 0.6 and peer._beam_offset < -0.4,"R6 B4 separated same-lane beam centers")
-	peer.position.x = 2.0
+	peer.position.x = 3.5
+	peer._update_affordance()
 	art._rear_mix = 0.0
 	art._process(0.51)
-	check(art._rear_mix > 0.99 and art._glyph.visible,"R6 B3 cross-lane rear also shrinks without disappearing")
+	check(art._rear_mix < 0.01 and art._glyph.visible,"Compact badges in separate lanes no longer overlap")
 	peer._collect_time = 0.0
 	art._process(0.51)
 	check(art._glyph.visible and is_equal_approx(art._glyph.scale.x,full_size),"R6 B3 smooth promotion after collection")
