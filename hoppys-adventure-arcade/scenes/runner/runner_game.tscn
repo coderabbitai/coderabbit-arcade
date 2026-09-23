@@ -1,0 +1,129 @@
+[gd_scene load_steps=19 format=3]
+
+[ext_resource type="Script" path="res://scenes/runner/runner_game.gd" id="1"]
+[ext_resource type="Script" path="res://scenes/runner/systems/speed_controller.gd" id="2"]
+[ext_resource type="Script" path="res://scenes/runner/systems/hit_manager.gd" id="3"]
+[ext_resource type="Script" path="res://scenes/runner/systems/score_manager.gd" id="4"]
+[ext_resource type="Script" path="res://scenes/runner/systems/effect_manager.gd" id="5"]
+[ext_resource type="Script" path="res://scenes/runner/systems/chunk_spawner.gd" id="6"]
+[ext_resource type="Script" path="res://scenes/runner/systems/autopilot.gd" id="7"]
+[ext_resource type="Script" path="res://scenes/runner/systems/camera_rig.gd" id="8"]
+[ext_resource type="Script" path="res://scenes/runner/pursuer/pursuer.gd" id="9"]
+[ext_resource type="Script" path="res://scenes/runner/systems/debug_overlay.gd" id="10"]
+[ext_resource type="PackedScene" path="res://scenes/runner/player/runner_player.tscn" id="11"]
+[ext_resource type="Script" path="res://scenes/runner/systems/stage_manager.gd" id="12"]
+[ext_resource type="Script" path="res://scenes/runner/systems/turn_rig.gd" id="13"]
+[ext_resource type="PackedScene" path="res://scenes/runner/boss/boss_arena.tscn" id="14"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
+size = Vector3(12, 1, 400)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_floor"]
+size = Vector2(12, 400)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_floor"]
+shading_mode = 0
+albedo_color = Color(0.0862745, 0.137255, 0.192157, 1)
+
+[sub_resource type="Environment" id="Environment_graybox"]
+background_mode = 1
+background_color = Color(0.0313726, 0.0666667, 0.109804, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.298039, 0.396078, 0.501961, 1)
+ambient_light_energy = 0.6
+
+[node name="RunnerGame" type="Node3D"]
+process_mode = 3
+script = ExtResource("1")
+
+[node name="Systems" type="Node" parent="."]
+process_mode = 1
+
+[node name="SpeedController" type="Node" parent="Systems"]
+script = ExtResource("2")
+
+[node name="HitManager" type="Node" parent="Systems"]
+script = ExtResource("3")
+
+[node name="ScoreManager" type="Node" parent="Systems"]
+script = ExtResource("4")
+
+[node name="EffectManager" type="Node" parent="Systems"]
+script = ExtResource("5")
+
+[node name="Spawner" type="Node" parent="Systems"]
+script = ExtResource("6")
+
+[node name="StageManager" type="Node" parent="Systems"]
+script = ExtResource("12")
+
+[node name="Autopilot" type="Node" parent="Systems"]
+script = ExtResource("7")
+
+[node name="World" type="Node3D" parent="."]
+process_mode = 1
+
+[node name="Floor" type="StaticBody3D" parent="World"]
+collision_layer = 1
+collision_mask = 2
+
+[node name="FloorShape" type="CollisionShape3D" parent="World/Floor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+shape = SubResource("BoxShape3D_floor")
+
+[node name="Chunks" type="Node3D" parent="World"]
+
+[node name="TurnRig" type="Node3D" parent="World"]
+script = ExtResource("13")
+
+[node name="GrayboxEnvironment" type="Node3D" parent="World/TurnRig"]
+
+[node name="Sun" type="DirectionalLight3D" parent="World/TurnRig/GrayboxEnvironment"]
+transform = Transform3D(0.866025, 0, -0.5, -0.383022, 0.642788, -0.663414, 0.321394, 0.766044, 0.55667, 0, 12, 0)
+light_energy = 0.9
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="World/TurnRig/GrayboxEnvironment"]
+environment = SubResource("Environment_graybox")
+
+[node name="GrayboxFloor" type="MeshInstance3D" parent="World/TurnRig/GrayboxEnvironment"]
+mesh = SubResource("PlaneMesh_floor")
+material_override = SubResource("StandardMaterial3D_floor")
+
+[node name="Environment" type="Node3D" parent="World/TurnRig"]
+
+[node name="BossArena" parent="World/TurnRig" instance=ExtResource("14")]
+
+[node name="Player" parent="." instance=ExtResource("11")]
+process_mode = 1
+
+[node name="Pursuer" type="Node3D" parent="."]
+process_mode = 1
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 12)
+script = ExtResource("9")
+
+[node name="Visual" type="Node3D" parent="Pursuer"]
+
+[node name="CameraRig" type="Node3D" parent="."]
+process_mode = 1
+script = ExtResource("8")
+
+[node name="Camera" type="Camera3D" parent="CameraRig"]
+transform = Transform3D(1, 0, 0, 0, 0.982872, -0.184288, 0, 0.184288, 0.982872, 0, 4, 8)
+current = true
+fov = 60.0
+
+[node name="HUD" type="CanvasLayer" parent="."]
+process_mode = 1
+layer = 10
+
+[node name="Overlays" type="CanvasLayer" parent="."]
+process_mode = 3
+layer = 20
+
+[node name="Audio" type="Node" parent="."]
+process_mode = 3
+
+[node name="DebugOverlay" type="CanvasLayer" parent="."]
+process_mode = 3
+layer = 90
+script = ExtResource("10")

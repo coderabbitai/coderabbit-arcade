@@ -1,0 +1,53 @@
+extends "res://scenes/runner/environment/corridor.gd"
+## Visual-only replacement retaining the existing corridor lifecycle and facade.
+const Starship = preload("res://scenes/runner/environment/starship/starship_world.gd")
+var starship: Node3D
+
+func _ready() -> void:
+	retro_scale = 0.85
+	super._ready()
+	# Keep the original corridor implementation available for legacy fixtures.
+	# Its old geometry is hidden, never layered over the starship or drawn.
+	for child in get_children():
+		if child is GeometryInstance3D:
+			child.visible = false
+		if child is GPUParticles3D:
+			child.emitting = false
+	starship = Node3D.new()
+	starship.set_script(Starship)
+	add_child(starship)
+	_environment.background_color = Color("08111f")
+	_environment.ambient_light_color = Color("94abc3")
+	_environment.ambient_light_energy = 0.34
+	_environment.fog_depth_begin = 24.0
+	_environment.fog_depth_end = 96.0
+	_environment.adjustment_saturation = 0.95
+	_sun.light_energy = 0.68
+	_sun.rotation_degrees = Vector3(-48,-28,0)
+	var key := get_node("KeyLight") as OmniLight3D
+	key.light_color = Color("e9edf5")
+	key.light_energy = 0.35
+	key.omni_range = 5.0
+	set_pursuit(_pursuit)
+	starship.sync(_offset,_clock,bend,global_transform,boss_arena,0.0)
+
+func _process(delta: float) -> void:
+	super._process(delta)
+	if is_instance_valid(starship):
+		starship.sync(_offset,_clock,bend,global_transform,boss_arena,delta)
+
+func _apply_turn() -> void:
+	super._apply_turn()
+	if is_instance_valid(_corner): _corner.visible = false
+	if is_instance_valid(_rain):
+		_rain.visible = false
+		_rain.emitting = false
+	if is_instance_valid(_speed_lines):
+		_speed_lines.visible = false
+		_speed_lines.emitting = false
+
+func set_pursuit(t: float) -> void:
+	super.set_pursuit(t)
+	if _environment != null:
+		_environment.fog_light_color = Color("102236").lerp(Color("422b29"),_pursuit*0.6)
+		_sun.light_color = Color("c4d6e8").lerp(Color("edb19a"),_pursuit*0.45)

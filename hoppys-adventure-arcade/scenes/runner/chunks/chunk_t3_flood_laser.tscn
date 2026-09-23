@@ -1,0 +1,26 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/runner/chunks/chunk.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/runner/hazards/hazard.tscn" id="2"]
+
+[node name="ChunkT3FloodLaser" type="Node3D"]
+script = ExtResource("1")
+length = 48.0
+weight = 3.0
+min_difficulty = 0.45
+max_difficulty = 0.85
+mirror_x = true
+tags = PackedStringArray("t3", "flood", "laser")
+
+[node name="Hazard1" parent="." instance=ExtResource("2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -33)
+kind = &"laser_grid"
+variant = &"ground"
+
+[node name="Hazard2" parent="." instance=ExtResource("2")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1, 0, -9)
+kind = &"comment_flood"
+
+[node name="PowerUpSlot1" type="Marker3D" parent="." groups=["pickup_slot"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.2, -32.9)
+metadata/height = "jump"

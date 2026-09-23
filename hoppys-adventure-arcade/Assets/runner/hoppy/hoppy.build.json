@@ -1,0 +1,198 @@
+{
+  "recipe_revision": 6,
+  "hoodie_linear": [
+    0.93,
+    0.25,
+    0.067
+  ],
+  "stance_revision": 17,
+  "effect_triangles": 1392,
+  "joint_revision": 14,
+  "contact_revision": 16,
+  "sole_sweeps": {
+    "idle": {
+      "hz": 120,
+      "samples": 193,
+      "min_y": -1.0238727554678917e-07,
+      "max_y": 7.191556505858898e-08
+    },
+    "run": {
+      "hz": 120,
+      "samples": 73,
+      "min_y": -4.5925844460725784e-08,
+      "max_y": 5.061156116425991e-08
+    }
+  },
+  "animation_sample_rate": 120,
+  "joint_bend_signs": {
+    "forearm": 1,
+    "shin": -1
+  },
+  "brace_profile": [
+    [
+      0.02,
+      0.934
+    ],
+    [
+      0.043,
+      0.922
+    ],
+    [
+      0.044,
+      0.89
+    ],
+    [
+      0.061,
+      0.876
+    ],
+    [
+      0.044,
+      0.862
+    ],
+    [
+      0.043,
+      0.832
+    ],
+    [
+      0.02,
+      0.821
+    ]
+  ],
+  "sole_radii": [
+    0.108,
+    0.162
+  ],
+  "back_mark_z": 0.268,
+  "script_sha256": "5ff4a39aadeca3bda630400b0cf0e2e276ba7c1c97150c92c00ca8bca6d9c63a",
+  "atlas_helper_sha256": "33cd94ba483671e156465bde7ea6e0aecf59ce6e7fa84d0cc189509b5d138675",
+  "blender": "5.2.2 LTS",
+  "seed": 41027,
+  "triangles": 38416,
+  "image_report": [
+    {
+      "index": 0,
+      "name": "accessory_emissive",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 134728,
+      "sha256": "9298aae1a24af6e457c09406db51e0fb5d42e9df21fcfd9e4a32ebbc8effe1e8"
+    },
+    {
+      "index": 1,
+      "name": "accessory_normal",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 592835,
+      "sha256": "27d2ac8f0a90b5bd7da76556b52bd7723887071f4474d20b0f7580fc8009b605"
+    },
+    {
+      "index": 2,
+      "name": "accessory_albedo",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 845757,
+      "sha256": "333efd60a6b12d66b590133f80588afc3191a843cf3a32bd9bf227e0b3b64e1e"
+    },
+    {
+      "index": 3,
+      "name": "accessory_orm",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 279821,
+      "sha256": "094b84d6c80a0acc01e0f868af3cd8c55a9ac56f55cbb2bf86c09d24cf25c09d"
+    },
+    {
+      "index": 4,
+      "name": "body_emissive",
+      "width": 2048,
+      "height": 2048,
+      "bytes": 55235,
+      "sha256": "5630edf42913f842e57308503a7e0977e721d09027a12c453b8878c22108cd37"
+    },
+    {
+      "index": 5,
+      "name": "body_normal",
+      "width": 2048,
+      "height": 2048,
+      "bytes": 2923775,
+      "sha256": "e661c1b86431eb3e35dc05562008fbaed94a4c2fcb39245ec2b76661a8655756"
+    },
+    {
+      "index": 6,
+      "name": "body_albedo",
+      "width": 2048,
+      "height": 2048,
+      "bytes": 3043670,
+      "sha256": "fd5fe60971e825430f1e2cc3d6eff49778cfb783e632bf140d1577d127887d20"
+    },
+    {
+      "index": 7,
+      "name": "body_orm",
+      "width": 2048,
+      "height": 2048,
+      "bytes": 254073,
+      "sha256": "7eed244c949b2f6ffa279d026171aefdc5c20c2517a1f3402423eba0c345bd41"
+    }
+  ],
+  "textures": [
+    "accessory_albedo.png",
+    "accessory_emissive.png",
+    "accessory_normal.png",
+    "accessory_orm.png",
+    "body_albedo.png",
+    "body_emissive.png",
+    "body_normal.png",
+    "body_orm.png"
+  ],
+  "exported_texture_count": 8,
+  "quick": false,
+  "animations": [
+    "idle",
+    "run",
+    "jump",
+    "fall",
+    "roll",
+    "hurt",
+    "dead"
+  ],
+  "bones": [
+    "root",
+    "hips",
+    "spine",
+    "chest",
+    "neck",
+    "head",
+    "ear_L",
+    "ear_tip_L",
+    "eye_L",
+    "ear_R",
+    "ear_tip_R",
+    "eye_R",
+    "shoulder_L",
+    "arm_L",
+    "forearm_L",
+    "hand_L",
+    "shoulder_R",
+    "arm_R",
+    "forearm_R",
+    "hand_R",
+    "tail",
+    "leg_L",
+    "shin_L",
+    "foot_L",
+    "leg_R",
+    "shin_R",
+    "foot_R"
+  ],
+  "roll_bounds_y": [
+    0.08456936478614807,
+    0.8154305219650269
+  ],
+  "height": 1.8,
+  "forward": [
+    0,
+    0,
+    -1
+  ],
+  "generator": "Khronos glTF Blender I/O v5.2.40"
+}

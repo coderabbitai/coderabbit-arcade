@@ -1,0 +1,15 @@
+extends RefCounted
+## Shared runner palette. Keep the environment dim so gameplay reads first.
+const NAVY_BG := Color("08111c")
+const NAVY := Color("101d2d")
+const NAVY_2 := Color("142735")
+const SLATE := Color("435464")
+const CREAM := Color("fff0d3")
+const MINT := Color("79e0c4")
+const MATRIX := Color("63f9b2")
+const ORANGE := Color("f78949")
+const DANGER := Color("ff4d3d")
+const ROSE := Color("ff7185")
+const LILAC := Color("a99bff")
+const EAR_PINK := Color("ecaca0")
+const EYE := Color("202b40")
