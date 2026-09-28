@@ -4,6 +4,12 @@ const Finish = preload("res://scenes/runner/powerups/visuals/hifi/pickup_materia
 const Grab = preload("res://scenes/runner/powerups/visuals/hifi/grab_affordance.gd")
 const Burst = preload("res://scenes/runner/powerups/visuals/hifi/collect_burst.gd")
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
+## Scripted Blender hero props (tools/blender/props/build_props.py): PU_<kind> holds the neutral
+## shell ("Ring") and the family-coloured working part ("InnerCore").
+const PropScene = preload("res://Assets/runner/props/pickup_props.glb")
+## Subdued hardware glow on the shell's baked inlays; the working part carries the family colour.
+const FRAME_ENERGY := 0.40
+const CORE_ENERGY := 0.55
 const BACKED_KINDS := [&"approve_shield",&"auto_fix",&"lgtm",&"nitro",&"super_jump",&"code_review",&"review_comment",&"lint_rule",&"unit_test",&"auto_fix_patch"]
 const BODY_MINT := Color(115.5/255.0,230.25/255.0,191.5/255.0) # MINT.lerp(MATRIX,0.25)
 static var FRAME_MINT := Palette.SLATE.lerp(Palette.MINT,0.45).lightened(0.18)
@@ -12,7 +18,7 @@ static var FRAME_ORANGE := Palette.ORANGE.lerp(Palette.CREAM,0.15)
 const TAGS := {&"approve_shield":"APPROVE", &"auto_fix":"AUTO FIX", &"lgtm":"LGTM", &"nitro":"NITRO", &"super_jump":"JUMP", &"code_review":"REVIEW", &"review_comment":"COMMENT", &"lint_rule":"LINT", &"unit_test":"TEST", &"auto_fix_patch":"PATCH"}
 var _kind: StringName
 var _core_node: MeshInstance3D
-var _teeth: MultiMeshInstance3D
+var _core_rest := Transform3D.IDENTITY
 var _is_tool := false
 var pivot: Node3D:
 	get: return _pivot
@@ -38,6 +44,8 @@ static var _kind_cache: Dictionary = {}
 static var _plate_mesh: ArrayMesh
 static var _plate_material: ShaderMaterial
 static var _glyph_quad: QuadMesh
+## PU_<kind> -> {role: [mesh, transform]} read once from the GLB SceneState (no scene instancing).
+static var _prop_layouts: Dictionary = {}
 ## One snapshot of every live pickup per process frame, instead of a group scan per pickup.
 static var _peer_frame := -1
 static var _peers: Array[Dictionary] = []
@@ -66,22 +74,13 @@ func build(kind: StringName) -> void:
 	add_child(_pivot)
 	var shapes := kind_shapes(_kind)
 	_phase = float(TAGS.keys().find(_kind))*0.37
-	var frame_mesh: ArrayMesh = shapes.frame
-	var frame_tint := Palette.CREAM
-	# Lift only the magnifier diffuse plating; mint mix retains saturation.
-	if _kind == &"code_review": frame_tint = Palette.CREAM
-	var frame_material := Finish.material(frame_tint,0.12)
-	frame_material.set_shader_parameter("inlay_tint",Palette.ORANGE if is_tool else BODY_MINT)
-	_add_mesh("Ring",frame_mesh,frame_material,_pivot)
-	if kind == &"auto_fix": frame_material.set_shader_parameter("emission_inset",0.26)
+	# Neutral CREAM shell with baked MINT / ORANGE inlays; all sculpture emission stays in the family.
+	var glow := Palette.ORANGE if is_tool else BODY_MINT
+	_add_mesh("Ring",shapes.frame,Finish.prop(Palette.CREAM,FRAME_ENERGY,glow),_pivot)
 	if shapes.core != null:
-		_core_node = _add_mesh("InnerCore",shapes.core,Finish.material(_accent,4.8),_pivot)
-		_core_node.material_override.set_shader_parameter("emission_fill",0.65)
-	# Filter prongs are part of the solid cartridge core.
-	if not is_tool:
-		# Opaque frame contributes the same broad patch as ORANGE tool frames.
-		# Diffuse frame and all sculpture emission remain in the MINT family.
-		for material in _materials: material.set_shader_parameter("emission_tint",BODY_MINT)
+		_core_node = _add_mesh("InnerCore",shapes.core,Finish.prop(_accent,CORE_ENERGY,glow),_pivot)
+		_core_rest = shapes.core_rest
+		_core_node.transform = _core_rest
 	# Unlit (energy 0) NAVY backing: its clock never reaches the image, so one material serves all.
 	_tag_plate = _add_mesh("TagPlate",_plate_mesh,_plate_material,self,false)
 	_tag_plate.position = Vector3(0,-0.50,0.01)
@@ -111,12 +110,12 @@ func build(kind: StringName) -> void:
 	# Measured from the CPU raster; get_image() on the uploaded texture was a GPU readback stall.
 	_glyph_coverage = shapes.coverage
 	for material in _materials:
-		if material.shader == Finish.template("opaque").shader or material.shader == Finish.template("glass").shader:
+		if material.shader in [Finish.template("opaque").shader,Finish.template("glass").shader,Finish.template("prop").shader]:
 			_surface_materials.append(material)
 	_set_modes(self)
 
-## Builds (once per kind) every immutable piece of a pickup: merged frame, core, tag fit and glyph
-## coverage. Also a warm-up hook: calling it before play moves all of that CPU work off the run.
+## Builds (once per kind) every immutable piece of a pickup: baked shell and core meshes, tag fit and
+## glyph coverage. Also a warm-up hook: calling it before play moves all of that CPU work off the run.
 static func kind_shapes(kind: StringName) -> Dictionary:
 	if not TAGS.has(kind): kind = &"approve_shield"
 	if _kind_cache.has(kind): return _kind_cache[kind]
@@ -127,43 +126,36 @@ static func kind_shapes(kind: StringName) -> Dictionary:
 		_plate_material = Finish.material(Palette.NAVY_2)
 		_glyph_quad = QuadMesh.new()
 		_glyph_quad.size = Vector2.ONE
-	var builder = new()
-	var metal := Forge.new()
-	var glass := Forge.new()
-	var core := Forge.new()
-	builder._build_icon(kind,metal,glass,core)
-	builder.free()
-	if kind in BACKED_KINDS:
-		# Closed, thick core behind the thin icon, merged into its frame draw.
-		# The depth keeps a solid silhouette during the existing sculpture spin.
-		var disc := PackedVector2Array()
-		for i in 24: disc.append(Vector2(cos(TAU*i/24.0),sin(TAU*i/24.0))*0.15)
-		metal.panel(disc,0.26,0.025,Vector3(0,0,-0.09))
-	# Merge the inlay into the frame surface; vertex alpha selects glass shading.
-	var inlay_mesh := glass.finish()
-	var arrays := inlay_mesh.surface_get_arrays(0)
-	var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
-	for i in colors.size(): colors[i].a = 0.5
-	arrays[Mesh.ARRAY_COLOR] = colors
-	var marked := ArrayMesh.new()
-	marked.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
-	# Index the existing frame before appending an indexed mesh.
-	metal.surface.index()
-	metal.surface.append_from(marked,0,Transform3D.IDENTITY)
-	metal.vertex_count += glass.vertex_count
-	metal.panel_bounds.append_array(glass.panel_bounds)
-	var frame_mesh := metal.finish()
-	frame_mesh.set_meta("expected_triangles",metal.vertex_count/3)
-	frame_mesh.set_meta("inlay_bounds",glass.panel_bounds.duplicate())
+	var parts := prop_parts(kind)
+	var frame_mesh: Mesh = parts.Ring[0]
+	var core_part: Array = parts.get("InnerCore",[null,Transform3D.IDENTITY])
 	# Fit the longest tag inside the plate at the fixed 0.0045 world pixel size.
 	var text: String = TAGS[kind]
 	var tag_size := 32
 	var tag_font: Font = ThemeDB.fallback_font
 	while (tag_font.get_string_size(text,HORIZONTAL_ALIGNMENT_LEFT,-1,tag_size).x+6*2)*0.0045 > 0.70:
 		tag_size -= 1
-	var shapes := {"frame": frame_mesh, "core": core.finish() if core.vertex_count > 0 else null, "tag_size": tag_size, "coverage": Grab.coverage(kind)}
+	var shapes := {"frame": frame_mesh, "core": core_part[0], "core_rest": core_part[1], "tag_size": tag_size, "coverage": Grab.coverage(kind)}
 	_kind_cache[kind] = shapes
 	return shapes
+
+## {role: [mesh, rest transform]} of PU_<kind>, read from the GLB's SceneState once for all kinds.
+static func prop_parts(kind: StringName) -> Dictionary:
+	if _prop_layouts.is_empty():
+		var state := PropScene.get_state()
+		for i in state.get_node_count():
+			var path := String(state.get_node_path(i)).trim_prefix("./").split("/")
+			if path.size() != 2: continue
+			var mesh: Mesh = null
+			var pose := Transform3D.IDENTITY
+			for p in state.get_node_property_count(i):
+				match state.get_node_property_name(i,p):
+					&"mesh": mesh = state.get_node_property_value(i,p)
+					&"transform": pose = state.get_node_property_value(i,p)
+			var role := String(state.get_node_name(i)).split("__")[1]
+			if not _prop_layouts.has(path[0]): _prop_layouts[path[0]] = {}
+			_prop_layouts[path[0]][role] = [mesh,pose]
+	return _prop_layouts.get("PU_"+String(kind),{})
 
 ## Warm-up hook: every per-kind CPU cache (meshes, glyph raster, tag fit) for `kind`.
 static func warm_kind(kind: StringName) -> void:
@@ -172,6 +164,7 @@ static func warm_kind(kind: StringName) -> void:
 ## Drops the static caches (tests call this before quitting, like Finish.cache.clear()).
 static func release_caches() -> void:
 	_kind_cache.clear()
+	_prop_layouts.clear()
 	_plate_mesh = null
 	_plate_material = null
 	_glyph_quad = null
@@ -193,147 +186,23 @@ func _add_mesh(title: String, shape: Mesh, material: ShaderMaterial, parent: Nod
 	if animated: _materials.append(material)
 	return mesh
 
-func _polygon(forge: RefCounted, points: Array, depth := 0.07, z := 0.0) -> void:
-	var packed := PackedVector2Array()
-	for point: Vector2 in points: packed.append(point)
-	forge.panel(packed,depth,0.012,Vector3(0,0.015,z))
-
-func _check(core: RefCounted, offset := Vector3.ZERO, factor := 1.0) -> void:
-	core.bar(Vector3(-0.055,-0.015,0.063)+offset,Vector2(0.10,0.026)*factor,-0.7,0.025)
-	core.bar(Vector3(0.035,0.024,0.063)+offset,Vector2(0.19,0.026)*factor,0.8,0.025)
-
-func _framed_polygon(metal: RefCounted, glass: RefCounted, points: Array, size := Vector2(1.45,1.45), depth := 0.12) -> void:
-	var outline := PackedVector2Array()
-	for point: Vector2 in points: outline.append(point*size)
-	if Geometry2D.is_polygon_clockwise(outline): outline.reverse()
-	metal.panel(outline,depth,0.012)
-	var inner: PackedVector2Array = metal.inset(outline,0.018)
-	glass.panel(inner,0.045,0.006,Vector3(0,0,depth/2+0.004))
-
-func _build_teeth() -> void:
-	var forge := Forge.new()
-	# Native dimensions keep the actual chamfer width; instances only translate.
-	forge.bar(Vector3.ZERO,Vector2(0.048,0.38),0,0.075)
-	var teeth := MultiMeshInstance3D.new()
-	_teeth = teeth
-	teeth.name = "CombTeeth"
-	teeth.multimesh = MultiMesh.new()
-	teeth.multimesh.transform_format = MultiMesh.TRANSFORM_3D
-	teeth.multimesh.mesh = forge.finish()
-	teeth.multimesh.instance_count = 5
-	for i in 5:
-		teeth.multimesh.set_instance_transform(i,Transform3D(Basis.IDENTITY,Vector3((i-2)*0.115,0.04,0)))
-	var material := Finish.material(Palette.MATRIX,3.2)
-	teeth.material_override = material
-	_materials.append(material)
-	teeth.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_pivot.add_child(teeth)
-
-func _equipment_box(forge: RefCounted, center: Vector3, size: Vector3, angle := 0.0) -> void:
-	forge.bar(center,Vector2(size.x,size.y),angle,size.z)
-
-func _equipment_hex(forge: RefCounted, center: Vector3, radius: float, depth: float) -> void:
-	var points := PackedVector2Array()
-	for i in 8: points.append(Vector2(cos(TAU*i/8.0+PI/8),sin(TAU*i/8.0+PI/8))*radius)
-	forge.panel(points,depth,0.015,center)
-
-func _build_icon(kind: StringName, metal: RefCounted, glass: RefCounted, core: RefCounted) -> void:
-	# Tangible equipment, with depth and attached working parts, not floating UI icons.
-	match kind:
-		&"approve_shield":
-			_framed_polygon(metal,glass,[Vector2(0,-0.29),Vector2(0.27,-0.08),Vector2(0.25,0.20),Vector2(-0.25,0.20),Vector2(-0.27,-0.08)],Vector2.ONE,0.24)
-			for side in [-1,1]:
-				_equipment_box(metal,Vector3(side*0.16,0.26,-0.03),Vector3(0.10,0.28,0.18),-side*0.18)
-			_check(core,Vector3(0,0,0.09),1.7)
-		&"auto_fix":
-			_equipment_box(metal,Vector3(-0.04,0.10,0),Vector3(0.44,0.21,0.26),0.12)
-			_equipment_box(metal,Vector3(-0.13,-0.12,0),Vector3(0.14,0.32,0.22),-0.22)
-			_equipment_box(metal,Vector3(0.23,0.13,0),Vector3(0.16,0.12,0.18))
-			_equipment_box(glass,Vector3(-0.10,0.10,0.145),Vector3(0.18,0.11,0.035))
-			for side in [-1,1]: _equipment_box(core,Vector3(0.27,0.13+side*0.075,0.02),Vector3(0.13,0.035,0.13))
-		&"lgtm":
-			_equipment_hex(metal,Vector3(0,-0.19,0),0.29,0.25)
-			_equipment_box(metal,Vector3(0,0.05,0),Vector3(0.16,0.32,0.20))
-			for side in [-1,1]: _equipment_box(metal,Vector3(side*0.11,0.24,0),Vector3(0.11,0.24,0.20),-side*0.18)
-			_equipment_hex(glass,Vector3(0,-0.19,0.14),0.22,0.04)
-			_check(core,Vector3(0,-0.17,0.105),1.55)
-		&"nitro":
-			_equipment_box(metal,Vector3(0,0,0),Vector3(0.45,0.19,0.22))
-			for side in [-1,1]:
-				_equipment_hex(metal,Vector3(side*0.16,0.11,0),0.15,0.24)
-				_equipment_box(metal,Vector3(side*0.16,-0.07,0),Vector3(0.21,0.40,0.25))
-				_equipment_box(glass,Vector3(side*0.16,0.02,0.14),Vector3(0.10,0.28,0.035))
-				_equipment_box(core,Vector3(side*0.16,-0.32,0),Vector3(0.10,0.19,0.12))
-		&"super_jump":
-			for side in [-1,1]:
-				_equipment_box(metal,Vector3(side*0.17,-0.23,0.035),Vector3(0.24,0.15,0.34))
-				_equipment_box(metal,Vector3(side*0.17,0.03,-0.03),Vector3(0.15,0.44,0.20))
-				_equipment_box(glass,Vector3(side*0.17,0.10,0.08),Vector3(0.10,0.25,0.035))
-				for y in [-0.12,-0.05,0.02]: _equipment_box(core,Vector3(side*0.17,y,0.11),Vector3(0.20,0.025,0.05))
-			_equipment_box(metal,Vector3(0,0.18,-0.04),Vector3(0.25,0.075,0.15))
-		&"code_review":
-			_equipment_box(metal,Vector3(0,0.05,-0.05),Vector3(0.56,0.30,0.25))
-			_equipment_box(metal,Vector3(0,-0.19,-0.05),Vector3(0.16,0.23,0.20))
-			for side in [-1,1]:
-				_equipment_hex(metal,Vector3(side*0.16,0.06,0.08),0.16,0.20)
-				_equipment_hex(glass,Vector3(side*0.16,0.06,0.19),0.115,0.03)
-				_equipment_box(core,Vector3(side*0.16,0.06,0.21),Vector3(0.12,0.025,0.025))
-		&"review_comment":
-			_equipment_box(metal,Vector3(0,-0.04,0),Vector3(0.38,0.45,0.27))
-			_equipment_box(metal,Vector3(-0.13,0.28,0),Vector3(0.075,0.26,0.12),-0.12)
-			_equipment_box(glass,Vector3(0,0.04,0.15),Vector3(0.29,0.19,0.035))
-			for x in [-0.085,0,0.085]: _equipment_box(core,Vector3(x,0.03,0.175),Vector3(0.028,0.08 if x != 0 else 0.14,0.025))
-			for y in [-0.13,-0.20]: _equipment_box(metal,Vector3(0,y,0.16),Vector3(0.27,0.025,0.025))
-		&"lint_rule":
-			_equipment_box(metal,Vector3(0,-0.10,0),Vector3(0.56,0.25,0.25))
-			_equipment_box(glass,Vector3(0,-0.10,0.14),Vector3(0.46,0.13,0.035))
-			for x in [-0.23,0.23]: _equipment_box(metal,Vector3(x,0.11,0),Vector3(0.075,0.43,0.20))
-			for x in [-0.12,0,0.12]: _equipment_box(core,Vector3(x,0.12,0.01),Vector3(0.055,0.35,0.11))
-		&"unit_test":
-			_equipment_hex(metal,Vector3(0,0,0),0.32,0.32)
-			_equipment_hex(glass,Vector3(0,0,0.18),0.235,0.055)
-			for x in [-0.29,0.29]:
-				for y in [-0.17,0.17]: _equipment_box(metal,Vector3(x,y,0),Vector3(0.07,0.10,0.18))
-			_check(core,Vector3(0,0,0.15),1.55)
-		&"auto_fix_patch":
-			_equipment_box(metal,Vector3(0,0,0),Vector3(0.43,0.55,0.24),0.16)
-			_equipment_box(glass,Vector3(0,0,0.14),Vector3(0.30,0.39,0.04),0.16)
-			for side in [-1,1]:
-				_equipment_box(metal,Vector3(side*0.25,0,0),Vector3(0.09,0.23,0.20))
-			_equipment_box(core,Vector3(0,0,0.17),Vector3(0.25,0.075,0.04))
-			_equipment_box(core,Vector3(0,0,0.17),Vector3(0.075,0.27,0.04))
-
-	# Dark rubber grips and service seams give the shells working surfaces.
-	metal.color = Color(0.22,0.29,0.34)
-	match kind:
-		&"auto_fix":
-			for y in [-0.08,-0.15,-0.22]: _equipment_box(metal,Vector3(-0.13,y,0.12),Vector3(0.11,0.022,0.025),-0.22)
-		&"nitro":
-			for side in [-1,1]: _equipment_box(metal,Vector3(side*0.16,-0.14,0.14),Vector3(0.20,0.05,0.025))
-		&"super_jump":
-			for side in [-1,1]: _equipment_box(metal,Vector3(side*0.17,-0.30,0.035),Vector3(0.24,0.035,0.34))
-		&"review_comment":
-			for y in [-0.13,-0.20]: _equipment_box(metal,Vector3(0,y,0.179),Vector3(0.25,0.015,0.015))
-		&"auto_fix_patch":
-			for y in [-0.20,0.20]: _equipment_box(metal,Vector3(0,y,0.18),Vector3(0.17,0.025,0.025))
-		&"code_review":
-			for y in [-0.15,-0.21]: _equipment_box(metal,Vector3(0,y,0.064),Vector3(0.15,0.03,0.025))
-	metal.color = Color.WHITE
-
 func _signature_idle() -> void:
-	if _teeth != null: _teeth.position.y = 0.012*pow(maxf(0.0,sin(_t*5.0)),6.0)
 	if _core_node == null: return
 	var wave := sin(_t*4.0)
+	# Every working part moves about its own baked rest pose, within the pickup envelope.
+	var pose := _core_rest
 	match _kind:
-		&"approve_shield": _core_node.scale = Vector3.ONE*(1.0+0.04*wave)
-		&"auto_fix": _core_node.rotation.z = 0.10*sin(_t*6.0)
-		&"lgtm": _core_node.position.y = 0.012*maxf(0.0,wave)
-		&"nitro": _core_node.scale.y = 1.0+0.07*sin(_t*9.0)
-		&"super_jump": _core_node.scale.y = 1.0+0.10*sin(_t*3.0)
-		&"code_review": _core_node.position.y = 0.009*sin(_t*2.0)
-		&"review_comment": _core_node.scale.x = 1.0+0.06*sin(_t*5.0)
-		&"unit_test": _core_node.position.y = 0.01*sin(_t*2.5)
-		&"auto_fix_patch": _core_node.position.x = 0.014*sin(_t*6.0)
+		&"approve_shield": pose = pose.scaled_local(Vector3.ONE*(1.0+0.04*wave))
+		&"auto_fix": pose = pose*Transform3D(Basis(Vector3.UP,_t*5.0))
+		&"lgtm": pose.origin.y += 0.012*maxf(0.0,wave)
+		&"nitro": pose = pose.scaled_local(Vector3(1.0,1.0+0.07*sin(_t*9.0),1.0))
+		&"super_jump": pose = pose.scaled_local(Vector3(1.0,1.0+0.10*sin(_t*3.0),1.0))
+		&"code_review": pose.origin.y += 0.009*sin(_t*2.0)
+		&"review_comment": pose = pose.scaled_local(Vector3(1.0+0.06*sin(_t*5.0),1.0,1.0))
+		&"lint_rule": pose = pose*Transform3D(Basis(Vector3.UP,sin(_t*1.5)*0.35))
+		&"unit_test": pose.origin.y += 0.01*sin(_t*2.5)
+		&"auto_fix_patch": pose.origin.x += 0.014*sin(_t*6.0)
+	_core_node.transform = pose
 
 func reset() -> void:
 	_t = 0.0
@@ -343,8 +212,7 @@ func reset() -> void:
 	_range_boost = -1.0
 	_collect_time = -1.0
 	_pivot.transform = Transform3D.IDENTITY
-	if _core_node != null: _core_node.transform = Transform3D.IDENTITY
-	if _teeth != null: _teeth.position = Vector3.ZERO
+	if _core_node != null: _core_node.transform = _core_rest
 	_tag.modulate.a = 1.0
 	_tag.transform = Transform3D(Basis.IDENTITY,Vector3(0,-0.50,0.045))
 	_pool.show()

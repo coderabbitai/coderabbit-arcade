@@ -11,6 +11,30 @@ const PitInterior = preload("res://scenes/runner/hazards/visuals/hifi/pit_interi
 const PitMouth = preload("res://scenes/runner/hazards/visuals/hifi/pit_mouth.gdshader")
 const Trail = preload("res://scenes/runner/hazards/visuals/hifi/trail.gdshader")
 const BatchRoot = preload("res://scenes/runner/hazards/visuals/hifi/batch_root.gd")
+const Prop = preload("res://scenes/runner/hazards/visuals/hifi/prop.gdshader")
+## Scripted Blender hero props (tools/blender/props/build_props.py): geometry and node layout only.
+const PropScene = preload("res://Assets/runner/props/hazard_props.glb")
+## One shared atlas set for every hazard prop (albedo / normal / ORM / emission, 1024 square).
+const PROP_MAPS := {
+	"albedo": preload("res://Assets/runner/props/hazard_props_albedo.png"),
+	"normal": preload("res://Assets/runner/props/hazard_props_normal.png"),
+	"orm": preload("res://Assets/runner/props/hazard_props_orm.png"),
+	"emission": preload("res://Assets/runner/props/hazard_props_emission.png"),
+}
+## Blender root per kind (variant-specific for the pit) and the hitbox size it was authored for, in
+## metres; the body scales by size / authored (only laser mid differs, 0.75 in y).
+const PROP_ROOTS := {&"pr_backlog_low": "HZ_pr_backlog_low", &"pr_backlog_high": "HZ_pr_backlog_high",
+	&"bug_swarm": "HZ_bug_swarm", &"merge_conflict": "HZ_merge_conflict", &"laser_grid": "HZ_laser_grid",
+	&"comment_flood": "HZ_comment_flood", &"build_shockwave": "HZ_build_shockwave"}
+const AUTHORED := {"HZ_pr_backlog_low": Vector3(5.6,1.0,1.2), "HZ_pr_backlog_high": Vector3(5.6,1.8,1.2),
+	"HZ_bug_swarm": Vector3(1.6,0.9,1.2), "HZ_merge_conflict": Vector3(3.6,1.0,1.2),
+	"HZ_deprecated_pit_full": Vector3(5.6,0.4,3.0), "HZ_deprecated_pit_two_lane": Vector3(3.6,0.4,3.0),
+	"HZ_laser_grid": Vector3(5.6,0.4,1.2), "HZ_comment_flood": Vector3(3.6,4.0,1.2),
+	"HZ_build_shockwave": Vector3(5.6,0.5,1.2)}
+## Node role (`<kind>__<Role>__<n>` in the GLB) -> idle style driven by the rig clock.
+const ROLE_STYLE := {"Crate": "jam", "ScanHead": "scan", "Ticket": "swing", "Bug": "bug", "Wing": "wing",
+	"Ours": "grind", "Theirs": "grind", "Card": "flutter", "Shard": "debris"}
+const PROP_EMISSION_GAIN := 1.0
 const LASER_HIGH_Y := 1.3
 ## Footprint decal heights: distinct from each other and from the corridor LaneGlow (y 0.012) so no
 ## two additive floor layers share a depth plane (z-fighting flicker).
@@ -20,6 +44,15 @@ const SAFE_GAP_Y := 0.03
 ## materials, spark draw pass and process materials. Keeping one live reference also keeps each
 ## material variant's compiled shader alive after the GPU warm-up.
 static var _shared: Dictionary = {}
+## Per-root prop layout read once from the GLB's SceneState (no scene instancing): entries of
+## {role, tag, parent, transform, mesh}. Meshes are shared by every spawn of the kind.
+static var _layouts: Dictionary = {}
+## Read at script load (with the hazard scenes), never on the first spawning gameplay frame.
+static var _layouts_ready: bool = _warm_at_load()
+
+static func _warm_at_load() -> bool:
+	warm_props()
+	return true
 var body: Node3D
 var beams: Node3D
 var scanner: Node3D
@@ -27,6 +60,8 @@ var tag: Label3D
 var _kind: StringName
 var _variant: StringName
 var _size := Vector3.ONE
+## Body scale at rest: the hitbox size for normalized procedural rigs, size / authored for props.
+var _rest_scale := Vector3.ONE
 var _offset := Vector3.ZERO
 var _t := 0.0
 var _reaction := 0.0
@@ -60,6 +95,15 @@ func _pivot(parent: Node3D, pos := Vector3.ZERO) -> Node3D:
 func _material(key: String) -> ShaderMaterial:
 	if _materials.has(key): return _materials[key]
 	var mat := ShaderMaterial.new()
+	if key == "prop":
+		# Private per rig (clock, hit, charge and distance uniforms); the atlases are shared.
+		mat.shader = Prop
+		for channel: String in PROP_MAPS: mat.set_shader_parameter(channel+"_atlas",PROP_MAPS[channel])
+		mat.set_shader_parameter("accent",Palette.DANGER)
+		mat.set_shader_parameter("emission_gain",PROP_EMISSION_GAIN)
+		mat.set_shader_parameter("distance_gain",_distance_gain)
+		_materials[key] = mat
+		return mat
 	var maps := TextureForge.maps()
 	mat.shader = Trail if key == "trail" else Wing if key == "glass" else Energy if key in ["halo", "glyph"] else PitInterior if key in ["pit_bottom", "pit_wall"] else Surface
 	mat.set_shader_parameter("atlas", maps.albedo)
@@ -122,7 +166,9 @@ func build(kind: StringName, variant: StringName, size: Vector3, offset: Vector3
 	body.position = offset
 	body.batches = _batches
 	body.name = "Body"
-	body.scale = size
+	var root := _prop_root()
+	_rest_scale = size/AUTHORED[root] if root != "" else size
+	body.scale = _rest_scale
 	match kind:
 		&"pr_backlog_low", &"pr_backlog_high": _backlog()
 		&"bug_swarm": _bugs()
@@ -135,6 +181,91 @@ func build(kind: StringName, variant: StringName, size: Vector3, offset: Vector3
 	_flush()
 	update_view_distance()
 	if kind in [&"pr_backlog_low", &"deprecated_pit", &"build_shockwave"]: _sparks()
+
+func _prop_root() -> String:
+	if _kind == &"deprecated_pit": return "HZ_deprecated_pit_two_lane" if _variant == &"two_lane" else "HZ_deprecated_pit_full"
+	return PROP_ROOTS.get(_kind,"")
+
+## Mounts one Blender prop root: GLB empties become pivots, GLB meshes batch per shared mesh.
+func _prop(root_name: String) -> void:
+	var nodes: Array[Node3D] = []
+	var phase := 0
+	for entry: Dictionary in prop_layout(root_name):
+		var parent: Node3D = body if entry.parent < 0 else nodes[entry.parent]
+		var node := _pivot(parent)
+		node.transform = entry.transform
+		node.name = String(entry.role)+String(entry.tag)
+		nodes.append(node)
+		if entry.unit != null:
+			# Unit-box mesh instanced at the piece's own bounds, like every other batched piece.
+			_piece(node,entry.center,entry.size,"prop",entry.unit).name = "Mesh"
+		if ROLE_STYLE.has(entry.role):
+			_animate(node,ROLE_STYLE[entry.role],float(phase))
+			phase += 1
+
+## Layout of one prop root; also the warm-up hook (reads every root's SceneState once).
+static func prop_layout(root_name: String) -> Array:
+	if _layouts.is_empty(): warm_props()
+	return _layouts.get(root_name,[])
+
+static func warm_props() -> void:
+	if not _layouts.is_empty(): return
+	var state := PropScene.get_state()
+	var indices: Dictionary = {}
+	var units: Dictionary = {}
+	for i in state.get_node_count():
+		var path := String(state.get_node_path(i)).trim_prefix("./")
+		if path == ".": continue
+		var parts := path.split("/")
+		if parts.size() == 1:
+			_layouts[parts[0]] = []
+			continue
+		var name_parts := String(state.get_node_name(i)).split("__")
+		var entry := {"role": name_parts[1] if name_parts.size() > 1 else name_parts[0], "tag": name_parts[2] if name_parts.size() > 2 else "", "parent": -1, "transform": Transform3D.IDENTITY, "mesh": null, "unit": null, "center": Vector3.ZERO, "size": Vector3.ONE}
+		for p in state.get_node_property_count(i):
+			match state.get_node_property_name(i,p):
+				&"transform": entry.transform = state.get_node_property_value(i,p)
+				&"mesh": entry.mesh = state.get_node_property_value(i,p)
+		if entry.mesh != null:
+			if not units.has(entry.mesh): units[entry.mesh] = _unit_mesh(entry.mesh)
+			var unit: Array = units[entry.mesh]
+			entry.unit = unit[0]
+			entry.center = unit[1]
+			entry.size = unit[2]
+		var parent_path := "/".join(parts.slice(0,parts.size()-1))
+		if parts.size() > 2: entry.parent = indices[parent_path]
+		var list: Array = _layouts[parts[0]]
+		indices[path] = list.size()
+		list.append(entry)
+
+## [unit mesh, bounds centre, bounds size]: the baked mesh remapped into the unit box every batch
+## instances at its own size. MultiMesh instances transform normals and tangents by the plain
+## instance basis, so they are stored pre-divided by the size to shade exactly like the source.
+static func _unit_mesh(mesh: Mesh) -> Array:
+	var bounds := mesh.get_aabb()
+	var size := bounds.size.max(Vector3.ONE*0.001)
+	var center := bounds.get_center()
+	var unit := ArrayMesh.new()
+	for surface in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(surface)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		for v in vertices.size(): vertices[v] = (vertices[v]-center)/size
+		arrays[Mesh.ARRAY_VERTEX] = vertices
+		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		for n in normals.size(): normals[n] = (normals[n]/size).normalized()
+		arrays[Mesh.ARRAY_NORMAL] = normals
+		if arrays[Mesh.ARRAY_TANGENT] != null:
+			var tangents: PackedFloat32Array = arrays[Mesh.ARRAY_TANGENT]
+			for t in range(0,tangents.size(),4):
+				var axis := (Vector3(tangents[t],tangents[t+1],tangents[t+2])/size).normalized()
+				tangents[t] = axis.x
+				tangents[t+1] = axis.y
+				tangents[t+2] = axis.z
+			arrays[Mesh.ARRAY_TANGENT] = tangents
+		unit.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	unit.resource_name = mesh.resource_name
+	unit.set_meta("source",mesh)
+	return [unit,center,size]
 
 func _floor_marker(title: String, size: Vector3, elevation: float, color: Color, opacity: float) -> void:
 	var node := MeshInstance3D.new()
@@ -174,6 +305,7 @@ static func _marker_material(color: Color, opacity: float) -> StandardMaterial3D
 ## Drops the shared resources (tests call this before quitting).
 static func release_caches() -> void:
 	_shared.clear()
+	_layouts.clear()
 
 func _label(text: String, pos: Vector3, width: float, height: float) -> Label3D:
 	# Input layout is normalized; glyph transforms are authored in metres at unit scale.
@@ -198,93 +330,27 @@ func _label(text: String, pos: Vector3, width: float, height: float) -> Label3D:
 	return label
 
 func _backlog() -> void:
+	# Low: a jammed merge-queue conveyor of stacked PR crates. High: a hanging review-scanner gantry.
 	var high := _kind == &"pr_backlog_high"
-	# Collision-normalized geometry: all solids remain in the occupied volume.
-	if high:
-		# Suspended merge scanner: a heavy overhead bridge with downward sensors.
-		_piece(body,Vector3(0,0.26,0),Vector3(0.97,0.42,0.72),"metal")
-		_piece(body,Vector3(0,0.23,0.38),Vector3(0.78,0.20,0.08),"screen")
-		for side in [-1,1]:
-			_piece(body,Vector3(side*0.42,-0.08,0),Vector3(0.14,0.78,0.80),"shell")
-			_piece(body,Vector3(side*0.30,-0.06,0.22),Vector3(0.12,0.33,0.30),"metal")
-			_piece(body,Vector3(side*0.30,-0.25,0.27),Vector3(0.11,0.06,0.34),"edge")
-		# Lower scanning beam coincides with the actual underside of the hitbox.
-		_piece(body,Vector3(0,-0.44,0.28),Vector3(0.82,0.075,0.10),"edge")
-	else:
-		# A jammed merge conduit: two branch pipes converge into a raised lock.
-		_piece(body,Vector3(0,-0.35,0),Vector3(0.97,0.25,0.85),"metal")
-		for side in [-1,1]:
-			var branch := _piece(body,Vector3(side*0.28,-0.05,0.04),Vector3(0.43,0.35,0.55),"shell")
-			branch.rotation.z = side*0.16
-			for x in [0.14,0.27,0.40]:
-				_piece(body,Vector3(side*x,-0.04,0.34),Vector3(0.028,0.31,0.04),"metal")
-		_piece(body,Vector3(0,0.08,0),Vector3(0.25,0.79,0.74),"metal")
-		_piece(body,Vector3(0,0.10,0.40),Vector3(0.18,0.48,0.10),"screen")
-		# A physical split-arrow on the cap makes the jump crest legible.
-		for side in [-1,1]:
-			var arrow := _piece(body,Vector3(side*0.05,0.33,0.46),Vector3(0.13,0.07,0.035),"edge")
-			arrow.rotation.z = -side*0.6
-	# End caps and interrupted red status strips distinguish blocked equipment.
-	for side in [-1,1]:
-		_piece(body,Vector3(side*0.44,0.31 if high else -0.32,0.43),Vector3(0.10,0.10,0.06),"edge")
+	_prop(_prop_root())
 	tag = _label("ROLL" if high else "JUMP",Vector3(0,0.26 if high else -0.28,0.48),0.28,0.13)
 
 func _bugs() -> void:
-	# Three curved 32-ring beetles replace seven boxes without exceeding 6000 tris.
-	for i in 3:
-		var insect := _pivot(body,Vector3((i-1)*0.24,0.08 if i == 1 else -0.12,-0.10 if i == 1 else 0.10))
-		_animate(insect,"bug",float(i))
-		var shell := _piece(insect,Vector3.ZERO,Vector3(0.29,0.34,0.38),"shell",MeshForge.carapace())
-		shell.name = "Carapace%d" % i
-		_piece(insect,Vector3(0,0.135,0),Vector3(0.075,0.032,0.31),"edge")
-		var head := _piece(insect,Vector3(0,0,0.20),Vector3(0.19,0.16,0.18),"shell",MeshForge.wedge())
-		head.rotation.x = -0.18
-		for side in [-1,1]:
-			_piece(insect,Vector3(side*0.048,0.035,0.275),Vector3(0.060,0.065,0.025),"eyes")
-			for leg in 3:
-				var limb := _piece(insect,Vector3(side*0.16,-0.09,(leg-1)*0.105),Vector3(0.20,0.20,0.03),"carapace",MeshForge.jointed_leg())
-				limb.rotation.y = PI if side < 0 else 0.0
-				limb.name = "JointedLeg%d_%d" % [side,leg]
-			var wing := _piece(insect,Vector3(side*0.10,0.17,-0.075),Vector3(0.20,0.35,0.10),"glass",MeshForge.wing())
-			wing.name = "Wing%d_%d" % [i,side]
-			wing.rotation.x = -0.8
-			_animate(wing,"wing",float(i)+side)
+	# Three armoured beetles with DANGER wing covers; bodies bob, membranes flutter.
+	_prop(_prop_root())
 	tag = _label("BUGS",Vector3(0,-0.32,0.48),0.68,0.20)
 
 func _merge() -> void:
-	# Staggered fragments form a jagged physical fracture, with recessed branch light.
-	for side in [-1,1]:
-		for row in 5:
-			var width := 0.41 - (0.025 if row%2 else 0.0)
-			_piece(body,Vector3(side*(0.055+width*0.5),(row-2)*0.17,0),Vector3(width,0.165,0.66),"lilac_plate" if side > 0 else "metal")
-			var seam := _piece(body,Vector3(side*(0.033+0.01*(row%2)),(row-2)*0.17,0.34),Vector3(0.024,0.175,0.026),"lilac" if side>0 else "edge")
-			seam.rotation.z = side*(0.15 if row%2 else -0.15)
-		var glyph := _piece(body,Vector3(side*0.25,0.05,0.39),Vector3(0.36,0.42,0.014),"lilac_screen" if side>0 else "screen")
-		_animate(glyph,"card",float(side))
+	# Split diff slab: <<<<<<< ours (slate) against >>>>>>> theirs (the only LILAC in the corridor).
+	_prop(_prop_root())
 	_label("<<<<<<<",Vector3(-0.25,-0.18,0.40),0.35,0.12)
 	_label(">>>>>>>",Vector3(0.25,-0.18,0.40),0.35,0.12)
 	tag = _label("CONFLICT",Vector3(0,0.42,0.39),0.64,0.10)
 
 func _pit() -> void:
-	# Physical well below the floor, with a normally depth-tested parallax mouth.
+	# Crumbling legacy-code rim at floor level around a normally depth-tested parallax well mouth.
 	# Opaque corridor floor is not edited or bypassed.
-	var bottom := _piece(body,Vector3(0,-0.45,0),Vector3(0.90,0.04,0.88),"pit_bottom")
-	bottom.name = "PitBottom"
-	for side in [-1,1]:
-		_piece(body,Vector3(side*0.46,-0.20,0),Vector3(0.065,0.44,0.98),"pit_wall")
-		_piece(body,Vector3(0,-0.20,side*0.455),Vector3(0.89,0.44,0.065),"pit_wall")
-		_piece(body,Vector3(side*0.46,0.010,0),Vector3(0.050,0.04,0.98),"carapace")
-		_piece(body,Vector3(0,0.010,side*0.455),Vector3(0.90,0.04,0.055),"stripe")
-		for cable in 3:
-			var wire := _piece(body,Vector3(side*0.41,-0.20,cable*0.22-0.22),Vector3(0.012,0.36,0.025),"pit_wall")
-			wire.rotation.z = side*0.06
-		for bolt in 6:
-			_piece(body,Vector3(side*0.46,0.035,(bolt-2.5)*0.14),Vector3(0.014,0.020,0.018),"metal")
-		_piece(body,Vector3(side*0.45,0.030,0.38),Vector3(0.035,0.035,0.09),"edge")
-	# The red mouth rim marks the exact opening without painting over its depth.
-	for side in [-1.0,1.0]:
-		_piece(self,Vector3(side*_size.x*0.46,0.011,0),Vector3(0.045,0.018,_size.z*0.94),"edge")
-		_piece(self,Vector3(0,0.011,side*_size.z*0.46),Vector3(_size.x*0.94,0.018,0.055),"edge")
+	_prop(_prop_root())
 	tag = _label("@deprecated",Vector3.ZERO,0.46,0.30)
 	tag.position = Vector3(0,0.028,1.38)
 	tag.pixel_size = minf(_size.x*0.42/440.0,0.006)
@@ -319,22 +385,18 @@ func _pit() -> void:
 	add_child(_pit_mouth)
 
 func _laser() -> void:
-	for side in [-1,1]:
-		_piece(body,Vector3(side*0.46,0,0),Vector3(0.075,0.90,0.66),"housing")
-		_piece(body,Vector3(side*0.46,0.34,0.36),Vector3(0.025,0.09,0.04),"eyes")
-		_piece(body,Vector3(side*0.46,0,0.36),Vector3(0.045,0.40,0.04),"halo",MeshForge.carapace())
-		for vent in 4: _piece(body,Vector3(side*0.46,(vent-1.5)*0.18,0.34),Vector3(0.048,0.045,0.025),"metal")
-		for row in 3:
-			_piece(body,Vector3(side*0.415,(row-1)*0.28,0),Vector3(0.033,0.19,0.26),"edge")
+	# CI linter emitter pods; the beams and the timed charge bar stay additive energy, in metres.
+	_prop(_prop_root())
 	beams = _pivot(body)
 	beams.name = "Beams"
 	for row in 3:
-		_piece(beams,Vector3(0,(row-1)*0.28,0),Vector3(0.035,0.81,0.045),"edge",MeshForge.cylinder()).rotation.z = PI/2
-		_piece(beams,Vector3(0,(row-1)*0.28,0),Vector3(0.15,0.82,0.19),"halo",MeshForge.cylinder()).rotation.z = PI/2
+		var y := float(row-1)*0.112
+		_piece(beams,Vector3(0,y,0),Vector3(0.014,4.86,0.054),"edge",MeshForge.cylinder()).rotation.z = PI/2
+		_piece(beams,Vector3(0,y,0),Vector3(0.06,4.90,0.228),"halo",MeshForge.cylinder()).rotation.z = PI/2
 	scanner = _pivot(body)
 	scanner.name = "Scanner"
-	_piece(scanner,Vector3(0,0,0.39),Vector3(0.81,0.22,0.075),"edge")
-	_piece(scanner,Vector3(0,0,0.40),Vector3(0.83,0.32,0.08),"halo")
+	_piece(scanner,Vector3(0,0,0.468),Vector3(4.54,0.088,0.09),"edge")
+	_piece(scanner,Vector3(0,0,0.48),Vector3(4.65,0.128,0.096),"halo")
 	scanner.hide()
 	_state = &"high" if _variant == &"high" else &"ground"
 	tag = _label(_laser_hint(),Vector3(0,0,0.50),0.38,0.48)
@@ -346,28 +408,13 @@ func _laser_hint() -> String:
 	return "JUMP"
 
 func _comments() -> void:
-	# Opaque panel layers resolve depth; their glyph faces follow the helix.
-	for layer in 3:
-		for i in 7:
-			var angle := float(i)*2.1 + layer*0.7
-			var card := _pivot(body,Vector3(sin(angle)*0.30,(i-3)*0.13,(layer-1)*0.28))
-			_animate(card,"tornado",float(i+layer*7))
-			_piece(card,Vector3.ZERO,Vector3(0.26,0.095,0.06),"metal")
-			_piece(card,Vector3(0,0,0.036),Vector3(0.23,0.072,0.009),"screen")
-			_piece(card,Vector3(-0.09,-0.049,0),Vector3(0.035,0.02,0.05),"metal")
+	# A wall of stacked review-thread cards drifting on their thread spines.
+	_prop(_prop_root())
 	tag = _label("BLOCKED",Vector3(0,0.43,0.43),0.72,0.06)
 
 func _shockwave() -> void:
-	# One 64-segment crest spans all lanes, clipped to a low circular arc.
-	_piece(self,_offset,Vector3(5.41,0.39,0.11),"metal",MeshForge.wave_arc()).name = "WaveCrest"
-	_piece(self,_offset+Vector3(0,0,0.075),Vector3(5.41,0.39,0.07),"threat",MeshForge.wave_arc()).name = "WaveLeadingEdge"
-	_piece(self,_offset+Vector3(0,-0.08,-0.42),Vector3(5.20,0.30,0.07),"threat",MeshForge.wave_arc()).name = "WaveTrailingEdge"
-	for i in 20:
-		var shard := _piece(body,Vector3((i-9.5)*0.046,0.08,sin(float(i))*0.27),Vector3(0.045,0.40,0.16),"metal",MeshForge.shard())
-		_piece(shard,Vector3.ZERO,Vector3(0.045,0.40,0.16),"edge",MeshForge.shard_glint())
-		shard.name = "Shard%d" % i
-		shard.rotation.z = sin(float(i))*0.20
-		_animate(shard,"debris",float(i))
+	# A cracked build-pipeline ring with a jagged glowing crest and floating debris.
+	_prop(_prop_root())
 	tag = _label("JUMP",Vector3(0,-0.20,0.51),0.35,0.35)
 
 func _projectile() -> void:
@@ -446,9 +493,9 @@ func telegraph(t: float) -> void:
 	var amount := clampf(t,0,1)
 	scanner.visible = amount > 0 and not _cleared
 	_charge = amount
-	scanner.position.y = lerpf(-0.25,0.25,amount)
+	scanner.position.y = lerpf(-0.10,0.10,amount)
 	scanner.scale.x = lerpf(0.15,1.0,amount)
-	_material("housing").set_shader_parameter("charge",amount)
+	_material("prop").set_shader_parameter("charge",amount)
 	_material("halo").set_shader_parameter("charge",amount)
 	if tag != null: tag.text = "CHARGING" if amount > 0 else _laser_hint()
 	_update_batches()
@@ -477,14 +524,23 @@ func advance(delta: float) -> void:
 	for key: String in _materials:
 		var mat: ShaderMaterial = _materials[key]
 		mat.set_shader_parameter("clock",_t)
-		if write_hit and mat.shader in [Surface, PitInterior]: mat.set_shader_parameter("hit",hit)
+		if write_hit and mat.shader in [Surface, PitInterior, Prop]: mat.set_shader_parameter("hit",hit)
 	for item in _moving:
 		var node: Node3D = item.node
 		var phase: float = item.phase
 		node.position = item.rest
 		node.rotation = item.rotation
 		match item.style:
-			"card": node.position.x += sin(_t*2.5+phase)*0.005
+			"card", "grind": node.position.x += sin(_t*2.5+phase)*0.005
+			"jam":
+				# Crates shudder against the jammed queue gates.
+				node.position.y += absf(sin(_t*9.0+phase*1.7))*0.006
+				node.rotation.z += sin(_t*17.0+phase*1.3)*0.012
+			"scan": node.position.x += sin(_t*1.1+phase*PI)*1.05
+			"swing": node.rotation.z += sin(_t*1.8+phase)*0.10
+			"flutter":
+				node.position.y += sin(_t*2.0+phase*0.7)*0.02
+				node.rotation.z += sin(_t*1.4+phase)*0.035
 			"bug": node.position.y += sin(_t*5+phase)*0.025
 			"wing": node.rotation.z += sin(_t*38+phase)*0.24
 			"tornado":
@@ -492,13 +548,15 @@ func advance(delta: float) -> void:
 				node.position.x = sin(angle)*(0.18+(item.rest.y+0.4)*0.2)
 				node.position.z = cos(angle)*0.30
 				node.position.y += sin(_t*2+phase)*0.008
-			"debris": node.position.y += sin(_t*8+phase)*0.05
+			"debris":
+				node.position.y += sin(_t*8+phase)*0.05
+				node.rotation.y += _t*1.5
 			"trail": node.scale.z = 0.75+0.20*sin(_t*18+phase)
 	# Collapse rather than expand: impact and clear never breach collision bounds.
 	if _cleared:
-		body.scale = _size * maxf(0.001,1.0-_reaction*3)
+		body.scale = _rest_scale * maxf(0.001,1.0-_reaction*3)
 	elif _hit:
-		body.scale = _size * (1.0-0.04*sin(minf(_reaction*10,PI)))
+		body.scale = _rest_scale * (1.0-0.04*sin(minf(_reaction*10,PI)))
 	_update_batches()
 
 func _sparks() -> void:
@@ -553,4 +611,4 @@ func update_view_distance() -> void:
 	if _distance_gain == _gain_written: return
 	_gain_written = _distance_gain
 	for material: ShaderMaterial in _materials.values():
-		if material.shader in [Surface,Energy,Trail]: material.set_shader_parameter("distance_gain",_distance_gain)
+		if material.shader in [Surface,Energy,Trail,Prop]: material.set_shader_parameter("distance_gain",_distance_gain)

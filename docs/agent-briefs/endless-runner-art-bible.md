@@ -48,6 +48,21 @@ Rule: **one accent hue per object** plus neutrals. Emissive never exceeds ~40 % 
   each, no shadows. Bake lighting into emissive/occlusion detail instead.
 - Shaders: no SDFGI/SSR/volumetrics/decals (unsupported). Depth fog, glow (threshold 0.75), 0.5 3D scale stay.
 
+### 3.1 Scripted Blender hero props (creative pass C2)
+
+Hoppy, the hazards and the pickups may be authored as **scripted Blender props** under the same determinism
+rules as Hoppy: deterministic Python (`tools/blender/build_hoppy.py`, `tools/blender/props/build_props.py`),
+fixed seed, no downloads, fonts, boolean operations or hand-made binaries; the script, its budget JSON and the
+build report are committed next to the GLB. Props bake to shared atlas sets (hazards one set, pickups one set:
+albedo / normal / ORM / emission, 1024 square) and export geometry-only GLBs; the runtime binds its own
+clock-driven shaders. Pickup emission bakes as a grey mask tinted by the family colour, so help can never glow
+a hazard hue. Blender's UV solvers are not bit-stable, so checks pin properties (budgets, envelope, palette
+shares, emissive share, silhouettes), never atlas bytes.
+
+Prop budgets: each hazard <= 14 draws and <= 6000 triangles (<= 9000 only with measured justification in the
+asset doc); each pickup draws+1 <= 8 and <= 3000 triangles (<= 4500 only if justified); every mesh piece and
+label inside 110 % of its hitbox; emissive <= 40 % of the baked surface.
+
 ## 4. Motion and effects
 
 - Idle motion on everything organic (breathe, sway, flicker); mechanical things click into positions.

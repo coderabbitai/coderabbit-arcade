@@ -26,6 +26,11 @@ class RuntimeErrors extends Logger:
 		if error_type != Logger.ERROR_TYPE_WARNING: count += 1
 
 var runtime_errors := RuntimeErrors.new()
+const Art = preload("res://scenes/runner/hazards/visuals/hazard_art.gd")
+const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
+## Baked hazard atlases exactly as the runtime binds them.
+var albedo_image: Image
+var emission_image: Image
 var checks := 0
 var failures := 0
 
@@ -116,6 +121,18 @@ func _run() -> void:
 		check(capture_source.contains(setting),"R8 shipped corridor fixture light: "+setting)
 
 
+	# One shared four-map atlas set for every Blender hazard prop.
+	for channel: String in Art.PROP_MAPS:
+		var map: Texture2D = Art.PROP_MAPS[channel]
+		check(map.get_size() == Vector2(1024,1024) and map.get_image().has_mipmaps(),"1024 square mipmapped prop atlas " + channel)
+	albedo_image = (Art.PROP_MAPS.albedo as Texture2D).get_image()
+	emission_image = (Art.PROP_MAPS.emission as Texture2D).get_image()
+	check(not Art.Prop.code.contains("TIME") and not Art.Prop.code.contains("cull_disabled"),"clock-driven back-face culled prop shader")
+	check(Art.Prop.code.contains("accent.rgb*mask*hit") and not Art.Prop.code.contains("accent.rgb*hit"),"R2 B4 hit flash only brightens the baked emissive mask")
+	check(Art.Prop.code.contains("depth_draw_opaque") and not Art.Prop.code.contains("ALPHA"),"opaque depth-writing prop surfaces")
+	check(Art.PROP_EMISSION_GAIN <= 1.2,"R2 B4 capped prop emission gain")
+	var build: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://Assets/runner/props/props.build.json"))
+	check(not build.get("quick",true) and build.get("seed") != null,"baked (non-quick) deterministic Blender build")
 	var atlas: Image = maps.albedo.get_image()
 	for tile in 4:
 		var lit := 0
@@ -197,37 +214,62 @@ func _round_two(visual: Base, title: String) -> void:
 		if batch.material.shader == art.Surface:
 			check(batch.material.shader.code.contains("float mask = plate.a;"),"R2 B4 no full-surface emissive fallback")
 			check(float(batch.material.get_shader_parameter("emission_gain")) <= 0.65,"R2 B4 capped emission gain")
+		if batch.material.shader == art.Prop:
+			check(float(batch.material.get_shader_parameter("emission_gain")) <= 1.2,"R2 B4 capped prop emission gain")
+			for channel: String in art.PROP_MAPS:
+				check(batch.material.get_shader_parameter(channel+"_atlas") == art.PROP_MAPS[channel],"prop binds the shared atlas " + channel)
 		for surface in batch.mesh.get_surface_count():
 			var arrays: Array = batch.mesh.surface_get_arrays(surface)
 			for uv: Vector2 in arrays[Mesh.ARRAY_TEX_UV]:
 				check(uv.x >= -0.001 and uv.x <= 1.001 and uv.y >= -0.001 and uv.y <= 1.001,"R2 per-face UV range")
+	if visual.kind != &"projectile":
+		# Every barrier is a mounted Blender prop: its batches draw baked GLB meshes, not forge boxes.
+		var prop_pieces := 0
+		for batch: Dictionary in art._batches:
+			if batch.material.shader == art.Prop: prop_pieces += batch.instances.size()
+		check(prop_pieces > 0 and not art.prop_layout(art._prop_root()).is_empty(),title+" mounts its baked prop layout")
+		for batch: Dictionary in art._batches:
+			if batch.material.shader != art.Prop: continue
+			var unit: AABB = batch.mesh.get_aabb()
+			check(unit.position.is_equal_approx(-Vector3.ONE*0.5) or unit.size.x < 1.0001,"prop batch meshes live in the shared unit box")
+			var source: Mesh = batch.mesh.get_meta("source")
+			for item: Array in batch.instances:
+				check(item[1].is_equal_approx(source.get_aabb().size.max(Vector3.ONE*0.001)),"prop instance scale equals its baked bounds")
 	if visual.kind == &"deprecated_pit":
 		check(is_equal_approx(art.tag.rotation.x,-PI/2),"R3 B1 pit front faces upward")
-		var bottom: Node3D = art.body.get_node("PitBottom")
-		check(bottom.global_position.y < -0.15,"R2 B3 recessed bottom")
 		check(art.tag.position.y < 0.05,"R2 B3 floor-level tag")
 	if visual.kind == &"bug_swarm":
+		# Several articulated bodies that bob, each carrying a pair of clock-driven flapping wings.
 		var bodies := 0
-		var wings := 0
+		var wings: Array[Node3D] = []
+		for item: Dictionary in art._moving:
+			if item.style == "bug": bodies += 1
+			if item.style == "wing": wings.append(item.node)
+		check(bodies >= 3 and wings.size() >= bodies*2,"R2 B6 several beetles, each with a visible wing pair")
 		for batch: Dictionary in art._batches:
-			if batch.mesh == MeshForge.carapace(): bodies += batch.instances.size()
-			if batch.mesh == MeshForge.wing(): wings += batch.instances.size()
-		check(bodies == 3 and wings == 6,"R2 B6 curved beetles and visible two-sided membranes")
-		check(MeshForge.wing().custom_aabb.size.z >= 0.15,"R2 B6 shader displacement culling envelope")
-		check(MeshForge.wing().get_faces().size() == 96,"R3 B5 teardrop front and back triangles")
-		check(art.Wing.code.contains("clock*30.0"),"R2 B6 clock-driven flutter")
+			for item: Array in batch.instances:
+				if item[0].get_parent() in wings:
+					var extent: Vector3 = item[1]
+					check(minf(extent.x,minf(extent.y,extent.z)) <= 0.02,"R3 B5 thin wing membranes")
+		if not wings.is_empty():
+			var before := wings[0].rotation
+			art.advance(0.013)
+			check(not wings[0].rotation.is_equal_approx(before),"R2 B6 clock-driven flutter")
 	if visual.kind == &"build_shockwave":
-		check(art.has_node("WaveCrest") and not art.has_node("RollingRing0"),"R3 B6 one continuous crest, no small hoops")
-		var arcs := 0
-		var shards := 0
+		# One broad, low cracked ring spans every lane; floating debris rides its crest.
+		var span := AABB()
+		var first := true
 		for batch: Dictionary in art._batches:
-			if batch.mesh == MeshForge.wave_arc():
-				arcs += batch.instances.size()
-				for item: Array in batch.instances:
-					var box: AABB = item[0].global_transform.scaled_local(item[1])*batch.mesh.get_aabb()
-					check(box.size.x > 5.0 and box.size.y < 0.55,"R3 B6 broad low arc")
-			if batch.mesh == MeshForge.shard(): shards += batch.instances.size()
-		check(arcs == 3 and shards == 20,"R3 B6 crest, leading edge and faceted debris")
+			if batch.material.shader != art.Prop: continue
+			for item: Array in batch.instances:
+				var box: AABB = art.body.global_transform.affine_inverse()*item[0].global_transform.scaled_local(item[1])*batch.mesh.get_aabb()
+				span = box if first else span.merge(box)
+				first = false
+		check(span.size.x >= visual.hitbox_size.x*0.95 and span.size.y <= visual.hitbox_size.y*1.1,"R3 B6 one continuous low ring across all lanes")
+		var debris := 0
+		for item: Dictionary in art._moving:
+			if item.style == "debris": debris += 1
+		check(debris >= 8,"R3 B6 faceted debris")
 	if visual.kind == &"projectile":
 		var names := {&"orb":"OrbCore",&"low":"LowWedge",&"high":"HighBar",&"wide":"WideCrescent"}
 		check(art.body.has_node(names[visual.variant]),"R2 B5 distinct silhouette")
@@ -240,7 +282,7 @@ func _round_two(visual: Base, title: String) -> void:
 			for item: Array in batch.instances:
 				if item[0].get_parent() == art.scanner: check(item[0].position.z >= 0.38,"R2 B8 charge bar ahead of beam plane")
 		check(art.scanner.visible and art._charge == 0.75,"R2 B8 charge state")
-		check(float(art._materials.housing.get_shader_parameter("charge")) == 0.75,"R2 B8 housing charge")
+		check(float(art._materials.prop.get_shader_parameter("charge")) == 0.75,"R2 B8 emitter housing charge")
 		check(art.tag.text == "CHARGING","R2 B8 explicit charge message")
 		visual.set_telegraph(0.0)
 		check(not art.scanner.visible and art._charge == 0.0,"R2 B8 charge reset")
@@ -260,6 +302,10 @@ func _round_two(visual: Base, title: String) -> void:
 		check(mine.material_override.emission == before and theirs.material_override.emission == art.Palette.MINT,"cleared footprint swap leaves other rigs untouched")
 	if art.has_node("SafeGap"):
 		check(absf(art.get_node("SafeGap").position.y-art.get_node("FloorMarker").position.y) >= 0.005,"footprint layers never share a plane")
+	# Per-kind prop meshes come from one cached layout: a new spawn instances them, never rebuilds.
+	for i in art._batches.size():
+		if i < clone._art._batches.size() and art._batches[i].material.shader == art.Prop:
+			check(art._batches[i].mesh == clone._art._batches[i].mesh,"shared per-kind prop mesh")
 	for sparks: GPUParticles3D in art.find_children("BoundedSparks","GPUParticles3D",true,false):
 		var twin := clone._art.get_node_or_null("BoundedSparks") as GPUParticles3D
 		if twin != null: check(twin.draw_pass_1 == sparks.draw_pass_1,"shared spark draw pass")
@@ -267,11 +313,14 @@ func _round_two(visual: Base, title: String) -> void:
 
 func _round_three(visual: Base) -> void:
 	var art: Node3D = visual.get_node("Artwork")
-	if visual.kind in [&"pr_backlog_low", &"pr_backlog_high"]:
-		check(art.Surface.code.contains("fwidth(symbol)") and art.Surface.code.contains("diff_mark"),"R7 analytic diff glyphs")
+	if visual.kind != &"projectile": _palette(visual)
 	if visual.kind == &"merge_conflict":
-		check(art._materials.lilac_plate.get_shader_parameter("tile") == art._materials.metal.get_shader_parameter("tile"),"R8 both slabs share plating tile")
-		check(art._materials.lilac_plate.get_shader_parameter("normal_atlas") == art._materials.metal.get_shader_parameter("normal_atlas"),"R8 both slabs share normal treatment")
+		var halves: Array[ShaderMaterial] = []
+		for batch: Dictionary in art._batches:
+			for item: Array in batch.instances:
+				var role := String(item[0].get_parent().name)
+				if role.begins_with("Ours") or role.begins_with("Theirs"): halves.append(batch.material)
+		check(halves.size() == 2 and halves[0] == halves[1],"R8 both slabs share one plating and normal treatment")
 	if visual.kind == &"deprecated_pit":
 		check(art.tag.global_basis.z.normalized().dot(Vector3.UP) > 0.999,"R3 B1 label face +Y")
 		check(art.tag.global_basis.y.normalized().dot(Vector3.FORWARD) > 0.999,"R3 B1 glyph up maps to -Z")
@@ -300,12 +349,14 @@ func _round_three(visual: Base) -> void:
 		check(art.PitMouth.code.contains("1.0-cable*0.60") and art.PitMouth.code.contains("seam*0.12*(1.0+0.15*sin"),"R6 visible cables and clock seam")
 		check(art._pit_mouth.material_override.get_shader_parameter("cable_color").is_equal_approx(art.Palette.MATRIX),"R6 MATRIX cable core")
 
-		check(art._materials.carapace.get_shader_parameter("tint").is_equal_approx(art.Palette.NAVY_2),"R4 dark lip")
-
+		var sagging := false
 		for batch: Dictionary in art._batches:
 			for item: Array in batch.instances:
 				var bounds: AABB = item[0].global_transform.scaled_local(item[1])*batch.mesh.get_aabb()
 				check(bounds.end.y <= 0.0201,"R3 B2 rim and hardware at floor level")
+				if batch.material.shader == art.Prop: check(_median_value(batch.mesh.get_meta("source")) < 0.45,"R4 dark legacy-stone lip")
+				sagging = sagging or bounds.position.y < -0.03
+		check(sagging,"R3 B2 crumbling lip sags into the well")
 		check(is_equal_approx(art._pit_mouth.position.y,0.001),"R3 B3 depth-tested mouth above opaque floor")
 		for shader: Shader in [art.PitInterior,art.PitMouth]:
 			check(not shader.code.contains("depth_test_disabled") and not shader.code.contains("depth_draw_never"),"R3 B3 normal depth test/write")
@@ -329,15 +380,18 @@ func _round_three(visual: Base) -> void:
 		for vertex: Vector3 in vertices:
 			if vertex.z < -0.499: check(absf(vertex.x)+absf(vertex.y) < 0.001,"R3 B4 zero-width aft tip")
 	if visual.kind == &"bug_swarm":
-		check(art._materials.glass.get_shader_parameter("membrane_color").is_equal_approx(art.Palette.DANGER),"hostile wings use DANGER, distinct from friendly pickups")
-		check(not art.Wing.code.contains("0.68,0.76,0.79"),"R3 B5 no pale-grey wing color")
-		for vertex: Vector3 in MeshForge.wing().get_faces():
-			if absf(vertex.y) > 0.49: check(absf(vertex.x) < 0.01,"R3 B5 tapered wing ends")
-		check(art._materials.carapace.get_shader_parameter("tint").is_equal_approx(Color("b7a69a")),"contrasting articulated legs preserve the bug silhouette")
-		var jointed := 0
+		# Hostile red membranes and wing covers, distinct from every friendly pickup hue.
 		for batch: Dictionary in art._batches:
-			if batch.mesh == MeshForge.jointed_leg(): jointed += batch.instances.size()
-		check(jointed == 18,"R4 six jointed tapered legs per beetle")
+			if batch.material.shader != art.Prop: continue
+			var shares := _shares(batch.mesh)
+			var wing := String(batch.instances[0][0].get_parent().name).begins_with("Wing")
+			check(shares.danger >= (0.5 if wing else 0.15),"hostile %s surfaces use DANGER (%.2f)" % ["wing" if wing else "body",shares.danger])
+			if wing:
+				# Tapered membranes: the wing narrows to a point at both ends of its length.
+				var source: Mesh = batch.mesh.get_meta("source")
+				var aabb: AABB = source.get_aabb()
+				for vertex: Vector3 in source.get_faces():
+					if vertex.z < aabb.position.z+0.005 or vertex.z > aabb.end.z-0.002: check(absf(vertex.x) < 0.012,"R3 B5 tapered wing ends")
 
 	var old_z := visual.position.z
 	visual.position.z = -60
@@ -345,6 +399,77 @@ func _round_three(visual: Base) -> void:
 	check(is_equal_approx(art._distance_gain,4.5),"R3 bounded distance visibility gain")
 	visual.position.z = old_z
 	art.update_view_distance()
+
+## Area-weighted atlas samples (four barycentric points per triangle) of one baked mesh.
+func _samples(mesh: Mesh) -> Array:
+	var out: Array = []
+	# Batched props draw unit-box copies; weigh areas on the baked source mesh.
+	if mesh.has_meta("source"): mesh = mesh.get_meta("source")
+	var arrays := mesh.surface_get_arrays(0)
+	var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	for i in range(0,indices.size(),3):
+		var a := indices[i]
+		var b := indices[i+1]
+		var c := indices[i+2]
+		var area := (points[b]-points[a]).cross(points[c]-points[a]).length()*0.5
+		for w: Vector3 in [Vector3.ONE/3.0,Vector3(0.6,0.2,0.2),Vector3(0.2,0.6,0.2),Vector3(0.2,0.2,0.6)]:
+			out.append([uvs[a]*w.x+uvs[b]*w.y+uvs[c]*w.z,area*0.25])
+	return out
+
+func _texel(image: Image, uv: Vector2) -> Color:
+	var size := image.get_size()
+	return image.get_pixel(clampi(int(uv.x*size.x),0,size.x-1),clampi(int(uv.y*size.y),0,size.y-1))
+
+static func _hue_near(colour: Color, target: Color, width: float) -> bool:
+	var d := absf(colour.h-target.h)
+	return minf(d,1.0-d) < width
+
+## Area shares of one baked mesh: DANGER albedo or emission, LILAC, help hues glowing, ink, emissive.
+func _shares(mesh: Mesh) -> Dictionary:
+	var out := {"area": 0.0, "danger": 0.0, "lilac": 0.0, "help_glow": 0.0, "ink": 0.0, "lit": 0.0}
+	for sample: Array in _samples(mesh):
+		var albedo := _texel(albedo_image,sample[0])
+		var glow := _texel(emission_image,sample[0])
+		var weight: float = sample[1]
+		out.area += weight
+		var red := (_hue_near(albedo,Palette.DANGER,0.03) and albedo.s > 0.5 and albedo.v > 0.15) or (_hue_near(glow,Palette.DANGER,0.03) and glow.v > 0.1)
+		if red: out.danger += weight
+		if (_hue_near(albedo,Palette.LILAC,0.05) and albedo.s > 0.2) or (_hue_near(glow,Palette.LILAC,0.05) and glow.v > 0.1 and glow.s > 0.2): out.lilac += weight
+		if glow.v > 0.05 and glow.s > 0.2 and (_hue_near(glow,Palette.MINT,0.06) or _hue_near(glow,Palette.MATRIX,0.06) or _hue_near(glow,Palette.ORANGE,0.03)): out.help_glow += weight
+		if albedo.v > 0.45 and albedo.s < 0.4: out.ink += weight
+		if glow.v > 0.02: out.lit += weight
+	for key: String in out:
+		if key != "area": out[key] /= maxf(out.area,0.000001)
+	return out
+
+func _median_value(mesh: Mesh) -> float:
+	var values: Array[float] = []
+	for sample: Array in _samples(mesh): values.append(_texel(albedo_image,sample[0]).v)
+	values.sort()
+	return values[values.size()/2] if not values.is_empty() else 0.0
+
+## Help-vs-hurt palette from the baked atlas, weighted by every instance's surface area.
+func _palette(visual: Base) -> void:
+	var art: Node3D = visual.get_node("Artwork")
+	var total := {"area": 0.0, "danger": 0.0, "lilac": 0.0, "help_glow": 0.0, "lit": 0.0}
+	for batch: Dictionary in art._batches:
+		if batch.material.shader != art.Prop: continue
+		var shares := _shares(batch.mesh)
+		var role := String(batch.instances[0][0].get_parent().name)
+		var weight: float = shares.area*batch.instances.size()
+		for key: String in total: total[key] += weight if key == "area" else shares[key]*weight
+		if role.begins_with("Theirs"): check(shares.lilac >= 0.05,"LILAC marks the theirs half (%.2f)" % shares.lilac)
+		else: check(shares.lilac <= 0.002,"LILAC only on the merge-conflict theirs half %s (%.3f)" % [role,shares.lilac])
+		if role.begins_with("Crate") or role.begins_with("Card") or role.begins_with("Ticket") or role.begins_with("Ours"):
+			check(shares.ink >= 0.01,"%s carries baked CREAM code-line ink (%.3f)" % [role,shares.ink])
+	for key: String in total:
+		if key != "area": total[key] /= maxf(total.area,0.000001)
+	print("A3 PALETTE: %s/%s danger=%.3f lilac=%.3f help_glow=%.4f emissive=%.3f" % [visual.kind,visual.variant,total.danger,total.lilac,total.help_glow,total.lit])
+	check(total.danger >= 0.01,"hazard reads DANGER from its baked accents")
+	check(total.help_glow <= 0.002,"no friendly MINT / MATRIX / ORANGE glow on a hazard")
+	check(total.lit <= 0.40,"baked emissive surface below forty percent")
 
 func _check_occlusion_guard() -> void:
 	# Unit-check the host pixel oracle without claiming a rendered occlusion test.

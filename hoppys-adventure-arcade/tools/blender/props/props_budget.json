@@ -1,0 +1,13 @@
+{
+  "hazard_draws": 14,
+  "hazard_triangles": 6000,
+  "hazard_prop_triangles": 5200,
+  "pickup_draws_plus_burst": 8,
+  "pickup_triangles": 3000,
+  "pickup_prop_triangles": 2600,
+  "atlas_resolution": 1024,
+  "emission_share_max": 0.40,
+  "envelope": 1.10,
+  "pickup_radius": 0.385,
+  "pickup_half_height": 0.46
+}

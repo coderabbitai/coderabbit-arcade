@@ -11,6 +11,11 @@ const KINDS := [&"approve_shield",&"auto_fix",&"lgtm",&"nitro",&"super_jump",&"c
 var checks := 0
 var failures := 0
 var silhouettes: Dictionary = {}
+## Baked pickup atlases as the runtime binds them (albedo RGB, emission grey mask).
+var albedo_image: Image
+var emission_image: Image
+## Blender build census (tools/blender/props/build_props.py -> props.build.json).
+var build: Dictionary = {}
 
 func _initialize() -> void:
 	call_deferred("run")
@@ -148,7 +153,7 @@ func material_checks() -> void:
 	var other_pool := Finish.pool(Palette.MATRIX)
 	check(a.shader == b.shader and glass.shader == other_glass.shader and a.shader != glass.shader,"exactly two surface shader variants")
 	check(pool.shader == other_pool.shader,"pool shader is cached")
-	check(Finish.cache.size() == 3,"two surface templates plus one pool template")
+	check(Finish.cache.size() == 4 and Finish.cache.has("prop"),"two surface templates, the load-time prop template and one pool template")
 	var emission_baseline: Variant = Finish.template("opaque").get_shader_parameter("emission_tint")
 	a.set_shader_parameter("emission_tint",Art.BODY_MINT)
 	check(b.get_shader_parameter("emission_tint") == Palette.ORANGE and Finish.template("opaque").get_shader_parameter("emission_tint") == emission_baseline,"R7 emission tint never mutates another instance or cache")
@@ -177,6 +182,23 @@ func material_checks() -> void:
 	check(occupied < 64,"no repeating solid masonry seam at x=64")
 	check(Textures.height_at(24,60) > Textures.height_at(32,60)+0.025,"sparse circuit trace relief")
 	var environment := Capture.fixture_environment()
+	# Baked Blender prop surfaces: one private material per surface over one shared shader and maps.
+	var prop_a := Finish.prop(Palette.CREAM,Art.FRAME_ENERGY,Art.BODY_MINT)
+	var prop_b := Finish.prop(Palette.CREAM,Art.FRAME_ENERGY,Palette.ORANGE)
+	check(prop_a.shader == prop_b.shader and prop_a.shader != a.shader and prop_a.shader != glass.shader,"one shared baked-prop shader variant")
+	check(Finish.cache.size() == 4,"prop materials reuse the load-time template, never add one")
+	prop_a.set_shader_parameter("clock",7.0)
+	check(prop_b.get_shader_parameter("clock") != 7.0 and Finish.template("prop").get_shader_parameter("clock") != 7.0,"prop spawn uniforms are isolated from peers and the cached template")
+	check(prop_b.get_shader_parameter("emission_tint") == Palette.ORANGE and Finish.template("prop").get_shader_parameter("emission_tint") != Palette.ORANGE,"prop emission tint never mutates the template")
+	check(not Finish.PROP_CODE.contains("TIME") and not Finish.PROP_CODE.contains("cull_disabled"),"clock-driven back-face culled prop shader")
+	check(Finish.PROP_CODE.contains("texture(emission_atlas, UV).r * emission_tint.rgb"),"prop emission is a baked grey mask tinted only by the family colour")
+	check(Finish.PROP_CODE.contains("min(0.65, energy*clamp(range_boost,1.0,3.0)"),"prop emissive product capped, not just one factor")
+	check(Finish.PROP_CODE.contains("METALLIC = min(orm.b, 0.6)") and Finish.PROP_CODE.contains("ROUGHNESS = max(orm.g, 0.18)"),"prop diffuse response retained without a reflection probe")
+	check(Finish.PROP_CODE.contains("world_height*5.23598776") and Finish.PROP_CODE.contains("fwidth(wave)"),"prop scan keeps one derivative-filtered band per 1.2 world metres")
+	for key: String in Finish.PROP_MAPS:
+		var map: Texture2D = Finish.PROP_MAPS[key]
+		check(map.get_size() == Vector2(1024,1024) and map.get_image().has_mipmaps(),"1024 square mipmapped pickup atlas " + key)
+		check(Finish.template("prop").get_shader_parameter(key) == map,"template binds shared atlas " + key)
 	check(environment.glow_enabled and is_equal_approx(environment.glow_hdr_threshold,0.75),"capture glow enabled at 0.75")
 	check(environment.background_color == Palette.NAVY_BG and environment.ambient_light_color == Palette.NAVY_2,"capture uses corridor darkness")
 	check(Capture.CORRIDOR.resource_path == "res://scenes/runner/environment/corridor.tscn","capture mounts shipping corridor")
@@ -200,6 +222,10 @@ func attachment_checks(art: Art, kind: StringName) -> void:
 
 func run() -> void:
 	root.size = Vector2i(1280,720)
+	albedo_image = (Finish.PROP_MAPS.albedo_atlas as Texture2D).get_image()
+	emission_image = (Finish.PROP_MAPS.emission_atlas as Texture2D).get_image()
+	build = JSON.parse_string(FileAccess.get_file_as_string("res://Assets/runner/props/props.build.json"))
+	check(build.get("seed") != null and not build.get("quick",true),"baked (non-quick) deterministic Blender build")
 	var camera := Camera3D.new()
 	root.add_child(camera)
 	camera.position = Vector3(0,4,8)
@@ -225,6 +251,7 @@ func run() -> void:
 		visual.set("kind",kind)
 		visual.on_spawned()
 		var art: Art = visual._art
+		check(art._core_node.transform == art._core_rest,"spawn places the working part at its baked rest pose " + kind)
 		affordance_checks(art, camera, kind)
 		var count := visual.find_children("*","",true,false).size()
 		visual.on_spawned()
@@ -331,7 +358,7 @@ func run() -> void:
 	Burst.release_caches()
 	Finish.cache.clear()
 	Textures.cache.clear()
-	check(Finish.cache.is_empty() and Textures.cache.is_empty() and Art._kind_cache.is_empty(),"static caches released before quit")
+	check(Finish.cache.is_empty() and Textures.cache.is_empty() and Art._kind_cache.is_empty() and Art._prop_layouts.is_empty(),"static caches released before quit")
 	# The actual previous exit leak was the global MP3 playback, not these caches.
 	var audio := root.get_node_or_null("AudioService")
 	if audio != null:
@@ -351,22 +378,26 @@ func affordance_checks(art: Art, camera: Camera3D, kind: StringName) -> void:
 		check(not node.material_override.shader.code.contains("TIME"),"pausable affordance shader")
 	round5_affordance_checks(art,camera,kind)
 	var frame: MeshInstance3D = art._pivot.get_node("Ring")
-	check(triangles(frame.mesh) == frame.mesh.get_meta("expected_triangles"),"R9 merged surface retains every frame, backing and inlay triangle")
-	var frame_colors: PackedColorArray = frame.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
-	var has_inlay := false
-	var has_frame := false
-	for color in frame_colors:
-		has_inlay = has_inlay or color.a < 0.75
-		has_frame = has_frame or color.a >= 0.75
-	check(has_inlay and has_frame,"R9 per-face frame and inlay shading retained")
-	check(kind in Art.BACKED_KINDS,"R9 every kind receives the same small closed core")
-	if kind in Art.BACKED_KINDS:
-		var backing_found := false
-		for bounds: AABB in frame.mesh.get_meta("panel_bounds"):
-			if bounds.size.is_equal_approx(Vector3(0.3,0.3,0.26)) and bounds.position.is_equal_approx(Vector3(-0.15,-0.15,-0.22)): backing_found = true
-		check(backing_found,"R8 closed 0.30m backing is merged behind thin silhouette " + kind)
+	var core: MeshInstance3D = art._pivot.get_node("InnerCore")
+	# The runtime mounts exactly the baked Blender meshes, every triangle the build counted.
+	var shapes: Dictionary = Art.kind_shapes(kind)
+	check(frame.mesh == shapes.frame and core.mesh == shapes.core,"R9 shell and working part are the shared baked prop meshes " + kind)
+	var census: Dictionary = build.pickups.census.get("PU_"+String(kind),{})
+	check(triangles(frame.mesh)+triangles(core.mesh) == int(census.get("triangles",-1)),"R9 imported prop retains every built triangle " + kind)
+	check(art._core_rest == shapes.core_rest,"working part rest pose comes from the baked layout " + kind)
+	# Help-vs-hurt palette read from the baked atlas: neutral shell, family inlay, never DANGER.
+	var hues := palette_shares([frame.mesh,core.mesh],Palette.ORANGE if art._is_tool else Palette.MINT)
+	print("A4 PALETTE %s: neutral=%.2f family=%.2f danger=%.4f" % [kind,hues.x,hues.y,hues.z])
+	check(hues.x >= 0.2,"R9 neutral CREAM/grey hardware carries the family accents " + kind)
+	check(hues.y >= 0.03,"R9 family-coloured inlays and working part present " + kind)
+	check(hues.z <= 0.002,"R9 no hazard DANGER hue anywhere on a pickup " + kind)
+	# A solid sculpture, not a thin floating icon: its front projection covers a real area.
+	var filled := 0
+	for pixel: int in silhouette(art): filled += pixel
+	check(filled >= 100,"R8 solid equipment silhouette (%d of 768 samples) " % filled + kind)
 	check(is_equal_approx(art._pool.material_override.get_shader_parameter("beam_core_gain"),1.12 if art._is_tool else 1.0),"R8 twelve percent boost isolated to tool beam cores")
-	check(is_equal_approx(frame.material_override.get_shader_parameter("energy"),0.12),"Subdued hardware emission across both families")
+	check(is_equal_approx(frame.material_override.get_shader_parameter("energy"),Art.FRAME_ENERGY) and Art.FRAME_ENERGY <= 0.4,"Subdued hardware emission across both families")
+	check(is_equal_approx(core.material_override.get_shader_parameter("energy"),minf(Art.CORE_ENERGY,0.55)),"working part glows at the shared capped core energy")
 	if not art._is_tool:
 		for node in art._pivot.get_children():
 			check(node.material_override.get_shader_parameter("emission_tint") == Art.BODY_MINT,"R7 every MINT body surface emits deeper mint")
@@ -418,23 +449,22 @@ func affordance_checks(art: Art, camera: Camera3D, kind: StringName) -> void:
 	var area := Vector2.ZERO
 	for node in art._pivot.get_children():
 		var shape: Mesh = node.mesh if node is MeshInstance3D else node.multimesh.mesh
-		var measured := emission_area(shape,float(node.material_override.get_shader_parameter("emission_inset")))
+		var measured := baked_emission_area(shape)
 		if node is MultiMeshInstance3D: measured *= node.multimesh.instance_count
 		if float(node.material_override.get_shader_parameter("energy")) <= 0.0: measured.y = 0.0
 		area += measured
 	var coverage := area.y/area.x
 	print("A4 EMISSIVE %s: %.2f percent sculpture area" % [kind,coverage*100.0])
-	check(coverage <= 0.4 and Finish.CODE.contains("emission_mask * glow_tint"),"masked emissive surface below forty percent")
+	check(coverage <= 0.4 and Finish.PROP_CODE.contains("texture(emission_atlas, UV).r"),"masked emissive surface below forty percent")
 
 func polygon_area(points: PackedVector2Array) -> float:
 	var area := 0.0
 	for i in points.size(): area += points[i].cross(points[(i+1)%points.size()])
 	return absf(area)*0.5
 
-func emission_area(mesh: Mesh, inset: float) -> Vector2:
-	# Exact UV polygon clipping weighted by each triangle's real surface area.
-	var result := Vector2.ZERO
-	var interior := PackedVector2Array([Vector2(inset,inset),Vector2(1.0-inset,inset),Vector2(1.0-inset,1.0-inset),Vector2(inset,1.0-inset)])
+## Area-weighted surface samples of the baked atlases (four barycentric points per triangle).
+func surface_samples(mesh: Mesh) -> Array:
+	var out: Array = []
 	for surface in mesh.get_surface_count():
 		var arrays := mesh.surface_get_arrays(surface)
 		var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
@@ -445,12 +475,36 @@ func emission_area(mesh: Mesh, inset: float) -> Vector2:
 			var b := indices[i+1]
 			var c := indices[i+2]
 			var area := (points[b]-points[a]).cross(points[c]-points[a]).length()*0.5
-			var triangle := PackedVector2Array([uvs[a],uvs[b],uvs[c]])
-			var unlit := 0.0
-			for clipped in Geometry2D.intersect_polygons(triangle,interior): unlit += polygon_area(clipped)
-			result.x += area
-			result.y += area*clampf(unlit/polygon_area(triangle),0.0,1.0)
+			for w: Vector3 in [Vector3.ONE/3.0,Vector3(0.6,0.2,0.2),Vector3(0.2,0.6,0.2),Vector3(0.2,0.2,0.6)]:
+				out.append([uvs[a]*w.x+uvs[b]*w.y+uvs[c]*w.z,area*0.25])
+	return out
+
+func texel(image: Image, uv: Vector2) -> Color:
+	var size := image.get_size()
+	return image.get_pixel(clampi(int(uv.x*size.x),0,size.x-1),clampi(int(uv.y*size.y),0,size.y-1))
+
+## x: total area, y: area whose baked emission mask is lit.
+func baked_emission_area(mesh: Mesh) -> Vector2:
+	var result := Vector2.ZERO
+	for sample: Array in surface_samples(mesh):
+		result.x += sample[1]
+		if texel(emission_image,sample[0]).r > 0.02: result.y += sample[1]
 	return result
+
+## Shares of baked albedo area: x neutral (low saturation), y the family hue, z hazard DANGER hue.
+func palette_shares(meshes: Array, family: Color) -> Vector3:
+	var total := 0.0
+	var shares := Vector3.ZERO
+	for mesh: Mesh in meshes:
+		for sample: Array in surface_samples(mesh):
+			var colour := texel(albedo_image,sample[0])
+			total += sample[1]
+			if colour.s < 0.25: shares.x += sample[1]
+			var hue := absf(colour.h-family.h)
+			if minf(hue,1.0-hue) < 0.05 and colour.s > 0.3 and colour.v > 0.2: shares.y += sample[1]
+			var danger := absf(colour.h-Palette.DANGER.h)
+			if minf(danger,1.0-danger) < 0.025 and colour.s > 0.55 and colour.v > 0.3: shares.z += sample[1]
+	return shares/maxf(total,0.000001)
 
 func round5_fixture_checks() -> void:
 	var corridor := Capture.CORRIDOR.instantiate()
