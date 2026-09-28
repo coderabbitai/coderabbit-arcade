@@ -5,6 +5,7 @@ var _surface := 0
 var _tread := 0
 const Prewarm = preload("res://scenes/runner/environment/hifi/prewarm.gd")
 const Synth = preload("res://scenes/runner/audio/sfx_synth.gd")
+const GpuWarmup = preload("res://scenes/runner/warmup/gpu_warmup.gd")
 const MUSIC_PATH := "res://Assets/Backgrounds/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg"
 ## Emitted only after an actual playback start, also usable by headless smoke tests.
 signal sound_played(kind: StringName, stream: AudioStream)
@@ -64,8 +65,13 @@ func _ready() -> void:
 		player.process_mode = Node.PROCESS_MODE_PAUSABLE
 
 func bind(game: Node) -> void:
-	# Shared warmup also covers turn cues and every panned whoosh variant.
+	# Shared warmup also covers turn cues and every panned whoosh variant. bind() runs inside the
+	# game's _ready (veil opaque, before the first frame), so whatever the menu did not absorb is
+	# completed here rather than one package per frame during play; then every runtime shader is
+	# drawn once. Both are no-ops after the runner menu or an earlier run.
 	Prewarm.warm()
+	Prewarm.finish()
+	GpuWarmup.run(game)
 	_disconnect_game()
 	_stop_all()
 	_game = game

@@ -70,13 +70,6 @@ func run() -> void:
 		print("PREWARM sync %s: %.3f ms" % [package, Prewarm.timings[package]])
 	check(not Prewarm.is_complete(), "heavy packages remain asynchronous")
 	check((Audio as Script).source_code.contains("Prewarm.warm()"), "audio bind relies on shared prewarm")
-	for kind in [&"boss_intro", &"turn_warning", &"turn_whoosh"]:
-		check(Synth._cache.has(kind), "critical cue warm before gameplay: " + kind)
-	for kind in Synth.PERCUSSIVE:
-		check(Synth._cache.has(kind), "percussive ready: " + kind)
-	for kind in [&"projectile_whoosh", &"turn_whoosh"]:
-		for mask in 8:
-			check(Synth._cache.has(StringName("%s_pan_%d" % [kind, mask])), "panned cue ready")
 	var queued_jobs := Prewarm.jobs.duplicate()
 	var environment_ids := identities(EnvironmentForge.cache)
 	var floor_ids := identities(EnvironmentForge.floor_cache)
@@ -93,6 +86,14 @@ func run() -> void:
 	check(Prewarm.is_complete(), "worker images and deferred packages completed")
 	check(Prewarm.generated_on_workers, "image generation ran on workers")
 	check(Prewarm.finalized_on_main, "ImageTexture finalization ran on main")
+	# Cues are synthesised on workers; RunnerAudio.bind() finishes them before a run can start.
+	for kind in [&"boss_intro", &"turn_warning", &"turn_whoosh"]:
+		check(Synth._cache.has(kind), "critical cue warm before gameplay: " + kind)
+	for kind in Synth.PERCUSSIVE:
+		check(Synth._cache.has(kind), "percussive ready: " + kind)
+	for kind in [&"projectile_whoosh", &"turn_whoosh"]:
+		for mask in 8:
+			check(Synth._cache.has(StringName("%s_pan_%d" % [kind, mask])), "panned cue ready")
 	check(identities(BossForge.maps) == fallback_ids, "early boss fallback cache survives worker completion")
 	check(BossForge.maps.albedo.get_image().get_data() == fallback_pixels, "worker completion preserves fallback pixels")
 	check(identities(EnvironmentForge.cache) == environment_ids, "environment bindings retain texture identities")
