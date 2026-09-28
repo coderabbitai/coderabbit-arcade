@@ -9,6 +9,7 @@ var radius := 100.0
 var phase := 0.0
 var hit_flash := 0.0
 var dead := false
+var telegraph_drawn := false
 var sprite: AnimatedSprite2D
 var hurtbox: Area2D
 func _ready() -> void:
@@ -26,7 +27,12 @@ func _physics_process(dt: float) -> void:
 	if dead or player.hp <= 0:
 		return
 	phase += dt
-	queue_redraw()
+	# Only the boss draws (its slam telegraph); redraw while it shows and once more to clear it.
+	if kind == "merge_monster":
+		var telegraph := fmod(phase, 3.4) > 1.7 and fmod(phase, 3.4) < 2.9
+		if telegraph or telegraph_drawn:
+			queue_redraw()
+		telegraph_drawn = telegraph
 	hit_flash = maxf(0, hit_flash - dt)
 	sprite.modulate = Color(2, 1, 1) if hit_flash > 0 else Color.WHITE
 	if kind == "merge_monster":

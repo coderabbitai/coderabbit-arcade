@@ -14,9 +14,10 @@ Arrow keys, Tab, D-pad, or left stick navigate; Enter / gamepad A activates; Esc
 
 ## Behavior and ownership
 
-- Scene-local showcase: idle previews 0–6 every 9 seconds; 1.2-second fades. Platformer and brawler focus cycle their three themes every 3 seconds with 0.6-second fades. Runner holds the corridor with a 0.8-second fade.
+- Scene-local showcase: idle previews 0–9 every 9 seconds; 1.2-second fades. Focusing a mode cycles its previews every 3 seconds with 0.6-second fades: Platformer and brawler cycle three themes, and the Endless Runner cycles four in-game stills (corridor, power-ups, sharp turn, boss).
 - Focus exit waits 2 seconds, then restores the idle index and remaining dwell. Modals pause showcase timing. Parallax continues behind overlays.
-- At most two preview nodes exist. During a fade, requests coalesce to the latest selection; the outgoing node is freed before another fade begins.
+- At most two preview nodes exist. During a fade, requests coalesce to the latest selection; the outgoing node is freed before another fade begins. Each preview is a `CanvasGroup`, so a fade blends the flattened scene instead of letting its parallax layers show through each other. Preview textures are loaded once and kept, so transitions never read from disk.
+- Layout recenters on viewport resize (not every frame). Menu buttons grow 5% around their centre on hover/focus and keep that scale when their container re-sorts.
 - The UI uses a 1280×720 reference with expanding viewport coverage and centered composition. Backgrounds fill taller and wider windows. Pixel scenery uses nearest filtering.
 - AppRouter validates known routes and prevents duplicate transitions. Each mode currently opens an explicit “not playable yet” endpoint with a return button. No gameplay was added.
 - AudioService owns a single looping music player and one UI sound player. Music and SFX independently feed Master. Supplied `Assets/Audio/happy_adveture.mp3` is used unchanged; synthesized UI blips are generated in code. MP3 repeat is enabled; musical seamlessness at the track boundary still needs listening review.
@@ -32,8 +33,8 @@ The user approved a temporary rabbit for this session. `hoppy.gd` draws and anim
 | Bay Area Blitz | `Assets/CityBackground` layered pixel skyline |
 | Orbital Ops | `Assets/space_background_pack/layers` |
 | Enchanted Repo | `Assets/parallax_forest_pack/layers` |
-| Codebase Corridor | Code-drawn tunnel and falling marks |
-| CLI / IDE District | `Assets/cyberpunk-street-files/Assets/Version 2/Layers` |
+| Codebase Corridor, Power-ups, Sharp Turns, Boss Fights | `Assets/runner/menu_previews/runner_*.png`, captured from an autopilot run by `tests/capture_runner_menu_previews.gd` (graphical: `Godot --always-on-top --path hoppys-adventure-arcade --script res://tests/capture_runner_menu_previews.gd`) |
+| CLI / IDE District | `Assets/Backgrounds/cyberpunk-street-files/Assets/Version 2/Layers` |
 | Security Sector | Code-drawn racks, scanner, and tunnel |
 | Git Repository HQ | Code-drawn branching nodes and hall |
 
@@ -45,6 +46,6 @@ These are theme previews, not final level art. Supplied asset files and accompan
 /Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --script res://tests/menu_smoke.gd
 ```
 
-The behavioral smoke test covers preview timing and preservation, rapid input coalescing, bounded preview count, all seven themes, modal focus restoration, invalid routes, duplicate navigation, all three mode round trips, and audio player counts. It also dispatches keyboard, simulated gamepad, and mouse events. A rendered run writes menu/settings screenshots to `/tmp` for layout inspection. It uses the normal settings path, so run against a disposable user profile if preserving settings during tests matters.
+The behavioral smoke test covers preview timing and preservation, rapid input coalescing, bounded preview count, all ten previews, modal focus restoration, invalid routes, duplicate navigation, all three mode round trips, and audio player counts. It also dispatches keyboard, simulated gamepad, and mouse events. A rendered run writes menu/settings screenshots to `/tmp` for layout inspection. It uses the normal settings path, so run against a disposable user profile if preserving settings during tests matters.
 
 Physical controller feel, audio loop quality, and Windows/Linux exports require later hands-on checks; no export presets or platform builds were added.

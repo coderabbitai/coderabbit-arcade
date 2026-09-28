@@ -3,6 +3,15 @@ const Art = preload("res://modes/platformer/art.gd")
 const Player = preload("res://modes/platformer/player.gd")
 const Enemy = preload("res://modes/platformer/enemy.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
+# Preloaded so nothing is read from disk mid-run (a freed one-shot player used to drop its stream,
+# so every jump reloaded the WAV).
+const SFX := {
+	"jump": preload("res://Assets/Backgrounds/Sunny-land-forest-files/demo/assets/sound/wavs/jump.wav"),
+	"hurt": preload("res://Assets/Backgrounds/Sunny-land-forest-files/demo/assets/sound/wavs/hurt.wav")
+}
+const HEART_FULL = preload("res://Assets/bay-area-blitz-assets-only/individual/hud/heart_full.png")
+const HEART_EMPTY = preload("res://Assets/bay-area-blitz-assets-only/individual/hud/heart_empty.png")
+const MUSIC = preload("res://Assets/Audio/Platformer/Bay Area Blitz/c64_uptempo_chiptune.ogg")
 var player: CharacterBody2D
 var camera: Camera2D
 var score := 0
@@ -23,6 +32,8 @@ var overlay_detail: Label
 var resume_button: Button
 var exit_sprite: AnimatedSprite2D
 var music: AudioStreamPlayer
+var sfx_players := {}
+var terrain_crops := {}
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -85,14 +96,23 @@ func _ready() -> void:
 	AudioService.music.stream_paused = true
 	music = AudioStreamPlayer.new()
 	music.bus = "Music"
-	var track := load("res://Assets/Audio/Platformer/Bay Area Blitz/c64_uptempo_chiptune.ogg").duplicate() as AudioStreamOggVorbis
+	var track := MUSIC.duplicate() as AudioStreamOggVorbis
 	track.loop = true
 	music.stream = track
 	music.volume_db = -13
 	add_child(music)
 	music.play()
+	for clip in SFX:
+		var sound := AudioStreamPlayer.new()
+		sound.stream = SFX[clip]
+		sound.bus = "SFX"
+		sound.volume_db = -12
+		add_child(sound)
+		sfx_players[clip] = sound
 	for child in get_children():
 		if not child is CanvasLayer: child.process_mode = Node.PROCESS_MODE_PAUSABLE
+	# Everything above was placed, not moved: start interpolation from those positions.
+	reset_physics_interpolation()
 func _background() -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = -10
@@ -138,11 +158,8 @@ func platform(pos: Vector2, size: Vector2, art: String) -> void:
 	fill.polygon = PackedVector2Array([Vector2.ZERO, Vector2(size.x, 0), size, Vector2(0, size.y)])
 	fill.color = Color("223c48")
 	body.add_child(fill)
-	var texture := load("res://Assets/bay-area-blitz-assets-only/individual/street_kit/" + art + ".png") as Texture2D
-	var bounds := texture.get_image().get_used_rect()
-	var cropped := AtlasTexture.new()
-	cropped.atlas = texture
-	cropped.region = bounds
+	var cropped := _terrain_crop(art)
+	var bounds := cropped.region
 	for x in range(0, int(size.x), 96):
 		var piece := Sprite2D.new()
 		piece.texture = cropped
@@ -150,6 +167,15 @@ func platform(pos: Vector2, size: Vector2, art: String) -> void:
 		piece.position.x = x
 		piece.scale = Vector2(minf(96, size.x - x) / bounds.size.x, minf(size.y, 32) / bounds.size.y)
 		body.add_child(piece)
+# get_image() is a GPU readback on this renderer: crop each street-kit texture once.
+func _terrain_crop(art: String) -> AtlasTexture:
+	if not terrain_crops.has(art):
+		var texture := load("res://Assets/bay-area-blitz-assets-only/individual/street_kit/" + art + ".png") as Texture2D
+		var cropped := AtlasTexture.new()
+		cropped.atlas = texture
+		cropped.region = texture.get_image().get_used_rect()
+		terrain_crops[art] = cropped
+	return terrain_crops[art]
 func _car(pos: Vector2, travel: Vector2) -> void:
 	var body := AnimatableBody2D.new()
 	body.position = pos
@@ -209,7 +235,8 @@ func _physics_process(dt: float) -> void:
 	elapsed += dt
 	for car in cars:
 		car.body.position = car.origin + car.travel * _car_progress(elapsed)
-	for item in pickups.duplicate():
+	for i in range(pickups.size() - 1, -1, -1):
+		var item: Dictionary = pickups[i]
 		var area: Area2D = item.node
 		area.position.y = item.origin.y + sin(elapsed * 3 + item.origin.x) * 5
 		if area.overlaps_body(player):
@@ -224,7 +251,7 @@ func _physics_process(dt: float) -> void:
 						if enemy is Enemy and enemy.kind != "merge_monster" and enemy.position.distance_to(player.position) < 350:
 							enemy.hp = 1
 							enemy.take_hit()
-			pickups.erase(item)
+			pickups.remove_at(i)
 			area.queue_free()
 			AudioService.play_ui(1)
 			_update_hud()
@@ -306,7 +333,7 @@ func _hud() -> void:
 	overlay.hide()
 func _update_hud() -> void:
 	for i in hearts.size():
-		hearts[i].texture = load("res://Assets/bay-area-blitz-assets-only/individual/hud/heart_" + ("full" if i < player.hp else "empty") + ".png")
+		hearts[i].texture = HEART_FULL if i < player.hp else HEART_EMPTY
 	score_label.text = "BAY AREA BLITZ   /   %06d" % score
 	objective.text = "Smash the MERGE button with J / X!" if boss_down else "Reach the bridge. Resolve the Merge Conflict Monster."
 	if player.shield: objective.text += "   [SHIELD]"
@@ -336,26 +363,22 @@ func _finish(won: bool) -> void:
 	overlay.show()
 	resume_button.get_parent().get_child(3).grab_focus()
 func _input(event: InputEvent) -> void:
+	# Once a route change has started, the level is leaving: never re-pause it under the veil.
+	if AppRouter.busy:
+		return
 	if event.is_action_pressed("pause") and not finished:
 		if get_tree().paused: _resume()
 		else: _pause()
 		get_viewport().set_input_as_handled()
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and is_instance_valid(overlay) and not finished:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and is_instance_valid(overlay) and not finished and not AppRouter.busy:
 		_pause()
 func _exit_tree() -> void:
 	get_tree().paused = false
 	AudioService.music.stream_paused = false
 
 func _sound(clip: String) -> void:
-	var sound := AudioStreamPlayer2D.new()
-	sound.stream = load("res://Assets/Backgrounds/Sunny-land-forest-files/demo/assets/sound/wavs/" + clip + ".wav")
-	sound.bus = "SFX"
-	sound.volume_db = -12
-	sound.position = player.position
-	add_child(sound)
-	sound.finished.connect(sound.queue_free)
-	sound.play()
+	sfx_players[clip].play()
 
 # Ten-second round trip with a one-second boarding stop at each end.
 func _car_progress(time: float) -> float:

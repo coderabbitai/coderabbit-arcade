@@ -23,6 +23,7 @@ func _ready() -> void:
 	music.play()
 	for frequency in [660.0, 990.0, 330.0]:
 		tones.append(_tone(frequency))
+	_start_ui_voices()
 	apply_volumes()
 func apply_volumes() -> void:
 	for bus in ["Master", "Music", "SFX"]:
@@ -56,10 +57,22 @@ func _stop_duck() -> void:
 		duck.kill()
 		duck = null
 	music.volume_db = music_volume_db
-func play_ui(kind: int = 0) -> void:
-	sfx.stream = tones[kind]
+## One polyphonic stream for every UI blip: overlapping blips (hover, confirm, route change, pickups)
+## layer instead of each one cutting off the last and rebuilding playback.
+func _start_ui_voices() -> void:
+	var voices := AudioStreamPolyphonic.new()
+	voices.polyphony = 6
+	sfx.stream = voices
 	sfx.volume_db = -19
 	sfx.play()
+func play_ui(kind: int = 0) -> void:
+	if sfx.stream == null:
+		return
+	if not sfx.playing:
+		sfx.play()
+	var voices := sfx.get_stream_playback() as AudioStreamPlaybackPolyphonic
+	if voices:
+		voices.play_stream(tones[kind])
 func _tone(frequency: float) -> AudioStreamWAV:
 	var stream := AudioStreamWAV.new()
 	stream.format = AudioStreamWAV.FORMAT_16_BITS
