@@ -1,0 +1,15 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/runner/ui/dev/mock_runner_game.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/runner/environment/corridor.tscn" id="2"]
+
+[node name="MockRunnerGame" type="Node3D"]
+script = ExtResource("1")
+
+[node name="Backdrop" parent="." instance=ExtResource("2")]
+
+[node name="Camera" type="Camera3D" parent="."]
+position = Vector3(0, 4, 8)
+rotation_degrees = Vector3(-10.62, 0, 0)
+current = true
+fov = 60.0

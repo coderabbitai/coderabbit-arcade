@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/runner/hazards/hazard.gd" id="1"]
+
+[node name="Hazard" type="Area3D"]
+collision_layer = 4
+collision_mask = 8
+monitorable = false
+script = ExtResource("1")
