@@ -4,6 +4,7 @@ const Grab = preload("res://scenes/runner/powerups/visuals/hifi/grab_affordance.
 const Forge = preload("res://scenes/runner/powerups/visuals/hifi/mesh_forge.gd")
 const Finish = preload("res://scenes/runner/powerups/visuals/hifi/pickup_materials.gd")
 const Textures = preload("res://scenes/runner/powerups/visuals/hifi/texture_forge.gd")
+const Burst = preload("res://scenes/runner/powerups/visuals/hifi/collect_burst.gd")
 const Capture = preload("res://scenes/runner/powerups/dev/capture_a4.gd")
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 const KINDS := [&"approve_shield",&"auto_fix",&"lgtm",&"nitro",&"super_jump",&"code_review",&"review_comment",&"lint_rule",&"unit_test",&"auto_fix_patch"]
@@ -279,7 +280,9 @@ func run() -> void:
 				check(max_radius <= 0.385,"horizontal 110 percent footprint " + kind)
 				check(min_y >= -0.52 and max_y <= 0.52,"authored vertical idle bound " + kind)
 		check(art._tag.transform == tag_pose and art._tag_plate.transform == plate_pose,"R9 label and restored plate remain fixed through sculpture spin")
-		check(is_equal_approx(art._pool.global_position.y,0.012),"pool at floor")
+		check(is_equal_approx(art._pool.global_position.y,Art.POOL_Y) and Art.POOL_Y <= 0.05,"pool at floor")
+		# The corridor LaneGlow decal sits at y 0.012; a shared plane z-fights.
+		check(absf(Art.POOL_Y-0.012) >= 0.02,"pool clear of the corridor lane glow plane")
 		var glyph_pose := art._glyph.transform
 		var beacon_clock: Variant = art._pool.material_override.get_shader_parameter("clock")
 		var fade := art._rear_mix
@@ -303,6 +306,13 @@ func run() -> void:
 		check(not visual.visible,"collection hides")
 		visual.on_spawned()
 		check(visual.visible and art._collect_time < 0.0 and art._pool.visible and art._glyph.visible,"reuse resets collection")
+		if not bursts.is_empty():
+			# Pooled burst: an idle one is restarted, never rebuilt, and its draw pass is shared.
+			bursts[0]._process(Burst.LIFETIME)
+			check(not bursts[0].busy,"burst idles after its lifetime instead of freeing")
+			visual.on_collected()
+			check(scene.find_children("A4CollectBurst*","GPUParticles3D",false,false).size() == 1 and bursts[0].busy,"repeat collection reuses the pooled burst")
+			check(bursts[0].draw_pass_1 == Burst.draw_mesh(art._accent),"burst draw pass shared per accent")
 		pickup.free()
 		if not bursts.is_empty(): check(is_instance_valid(bursts[0]),"burst survives pickup removal")
 		scene.free()
@@ -317,9 +327,11 @@ func run() -> void:
 			minimum_difference = mini(minimum_difference,different)
 			check(different >= 10,"distinct projected sculpture silhouettes %s/%s" % [KINDS[i],KINDS[j]])
 	print("A4 SILHOUETTES: 10 unique; minimum pairwise difference %d / 768 samples" % minimum_difference)
+	Art.release_caches()
+	Burst.release_caches()
 	Finish.cache.clear()
 	Textures.cache.clear()
-	check(Finish.cache.is_empty() and Textures.cache.is_empty(),"static caches released before quit")
+	check(Finish.cache.is_empty() and Textures.cache.is_empty() and Art._kind_cache.is_empty(),"static caches released before quit")
 	# The actual previous exit leak was the global MP3 playback, not these caches.
 	var audio := root.get_node_or_null("AudioService")
 	if audio != null:
@@ -531,6 +543,11 @@ func round5_affordance_checks(art: Art, camera: Camera3D, kind: StringName) -> v
 	var peer := Art.new()
 	root.add_child(peer)
 	peer.build(kind)
+	var own_ring: MeshInstance3D = art._pivot.get_node("Ring")
+	var peer_ring: MeshInstance3D = peer._pivot.get_node("Ring")
+	check(peer_ring.mesh == own_ring.mesh and own_ring.mesh == Art.kind_shapes(kind).frame,"per-kind frame mesh built once and shared " + kind)
+	check(peer_ring.material_override != own_ring.material_override and peer._glyph.mesh == art._glyph.mesh,"animated materials stay per pickup, quads shared " + kind)
+	check(is_equal_approx(peer._glyph_coverage,art._glyph_coverage) and art._glyph_coverage > 0.5 and art._glyph_coverage <= 1.0,"cached CPU glyph coverage " + kind)
 	peer.position = Vector3(0,1,-40)
 	peer._update_affordance()
 	art._update_affordance()

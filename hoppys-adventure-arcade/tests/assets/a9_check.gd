@@ -121,6 +121,10 @@ func run() -> void:
 	step(fx, 0.3)
 	check(value(fx, "strength") == 1.0, "catch strength")
 	game.speed_changed.emit(32.0, 2.0)
+	# Per-tick signals ease in _process: no Tween is allocated per physics step.
+	check(not fx.transitions.has("speed") and fx.channels.has("speed"), "per-tick speed eases without a Tween")
+	game.speed_changed.emit(32.0, 2.0)
+	check(fx.channels["speed"].age == 0.0 and fx.channels.size() >= 1, "repeated identical target keeps one channel")
 	game.power_up_collected.emit(&"nitro", 6.0)
 	step(fx, 0.3)
 	check(value(fx, "speed") == 1.0 and value(fx, "bloom_lift") == 1.0, "speed clamp and Nitro lift")

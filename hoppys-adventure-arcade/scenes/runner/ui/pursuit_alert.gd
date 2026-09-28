@@ -23,6 +23,7 @@ var beat_time := 0.0
 var blocked_time := 0.0
 var _connections := {}
 var _audio: Node
+var _border := Color(0, 0, 0, 0)
 
 class PortraitArt extends Control:
 	const EYE_PLATE := Rect2(24, 12, 208, 80)
@@ -113,7 +114,9 @@ func _ready() -> void:
 	portrait_viewport.name = "PortraitViewport"
 	portrait_viewport.size = Vector2i(256, 256)
 	portrait_viewport.disable_3d = true
-	portrait_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	# Rendered once at ready (compiles the scanline shader and caches the headline glyphs), then only
+	# while the alert is visible; a hidden alert used to re-render its portrait every frame.
+	portrait_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	add_child(portrait_viewport)
 	portrait_viewport.add_child(PortraitArt.new())
 	var back_buffer := BackBufferCopy.new()
@@ -146,7 +149,14 @@ func _ready() -> void:
 	radar.position = Vector2(304, 0)
 	radar.size = Vector2(88, 88)
 	_mouse_ignore(self)
+	visibility_changed.connect(_sync_portrait_updates)
 	hide()
+
+func _sync_portrait_updates() -> void:
+	if visible:
+		portrait_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	elif portrait_viewport.render_target_update_mode == SubViewport.UPDATE_ALWAYS:
+		portrait_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 
 func _label(parent: Node, text: String, size_units: int, at: Vector2, extent: Vector2) -> Label:
 	var label := Style.label(text, size_units)
@@ -259,7 +269,10 @@ func _process(delta: float) -> void:
 		accent = Palette.MINT
 	elif state == &"incoming" and beat_time < 0.08:
 		accent = Palette.CREAM
-	(panel.get_theme_stylebox("panel") as StyleBoxFlat).border_color = accent
+	if accent != _border:
+		# Mutating the StyleBox emits `changed` and redraws the panel; only do it on a change.
+		_border = accent
+		(panel.get_theme_stylebox("panel") as StyleBoxFlat).border_color = accent
 	portrait_material.set_shader_parameter("clock", clock)
 	portrait_material.set_shader_parameter("threat", 1 - fraction)
 	radar_phase = fposmod(radar_phase + delta * radar_rate, 1.0)

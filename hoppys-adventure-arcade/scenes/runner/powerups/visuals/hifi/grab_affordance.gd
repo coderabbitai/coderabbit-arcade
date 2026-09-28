@@ -16,6 +16,8 @@ const GLYPHS := {
  &"auto_fix_patch": '<path d="M5 5L15 16L5 27M17 5L27 16L17 27"/>'
 }
 static var glyph_cache: Dictionary = {}
+## Vertical fraction of each glyph raster that is inked, measured on the CPU image at raster time.
+static var coverage_cache: Dictionary = {}
 static var beam_mesh: ArrayMesh
 static var beam_shader: Shader
 static var glyph_shader: Shader
@@ -78,16 +80,25 @@ static func material(color: Color, kind: StringName = &"") -> ShaderMaterial:
 			glyph_shader = Shader.new()
 			glyph_shader.code = GLYPH_CODE
 		result.shader = glyph_shader
-		if not glyph_cache.has(kind):
-			var svg := '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 32 32"><g fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">%s</g></svg>' % GLYPHS[kind]
-			var image := Image.new()
-			image.load_svg_from_string(svg)
-			image.generate_mipmaps()
-			glyph_cache[kind] = ImageTexture.create_from_image(image)
-		result.set_shader_parameter("glyph",glyph_cache[kind])
+		result.set_shader_parameter("glyph",glyph(kind))
 	result.set_shader_parameter("tint",TOOL_GLYPH_TINT if kind in TOOL_KINDS else color)
 	if kind != &"": result.set_shader_parameter("glyph_gain",0.675 if kind in TOOL_KINDS else 0.75)
 	return result
+
+## Rasterises each vector glyph once (warm-up hook); SVG parsing never repeats per spawn.
+static func glyph(kind: StringName) -> ImageTexture:
+	if not glyph_cache.has(kind):
+		var svg := '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 32 32"><g fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">%s</g></svg>' % GLYPHS[kind]
+		var image := Image.new()
+		image.load_svg_from_string(svg)
+		coverage_cache[kind] = float(image.get_used_rect().size.y)/image.get_height()
+		image.generate_mipmaps()
+		glyph_cache[kind] = ImageTexture.create_from_image(image)
+	return glyph_cache[kind]
+
+static func coverage(kind: StringName) -> float:
+	if not coverage_cache.has(kind): glyph(kind)
+	return coverage_cache[kind]
 
 static func mesh() -> ArrayMesh:
 	if beam_mesh != null: return beam_mesh

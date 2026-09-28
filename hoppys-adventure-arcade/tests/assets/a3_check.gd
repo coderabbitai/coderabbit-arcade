@@ -181,6 +181,7 @@ func _run() -> void:
 		print("A3 CENSUS: %s draws=%d triangles=%d" % [title,peak.x,peak.y])
 		visual.free()
 	check(runtime_errors.count == 0,"no runtime errors during asset checks")
+	preload("res://scenes/runner/hazards/visuals/hazard_art.gd").release_caches()
 	print("ASSET A3: %s (%d checks)" % ["PASS" if failures == 0 else "FAIL",checks])
 	quit(0 if failures == 0 else 1)
 
@@ -248,6 +249,20 @@ func _round_two(visual: Base, title: String) -> void:
 	clone.set_process(false)
 	for key: String in art._materials:
 		if clone._art._materials.has(key): check(art._materials[key] != clone._art._materials[key],"R2 instance-local materials")
+	# Immutable footprint resources are shared per colour/size; a clear swaps, never mutates them.
+	if art.has_node("FloorMarker"):
+		var mine: MeshInstance3D = art.get_node("FloorMarker")
+		var theirs: MeshInstance3D = clone._art.get_node("FloorMarker")
+		check(mine.mesh == theirs.mesh and mine.material_override == theirs.material_override,"shared footprint quad and material")
+		check(absf(mine.position.y-0.012) >= 0.005 and mine.position.y <= 0.05,"footprint clear of the corridor lane glow plane")
+		var before: Color = theirs.material_override.emission
+		clone._art.react(true)
+		check(mine.material_override.emission == before and theirs.material_override.emission == art.Palette.MINT,"cleared footprint swap leaves other rigs untouched")
+	if art.has_node("SafeGap"):
+		check(absf(art.get_node("SafeGap").position.y-art.get_node("FloorMarker").position.y) >= 0.005,"footprint layers never share a plane")
+	for sparks: GPUParticles3D in art.find_children("BoundedSparks","GPUParticles3D",true,false):
+		var twin := clone._art.get_node_or_null("BoundedSparks") as GPUParticles3D
+		if twin != null: check(twin.draw_pass_1 == sparks.draw_pass_1,"shared spark draw pass")
 	clone.free()
 
 func _round_three(visual: Base) -> void:

@@ -9,6 +9,11 @@ var clock := 0.0
 var game: Node
 var values := {"strength": 0.0, "corner_bars": 0.0, "aberration": 0.0, "letterbox": 0.0, "speed": 0.0, "bloom_lift": 0.0}
 var transitions: Dictionary = {}
+## Hold-free transitions (speed, pursuit, Nitro bloom) retarget every tick; they ease here in
+## _process instead of allocating a Tween per physics step. key -> {from, to, age, seconds}.
+var channels: Dictionary = {}
+## Last value written per uniform, so unchanged uniforms are not re-sent every frame.
+var _written: Dictionary = {}
 # Only tweens observed running before our pause may be resumed.
 var suspended: Dictionary = {}
 var signal_handlers: Dictionary = {}
@@ -61,21 +66,34 @@ func set_settings(overrides: Dictionary) -> void:
 func _enabled(key: String) -> float:
 	return 1.0 if bool(settings.get(key, true)) else 0.0
 
+func _uniform(key: String, value: float) -> void:
+	if _written.get(key) != value:
+		_written[key] = value
+		material.set_shader_parameter(key, value)
+
 func _apply() -> void:
-	material.set_shader_parameter("clock", clock)
-	material.set_shader_parameter("grain_seed", float(grain_seed))
-	material.set_shader_parameter("grade", 0.85 * _enabled("grade"))
-	material.set_shader_parameter("grain", 0.018 * _enabled("grain"))
-	material.set_shader_parameter("vignette", 0.16 * _enabled("vignette"))
-	material.set_shader_parameter("pulse", 0.5 + 0.5 * sin(clock * 6.0))
+	_uniform("clock", clock)
+	_uniform("grain_seed", float(grain_seed))
+	_uniform("grade", 0.85 * _enabled("grade"))
+	_uniform("grain", 0.018 * _enabled("grain"))
+	_uniform("vignette", 0.16 * _enabled("vignette"))
+	_uniform("pulse", 0.5 + 0.5 * sin(clock * 6.0))
 	for key: String in values:
 		var setting := "pursuit" if key in ["strength", "corner_bars"] else key
-		material.set_shader_parameter(key, float(values[key]) * _enabled(setting))
+		_uniform(key, float(values[key]) * _enabled(setting))
 
 func _process(delta: float) -> void:
 	if signal_paused:
 		return
 	clock += delta
+	for key: String in channels.keys():
+		var channel: Dictionary = channels[key]
+		channel.age += delta
+		var t := minf(1.0, channel.age / channel.seconds)
+		# Same curve the per-tick Tween used: TRANS_QUAD, EASE_OUT.
+		values[key] = lerpf(channel.from, channel.to, 1.0 - (1.0 - t) * (1.0 - t))
+		if t >= 1.0:
+			channels.erase(key)
 	_apply()
 
 func _write(value: float, key: String) -> void:
@@ -83,6 +101,7 @@ func _write(value: float, key: String) -> void:
 	_apply()
 
 func _cancel(key: String) -> void:
+	channels.erase(key)
 	if transitions.has(key):
 		var old: Tween = transitions[key]
 		if old.is_valid():
@@ -102,9 +121,14 @@ func _suspend(key: String, tween: Tween) -> void:
 		tween.pause()
 
 func _animate(key: String, target: float, seconds: float = 0.18, hold: float = -1.0) -> void:
+	if hold < 0.0 and channels.has(key) and is_equal_approx(channels[key].to, target):
+		return
 	_cancel(key)
 	if not is_inside_tree():
 		_write(target, key)
+		return
+	if hold < 0.0:
+		channels[key] = {"from": float(values[key]), "to": target, "age": 0.0, "seconds": maxf(seconds, 0.001)}
 		return
 	var tween := create_tween().set_pause_mode(Tween.TWEEN_PAUSE_BOUND)
 	transitions[key] = tween
@@ -119,6 +143,7 @@ func _animate(key: String, target: float, seconds: float = 0.18, hold: float = -
 func _reset() -> void:
 	for key: String in transitions.keys():
 		_cancel(key)
+	channels.clear()
 	for key: String in values:
 		values[key] = 0.0
 	clock = 0.0
