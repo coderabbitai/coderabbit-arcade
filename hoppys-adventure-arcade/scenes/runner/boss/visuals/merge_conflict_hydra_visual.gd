@@ -5,6 +5,10 @@ var show_name_plate := true
 var _clock := 0.0
 var intro_calls := 0
 var _intro_tag_visible := false
+## Pending telegraphs (lane mask, visual clock at fire), preallocated.
+const QUEUE := 6
+var _queue_mask := PackedInt32Array([0, 0, 0, 0, 0, 0])
+var _queue_due := PackedFloat32Array([0, 0, 0, 0, 0, 0])
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -26,6 +30,7 @@ func on_spawned() -> void:
 		ancestor = ancestor.get_parent()
 	set_health(max_hp, max_hp)
 	_clock = 0.0
+	_queue_mask.fill(0)
 	# Backend parents already supply hover_z; standalone mounts use the same depth.
 	position = Vector3(0, 0, hover_z - get_parent_node_3d().position.z) if get_parent_node_3d() != null else Vector3(0, 0, hover_z)
 	show()
@@ -39,19 +44,36 @@ func set_health(hp: int, max_health: int) -> void:
 	if _art == null: on_spawned()
 	_art.health = clampf(float(hp) / maxi(max_health, 1), 0, 1)
 
-func play_telegraph(lane_mask: int, _projectile_kind: StringName, seconds: float) -> void:
+func play_telegraph(lane_mask: int, projectile_kind: StringName, seconds: float) -> void:
 	if _art == null: on_spawned()
-	var total := 0.0
-	var count := 0
-	for lane in 3:
-		if lane_mask & (1 << lane):
-			total += (lane - 1) * 2.0
-			count += 1
-	_art.aim = total / maxi(count, 1)
-	_art.react(&"telegraph", seconds)
+	_art.signature_telegraph(lane_mask, projectile_kind, seconds)
+	# Remember which lanes fire when, so each head recoils as its own shot leaves (a branching
+	# volley fires its heads one after another).
+	var slot := 0
+	for i in QUEUE:
+		if _queue_due[i] < _queue_due[slot]: slot = i
+	for i in QUEUE:
+		if _queue_mask[i] == 0: slot = i
+	_queue_mask[slot] = lane_mask
+	_queue_due[slot] = _clock + seconds
 
-func play_attack(_projectile_kind: StringName) -> void:
-	if _art != null: _art.react(&"attack", 0.12)
+## Contract 2.4 optional hook; the Hydra has no flaky beat, so only the aim follows.
+func play_commit(lane_mask: int, _projectile_kind: StringName, seconds: float) -> void:
+	if _art != null: _art.signature_commit(lane_mask, seconds)
+
+func play_attack(projectile_kind: StringName) -> void:
+	if _art == null: return
+	_art.signature_attack(projectile_kind)
+	var slot := -1
+	for i in QUEUE:
+		if _queue_mask[i] != 0 and (slot < 0 or _queue_due[i] < _queue_due[slot]): slot = i
+	var mask := _queue_mask[slot] if slot >= 0 else 0b010
+	if slot >= 0: _queue_mask[slot] = 0
+	var order := 0
+	for lane in 3:
+		if mask & (1 << lane):
+			_art.recoil_head(_art.head_for_x((lane - 1) * 2.0), order * 0.07)
+			order += 1
 
 func play_hit(_tool_kind: StringName, _damage: int) -> void:
 	if _art != null: _art.flash()

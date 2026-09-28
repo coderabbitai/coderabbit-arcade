@@ -2,6 +2,11 @@ extends SceneTree
 const Forge = preload("res://scenes/runner/boss/hifi/forge.gd")
 const Art = preload("res://scenes/runner/boss/boss_art.gd")
 const Capture = preload("res://scenes/runner/boss/dev/capture_a5.gd")
+const BossDefs = preload("res://scenes/runner/boss/boss_defs.gd")
+const BossAttacks = preload("res://scenes/runner/boss/boss_attacks.gd")
+const HazardDefs = preload("res://scenes/runner/hazards/hazard_defs.gd")
+const ProjectileArt = preload("res://scenes/runner/boss/visuals/boss_projectile_art.gd")
+const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 var boss_peak_draws := 0
 const KINDS := ["flaky_test_swarm", "merge_conflict_hydra", "legacy_monolith"]
 var checks := 0
@@ -130,6 +135,8 @@ func run() -> void:
 			visual.play_resist(&"lint_rule")
 			visual._process(0.1)
 			inspect(visual, false)
+		var signature_peak := check_signature_reactions(visual)
+		peak = Vector2i(maxi(peak.x, signature_peak.x), maxi(peak.y, signature_peak.y))
 		visual.set_process(true)
 		paused = true
 		var previous: float = visual._art.clock
@@ -181,6 +188,12 @@ func run() -> void:
 		check(not node.tag.visible, "R4 subpixel tag hidden; contract metadata retained")
 	for node in fx.tracers: node.fire(Vector3.ZERO, Vector3(0, 3, -14), &"lint_rule", 15)
 	for node in fx.numbers: node.start(Vector3.ZERO, 15, Color.WHITE, 0)
+	# The signature accent layer is one MultiMesh however many marks are live: count it lit.
+	var quake: Dictionary = first_attack(2, BossAttacks.SIG_QUAKE)
+	fx._planned(quake)
+	fx._telegraph(int(quake.telegraph_mask), quake.variant, float(quake.telegraph))
+	fx._process(0.1)
+	check(fx.marks.visible and fx.marks.used > 0, "C4 signature marks lit for the census")
 	var fx_draws := 0
 	var fx_triangles := 0
 	for node in fx.find_children("*", "GeometryInstance3D", true, false):
@@ -204,6 +217,9 @@ func run() -> void:
 	check(boss_peak_draws + fx_draws <= 44, "whole fight leaves four draws of headroom")
 	print("A5 FX POOL CENSUS: %d draws, %d triangles (3 telegraphs, 4 tracers, 3 active numbers)" % [fx_draws, fx_triangles])
 	print("A5 WHOLE FIGHT CENSUS: %d draws (target 44, cap 48)" % [boss_peak_draws + fx_draws])
+	fx.clear()
+	await check_signature_fx(fx)
+	await check_projectiles()
 	fx.clear()
 	for i in 6:
 		fx._arrival(&"unit_test", 1, Vector3.ZERO)
@@ -230,6 +246,7 @@ func run() -> void:
 		check(not FileAccess.get_file_as_string(path).contains("cull_disabled"), "backface culling")
 		check(not FileAccess.get_file_as_string(path).contains("TIME"), "shader source clock only")
 	check_shader_masks()
+	ProjectileArt.release_caches()
 	root.get_node("AudioService").shutdown()
 	check(not root.get_node("AudioService").music.playing and root.get_node("AudioService").music.stream == null, "R5 MP3 playback released before shutdown")
 	Forge.clear_cache()
@@ -483,3 +500,388 @@ func check_round_five(visual: Node3D) -> void:
 	var beam := (load("res://scenes/runner/shaders/boss_beam.gdshader") as Shader).code
 	check(beam.contains("1.0-smoothstep(0.9,1.0,uv.y)") and beam.contains("across*along*end_fade"), "R5 near-end lane fade wired")
 	check(is_zero_approx(1.0-smoothstep(0.9,1.0,1.0)) and is_equal_approx(1.0-smoothstep(0.9,1.0,0.95),0.5), "R5 near edge fades over last ten percent")
+
+# --- C4: signature attack visuals (contract 2.4 §11.4-§11.6) ---
+
+## Every attack a boss's patterns can telegraph, in pattern order: [phase, attack] pairs.
+static func boss_attacks(slot: int, signature: StringName = &"*") -> Array:
+	var def: Dictionary = BossDefs.SLOTS[slot]
+	var out: Array = []
+	for phase in [1, 2, 3]:
+		for beat: Dictionary in def.patterns[phase - 1]:
+			if signature != &"*" and StringName(beat.get("signature", &"")) != signature: continue
+			for option: Array in BossAttacks.beat_options(beat, def, phase, null):
+				for attack: Dictionary in option: out.append([phase, attack])
+	return out
+
+static func first_attack(slot: int, signature: StringName) -> Dictionary:
+	var found := boss_attacks(slot, signature)
+	return found[0][1] if not found.is_empty() else {}
+
+static func first_option(slot: int, signature: StringName) -> Array:
+	var def: Dictionary = BossDefs.SLOTS[slot]
+	for phase in [1, 2, 3]:
+		for beat: Dictionary in def.patterns[phase - 1]:
+			if StringName(beat.get("signature", &"")) == signature:
+				return BossAttacks.beat_options(beat, def, phase, null)[0]
+	return []
+
+## Drives the real hook sequence of every signature attack through the visual, inspecting the
+## envelope and budget on every frame; returns the peak census.
+func check_signature_reactions(visual: Node3D) -> Vector2i:
+	var art: Node3D = visual._art
+	var slot: int = KINDS.find(String(visual.kind))
+	var peak := Vector2i.ZERO
+	var seen: Dictionary = {}
+	for pair: Array in boss_attacks(slot):
+		var attack: Dictionary = pair[1]
+		var signature := StringName(attack.get("signature", &""))
+		# Every signature once per phase, plus the first plain beat of each phase.
+		var key := "%s:%d" % [signature, pair[0]]
+		if seen.has(key): continue
+		seen[key] = true
+		visual.on_spawned()
+		visual.set_phase(pair[0])
+		visual._process(1.0)
+		var variant := StringName(attack.variant)
+		var total := float(attack.telegraph)
+		var commit_at := float(attack.get("commit_at", -1.0))
+		visual.play_telegraph(int(attack.telegraph_mask), variant, total)
+		var t := 0.0
+		var committed := commit_at < 0.0
+		var rest_spread := swarm_spread(art)
+		while t < total:
+			visual._process(0.05)
+			t += 0.05
+			if not committed and t >= commit_at:
+				committed = true
+				visual.play_commit(int(attack.mask), variant, total - commit_at)
+				visual._process(0.14)
+				t += 0.14
+				if visual.kind == &"flaky_test_swarm":
+					check(art.commit_age > 0.0 and swarm_spread(art) < rest_spread * 0.8, "C4 swarm tiles converge on commit")
+					check(art.batches[1].colors[0].is_equal_approx(Palette.DANGER), "C4 swarm tiles snap to one state")
+			var census := inspect(visual, false)
+			peak = Vector2i(maxi(peak.x, census.x), maxi(peak.y, census.y))
+			if visual.kind == &"legacy_monolith" and signature == BossAttacks.SIG_QUAKE and t > total * 0.5 and t < total - 0.03:
+				check(art.position.y > 0.05, "C4 monolith rises through the quake charge")
+			if visual.kind == &"legacy_monolith" and signature == BossAttacks.SIG_LEGACY_WALL and t > total * 0.5 and t < total - 0.03:
+				var pushed := false
+				for i in 6:
+					var lane := (i % 6) / 2
+					var dz: float = art.batches[0].poses[i].origin.z - art.batches[0].rest[i].origin.z
+					if int(attack.telegraph_mask) & (1 << lane): pushed = pushed or dz > 0.2
+					else: check(absf(dz) < 0.001, "C4 gap column stays for the wall")
+				check(pushed, "C4 monolith slabs push out for the wall")
+		visual.play_attack(variant)
+		if visual.kind == &"legacy_monolith" and signature == BossAttacks.SIG_QUAKE:
+			check(art.state == &"slam", "C4 monolith body slams for the quake")
+		for frame in 8:
+			visual._process(0.05)
+			var census := inspect(visual, false)
+			peak = Vector2i(maxi(peak.x, census.x), maxi(peak.y, census.y))
+			if visual.kind == &"legacy_monolith" and signature == BossAttacks.SIG_QUAKE and frame == 2:
+				check(art.ring.visible and art.scale.y < 1.0, "C4 slam squash and shock ring")
+	if visual.kind == &"merge_conflict_hydra":
+		# A branching volley: the heads recoil one after another, as each head's shot leaves.
+		visual.on_spawned()
+		visual.set_phase(1)
+		var volley := first_option(1, BossAttacks.SIG_BRANCHING)
+		check(volley.size() == 2, "C4 branching volley has two heads")
+		for attack: Dictionary in volley:
+			visual.play_telegraph(int(attack.telegraph_mask), attack.variant, float(attack.telegraph))
+		visual._process(float(volley[0].telegraph))
+		visual.play_attack(volley[0].variant)
+		visual._process(0.1)
+		var first := -1
+		for i in 4:
+			if art.head_recoil[i] < Art.HEAD_RECOIL: first = i
+		check(first >= 0 and art.heads[first].position.z < art.rest_poses[art.heads[first]].origin.z - 0.1, "C4 first head recoils")
+		visual._process(float(volley[1].telegraph) - float(volley[0].telegraph) - 0.1)
+		visual.play_attack(volley[1].variant)
+		visual._process(0.05)
+		var second := -1
+		for i in 4:
+			if i != first and art.head_recoil[i] < Art.HEAD_RECOIL and art.head_recoil[i] >= 0.0: second = i
+		check(second >= 0 and art.head_recoil[first] > art.head_recoil[second] + 0.2, "C4 second head recoils after the first")
+		inspect(visual, false)
+	return peak
+
+## Mean distance of the Swarm's tiles from their centroid (0 for other bosses).
+func swarm_spread(art: Node3D) -> float:
+	if art.boss_kind != &"flaky_test_swarm": return 0.0
+	var centre := Vector3.ZERO
+	for pose: Transform3D in art.batches[0].poses: centre += pose.origin
+	centre /= art.batches[0].poses.size()
+	var total := 0.0
+	for pose: Transform3D in art.batches[0].poses: total += pose.origin.distance_to(centre)
+	return total / art.batches[0].poses.size()
+
+func marks_with(fx: Node3D, record: Dictionary) -> int:
+	fx.marks.begin()
+	fx.draw_record(record)
+	var count: int = fx.marks.used
+	fx.marks.finish()
+	return count
+
+func color_near(a: Color, b: Color) -> bool:
+	return absf(a.r - b.r) < 0.02 and absf(a.g - b.g) < 0.02 and absf(a.b - b.b) < 0.02
+
+func mark_count(fx: Node3D, color: Color, test: Callable = Callable()) -> int:
+	var count := 0
+	for i in fx.marks.used:
+		if color_near(fx.marks.colors[i], color) and (not test.is_valid() or test.call(fx.marks.origins[i], fx.marks.sizes[i])): count += 1
+	return count
+
+func open(fx: Node3D, attack: Dictionary) -> Dictionary:
+	fx._planned(attack)
+	fx._telegraph(int(attack.telegraph_mask), attack.variant, float(attack.telegraph))
+	var newest: Dictionary = fx.records[0]
+	for record: Dictionary in fx.records:
+		if record.active and record.id > newest.id: newest = record
+	return newest
+
+func check_signature_fx(fx: Node3D) -> void:
+	var capacity: int = fx.marks.multimesh.instance_count
+	check(fx.records.size() == fx.MAX_RECORDS and fx.marks.multimesh.instance_count == fx.marks.CAPACITY, "C4 preallocated records and marks")
+	# Overlapping telegraphs on one lane: neither overwrites the other.
+	fx._telegraph(1, &"orb", 0.5)
+	fx._telegraph(1, &"orb", 1.0)
+	check(fx.telegraphs[0].entry_count() == 2, "C4 overlapping lane telegraphs both kept")
+	for i in 12: fx._process(0.05); fx.telegraphs[0]._process(0.05)
+	check(fx.telegraphs[0].active and absf(fx.telegraphs[0].remaining - 0.4) < 0.06, "C4 later telegraph survives the first")
+	fx.clear()
+	# Swarm flaky: the candidates alternate, then SNAP to the commit.
+	var flaky := first_attack(0, BossAttacks.SIG_FLAKY)
+	var record := open(fx, flaky)
+	check(record.flaky and not record.committed, "C4 flaky record opens uncommitted")
+	var candidates: Array = flaky.candidates
+	var swap := float(flaky.swap_seconds)
+	var lanes: Array[int] = []
+	for mask: int in candidates:
+		for lane in 3:
+			if mask & (1 << lane): lanes.append(lane)
+	fx._process(0.01)
+	var gain_a: float = fx.telegraphs[lanes[0]].gain
+	var gain_b: float = fx.telegraphs[lanes[1]].gain
+	check(gain_a > 0.9 and gain_b < 0.3, "C4 first flaky candidate shows, the other dims")
+	var showing_before: int = fx.showing_mask(record)
+	var tiles_a := mark_count(fx, Palette.MATRIX, func(o: Vector3, _s: Vector2) -> bool: return absf(o.x - fx.lane_x(lanes[0])) < 0.5)
+	for i in 3: fx._process(swap / 3.0)
+	check(fx.showing_mask(record) != showing_before, "C4 flaky candidates alternate at the swap rate")
+	check(fx.telegraphs[lanes[0]].gain < 0.3 and fx.telegraphs[lanes[1]].gain > 0.9, "C4 red lanes alternate with the tiles")
+	check(tiles_a > 2, "C4 glitch tiles on the showing candidate")
+	var lost := lanes[0] if int(flaky.mask) & (1 << lanes[1]) else lanes[1]
+	var won := lanes[1] if lost == lanes[0] else lanes[0]
+	fx._process(maxf(float(flaky.commit_at) - record.elapsed, 0.0))
+	fx._committed(int(flaky.mask), flaky.variant, float(flaky.telegraph) - float(flaky.commit_at))
+	check(record.committed and not fx.telegraphs[lost].has_entry(record.id) and fx.telegraphs[won].has_entry(record.id), "C4 commit drops the losing candidate lane")
+	fx._process(0.2)
+	check(not fx.telegraphs[lost].active and fx.telegraphs[won].gain > 0.99, "C4 committed lane solid")
+	var snapped := mark_count(fx, Palette.MATRIX, func(o: Vector3, s: Vector2) -> bool: return absf(o.x - fx.lane_x(won)) < 0.2 and s.x > 1.4)
+	check(snapped >= 6, "C4 tiles snap into the committed column")
+	check(mark_count(fx, Palette.MATRIX, func(o: Vector3, _s: Vector2) -> bool: return absf(o.x - fx.lane_x(lost)) < 0.6) == 0, "C4 losing candidate tiles gone")
+	var danger: Color = fx.telegraphs[won].countdown_material.get_shader_parameter("color")
+	check(color_near(danger, Palette.DANGER), "C4 DANGER stays the base telegraph")
+	fx.clear()
+	# Scatter: a fork at the split and the outer impact lanes after it.
+	record = open(fx, first_attack(0, BossAttacks.SIG_SCATTER))
+	fx._process(0.2)
+	check(mark_count(fx, Palette.DANGER, func(o: Vector3, _s: Vector2) -> bool: return absf(absf(o.x) - 2.0) < 0.1) == 2, "C4 scatter marks both outer impact lanes")
+	check(mark_count(fx, Palette.MATRIX, func(o: Vector3, _s: Vector2) -> bool: return absf(o.x) > 0.3 and absf(o.x) < 1.7) >= 2, "C4 scatter fork drawn")
+	fx.clear()
+	# Hydra branching: branch lines grow in firing order and are numbered.
+	var volley := first_option(1, BossAttacks.SIG_BRANCHING)
+	var heads: Array[Dictionary] = []
+	for attack: Dictionary in volley: heads.append(open(fx, attack))
+	for record_value in heads: record_value.elapsed = 0.05
+	check(marks_with(fx, heads[0]) >= 2 and marks_with(fx, heads[1]) == 1, "C4 second branch waits for the first")
+	for record_value in heads: record_value.elapsed = 0.7
+	check(marks_with(fx, heads[1]) == marks_with(fx, heads[0]) + 1, "C4 heads numbered in firing order")
+	fx.marks.begin()
+	fx.draw_record(heads[0])
+	check(mark_count(fx, Palette.LILAC) == fx.marks.used, "C4 hydra LILAC accent")
+	fx.clear()
+	# Sweep: the path crosses the lanes on the diagonal.
+	var sweep := first_attack(1, BossAttacks.SIG_SWEEP)
+	record = open(fx, sweep)
+	fx._process(0.1)
+	var sweep_end_z := -14.0 + float(sweep.speed) * float(sweep.sweep_end)
+	check(mark_count(fx, Palette.LILAC, func(o: Vector3, _s: Vector2) -> bool: return absf(o.x) < 1.2 and o.z < sweep_end_z - 1.0) >= 2, "C4 sweep diagonal across the middle lane")
+	check(mark_count(fx, Palette.LILAC, func(o: Vector3, _s: Vector2) -> bool: return absf(o.x - fx.lane_x(int(sweep.sweep_to))) < 0.4 and o.z > sweep_end_z + 1.0) >= 2, "C4 sweep continues down its end lane")
+	fx.clear()
+	record = open(fx, first_attack(1, BossAttacks.SIG_FORCE_PUSH))
+	fx._process(0.1)
+	check(mark_count(fx, Palette.LILAC) >= 11, "C4 force push chevrons and merge bar")
+	fx.clear()
+	# Monolith quake ring expands.
+	record = open(fx, first_attack(2, BossAttacks.SIG_QUAKE))
+	var radius := func() -> float:
+		var best := 0.0
+		for i in fx.marks.used:
+			var o: Vector3 = fx.marks.origins[i]
+			if fx.marks.sizes[i].x > 0.2: best = maxf(best, Vector2(o.x, o.z + 14.0).length())
+		return best
+	fx._process(0.1)
+	var early: float = radius.call()
+	fx._process(float(record.seconds) * 0.6)
+	check(radius.call() > early + 2.0, "C4 quake ring expands")
+	check(mark_count(fx, Palette.ORANGE) > 20, "C4 monolith ORANGE accent")
+	fx.clear()
+	# Legacy wall: the gap and its shift target in MINT from the first frame.
+	var wall := first_attack(2, BossAttacks.SIG_LEGACY_WALL)
+	record = open(fx, wall)
+	fx._process(0.01)
+	var shift_z := -14.0 + float(wall.speed) * float(wall.shift_at)
+	var gap_x: float = fx.lane_x(int(wall.gap_from))
+	var target_x: float = fx.lane_x(int(wall.gap_to))
+	check(mark_count(fx, Palette.MINT, func(o: Vector3, _s: Vector2) -> bool: return absf(absf(o.x - gap_x) - 0.9) < 0.05 and o.z < shift_z) >= 2, "C4 wall gap lane highlighted")
+	check(mark_count(fx, Palette.MINT, func(o: Vector3, _s: Vector2) -> bool: return absf(absf(o.x - target_x) - 0.9) < 0.05 and o.z > shift_z) >= 2, "C4 wall shift target shown from the start")
+	check(mark_count(fx, Palette.MINT, func(o: Vector3, _s: Vector2) -> bool: return absf(o.x - (gap_x + target_x) * 0.5) < 0.3) >= 1, "C4 wall shift arrow")
+	fx.clear()
+	# Debris shadows grow until impact.
+	record = open(fx, first_attack(2, BossAttacks.SIG_DEBRIS))
+	fx._process(0.05)
+	var fill := func() -> float:
+		var widest := 0.0
+		for i in fx.marks.used: widest = maxf(widest, fx.marks.sizes[i].x)
+		return widest
+	var small: float = fill.call()
+	fx._process(float(record.seconds) - 0.1)
+	check(fill.call() > small * 1.5, "C4 debris shadows grow until impact")
+	# Pause freezes the records and the marks.
+	var frozen: float = record.elapsed
+	paused = true
+	await process_frame
+	await process_frame
+	check(record.elapsed == frozen, "C4 signature marks freeze on pause")
+	paused = false
+	fx.clear()
+	check(not fx.marks.visible and fx.marks.multimesh.visible_instance_count == 0, "C4 marks clear")
+	# A fight already under way when bind() runs resumes its flaky commit.
+	var host := Node.new()
+	var source := GDScript.new()
+	source.source_code = "extends Node\nvar rows: Array = []\nfunc get_boss_info() -> Dictionary:\n\treturn {\"pending_attacks\": rows}\n"
+	source.reload()
+	host.set_script(source)
+	root.add_child(host)
+	host.rows = [{"lane_mask": int(flaky.mask), "kind": &"orb", "remaining": 0.4, "committed": true, "attack": flaky}]
+	fx.bind(host)
+	var resumed := false
+	for record_value: Dictionary in fx.records:
+		resumed = resumed or (record_value.active and record_value.committed and record_value.commit_mask == int(flaky.mask))
+	check(resumed and fx.telegraphs[won].active and not fx.telegraphs[lost].active, "C4 bind resumes a committed flaky telegraph")
+	fx.clear()
+	fx._disconnect()
+	host.free()
+	# Many beats later the pools have not grown.
+	for i in 40:
+		open(fx, first_attack(i % 3, [BossAttacks.SIG_FLAKY, BossAttacks.SIG_SWEEP, BossAttacks.SIG_QUAKE][i % 3]))
+		fx._process(0.2)
+	check(fx.records.size() == fx.MAX_RECORDS and fx.marks.multimesh.instance_count == capacity, "C4 pools stay bounded")
+	fx.clear()
+
+## Every per-boss projectile look, from the real shots its attack fires: envelope (110 % of the
+## hitbox, ground projections exempt on y), draws, shared resources, split, shadow, pause.
+func check_projectiles() -> void:
+	var scene := load("res://scenes/runner/hazards/visuals/projectile_visual.tscn") as PackedScene
+	var looks_seen: Dictionary = {}
+	var shared: Dictionary = {}
+	for look: StringName in ProjectileArt.LOOKS:
+		var spec: Array = ProjectileArt.LOOKS[look]
+		var slot: int = KINDS.find(String(spec[0]))
+		var attack := first_attack(slot, spec[2])
+		check(not attack.is_empty(), "C4 attack for " + look)
+		var shots: Array = attack.get("shots", [])
+		for shot: Dictionary in shots:
+			var def := HazardDefs.get_def(&"projectile", StringName(shot.variant))
+			var size: Vector3 = def.size
+			var offset := Vector3(0, float(def.y_min) + size.y * 0.5, 0)
+			var visual: Node3D = scene.instantiate()
+			visual.kind = &"projectile"
+			visual.variant = StringName(shot.variant)
+			visual.projectile_variant = StringName(shot.variant)
+			visual.boss_kind = spec[0]
+			visual.signature = spec[2]
+			visual.motion = shot
+			visual.hitbox_size = size
+			visual.hitbox_offset = offset
+			visual.closing_speed = float(shot.speed)
+			root.add_child(visual)
+			visual.on_spawned()
+			var count := visual.find_children("*", "", true, false).size()
+			visual.on_spawned()
+			await process_frame
+			check(visual.find_children("*", "", true, false).size() == count, "C4 projectile idempotent spawn " + look)
+			var art: Node3D = visual._art
+			check(art is ProjectileArt and art.look == look, "C4 projectile look selected " + look)
+			visual.set_process(false)
+			var window := BossAttacks.pass_window(shot)
+			var peak := 0
+			var t := 0.0
+			var split_seen := false
+			var shadow_small := INF
+			var shadow_big := 0.0
+			while t <= window.y + 0.05:
+				visual._process(0.02 if t > 0.0 else 0.0)
+				var draws := 0
+				for node in art.find_children("*", "MeshInstance3D", true, false):
+					check(node.process_mode in [Node.PROCESS_MODE_INHERIT, Node.PROCESS_MODE_PAUSABLE], "C4 projectile pause inheritance")
+					if node.material_override is ShaderMaterial: check(not node.material_override.shader.code.contains("TIME"), "C4 projectile clock only")
+					if not node.is_visible_in_tree(): continue
+					draws += 1
+					var box: AABB = visual.global_transform.affine_inverse() * node.global_transform * node.get_aabb()
+					var low := box.position - offset
+					var high := box.end - offset
+					var limit := size * 0.55 + Vector3.ONE * 0.002
+					var ground := node.has_meta("ground_projection")
+					check(low.x >= -limit.x and high.x <= limit.x and low.z >= -limit.z and high.z <= limit.z, "C4 projectile x/z envelope %s %s t=%.2f %s" % [look, node.name, t, box])
+					if not ground: check(low.y >= -limit.y and high.y <= limit.y, "C4 projectile y envelope %s %s t=%.2f %s" % [look, node.name, t, box])
+					else: check(absf(node.global_position.y - visual.global_position.y + art.motion_lift(art.age) - ProjectileArt.GROUND_Y) < 0.001, "C4 ground projection on the floor " + look)
+					if String(node.name) == "GroundShadow":
+						shadow_small = minf(shadow_small, node.scale.x)
+						shadow_big = maxf(shadow_big, node.scale.x)
+				peak = maxi(peak, draws)
+				if look == ProjectileArt.SWARM_SCATTER:
+					var split: bool = art._split_at >= 0.0 and art.age >= art._split_at
+					if bool(shot.twin): check(art.visible == split, "C4 scatter twin hidden until the split")
+					else: check(art.parts.RHalf.visible == (not split), "C4 scatter primary carries both halves until the split")
+					split_seen = split_seen or split
+				if look == ProjectileArt.MONOLITH_SLAB and art._slide_dir != 0.0 and art.age >= art._shift_at and art.age < art._shift_end:
+					check(art.parts.SlideChevron.visible, "C4 sliding slab shows its chevron")
+				t += 0.02
+			check(peak > 0 and peak <= 8, "C4 projectile draw budget %s = %d" % [look, peak])
+			if look == ProjectileArt.SWARM_SCATTER: check(split_seen, "C4 scatter splits in flight")
+			if look == ProjectileArt.MONOLITH_DEBRIS: check(shadow_big > shadow_small * 2.0, "C4 debris shadow grows until landing")
+			# Shared, never per-spawn, resources.
+			var cached: Array = ProjectileArt._cache.values()
+			for node in art.find_children("*", "MeshInstance3D", true, false):
+				check(cached.has(node.mesh) and cached.has(node.material_override), "C4 projectile resources come from the shared cache " + look)
+				var key := "%s:%s" % [look, node.name]
+				if shared.has(key): check(is_same(shared[key], node.material_override), "C4 projectile materials shared across spawns " + key)
+				else: shared[key] = node.material_override
+			# Clock-driven: a paused tree freezes the look.
+			visual.set_process(true)
+			var age: float = art.age
+			paused = true
+			await process_frame
+			await process_frame
+			check(art.age == age, "C4 projectile freezes on pause " + look)
+			paused = false
+			visual.on_cleared()
+			check(not visual.visible, "C4 cleared projectile hidden " + look)
+			visual.free()
+			looks_seen[look] = true
+		print("C4 PROJECTILE LOOK: %s (%d shots)" % [look, shots.size()])
+	check(looks_seen.size() == ProjectileArt.LOOKS.size(), "C4 every look exercised")
+	# Base looks stay on hazard_art for everything else.
+	for spec in [[&"", &"orb"], [&"legacy_monolith", &"wide"], [&"flaky_test_swarm", &"high"]]:
+		var visual: Node3D = scene.instantiate()
+		visual.variant = spec[1]
+		visual.projectile_variant = spec[1]
+		visual.boss_kind = spec[0]
+		visual.hitbox_size = HazardDefs.get_def(&"projectile", spec[1]).size
+		root.add_child(visual)
+		visual.on_spawned()
+		check(not (visual._art is ProjectileArt) and visual.get_node_or_null("Artwork") != null, "C4 base look fallback %s %s" % spec)
+		visual.free()

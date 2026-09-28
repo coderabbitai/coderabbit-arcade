@@ -1,6 +1,9 @@
 extends SceneTree
 const TurnPreview = preload("res://scenes/runner/environment/dev/turn_preview.gd")
 const CorridorScript = preload("res://scenes/runner/environment/corridor.gd")
+const SignatureDefs = preload("res://scenes/runner/boss/boss_defs.gd")
+const SignatureAttacks = preload("res://scenes/runner/boss/boss_attacks.gd")
+const SignatureArt = preload("res://scenes/runner/boss/visuals/boss_projectile_art.gd")
 ## Runtime loads happen after the logger is installed so engine errors fail this test.
 class ErrorCapture extends Logger:
 	var count := 0
@@ -1466,6 +1469,23 @@ func check_bosses() -> void:
 					visual.play_attack(variant)
 					visual._process(0.06)
 					check_boss_envelope(visual, String(kind) + " attack")
+			# Contract 2.4 signature hooks: every signature variant, the optional commit, and fire.
+			for variant in [&"scatter", &"sweep", &"force_push", &"slab", &"quake", &"debris"]:
+				for mask in [2, 3, 5, 6, 7]:
+					visual.play_telegraph(mask, variant, 0.7)
+					for i in 3:
+						visual._process(0.15)
+						check_boss_envelope(visual, "%s signature telegraph %s" % [kind, variant])
+						boss_peak = maxi(boss_peak, hazard_draw_count(visual))
+					if visual.has_method("play_commit"):
+						visual.play_commit(mask & -mask, variant, 0.25)
+						visual._process(0.15)
+						check_boss_envelope(visual, "%s commit %s" % [kind, variant])
+					visual.play_attack(variant)
+					for i in 5:
+						visual._process(0.08)
+						check_boss_envelope(visual, "%s signature attack %s" % [kind, variant])
+						boss_peak = maxi(boss_peak, hazard_draw_count(visual))
 			for tool in [&"review_comment", &"lint_rule", &"unit_test", &"auto_fix_patch"]:
 				visual.play_hit(tool, 15)
 				visual._process(0.09)
@@ -1494,6 +1514,84 @@ func check_bosses() -> void:
 	print("BOSS VISUALS: ", "PASS" if before == failures else "FAIL", " (3 checked; peak draw census=", peak, ")")
 	check(failures == before, "boss visual section")
 	await frames()
+
+## Contract 2.4: each boss's projectile look per signature variant, flown along its real motion,
+## plus the per-boss telegraph modes on the standalone FX. Independent of a5_check's census.
+func check_signature_projectiles() -> void:
+	var before := failures
+	var scene := preload("res://scenes/runner/hazards/visuals/projectile_visual.tscn")
+	var slots := {&"flaky_test_swarm": 0, &"merge_conflict_hydra": 1, &"legacy_monolith": 2}
+	for look: StringName in SignatureArt.LOOKS:
+		var spec: Array = SignatureArt.LOOKS[look]
+		var def: Dictionary = SignatureDefs.SLOTS[slots[spec[0]]]
+		var shots: Array = []
+		for phase in [1, 2, 3]:
+			for beat: Dictionary in def.patterns[phase - 1]:
+				if shots.is_empty() and StringName(beat.get("signature", &"")) == spec[2]:
+					shots = SignatureAttacks.beat_options(beat, def, phase, null)[0][0].shots
+		check(not shots.is_empty(), "signature shots for " + look)
+		for shot: Dictionary in shots:
+			var hazard := preload("res://scenes/runner/hazards/hazard_defs.gd").get_def(&"projectile", shot.variant)
+			var size: Vector3 = hazard.size
+			var offset := Vector3(0, float(hazard.y_min) + size.y * 0.5, 0)
+			var visual := scene.instantiate()
+			for key in ["variant", "projectile_variant"]: visual.set(key, shot.variant)
+			visual.boss_kind = spec[0]
+			visual.signature = spec[2]
+			visual.motion = shot
+			visual.hitbox_size = size
+			visual.hitbox_offset = offset
+			visual.closing_speed = float(shot.speed)
+			root.add_child(visual)
+			visual.on_spawned()
+			check(visual.signature_variants and visual.get_node_or_null("BossProjectileArt") != null, "signature look mounted " + look)
+			var window := SignatureAttacks.pass_window(shot)
+			var age := 0.0
+			while age < window.y:
+				visual._process(0.03)
+				age += 0.03
+				check(hazard_draw_count(visual) <= 8, "signature projectile draw budget " + look)
+				for node: MeshInstance3D in visual.find_children("*", "MeshInstance3D", true, false):
+					if not node.is_visible_in_tree(): continue
+					var box: AABB = visual.global_transform.affine_inverse() * node.global_transform * node.get_aabb()
+					var half := size * 0.55 + Vector3.ONE * 0.002
+					var low := box.position - offset
+					var high := box.end - offset
+					var ok := low.x >= -half.x and high.x <= half.x and low.z >= -half.z and high.z <= half.z
+					if not node.has_meta("ground_projection"): ok = ok and low.y >= -half.y and high.y <= half.y
+					check(ok, "signature projectile inside 110%% hitbox %s %s" % [look, node.name])
+			var art: Node3D = visual.get_node("BossProjectileArt")
+			var frozen: float = art.age
+			paused = true
+			await frames()
+			check(art.age == frozen, "signature projectile freezes on pause " + look)
+			paused = false
+			visual.free()
+	# Standalone FX: every signature telegraph mode lights the one-draw accent layer.
+	var fx: Node3D = preload("res://scenes/runner/boss/boss_fx.tscn").instantiate()
+	root.add_child(fx)
+	var lit := {}
+	for slot in 3:
+		var def: Dictionary = SignatureDefs.SLOTS[slot]
+		for phase in [1, 2, 3]:
+			for beat: Dictionary in def.patterns[phase - 1]:
+				var signature := StringName(beat.get("signature", &""))
+				if signature == &"" or lit.has(signature): continue
+				fx.clear()
+				for attack: Dictionary in SignatureAttacks.beat_options(beat, def, phase, null)[0]:
+					fx._planned(attack)
+					fx._telegraph(int(attack.telegraph_mask), attack.variant, float(attack.telegraph))
+				fx._process(0.4)
+				lit[signature] = fx.marks.used
+				check(fx.marks.visible and fx.marks.used > 0 and fx.marks is MultiMeshInstance3D and fx.marks.get_child_count() == 0, "signature telegraph mode lit " + signature)
+				var danger := false
+				for node in fx.telegraphs: danger = danger or node.active
+				check(danger, "DANGER base telegraph under " + signature)
+	check(lit.size() == SignatureAttacks.SIGNATURES.size(), "every signature has a telegraph mode (%s)" % [lit])
+	fx.clear()
+	check(not fx.marks.visible, "signature marks clear")
+	fx.free()
+	print("SIGNATURE VISUALS: ", "PASS" if failures == before else "FAIL", " (", SignatureArt.LOOKS.size(), " looks, ", lit.size(), " telegraph modes)")
 
 func check_tools_and_projectiles() -> void:
 	var before := failures
@@ -1534,6 +1632,7 @@ func check_tools_and_projectiles() -> void:
 		projectile.on_cleared()
 		check(not projectile.visible, "cleared projectile hidden")
 	projectile.free()
+	await check_signature_projectiles()
 	var mock := preload("res://scenes/runner/ui/dev/mock_runner_game.gd").new()
 	mock.autoplay = false
 	root.add_child(mock)

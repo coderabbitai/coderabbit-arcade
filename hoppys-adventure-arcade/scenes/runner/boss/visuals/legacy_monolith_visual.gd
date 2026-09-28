@@ -39,19 +39,16 @@ func set_health(hp: int, max_health: int) -> void:
 	if _art == null: on_spawned()
 	_art.health = clampf(float(hp) / maxi(max_health, 1), 0, 1)
 
-func play_telegraph(lane_mask: int, _projectile_kind: StringName, seconds: float) -> void:
+func play_telegraph(lane_mask: int, projectile_kind: StringName, seconds: float) -> void:
 	if _art == null: on_spawned()
-	var total := 0.0
-	var count := 0
-	for lane in 3:
-		if lane_mask & (1 << lane):
-			total += (lane - 1) * 2.0
-			count += 1
-	_art.aim = total / maxi(count, 1)
-	_art.react(&"telegraph", seconds)
+	_art.signature_telegraph(lane_mask, projectile_kind, seconds)
 
-func play_attack(_projectile_kind: StringName) -> void:
-	if _art != null: _art.react(&"attack", 0.12)
+## Contract 2.4 optional hook (boss_attack_committed): only the aim follows.
+func play_commit(lane_mask: int, _projectile_kind: StringName, seconds: float) -> void:
+	if _art != null: _art.signature_commit(lane_mask, seconds)
+
+func play_attack(projectile_kind: StringName) -> void:
+	if _art != null: _art.signature_attack(projectile_kind)
 
 func play_hit(_tool_kind: StringName, _damage: int) -> void:
 	if _art != null: _art.flash()

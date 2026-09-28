@@ -30,6 +30,18 @@ var flashes: Array[StandardMaterial3D] = []
 var rest_poses: Dictionary = {}
 var motes: GPUParticles3D
 static var PLATING := Palette.SLATE.lerp(Palette.CREAM, 0.32)
+## Contract 2.4 signature reactions. `mode` is the signature the current telegraph belongs to
+## (&"wall", &"quake", &"debris" for the Monolith, &"" otherwise), `wall_mask` its lanes;
+## `commit_age` counts from a flaky commit (-1 before one); `head_recoil` holds each Hydra head's
+## seconds since its recoil started (negative while staggered, >= HEAD_RECOIL when at rest).
+var mode: StringName = &""
+var wall_mask := 0
+var commit_age := -1.0
+var head_recoil := PackedFloat32Array([9.0, 9.0, 9.0, 9.0])
+const HEAD_RECOIL := 0.38
+const SIGNATURE_MODES := {&"slab": &"wall", &"quake": &"quake", &"debris": &"debris"}
+const WALL_PUSH := 0.5
+const QUAKE_RISE := 0.22
 
 static func shape(parent: Node3D, mesh: Mesh, pos: Vector3, material: Material) -> MeshInstance3D:
 	var node := MeshInstance3D.new()
@@ -279,6 +291,10 @@ func build(value: StringName) -> void:
 
 func reset() -> void:
 	state = &"idle"
+	mode = &""
+	wall_mask = 0
+	commit_age = -1.0
+	head_recoil.fill(9.0)
 	phase = 1
 	health = 1.0
 	clock = 0.0
@@ -294,6 +310,55 @@ func react(value: StringName, seconds: float) -> void:
 	age = 0.0
 	duration = maxf(seconds, 0.001)
 
+## play_telegraph with the variant: the Monolith reads its signature from it (slab = the legacy
+## wall, quake, debris); every boss aims at the lanes' centre.
+func signature_telegraph(lane_mask: int, projectile_kind: StringName, seconds: float) -> void:
+	aim = mask_center(lane_mask)
+	wall_mask = lane_mask
+	commit_age = -1.0
+	mode = SIGNATURE_MODES.get(projectile_kind, &"")
+	react(&"telegraph", seconds)
+
+## A flaky telegraph settled on `lane_mask`: the Swarm's tiles converge on it until the shot.
+func signature_commit(lane_mask: int, seconds: float) -> void:
+	aim = mask_center(lane_mask)
+	if state != &"telegraph":
+		react(&"telegraph", seconds)
+	else:
+		duration = age + maxf(seconds, 0.001)
+	commit_age = 0.0
+
+## At fire: the Monolith slams its body for a quake; every other attack is the short recoil.
+func signature_attack(projectile_kind: StringName) -> void:
+	commit_age = -1.0
+	if mode == &"quake" and projectile_kind == &"quake": react(&"slam", 0.34)
+	else: react(&"attack", 0.12)
+
+## Hydra: head `index` snaps back after `delay` seconds (heads recoil one after another).
+func recoil_head(index: int, delay: float) -> void:
+	if index >= 0 and index < head_recoil.size(): head_recoil[index] = -maxf(delay, 0.0)
+
+## The visible Hydra head nearest to lane x `x` that is not already recoiling (else the nearest).
+func head_for_x(x: float) -> int:
+	var best := -1
+	var fallback := -1
+	for i in heads.size():
+		if not (i < 3 or phase >= 2): continue
+		var distance := absf((i - 1.5) * 1.65 - x)
+		if fallback < 0 or distance < absf((fallback - 1.5) * 1.65 - x): fallback = i
+		if head_recoil[i] < HEAD_RECOIL: continue
+		if best < 0 or distance < absf((best - 1.5) * 1.65 - x): best = i
+	return best if best >= 0 else fallback
+
+static func mask_center(lane_mask: int) -> float:
+	var total := 0.0
+	var count := 0
+	for lane in 3:
+		if lane_mask & (1 << lane):
+			total += (lane - 1) * 2.0
+			count += 1
+	return total / maxi(count, 1)
+
 func flash(resisted: bool = false) -> void:
 	react(&"resist" if resisted else &"hurt", 0.25)
 
@@ -303,6 +368,9 @@ func shatter() -> void:
 func advance(delta: float) -> void:
 	clock += delta
 	age += delta
+	if commit_age >= 0.0: commit_age += delta
+	for i in head_recoil.size():
+		if head_recoil[i] < HEAD_RECOIL: head_recoil[i] += delta
 	# Entrance root transforms never leak into idle, hit, or defeat poses.
 	position = Vector3.ZERO
 	if age >= duration and state not in [&"idle", &"defeated", &"retreat"]: state = &"idle"
@@ -310,13 +378,18 @@ func advance(delta: float) -> void:
 	for node: Node3D in rest_poses:
 		node.transform = rest_poses[node]
 	var charge := u if state == &"telegraph" else 0.0
+	var converge := 0.5 * smoothstep(0.0, 0.12, commit_age) if boss_kind == &"flaky_test_swarm" and state == &"telegraph" and commit_age >= 0.0 else 0.0
+	var wall_push := 0.0
+	if boss_kind == &"legacy_monolith" and mode == &"wall":
+		wall_push = WALL_PUSH * (charge if state == &"telegraph" else (1.0 - u if state == &"attack" else 0.0))
+	var debris_shake := charge if boss_kind == &"legacy_monolith" and mode == &"debris" else 0.0
 	if boss_kind != &"merge_conflict_hydra":
 		core.scale = Vector3.ONE * (1 + 0.6 * charge)
 		core.rotation.y = sin(clock * 0.5) * 0.08
 		core.position.x += aim * 0.12 * charge
 	if state == &"attack": core.position.z -= 0.12 * sin(u * PI)
 	if state == &"hurt": core.position.x += sin(age * 90) * 0.06
-	ring.visible = boss_kind != &"merge_conflict_hydra" and state in [&"phase_change", &"attack", &"defeated"]
+	ring.visible = boss_kind != &"merge_conflict_hydra" and state in [&"phase_change", &"attack", &"defeated", &"slam"]
 	ring.scale = Vector3.ONE * (1 + minf(u * 1.5, 1.5))
 	# Lift expanding geometry to keep its bottom above the contract floor.
 	ring.position.y = 1.2
@@ -335,8 +408,10 @@ func advance(delta: float) -> void:
 			var color: Color = entry.color
 			if boss_kind == &"flaky_test_swarm":
 				if b <= 1:
-					current.origin = swarm_origin(i, phase, clock) + Vector3(0, 0, 0.145 if b == 1 else 0.0)
-					color = PLATING if b == 0 else tile_accent(i, clock)
+					current.origin = _swarm_point(i, converge) + Vector3(0, 0, 0.145 if b == 1 else 0.0)
+					color = PLATING if b == 0 else (Palette.DANGER if converge > 0.0 else tile_accent(i, clock))
+				elif converge > 0.0:
+					current = swarm_arc_between(_swarm_point(i, converge), _swarm_point((i + 1) % 24, converge)) if not (phase >= 2 and i % 8 == 7) else Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO)
 				else:
 					current = swarm_arc_pose(i, phase, clock)
 			if boss_kind == &"merge_conflict_hydra":
@@ -346,6 +421,10 @@ func advance(delta: float) -> void:
 					current.basis = Basis.from_scale(Vector3.ZERO)
 			if boss_kind == &"legacy_monolith" and b == 0:
 				current.origin.x += (-1.0 if i % 2 == 0 else 1.0) * (phase - 1) * 0.016
+				# Legacy wall: the bottom-row slabs of the blocked lanes push out toward the player.
+				if i < 6 and wall_mask & (1 << ((i % 6) / 2)): current.origin.z += wall_push
+				# Debris: the top row shakes loose while the shadows grow.
+				if i >= 12 and debris_shake > 0.0: current.origin += Vector3(sin(clock * 55.0 + i), cos(clock * 47.0 + i), 0) * 0.025 * debris_shake
 			if boss_kind == &"legacy_monolith" and b == 1:
 				current.basis = current.basis.scaled_local(Vector3(1 + phase * 0.35 + (1 - health), 1, 1))
 			if state == &"intro" and boss_kind == &"flaky_test_swarm":
@@ -362,6 +441,10 @@ func advance(delta: float) -> void:
 		heads[i].visible = i < 3 or phase >= 2
 		heads[i].rotation.y = aim * charge * 0.08
 		heads[i].position.x += sin(clock * 2 + i) * 0.025
+		if head_recoil[i] >= 0.0 and head_recoil[i] < HEAD_RECOIL:
+			var kick := sin(PI * head_recoil[i] / HEAD_RECOIL)
+			heads[i].position.z -= 0.34 * kick
+			heads[i].rotation.x = -0.4 * kick
 		if state == &"intro": heads[i].scale = Vector3.ONE * lerpf(0.86, 1.0, smoothstep(0.1, 0.9, u))
 		var jaw := heads[i].get_node("Jaw") as Node3D
 		jaw.rotation.x = 0.05 + charge * 0.7 + (sin(u * PI) * 0.9 if state == &"attack" else 0.0)
@@ -387,6 +470,13 @@ func advance(delta: float) -> void:
 	else:
 		scale = Vector3.ONE
 		motes.emitting = true
+	# Monolith quake: the body rises through the charge and slams down at fire.
+	if boss_kind == &"legacy_monolith":
+		if state == &"telegraph" and mode == &"quake": position.y += QUAKE_RISE * charge
+		elif state == &"slam":
+			position.y += QUAKE_RISE * (1.0 - smoothstep(0.0, 0.3, u))
+			var squash := sin(PI * clampf((u - 0.25) / 0.75, 0.0, 1.0))
+			scale = Vector3(1.0, 1.0 - 0.04 * squash, 1.0 + 0.04 * squash)
 
 static func tile_accent(index: int, seconds: float) -> Color:
 	return Palette.MATRIX if (index + int(floor(seconds * 3.0))) % 3 != 0 else Palette.DANGER
@@ -473,8 +563,15 @@ static func swarm_origin(index: int, current_phase: int, seconds: float) -> Vect
 
 static func swarm_arc_pose(index: int, current_phase: int, seconds: float) -> Transform3D:
 	if current_phase >= 2 and index % 8 == 7: return Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO)
-	var a := swarm_origin(index, current_phase, seconds)
-	var b := swarm_origin((index + 1) % 24, current_phase, seconds)
+	return swarm_arc_between(swarm_origin(index, current_phase, seconds), swarm_origin((index + 1) % 24, current_phase, seconds))
+
+## Swarm tile `index` pulled `amount` of the way toward the committed lane's focus point.
+func _swarm_point(index: int, amount: float) -> Vector3:
+	var origin := swarm_origin(index, phase, clock)
+	if amount <= 0.0: return origin
+	return origin.lerp(Vector3(aim * 0.35, 1.05, 0.3), amount)
+
+static func swarm_arc_between(a: Vector3, b: Vector3) -> Transform3D:
 	var tangent := (b - a).normalized()
 	var side := tangent.cross(Vector3.BACK).normalized()
 	var depth := side.cross(tangent).normalized()
