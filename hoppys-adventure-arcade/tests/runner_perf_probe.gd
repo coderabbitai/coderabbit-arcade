@@ -54,6 +54,9 @@ func run() -> void:
 		var now := Time.get_ticks_usec()
 		var span := (now - last) / 1000.0
 		last = now
+		if game.paused:
+			# The runner pauses itself when its window loses focus; this probe measures play.
+			game.resume()
 		if game.state != &"running":
 			game.start_run(run_seed + 1)
 			game.set_autopilot(true)
