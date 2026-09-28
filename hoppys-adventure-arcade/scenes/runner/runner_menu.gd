@@ -3,6 +3,7 @@ extends Node3D
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 const Style = preload("res://scenes/runner/ui/hud_style.gd")
 const Leaderboard = preload("res://scenes/runner/systems/runner_leaderboard.gd")
+const GpuWarmup = preload("res://scenes/runner/warmup/gpu_warmup.gd")
 const Music = preload("res://Assets/Backgrounds/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg")
 
 var buttons: Array[Button] = []
@@ -77,6 +78,8 @@ func _ready() -> void:
 	_label("↑ ↓ / D-PAD  SELECT    ENTER / A  CONFIRM    ESC / B  BACK", 12, Vector2(76, 670), Color("9baebc"))
 	buttons[0].grab_focus()
 	_process(0.0)
+	# Compile every gameplay shader now, behind the opaque route veil, instead of on first sight.
+	GpuWarmup.run(self, camera)
 
 func _label(text: String, size: int, position_2d: Vector2, color: Color = Style.CREAM) -> void:
 	var label := Style.label(text, size, color)

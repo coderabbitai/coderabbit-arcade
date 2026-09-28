@@ -11,6 +11,7 @@ const LIMIT_MS := 25.0
 const COLLECT_FRAMES := 20
 const MENU_SECONDS := 4.0
 const PLACE_Z := -9.0
+const ATTEMPT_SECONDS := 4.0
 var game: Node
 var failures := 0
 var last := 0
@@ -19,6 +20,11 @@ var via_menu := false
 func _initialize() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg == "via_menu=1": via_menu = true
+	# A window close or app quit request reaches AppRouter, which quits with code 0 a second later:
+	# the run would end silently and look like a pass to anything reading only the exit code.
+	root.close_requested.connect(func():
+		print("PICKUP HITCH: ABORTED (window close / app quit requested before the gate finished)")
+		quit(2))
 	call_deferred("run")
 
 func frame() -> float:
@@ -95,7 +101,9 @@ func _grab(kind: StringName, collected: Dictionary) -> float:
 		pickup.setup(game)
 		pickup.reset_physics_interpolation()
 		var after := -1
-		for i in 240:
+		# Time-bounded, not frame-bounded: at 4 ms frames 240 frames end before the pickup arrives.
+		var deadline := Time.get_ticks_msec() + int(ATTEMPT_SECONDS * 1000)
+		while Time.get_ticks_msec() < deadline:
 			worst = maxf(worst, await frame())
 			if game.paused:
 				# The runner pauses itself when its window loses focus; this gate measures play, not that.

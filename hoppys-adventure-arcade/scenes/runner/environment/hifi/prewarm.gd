@@ -1,5 +1,6 @@
 extends RefCounted
-## CPU/resource cache warmup only. Instance-owned animated materials stay private.
+## CPU/resource cache warmup. GPU shader warmup lives in scenes/runner/warmup/gpu_warmup.gd.
+## Instance-owned animated materials stay private.
 ## Keep scripts alive with their static caches across menu/game transitions.
 const ImageJob = preload("res://scenes/runner/environment/hifi/image_warm_job.gd")
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
@@ -14,6 +15,8 @@ static var finalized_on_main := true
 static var generated_on_workers := true
 static var runs := 0
 static var elapsed_ms := 0.0
+## Main-thread time finish() spent completing leftover work (0 when the menu absorbed it).
+static var finish_ms := 0.0
 
 static func warm() -> Dictionary:
 	if runs > 0: return _census
@@ -40,18 +43,11 @@ static func warm() -> Dictionary:
 	_record("ui", "ui/hud_style.gd", "theme")
 	var synth := _script("audio/sfx_synth.gd")
 	if synth != null:
-		# First-use gameplay sounds and turn/intro cues are ready before bind.
-		for kind in synth.get("RECIPES"):
-			if synth.get("PERCUSSIVE").has(kind) or kind in [&"turn_warning", &"turn_whoosh", &"boss_intro", &"jump", &"projectile_whoosh"]:
-				_record("audio", "audio/sfx_synth.gd", "sound", [kind])
-			else:
-				deferred.append(_record.bind("audio", "audio/sfx_synth.gd", "sound", [kind]))
-		for surface in 3:
-			for strike in 2:
-				_record("footsteps", "audio/sfx_synth.gd", "footstep", [surface, strike])
-		for kind in [&"projectile_whoosh", &"turn_whoosh"]:
-			for mask in 8:
-				_record("whooshes", "audio/sfx_synth.gd", "panned_whoosh", [mask, kind])
+		# Pure PCM math on workers, one task per recipe (with its panned/footstep variants);
+		# streams are installed on main by poll(). RunnerAudio.bind() calls finish(), so every
+		# cue is cached before a run can start.
+		for kind: StringName in synth.get("RECIPES"):
+			_queue_audio(synth, kind)
 	# Queue CPU-only images after urgent work, avoiding contention during warm().
 	for method in ["maps", "floor_maps"]:
 		var environment := _script("environment/hifi/texture_forge.gd")
@@ -100,36 +96,80 @@ static func _queue_images(package: String, path: String, method: String, args: A
 	job.task_id = WorkerThreadPool.add_task(job.generate, false, "Runner " + package + " " + method)
 	jobs.append(job)
 
+## Census keys match the old synchronous _record() calls, so footsteps and whooshes stay listed.
+static func _queue_audio(synth: Script, kind: StringName) -> void:
+	var job := ImageJob.new()
+	job.package = "audio"
+	job.key = "sound" + str([kind])
+	job.generator = Callable(synth, "render_family").bind(kind)
+	job.finalizer = func(family: Variant) -> Variant:
+		var streams: Array = synth.call("install_family", kind, family)
+		var index := 1
+		for key: Variant in family.variants:
+			var package := "footsteps" if key is Vector2i else "whooshes"
+			var args: Array = [key.x, key.y] if key is Vector2i else [key, kind]
+			if not _census.has(package): _census[package] = {}
+			_census[package][("footstep" if key is Vector2i else "panned_whoosh") + str(args)] = streams[index]
+			index += 1
+		return streams[0]
+	job.task_id = WorkerThreadPool.add_task(job.generate, false, "Runner audio " + String(kind))
+	jobs.append(job)
+
 static func is_complete() -> bool:
 	return runs > 0 and jobs.is_empty() and deferred.is_empty()
 
-## At most one image package upload or deferred package per frame, always on main.
+## Finished worker jobs are installed on main within a small per-frame budget (at least one), then
+## at most one deferred package. The menu normally absorbs all of this before Play.
+const POLL_BUDGET_MS := 3.0
 static func poll() -> void:
 	assert(Thread.is_main_thread())
-	for job in jobs:
+	var started := Time.get_ticks_usec()
+	var finalized := false
+	for job in jobs.duplicate():
 		if not WorkerThreadPool.is_task_completed(job.task_id): continue
-		WorkerThreadPool.wait_for_task_completion(job.task_id)
-		generated_on_workers = generated_on_workers and job.worker_thread
-		finalized_on_main = finalized_on_main and Thread.is_main_thread()
-		var started := Time.get_ticks_usec()
-		var value: Variant = job.finalizer.call(job.result)
-		if not _census.has(job.package): _census[job.package] = {}
-		_census[job.package][job.key] = value
-		async_timings[job.package + "/" + job.key] = {"image_ms": job.cpu_ms, "finalize_ms": (Time.get_ticks_usec() - started) / 1000.0}
-		if job.package == "boss":
-			for kind in ["flaky_test_swarm", "merge_conflict_hydra", "legacy_monolith"]:
-				deferred.append(_boss_art.bind(kind))
-			deferred.append(_record.bind("boss_fx", "boss/hifi/forge.gd", "bevel_box", [Vector3(0.045, 0.045, 1.0)]))
-			deferred.append(_record.bind("boss_fx", "boss/hifi/forge.gd", "bevel_box", [Vector3(0.13, 0.13, 0.17)]))
-		jobs.erase(job)
-		return
-	if not deferred.is_empty():
+		_finalize(job)
+		finalized = true
+		if (Time.get_ticks_usec() - started) / 1000.0 >= POLL_BUDGET_MS: break
+	if not finalized and not deferred.is_empty():
 		var work: Callable = deferred.pop_front()
 		work.call()
-	if is_complete():
-		_census["boss_meshes"] = _script("boss/hifi/forge.gd").get("meshes").duplicate()
-		var tree := Engine.get_main_loop() as SceneTree
-		if tree != null and tree.process_frame.is_connected(poll): tree.process_frame.disconnect(poll)
+	if is_complete(): _complete()
+
+## Blocking completion on main: joins every worker and runs every deferred package now. Used by
+## RunnerAudio.bind(), which runs while the route veil is opaque (or before the first frame of a
+## directly launched run), so nothing is left to finalize during play.
+static func finish() -> void:
+	assert(Thread.is_main_thread())
+	if runs == 0: warm()
+	var started := Time.get_ticks_usec()
+	while not jobs.is_empty() or not deferred.is_empty():
+		if not jobs.is_empty(): _finalize(jobs[0])
+		else:
+			var work: Callable = deferred.pop_front()
+			work.call()
+	finish_ms += (Time.get_ticks_usec() - started) / 1000.0
+	_complete()
+
+static func _finalize(job: ImageJob) -> void:
+	WorkerThreadPool.wait_for_task_completion(job.task_id)
+	jobs.erase(job)
+	generated_on_workers = generated_on_workers and job.worker_thread
+	finalized_on_main = finalized_on_main and Thread.is_main_thread()
+	var started := Time.get_ticks_usec()
+	var value: Variant = job.finalizer.call(job.result)
+	if not _census.has(job.package): _census[job.package] = {}
+	_census[job.package][job.key] = value
+	async_timings[job.package + "/" + job.key] = {"image_ms": job.cpu_ms, "finalize_ms": (Time.get_ticks_usec() - started) / 1000.0}
+	if job.package == "boss":
+		for kind in ["flaky_test_swarm", "merge_conflict_hydra", "legacy_monolith"]:
+			deferred.append(_boss_art.bind(kind))
+		deferred.append(_record.bind("boss_fx", "boss/hifi/forge.gd", "bevel_box", [Vector3(0.045, 0.045, 1.0)]))
+		deferred.append(_record.bind("boss_fx", "boss/hifi/forge.gd", "bevel_box", [Vector3(0.13, 0.13, 0.17)]))
+
+static func _complete() -> void:
+	_census["boss_meshes"] = _script("boss/hifi/forge.gd").get("meshes").duplicate()
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree != null and tree.process_frame.is_connected(poll): tree.process_frame.disconnect(poll)
 
 static func _boss_art(kind: String) -> void:
 	var started := Time.get_ticks_usec()
@@ -154,4 +194,5 @@ static func release_fixture_cache(tree: SceneTree) -> void:
 	_scripts.clear()
 	timings.clear()
 	async_timings.clear()
+	finish_ms = 0.0
 	runs = 0

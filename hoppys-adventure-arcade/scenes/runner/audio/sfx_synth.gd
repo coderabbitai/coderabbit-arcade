@@ -48,6 +48,7 @@ const LAYERS := {
 	&"drone": [0.50, 0.28, 0.0, 0.0, 0.22],
 	&"alarm": [0.42, 0.22, 0.08, 0.04, 0.24],
 }
+const FOOTSTEP_SOFTNESS := [0.85, 0.38, 0.16]
 static var _cache: Dictionary = {}
 static var raw_peaks: Dictionary = {}
 
@@ -67,6 +68,11 @@ static func sound(kind: StringName) -> AudioStreamWAV:
 		return _cache[kind]
 	if not RECIPES.has(kind):
 		return null
+	return install(kind, render(kind))
+
+## Pure PCM synthesis: reads only constants and allocates no resources, so prewarm can run it on
+## WorkerThreadPool. install() turns the result into the cached stream on the main thread.
+static func render(kind: StringName) -> Dictionary:
 	var recipe: Array = RECIPES[kind]
 	var seconds := float(recipe[0])
 	var count := int(seconds * RATE)
@@ -163,7 +169,6 @@ static func sound(kind: StringName) -> AudioStreamWAV:
 		phase += TAU * frequency / RATE
 	var raw_peak := 0.0
 	for value in samples: raw_peak = maxf(raw_peak, absf(value))
-	raw_peaks[kind] = raw_peak
 	# Remove DC with a zero-ended correction window, then normalize only if needed.
 	var window := PackedFloat64Array()
 	window.resize(count)
@@ -181,15 +186,22 @@ static func sound(kind: StringName) -> AudioStreamWAV:
 	for value in samples: peak = maxf(peak, absf(value))
 	var gain := minf(1.0, 0.79 / maxf(peak, 0.00001))
 	for i in samples.size(): data.encode_s16(i * 2, int(samples[i] * gain * 32767.0))
+	return {"data": data, "stereo": stereo, "looping": looping, "count": count, "raw_peak": raw_peak}
+
+## Main thread only. An already cached stream wins, so a cue synthesised on demand before its
+## worker result arrived keeps its identity.
+static func install(kind: StringName, rendered: Dictionary) -> AudioStreamWAV:
+	if _cache.has(kind): return _cache[kind]
+	raw_peaks[kind] = rendered.raw_peak
 	var stream := AudioStreamWAV.new()
 	stream.format = AudioStreamWAV.FORMAT_16_BITS
 	stream.mix_rate = RATE
-	stream.stereo = stereo
-	stream.data = data
-	if looping:
+	stream.stereo = rendered.stereo
+	stream.data = rendered.data
+	if rendered.looping:
 		stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
 		stream.loop_begin = 0
-		stream.loop_end = count
+		stream.loop_end = rendered.count
 	_cache[kind] = stream
 	return stream
 
@@ -197,8 +209,20 @@ static func panned_whoosh(lane_mask: int, kind: StringName = &"projectile_whoosh
 	var key := StringName("%s_pan_%d" % [kind, lane_mask & 7])
 	if _cache.has(key): return _cache[key]
 	var source := sound(kind)
-	var pcm := source.data
-	var stride := 4 if source.stereo else 2
+	return install_panned(kind, lane_mask, panned_pcm(source.data, source.stereo, lane_mask))
+
+static func install_panned(kind: StringName, lane_mask: int, data: PackedByteArray) -> AudioStreamWAV:
+	var key := StringName("%s_pan_%d" % [kind, lane_mask & 7])
+	if _cache.has(key): return _cache[key]
+	var stream := sound(kind).duplicate() as AudioStreamWAV
+	stream.stereo = true
+	stream.data = data
+	_cache[key] = stream
+	return stream
+
+## Pure, worker-safe: pans the source PCM toward the masked lanes.
+static func panned_pcm(pcm: PackedByteArray, stereo: bool, lane_mask: int) -> PackedByteArray:
+	var stride := 4 if stereo else 2
 	var frames := pcm.size() / stride
 	var data := PackedByteArray()
 	data.resize(frames * 4)
@@ -211,14 +235,10 @@ static func panned_whoosh(lane_mask: int, kind: StringName = &"projectile_whoosh
 	var pan := total / maxi(lanes, 1)
 	for i in frames:
 		var left := float(pcm.decode_s16(i * stride))
-		var right := float(pcm.decode_s16(i * stride + 2)) if source.stereo else left
+		var right := float(pcm.decode_s16(i * stride + 2)) if stereo else left
 		data.encode_s16(i * 4, int(left * (1 - maxf(pan, 0) * 0.8)))
 		data.encode_s16(i * 4 + 2, int(right * (1 + minf(pan, 0) * 0.8)))
-	var stream := source.duplicate() as AudioStreamWAV
-	stream.stereo = true
-	stream.data = data
-	_cache[key] = stream
-	return stream
+	return data
 
 static func _envelope(family: StringName, t: float, duration: float) -> float:
 	if family == &"percussive":
@@ -260,24 +280,54 @@ static func footstep(surface: int, variant: int = 0) -> AudioStreamWAV:
 	var strike := posmod(variant, 2)
 	var key := StringName("footstep_surface_%d_variant_%d" % [material, strike])
 	if _cache.has(key): return _cache[key]
+	return install_footstep(material, strike, footstep_pcm(sound(&"footstep").data, material, strike))
+
+static func install_footstep(material: int, strike: int, data: PackedByteArray) -> AudioStreamWAV:
+	var key := StringName("footstep_surface_%d_variant_%d" % [material, strike])
+	if _cache.has(key): return _cache[key]
 	var stream := sound(&"footstep").duplicate() as AudioStreamWAV
-	var data := stream.data
-	var previous := PackedFloat64Array([0.0, 0.0])
-	var softness := PackedFloat64Array([0.85, 0.38, 0.16])
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 8201 + material * 101 + strike * 7919
-	var strike_gain := rng.randf_range(0.88, 1.0)
-	for i in data.size() / 2:
-		var channel := i % 2
-		previous[channel] = lerpf(previous[channel], data.decode_s16(i * 2) * strike_gain, softness[material])
-		data.encode_s16(i * 2, int(previous[channel]))
 	stream.set_meta(&"surface", material)
 	stream.set_meta(&"variant", strike)
-	stream.set_meta(&"seed", rng.seed)
-	stream.set_meta(&"softness", softness[material])
+	stream.set_meta(&"seed", footstep_seed(material, strike))
+	stream.set_meta(&"softness", FOOTSTEP_SOFTNESS[material])
 	stream.data = data
 	_cache[key] = stream
 	return stream
+
+static func footstep_seed(material: int, strike: int) -> int:
+	return 8201 + material * 101 + strike * 7919
+
+## Pure, worker-safe: the surface filter and strike gain over the base footstep PCM.
+static func footstep_pcm(source: PackedByteArray, material: int, strike: int) -> PackedByteArray:
+	var data := source.duplicate()
+	var previous := PackedFloat64Array([0.0, 0.0])
+	var rng := RandomNumberGenerator.new()
+	rng.seed = footstep_seed(material, strike)
+	var strike_gain := rng.randf_range(0.88, 1.0)
+	for i in data.size() / 2:
+		var channel := i % 2
+		previous[channel] = lerpf(previous[channel], data.decode_s16(i * 2) * strike_gain, FOOTSTEP_SOFTNESS[material])
+		data.encode_s16(i * 2, int(previous[channel]))
+	return data
+
+## One worker task per recipe: the recipe plus every panned or footstep variant derived from it.
+static func render_family(kind: StringName) -> Dictionary:
+	var rendered := render(kind)
+	var variants := {}
+	if kind in [&"projectile_whoosh", &"turn_whoosh"]:
+		for mask in 8: variants[mask] = panned_pcm(rendered.data, rendered.stereo, mask)
+	elif kind == &"footstep":
+		for surface in 3:
+			for strike in 2: variants[Vector2i(surface, strike)] = footstep_pcm(rendered.data, surface, strike)
+	return {"base": rendered, "variants": variants}
+
+## Main-thread finalizer for render_family(); returns every stream it installed.
+static func install_family(kind: StringName, family: Dictionary) -> Array:
+	var streams: Array = [install(kind, family.base)]
+	for key: Variant in family.variants:
+		if key is Vector2i: streams.append(install_footstep(key.x, key.y, family.variants[key]))
+		else: streams.append(install_panned(kind, key, family.variants[key]))
+	return streams
 
 ## Optional UI audition hook; uses the existing crisp tick recipe and voice pool.
 static func ui_click() -> AudioStreamWAV:
