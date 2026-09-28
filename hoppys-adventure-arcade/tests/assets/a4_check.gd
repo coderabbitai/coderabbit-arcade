@@ -363,6 +363,7 @@ func run() -> void:
 			minimum_difference = mini(minimum_difference,different)
 			check(different >= 10,"distinct projected sculpture silhouettes %s/%s" % [KINDS[i],KINDS[j]])
 	print("A4 SILHOUETTES: 10 unique; minimum pairwise difference %d / 768 samples" % minimum_difference)
+	fresh_camera_checks()
 	Art.release_caches()
 	Burst.release_caches()
 	Finish.cache.clear()
@@ -469,6 +470,44 @@ func affordance_checks(art: Art, camera: Camera3D, kind: StringName) -> void:
 	var coverage := area.y/area.x
 	print("A4 EMISSIVE %s: %.2f percent sculpture area" % [kind,coverage*100.0])
 	check(coverage <= 0.4 and Finish.PROP_CODE.contains("texture(emission_atlas, UV).r"),"masked emissive surface below forty percent")
+
+class EngineErrors extends Logger:
+	var count := 0
+	func _log_error(_function: String, _file: String, _line: int, _code: String, _rationale: String, _editor_notify: bool, error_type: int, _backtrace: Array[ScriptBacktrace]) -> void:
+		if error_type != Logger.ERROR_TYPE_WARNING: count += 1
+
+## Regression (a4 capture, 294 "p.d == 0" engine errors): pickups spawned in the same frame as a
+## new, physics-interpolated camera. unproject_position() uses the pose the camera was last drawn
+## at (identity until its first tick), so a pickup at z 0 sat on that camera plane. The glyph rect
+## must skip such points silently and never report an overlap for them.
+func fresh_camera_checks() -> void:
+	var errors := EngineErrors.new()
+	OS.add_logger(errors)
+	var stage := Node3D.new()
+	root.add_child(stage)
+	var fresh := Camera3D.new()
+	fresh.fov = 60
+	stage.add_child(fresh)
+	fresh.make_current()
+	fresh.position = Vector3(0,2.6,8.5)
+	fresh.look_at(Vector3(0,0.95,0))
+	var arts: Array = []
+	for i in 3:
+		var visual := (load("res://scenes/runner/powerups/visuals/%s_visual.tscn" % KINDS[i]) as PackedScene).instantiate() as Node3D
+		stage.add_child(visual)
+		visual.set("kind",KINDS[i])
+		visual.position = Vector3((i-1)*1.5,1,0)
+		visual.on_spawned()
+		visual._art._process(0.1)
+		arts.append(visual._art)
+	OS.remove_logger(errors)
+	check(errors.count == 0,"pickups spawned with a fresh interpolated camera log no engine errors (%d)" % errors.count)
+	var drawn: Transform3D = fresh.get_camera_transform()
+	var behind: Vector3 = drawn.origin+drawn.basis.z*0.5
+	var rect: Rect2 = arts[0]._glyph_rect(fresh,behind,1.0).grow(3.0)
+	check(not rect.intersects(Rect2(Vector2.ZERO,Vector2(1280,720))),"glyph rect behind the drawn camera is off screen (%s)" % rect)
+	print("A4 FRESH CAMERA: %d engine errors from %d spawns in the camera's first frame" % [errors.count,arts.size()])
+	stage.free()
 
 func polygon_area(points: PackedVector2Array) -> float:
 	var area := 0.0

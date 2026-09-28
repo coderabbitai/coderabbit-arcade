@@ -279,9 +279,18 @@ func _glyph_size(camera: Camera3D, center: Vector3) -> float:
 	size = minf(size,(center.y-0.05)/maxf(0.001,extent.y))
 	return clampf(size,0.01,3.8)
 
+## unproject_position() projects through get_camera_transform(), which for a physics-interpolated
+## camera is the pose it was last drawn at, not global_transform: a camera created or moved this
+## frame is still at its old pose (identity for a new one) until its next process tick. A point on
+## that pose's camera plane made the engine log "p.d == 0" once per pickup and peer (294 errors in
+## the a4 capture, whose pickups sit at z 0 with a fresh camera). A point not in front of the drawn
+## camera has no screen rect: an empty one far off screen, which overlaps nothing even grown.
 func _glyph_rect(camera: Camera3D, center: Vector3, size: float) -> Rect2:
+	var view := camera.get_camera_transform().affine_inverse()
+	var top := center+camera.global_basis.y*size*0.5
+	if (view*center).z > -camera.near or (view*top).z > -camera.near: return Rect2(-1e6,-1e6,0,0)
 	var screen := camera.unproject_position(center)
-	var radius := camera.unproject_position(center+camera.global_basis.y*size*0.5).distance_to(screen)
+	var radius := camera.unproject_position(top).distance_to(screen)
 	return Rect2(screen-Vector2.ONE*radius,Vector2.ONE*radius*2.0)
 
 ## Screen data other pickups compare against: depth, lateral offset and grown glyph rect.

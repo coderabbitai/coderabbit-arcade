@@ -19,11 +19,26 @@ const Burst = preload("res://scenes/runner/powerups/visuals/hifi/collect_burst.g
 const Telegraph = preload("res://scenes/runner/boss/telegraph.tscn")
 const Tracer = preload("res://scenes/runner/boss/tool_tracer.gd")
 const Number = preload("res://scenes/runner/boss/damage_number.gd")
+const BossAttacks = preload("res://scenes/runner/boss/boss_attacks.gd")
+const ProjectileArt = preload("res://scenes/runner/boss/visuals/boss_projectile_art.gd")
+const HazardArt = preload("res://scenes/runner/hazards/visuals/hazard_art.gd")
+const PowerUpArt = preload("res://scenes/runner/powerups/visuals/power_up_art.gd")
 const POWER_UP_DIR := "res://scenes/runner/powerups/visuals/"
 const HAZARD_DIR := "res://scenes/runner/hazards/visuals/"
 const BOSS_DIR := "res://scenes/runner/boss/visuals/"
 const PURSUER_PATH := "res://scenes/runner/pursuer/pursuer_visual.tscn"
 const HOPPY_PATH := "res://scenes/runner/player/hoppy_runner_visual.tscn"
+const BOSS_FX_PATH := "res://scenes/runner/boss/boss_fx.tscn"
+## Hoppy's grounded one-shots (C1); each is drawn once where Hoppy stands, powerup_react with the
+## backpack LED meter lit.
+const HOPPY_CLIPS: Array[StringName] = [&"lane_dash_left", &"lane_dash_right", &"land", &"shield_brace",
+	&"powerup_react", &"victory"]
+## One copy per boss per state: a signature telegraph (commit, DANGER heat, charge), the attack
+## after it (ring, slam, recoil, all phases' heads), the hurt flash (a BaseMaterial3D emission
+## variant) and the defeat.
+const BOSS_STATES: Array[StringName] = [&"telegraph", &"attack", &"hurt", &"defeated"]
+## The boss-attack signals BossFX binds to (contract 2.4 §11.8); the warm-up emits them itself.
+const FX_SIGNALS: Array[StringName] = [&"boss_attack_planned", &"boss_attack_telegraph"]
 const Vignette = preload("res://scenes/runner/shaders/vignette.gdshader")
 const Scanline = preload("res://scenes/runner/shaders/scanline_portrait.gdshader")
 const PostGrade = preload("res://scenes/runner/shaders/post_grade.gdshader")
@@ -90,6 +105,7 @@ static func run(host: Node, camera: Camera3D = null) -> bool:
 	# The menu's own corridor and Hoppy are freed on Play; keep their programs for the game.
 	retain(host)
 	_drop_doomed(host)
+	_warm_caches()
 	var corridor := _corridor(host)
 	# One process tick puts the corridor and starship lights (DeckBounce, key light) where play has them.
 	if corridor != null: corridor.notification(Node.NOTIFICATION_PROCESS)
@@ -107,9 +123,10 @@ static func run(host: Node, camera: Camera3D = null) -> bool:
 		stage.build(batch)
 		build_ms += (Time.get_ticks_usec() - started) / 1000.0
 		started = Time.get_ticks_usec()
-		# The corridor's turn corner, chevron and streaks only show mid-turn.
+		# The corridor's turn corner, chevron and streaks only show mid-turn, the HUD's floor
+		# chevrons only once a turn is announced.
 		var turn: bool = corridor != null and batch == &"canvas"
-		if turn: _pose_turn(corridor, 0.5)
+		if turn: show_turn(host, corridor, true)
 		# The live Hoppy's auras and shield, under its own lights (restored below; a run opens bare).
 		if hoppy != null and batch == &"characters": _dress(hoppy, true)
 		_sync_transforms(host)
@@ -117,7 +134,7 @@ static func run(host: Node, camera: Camera3D = null) -> bool:
 			stage._light.visible = lit
 			for i in FRAMES: RenderingServer.force_draw(false, 1.0 / 60.0)
 		if hoppy != null and batch == &"characters": _dress(hoppy, false)
-		if turn: _pose_turn(corridor, 0.0)
+		if turn: show_turn(host, corridor, false)
 		draw_ms += (Time.get_ticks_usec() - started) / 1000.0
 		retain(stage)
 		labels._copy_labels(stage._group, [])
@@ -127,6 +144,30 @@ static func run(host: Node, camera: Camera3D = null) -> bool:
 	# message-queue flush and so before the next frame is drawn.
 	_draw_labels.call_deferred(labels)
 	return true
+
+## The shared CPU-side art (hazard and pickup GLB layouts, per-kind pickup meshes, every boss
+## projectile mesh and material) is built by script load or arena mount already; calling the
+## idempotent warm hooks here guarantees it exists before the first batch draws it.
+static func _warm_caches() -> void:
+	HazardArt.warm_props()
+	for kind: StringName in PowerUpDefs.kinds() + ToolDefs.kinds(): PowerUpArt.warm_kind(kind)
+	ProjectileArt.warm()
+
+## Every signature attack the bosses can plan, as [boss_kind, signature, attacks]: the first option
+## of the first beat carrying each signature (branching volleys and scatter twins included).
+static func signature_attacks() -> Array:
+	var result := []
+	for slot: Dictionary in BossDefs.SLOTS:
+		var seen := {}
+		var patterns: Array = slot.get("patterns", [])
+		for phase in patterns.size():
+			for beat: Dictionary in patterns[phase]:
+				var signature := StringName(beat.get("signature", &""))
+				if signature == BossAttacks.SIG_PLAIN or seen.has(signature): continue
+				seen[signature] = true
+				var options: Array = BossAttacks.beat_options(beat, slot, phase + 1, null)
+				if not options.is_empty(): result.append([slot.get("kind", &""), signature, options[0]])
+	return result
 
 ## One copy of each distinct Label3D setup under `root` (outside `skip`), at the same place.
 ## The shader depends on the draw flags, the atlas texture on font and size.
@@ -223,6 +264,15 @@ static func _corridor(host: Node) -> Node:
 		if node.has_method(&"set_turn") and node.has_method(&"set_boss_arena"): return node
 	return null
 
+## Mid-turn pose plus the announced floor chevrons (runner_hud.gd's turn_fx.gd, found by its
+## announce/clear hooks); `on` false restores the straight corridor and hides the chevrons.
+static func show_turn(host: Node, corridor: Node, on: bool) -> void:
+	_pose_turn(corridor, 0.5 if on else 0.0)
+	for node in host.find_children("*", "MultiMeshInstance3D", true, false):
+		if node.has_method(&"announce") and node.has_method(&"clear"):
+			if on: node.call(&"announce", 1)
+			else: node.call(&"clear")
+
 ## set_turn() is the StageManager's public hook; one process notification applies the pose the
 ## way the next frame would. Progress 0 restores the straight corridor.
 static func _pose_turn(corridor: Node, progress: float) -> void:
@@ -257,7 +307,7 @@ func _init() -> void:
 static func batches() -> Array[StringName]:
 	var result: Array[StringName] = [&"pickups"]
 	for kind: StringName in HazardDefs.kinds(): result.append(kind)
-	result.append_array([&"characters", &"canvas"])
+	result.append_array([&"bosses", &"characters", &"canvas"])
 	return result
 
 ## Mounts one copy of the batch at each track depth, in world space along the corridor (-Z).
@@ -285,22 +335,30 @@ func _build_into(copy: Node3D, batch: StringName) -> void:
 				var burst := Burst.new()
 				_place(burst, "burst")
 				burst.start(accent)
-		&"characters":
+		&"bosses":
 			for kind: StringName in _boss_kinds():
-				_boss(kind, false)
-				_boss(kind, true)
+				for state: StringName in BOSS_STATES: _boss(kind, state)
 			_boss_fx()
+			_signature_marks()
+		&"characters":
 			_pursuer()
 			_hoppies()
 		&"canvas":
 			_canvas()
 		_:
-			# One hazard kind: every variant, plus hit and clear FX on one variant each.
+			# One hazard kind: every variant (a timed laser charging, high and cleared too), plus hit
+			# and clear FX on one variant each. Every C2 prop, label backing and marker is drawn so.
 			var variants := _variants(batch)
 			for variant: StringName in variants:
 				_hazard(batch, variant, &"")
+				if HazardDefs.is_timed(HazardDefs.get_def(batch, variant)):
+					_hazard(batch, variant, &"high")
+					_hazard(batch, variant, &"cleared")
 			_hazard(batch, variants[variants.size() - 1], &"hit")
 			_hazard(batch, variants[0], &"cleared")
+			if HazardDefs.is_projectile(batch):
+				_boss_projectiles()
+				_projectile_swatch()
 
 func clear() -> void:
 	if is_instance_valid(_group): _group.free()
@@ -358,10 +416,53 @@ func _hazard(kind: StringName, variant: StringName, state: StringName) -> void:
 	_place(visual, "hazard")
 	_hook(visual, &"on_spawned")
 	if HazardDefs.is_timed(def):
-		_hook(visual, &"set_laser_state", [&"high" if state == &"hit" else &"ground"])
-		_hook(visual, &"set_telegraph", [0.5])
+		# Charging on the ground (the CHARGING bar and prop charge), or fired high.
+		_hook(visual, &"set_laser_state", [&"high" if state in [&"hit", &"high"] else &"ground"])
+		_hook(visual, &"set_telegraph", [0.0 if state == &"high" else 0.75])
 	if state == &"hit": _hook(visual, &"on_hit_player")
 	elif state == &"cleared": _hook(visual, &"on_cleared")
+	# One art tick applies the reaction (hit flash, clear collapse, charge) as the next frame would.
+	_hook(visual, &"_process", [0.05])
+
+## C4 per-boss projectile looks: every shot of every signature attack, on the real motion, posed
+## where it reaches the player (scatter halves split, debris landed on its DANGER shadow).
+func _boss_projectiles() -> void:
+	for entry: Array in _attacks():
+		for attack: Dictionary in entry[2]:
+			for shot: Dictionary in attack.get("shots", []):
+				var visual := _instance(HAZARD_DIR + String(HazardDefs.PROJECTILE_KIND) + "_visual.tscn")
+				if visual == null: return
+				var variant := StringName(shot.get("variant", &"orb"))
+				var def := HazardDefs.get_def(HazardDefs.PROJECTILE_KIND, variant)
+				var values := {
+					&"kind": HazardDefs.PROJECTILE_KIND, &"variant": variant, &"projectile_variant": variant,
+					&"boss_kind": entry[0], &"signature": entry[1], &"motion": shot,
+					&"hitbox_size": def.get("size", Vector3.ONE), &"hitbox_offset": Vector3(0, HazardDefs.center_y(def), 0),
+					&"closing_speed": float(shot.get("speed", 12.0)),
+				}
+				for key: StringName in values:
+					if key in visual: visual.set(key, values[key])
+				_place(visual, "boss_projectile")
+				_hook(visual, &"on_spawned")
+				_hook(visual, &"_process", [BossAttacks.pass_window(shot).x])
+
+## Every shared projectile material (danger_body/dark/stone, add_danger(_strong), screen_tile/merge,
+## glow_*) on one small part each, whichever look or age shows it in play.
+func _projectile_swatch() -> void:
+	for key: String in ProjectileArt.MATERIAL_KEYS:
+		var part := MeshInstance3D.new()
+		part.name = "Swatch_" + key
+		part.mesh = ProjectileArt.mesh("box")
+		part.material_override = ProjectileArt.material(key)
+		part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		part.scale = Vector3.ONE * 0.3
+		_place(part, "projectile_swatch")
+
+var _signature_cache: Array = []
+
+func _attacks() -> Array:
+	if _signature_cache.is_empty(): _signature_cache = signature_attacks()
+	return _signature_cache
 
 func _boss_kinds() -> Array[StringName]:
 	var kinds: Array[StringName] = []
@@ -370,7 +471,16 @@ func _boss_kinds() -> Array[StringName]:
 		if kind != &"" and kind not in kinds: kinds.append(kind)
 	return kinds
 
-func _boss(kind: StringName, defeated: bool) -> void:
+## The projectile variants a boss fires with a look of its own, in BossProjectileArt.LOOKS order.
+static func _signature_variants(kind: StringName) -> Array[StringName]:
+	var variants: Array[StringName] = []
+	for look: StringName in ProjectileArt.LOOKS:
+		var spec: Array = ProjectileArt.LOOKS[look]
+		if spec[0] == kind and spec[1] not in variants: variants.append(spec[1])
+	if variants.is_empty(): variants.append(HazardDefs.PROJECTILE_KIND)
+	return variants
+
+func _boss(kind: StringName, state: StringName) -> void:
 	var visual := _instance(BOSS_DIR + String(kind) + "_visual.tscn")
 	if visual == null: return
 	var values := {&"kind": kind, &"boss_name": String(kind), &"max_hp": 10, &"phase_count": BossDefs.PHASE_COUNT,
@@ -379,15 +489,23 @@ func _boss(kind: StringName, defeated: bool) -> void:
 		if key in visual: visual.set(key, values[key])
 	_place(visual, "boss")
 	_hook(visual, &"on_spawned")
-	_hook(visual, &"set_phase", [BossDefs.PHASE_COUNT if defeated else 1])
-	_hook(visual, &"set_health", [3 if defeated else 10, 10])
-	_hook(visual, &"play_telegraph", [BossDefs.LANE_ALL, HazardDefs.PROJECTILE_KIND, 1.0])
-	_hook(visual, &"play_attack", [HazardDefs.PROJECTILE_KIND])
-	if defeated:
-		_hook(visual, &"play_resist", [&"lint_rule"])
-		_hook(visual, &"play_defeat")
-	else:
-		_hook(visual, &"play_hit", [&"unit_test", 1])
+	var late := state in [&"attack", &"defeated"]
+	_hook(visual, &"set_phase", [BossDefs.PHASE_COUNT if late else 1])
+	_hook(visual, &"set_health", [3 if late else 10, 10])
+	var variants := _signature_variants(kind)
+	var variant: StringName = variants[mini(1, variants.size() - 1)] if late else variants[0]
+	_hook(visual, &"play_telegraph", [BossDefs.LANE_ALL, variant, 1.0])
+	match state:
+		&"telegraph": _hook(visual, &"play_commit", [BossDefs.LANE_ALL, variant, 0.5])
+		&"attack": _hook(visual, &"play_attack", [variant])
+		&"hurt":
+			_hook(visual, &"play_attack", [variant])
+			_hook(visual, &"play_hit", [&"unit_test", 1])
+		&"defeated":
+			_hook(visual, &"play_resist", [&"lint_rule"])
+			_hook(visual, &"play_defeat")
+	# One art tick applies the state (DANGER heat, ring, slam, hurt emission flash) to the materials.
+	_hook(visual, &"_process", [0.05])
 
 func _boss_fx() -> void:
 	var telegraph := Telegraph.instantiate() as Node3D
@@ -402,6 +520,25 @@ func _boss_fx() -> void:
 		_place(number, "boss_fx")
 		_hook(number, &"start", [number.position, damage, Palette.MATRIX, 0.0])
 
+## BossFX's per-boss accent layer (SignatureMarks, one MultiMesh) lit by every signature record:
+## flaky, scatter, branching, sweep, force push, legacy wall, quake and debris. Driven through
+## bind() and the contract 2.4 signals, the way the game drives it.
+func _signature_marks() -> void:
+	var fx := _instance(BOSS_FX_PATH)
+	if fx == null: return
+	var source := Node.new()
+	source.name = "SignalSource"
+	for event: StringName in FX_SIGNALS: source.add_user_signal(event)
+	fx.add_child(source)
+	_place(fx, "boss_marks")
+	_hook(fx, &"bind", [source])
+	for entry: Array in _attacks():
+		for attack: Dictionary in entry[2]:
+			source.emit_signal(&"boss_attack_planned", attack)
+			source.emit_signal(&"boss_attack_telegraph", int(attack.get("telegraph_mask", 0)),
+				StringName(attack.get("variant", &"orb")), float(attack.get("telegraph", 1.0)))
+	_hook(fx, &"_process", [0.4])
+
 func _pursuer() -> void:
 	for threat in [0.2, 1.0]:
 		var visual := _instance(PURSUER_PATH)
@@ -410,11 +547,16 @@ func _pursuer() -> void:
 		_hook(visual, &"set_threat", [threat])
 
 ## Roll, hurt sparks, every aura and the shield on Hoppy; the idle run pose is drawn by the scene.
+## Where Hoppy stands (he never runs at 9 or 55 m, and a clip only moves bones), each C1 one-shot
+## clip with its face-rig expression, the power-up reaction also lighting the backpack LED meter.
 func _hoppies() -> void:
-	for state: StringName in [&"roll", &"hurt"]:
+	var states: Array[StringName] = [&"roll", &"hurt"]
+	if _target == _near: states.append_array(HOPPY_CLIPS)
+	for state: StringName in states:
 		var hoppy := _instance(HOPPY_PATH)
 		if hoppy == null: return
 		_place(hoppy, "hoppy")
+		if state == &"powerup_react": _hook(hoppy, &"on_power_up", [&"nitro", 6.0])
 		_hook(hoppy, &"set_anim_state", [state])
 		if state == &"hurt":
 			_hook(hoppy, &"on_hit")
@@ -422,6 +564,10 @@ func _hoppies() -> void:
 			for aura: StringName in [&"lgtm", &"nitro", &"code_review"]:
 				_hook(hoppy, &"show_aura", [aura, true])
 			hoppy.notification(Node.NOTIFICATION_PROCESS)
+		elif state in HOPPY_CLIPS:
+			# The face rig eases toward the clip's expression, and the LED meter drains, over a
+			# few frames.
+			_hook(hoppy, &"_process", [0.6 if state == &"powerup_react" else 0.25])
 
 ## The HUD's canvas shaders (vignette, scanline portrait, screen-reading grade) compile on first
 ## draw too; the boss HUD and pursuit alert only draw them once their event fires.

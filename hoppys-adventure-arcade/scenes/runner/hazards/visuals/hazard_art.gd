@@ -44,6 +44,11 @@ const SAFE_GAP_Y := 0.03
 ## materials, spark draw pass and process materials. Keeping one live reference also keeps each
 ## material variant's compiled shader alive after the GPU warm-up.
 static var _shared: Dictionary = {}
+## Pit mouth opening as a fraction of the hitbox (x, z), and the gap between its near edge and the
+## floor-level tag backing: wider than the backing's 0.019 m height seen from the chase camera
+## (<= 0.06 m of mouth hidden at 6 m, 0.13 m at 20 m, inside the 12 % unsampled edge band).
+const PIT_MOUTH_SCALE := Vector2(0.88,0.84)
+const PIT_TAG_CLEARANCE := 0.02
 ## Per-root prop layout read once from the GLB's SceneState (no scene instancing): entries of
 ## {role, tag, parent, transform, mesh}. Meshes are shared by every spawn of the kind.
 static var _layouts: Dictionary = {}
@@ -353,8 +358,15 @@ func _pit() -> void:
 	# Opaque corridor floor is not edited or bypassed.
 	_prop(_prop_root())
 	tag = _label("@deprecated",Vector3.ZERO,0.46,0.30)
-	tag.position = Vector3(0,0.028,1.38)
-	tag.pixel_size = minf(_size.x*0.42/440.0,0.006)
+	# The tag and its backing lie on the near rim band only, between the mouth's near edge (plus a
+	# parallax clearance) and the 110 % envelope. They used to overhang the hole by 0.12 m, so from
+	# the 6 m approach view the lit backing covered the mouth's nearest rows and its bottom third
+	# read brighter than the middle (pit contrast clause middle > bottom - 2/255).
+	var band_near := _offset.z+_size.z*PIT_MOUTH_SCALE.y*0.5+PIT_TAG_CLEARANCE
+	var band_far := _offset.z+_size.z*0.55-0.01
+	var font: Font = tag.font if tag.font != null else ThemeDB.fallback_font
+	tag.pixel_size = minf(minf(_size.x*0.42/440.0,0.006),(band_far-band_near-0.01)/font.get_height(tag.font_size))
+	tag.position = Vector3(0,0.028,(band_near+band_far)*0.5)
 	tag.rotation.x = -PI/2
 	var plate: Node3D = _plates.back()
 	plate.position = tag.position-Vector3(0,0.015,0)
@@ -363,13 +375,13 @@ func _pit() -> void:
 	plate.scale = Vector3.ONE
 	for batch in _batches:
 		for item: Array in batch.instances:
-			if item[0] == plate: item[1] = Vector3(_size.x*0.46,0.012,0.48)
+			if item[0] == plate: item[1] = Vector3(_size.x*0.46,0.012,band_far-band_near)
 	_pit_mouth = MeshInstance3D.new()
 	_pit_mouth.name = "PitMouth"
 	_pit_mouth.process_mode = Node.PROCESS_MODE_PAUSABLE
 	_pit_mouth.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	var mouth := PlaneMesh.new()
-	mouth.size = Vector2(_size.x*0.88,_size.z*0.84)
+	mouth.size = Vector2(_size.x,_size.z)*PIT_MOUTH_SCALE
 	_pit_mouth.mesh = mouth
 	_pit_mouth.position = Vector3(_offset.x,0.001,_offset.z)
 	_pit_mouth.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

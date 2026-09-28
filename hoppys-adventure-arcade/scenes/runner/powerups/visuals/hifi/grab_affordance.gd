@@ -6,8 +6,10 @@ const TOOL_KINDS := [&"review_comment",&"lint_rule",&"unit_test",&"auto_fix_patc
 ## tool bodies and glyphs read their family hue without any extra gain (lower luminance than the old
 ## ORANGE.darkened(0.08) glyph tint). Blender bakes the same colour (build_props.py DEEP_ORANGE).
 static var TOOL_ORANGE: Color = Color.from_hsv(Palette.ORANGE.h,0.92,Palette.ORANGE.v*0.94)
-## Glyph: the deepest tool ORANGE (same hue, saturation 0.99), still no brighter than the old glyph.
-static var TOOL_GLYPH_TINT: Color = Color.from_hsv(Palette.ORANGE.h,0.99,Palette.ORANGE.v*0.94)
+## Glyph: the deepest tool ORANGE (same hue, full saturation, palette ORANGE's value), still darker
+## than the old ORANGE.darkened(0.08) glyph (luminance 0.461 vs 0.562). The thin PATCH chevrons at
+## 60 m blend with the corridor; saturation 0.99 at 94 % value measured 0.278 there (target 0.28).
+static var TOOL_GLYPH_TINT: Color = Color.from_hsv(Palette.ORANGE.h,1.0,Palette.ORANGE.v)
 ## Beam sheath / ring: deeper than ORANGE (saturation 0.86) at no more luminance than ORANGE itself.
 static var TOOL_BEAM: Color = Color.from_hsv(Palette.ORANGE.h,0.86,1.0)
 const GLYPHS := {

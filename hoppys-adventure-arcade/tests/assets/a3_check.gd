@@ -372,6 +372,16 @@ func _round_three(visual: Base) -> void:
 		check(art.tag.global_basis.z.normalized().dot(Vector3.UP) > 0.999,"R3 B1 label face +Y")
 		check(art.tag.global_basis.y.normalized().dot(Vector3.FORWARD) > 0.999,"R3 B1 glyph up maps to -Z")
 		check(art._plates.back().global_basis.y.normalized().dot(Vector3.UP) > 0.999,"R3 B1 XZ backing normal +Y")
+		# Pit contrast by construction: nothing lit lies over the opening. The tag and its backing sit
+		# on the near rim band, a clearance beyond the mouth's near edge and inside the envelope.
+		var mouth_near: float = visual.hitbox_offset.z+art._pit_mouth.mesh.size.y*0.5+art.PIT_TAG_CLEARANCE-0.0005
+		var tag_font: Font = art.tag.font if art.tag.font != null else ThemeDB.fallback_font
+		var tag_depth: float = tag_font.get_height(art.tag.font_size)*art.tag.pixel_size
+		check(art.tag.position.z-tag_depth*0.5 >= mouth_near and art.tag.position.z+tag_depth*0.5 <= visual.hitbox_size.z*0.55,"R6 pit tag clear of the mouth (%.3f..%.3f, mouth edge %.3f)" % [art.tag.position.z-tag_depth*0.5,art.tag.position.z+tag_depth*0.5,mouth_near])
+		for batch: Dictionary in art._batches:
+			for item: Array in batch.instances:
+				if item[0] == art._plates.back():
+					check(item[0].position.z-item[1].z*0.5 >= mouth_near and item[0].position.z+item[1].z*0.5 <= visual.hitbox_size.z*0.55,"R6 pit tag backing clear of the mouth")
 		check(not art.get_node("FloorMarker").visible,"R3 B2 no additive lid over hole")
 		check(is_equal_approx(art._pit_mouth.material_override.get_shader_parameter("well_depth"),1.6),"R4 explicit deep virtual well")
 		check(art.PitMouth.code.contains("ALBEDO = vec3(0.0)") and art.PitMouth.code.contains("specular_disabled"),"R5 black albedo and no key/fill specular")

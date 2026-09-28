@@ -847,8 +847,9 @@ def unit_test(fam, inlay, core_finish):
     shell = Part('unit_test__Ring')
     for y in (0.30, -0.30):
         shell.cylinder(paint(inlay), 0.20, 0.06, xform((0, y, 0), (0, PI / 6, 0)), segments=6, bevel=0.012)
-        # Cream collar rings (not glowing) keep the grown module's glow share clear of the 40% cap.
-        shell.cylinder('pk_shell', 0.205, 0.015, xform((0, y + (0.02 if y < 0 else -0.02), 0), (0, PI / 6, 0)),
+        # Family-paint collar rings (not glowing) keep the grown module's glow share clear of the 40%
+        # cap; cream collars greyed its brightest pixels at 40 m (saturation 0.277 vs 0.28).
+        shell.cylinder(paint(inlay), 0.205, 0.015, xform((0, y + (0.02 if y < 0 else -0.02), 0), (0, PI / 6, 0)),
                        segments=6)
     for k in range(3):
         a = PI / 6 + k * 2 * PI / 3

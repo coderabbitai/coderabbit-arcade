@@ -244,19 +244,19 @@
     "atlases": {
       "albedo": {
         "file": "pickup_props_albedo.png",
-        "sha256": "96102e28213f50a00a2e9fbad16f18ed5efd5fe3f96fa9250cba38793137dc57"
+        "sha256": "c27acef370b4aac89a63c712a2bd9a4d107e9760e5d780452b02ceb9bc2088ab"
       },
       "emission": {
         "file": "pickup_props_emission.png",
-        "sha256": "cf85fecd01fc2a248cbdc6f4bc6f99a0a5e145305b35f988b7914e2dd45bf08f"
+        "sha256": "6c738c2d4889d13b184e00f601f31224d2e8f605e16f9222cc8c625e52b71439"
       },
       "normal": {
         "file": "pickup_props_normal.png",
-        "sha256": "54940658decd0ff098efa38453327115307a401da87f0433b43539f4ddbe84ed"
+        "sha256": "0d6bdd7b6bff94e2f13418e41932ff3da42ed4d4238efbc909c61e83aeeef53c"
       },
       "orm": {
         "file": "pickup_props_orm.png",
-        "sha256": "dfafe5a4735233030e346e8c0a19dd28ba63608b499a7e2ef5f5965d1361827c"
+        "sha256": "1efae20a9761549ffd8932a116b276e02ea3c1a511c6b8f04785e7d245a8ab93"
       }
     },
     "census": {
@@ -488,11 +488,11 @@
         "unit_test__Ring"
       ],
       "nodes": 30,
-      "sha256": "4b97779690478968be3fee8a7761673a8417b1c72d7d7da0fb09032f60930b95"
+      "sha256": "0a4bf8d65584b97104de296314d4f9d392a21d870f18318f55ea74bd02f12e73"
     }
   },
   "quick": false,
   "revision": 2,
-  "script_sha256": "1d6ecae9b7a5ab22cec4805e98865c323bed3d6d4dd4834a85b1222da859d206",
+  "script_sha256": "dbc650e570e9ed41b4366541ef1691be73d87420526b24a9044ca36e695d4a75",
   "seed": 52019
 }
