@@ -111,6 +111,8 @@ script = ExtResource("8")
 transform = Transform3D(1, 0, 0, 0, 0.982872, -0.184288, 0, 0.184288, 0.982872, 0, 4, 8)
 current = true
 fov = 60.0
+near = 0.15
+far = 200.0
 
 [node name="HUD" type="CanvasLayer" parent="."]
 process_mode = 1

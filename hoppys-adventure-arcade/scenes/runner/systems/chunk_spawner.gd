@@ -54,6 +54,11 @@ var spawning := true
 ## is above zero the corridor may only take chunks whose hazards arrive after it, plus the reaction
 ## time; it counts down with the scroll, so a paused game never burns it.
 var _clear_road_remaining := 0.0
+## Metres the chunks have been scrolled in total, and the total one physics tick earlier. Read-only
+## for the frontend corridor, which draws its floor and walls between the same two ticks that the
+## interpolated chunk transforms are drawn between. Never reset: only the difference matters.
+var scroll_travel := 0.0
+var scroll_travel_previous := 0.0
 
 var _chunk_log := PackedStringArray()
 var _power_up_scene: PackedScene
@@ -218,6 +223,8 @@ func _sweep_clear_road(reach_seconds: float) -> void:
 ## corridor and can pull a hazard that was admitted back inside the window. Re-sweeping each tick
 ## at the current speed is what keeps the promise true rather than true-when-made.
 func _physics_process(delta: float) -> void:
+	# Before any early return, so a tick that does not scroll leaves nothing to interpolate.
+	scroll_travel_previous = scroll_travel
 	if game == null or config == null:
 		return
 	if game.state != &"running" and game.state != &"caught":
@@ -234,6 +241,7 @@ func _physics_process(delta: float) -> void:
 			_sweep_clear_road(_clear_road_remaining + _reaction_seconds())
 	var dz := float(game.speed) * delta
 	frontier_z += dz
+	scroll_travel += dz
 	for chunk in active:
 		if is_instance_valid(chunk):
 			chunk.position.z += dz
@@ -300,6 +308,9 @@ func _place_next(root: Node3D) -> bool:
 	frontier_z = chunk.back_edge_z()
 	_log_placement(meta, mirrored, gap)
 	_maybe_place_power_up(chunk)
+	# The chunk entered the tree at frontier_z and was then moved by the gap (and its pickup added):
+	# drop that from the interpolation history, or its first rendered tick slides in from the frontier.
+	chunk.reset_physics_interpolation()
 	if game != null:
 		game.chunk_spawned.emit(chunk)
 	return true

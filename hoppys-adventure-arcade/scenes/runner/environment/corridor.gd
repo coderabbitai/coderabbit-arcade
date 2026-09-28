@@ -45,6 +45,22 @@ var _pillars: MultiMesh
 var _rain: GPUParticles3D
 var _speed_lines: GPUParticles3D
 var _far_material: ShaderMaterial
+## The spawner of the bound run, if any. While one is bound the scroll is read off the same physics
+## ticks that move the chunks, so floor markers and hazards can never swim against each other.
+var _spawner: Node = null
+## Signed turn wave (direction x profile) and progress at the previous and latest physics tick that
+## called set_turn(), so the bend is drawn between ticks exactly like the interpolated camera swing.
+var _turn_wave_from := 0.0
+var _turn_wave_to := 0.0
+var _turn_progress_from := 0.0
+var _turn_direction_from := 0
+## Physics frame of the latest in-tick set_turn(); -1 when the last call came from outside physics
+## (fixtures, menus), which snaps instead of interpolating.
+var _turn_tick := -1
+## Speed the particle process materials were last written for; -1 forces the first write.
+var _particle_speed := -1.0
+## Rain drift and streak velocity only need to track the speed to a few cm/s.
+const PARTICLE_SPEED_STEP := 0.05
 
 func _init() -> void:
 	# Cosmetic transforms are animated on render frames, not physics ticks.
@@ -274,17 +290,27 @@ func _simple_particles(node_name: String, count: int, size_: Vector2, alpha: flo
 	add_child(particles)
 	return particles
 
+## Contract §3 mount hook. Only the spawner's scroll accumulators are read, never written.
+func bind(runner: Node) -> void:
+	_spawner = runner.get(&"spawner") as Node if runner != null else null
+	if _spawner != null and not (&"scroll_travel" in _spawner):
+		_spawner = null
+
 func set_scroll_speed(speed: float) -> void:
 	_speed = maxf(0.0, speed)
 	if not is_instance_valid(_rain):
 		return
+	# Rewriting both process materials on every physics tick only re-uploads their uniforms.
+	if absf(_speed - _particle_speed) < PARTICLE_SPEED_STEP and not (_speed == 0.0 and _particle_speed != 0.0):
+		return
+	_particle_speed = _speed
 	var rain_process := _rain.process_material as ParticleProcessMaterial
 	# Constant +Z drift without changing the falling velocity.
 	rain_process.direction = Vector3(0, -1.8, _speed * 0.12).normalized()
 	var velocity := Vector2(1.8, _speed * 0.12).length()
 	rain_process.initial_velocity_min = velocity * 0.8
 	rain_process.initial_velocity_max = velocity * 1.2
-	_speed_lines.emitting = clampf((_speed - 12.0) / 12.0, 0.0, 1.0) > 0.6
+	# Emission is decided in _apply_turn() alone; a second writer here made the streaks sputter.
 	var lines_process := _speed_lines.process_material as ParticleProcessMaterial
 	lines_process.direction = Vector3.BACK
 	lines_process.initial_velocity_min = _speed * 0.7
@@ -301,13 +327,28 @@ func set_pursuit(t: float) -> void:
 func _process(delta: float) -> void:
 	_apply_turn()
 	# 96 is a common period of the 2 m grid, wall glyph seed, and 8 m pillars.
-	_offset = fposmod(_offset + _speed * delta, 96.0)
+	var travel := _bound_travel()
+	_offset = fposmod(travel if not is_nan(travel) else _offset + _speed * delta, 96.0)
 	_clock += delta
 	for material in _scroll_materials:
 		material.set_shader_parameter("scroll", _offset)
 	for material in _clock_materials:
 		material.set_shader_parameter("clock", _clock)
 	_update_pillars()
+
+## Metres the bound spawner has scrolled the chunks, at the point between its last two physics ticks
+## that this frame renders, which is where the interpolated chunk transforms are drawn. NAN when no
+## run is bound (menu, fixtures): the corridor then keeps its own render-delta clock.
+func _bound_travel() -> float:
+	if _spawner == null or not is_instance_valid(_spawner):
+		return NAN
+	var current := float(_spawner.scroll_travel)
+	if not _interpolating():
+		return current
+	return lerpf(float(_spawner.scroll_travel_previous), current, Engine.get_physics_interpolation_fraction())
+
+func _interpolating() -> bool:
+	return is_inside_tree() and get_tree().physics_interpolation
 
 func _apply_retro_scale() -> void:
 	var viewport_id := _viewport.get_instance_id()
@@ -350,14 +391,39 @@ func _exit_tree() -> void:
 	_scaling_registered = false
 
 func set_turn(progress: float, direction: int) -> void:
-	turn_progress = clampf(progress, 0.0, 1.0)
-	turn_direction = signi(direction)
+	var clamped := clampf(progress, 0.0, 1.0)
+	var sign_ := signi(direction)
+	if Engine.is_in_physics_frame():
+		# First call of this tick: the latest tick's pose becomes the one to interpolate from.
+		var tick := Engine.get_physics_frames()
+		if tick != _turn_tick:
+			_turn_tick = tick
+			_turn_wave_from = _turn_wave_to
+			_turn_progress_from = turn_progress
+			_turn_direction_from = turn_direction
+	else:
+		_turn_tick = -1
+	turn_progress = clamped
+	turn_direction = sign_
+	_turn_wave_to = float(sign_) * turn_profile(clamped) if sign_ != 0 else 0.0
 	turn_applied.emit(turn_progress, turn_direction)
 
 func _apply_turn() -> void:
-	var wave := turn_profile(turn_progress) if turn_direction != 0 else 0.0
-	bend = float(turn_direction) * 0.010 * wave
-	rotation.y = float(turn_direction) * deg_to_rad(TURN_YAW) * wave
+	# The StageManager advances the turn on physics ticks and the camera swing is interpolated
+	# between them, so the bend is drawn at the same point between the same two ticks.
+	var signed := _turn_wave_to
+	var progress := turn_progress
+	var direction := turn_direction
+	if _turn_tick >= 0 and _turn_tick == Engine.get_physics_frames() and _interpolating():
+		var fraction := Engine.get_physics_interpolation_fraction()
+		signed = lerpf(_turn_wave_from, _turn_wave_to, fraction)
+		if _turn_direction_from == turn_direction:
+			progress = lerpf(_turn_progress_from, turn_progress, fraction)
+		elif direction == 0:
+			direction = _turn_direction_from
+	var wave := absf(signed)
+	bend = 0.010 * signed
+	rotation.y = deg_to_rad(TURN_YAW) * signed
 	if _far_material == null: return
 	for material in _frame_materials:
 		material.set_shader_parameter("bend", bend)
@@ -365,7 +431,7 @@ func _apply_turn() -> void:
 	for material in _metal_bend_materials:
 		material.set_shader_parameter("bend", bend)
 	_speed_lines.draw_pass_1.material.set_shader_parameter("corridor_frame", global_transform)
-	var sweep := float(turn_direction) * turn_progress * 48.0 if wave > 0.0 else 0.0
+	var sweep := float(direction) * progress * 48.0 if wave > 0.0 else 0.0
 	_scroll_materials[2].set_shader_parameter("lateral_scroll", sweep)
 	var blend := wave
 	_far_material.set_shader_parameter("opacity", 1.0 - blend)
@@ -378,12 +444,16 @@ func _apply_turn() -> void:
 	_corner.rotation.y = 0.0
 	_turn_chevron.visible = blend > 0.0
 	_turn_chevron.modulate.a = blend
-	_turn_chevron.text = "◄ TURN" if turn_direction < 0 else "TURN ►"
+	_turn_chevron.text = "◄ TURN" if direction < 0 else "TURN ►"
 	_turn_chevron.position.x = bend * pow(24.0 - _turn_chevron.position.z, 2) - _corner.position.x
 	_turn_chevron.rotation.y = 0.0
 	_rain.amount_ratio = lerpf(0.55, 1.0, wave)
 	_dust.amount_ratio = 1.0
-	_speed_lines.emitting = wave > 0.95 or clampf((_speed - 12.0) / 12.0, 0.0, 1.0) > 0.6
+	# Single writer for emission, and only on a change: a hidden emitter (the starship corridor hides
+	# the legacy streaks) is never switched on just to be switched off again in the same frame.
+	var streaks := _speed_lines.visible and (wave > 0.95 or clampf((_speed - 12.0) / 12.0, 0.0, 1.0) > 0.6)
+	if _speed_lines.emitting != streaks:
+		_speed_lines.emitting = streaks
 	_speed_lines.speed_scale = 1.0 + wave
 	_rain.speed_scale = 1.0 + wave * 1.5
 
