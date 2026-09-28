@@ -1,6 +1,6 @@
 # Hoppy’s Adventure Arcade
 
-A Godot 4.7.1 arcade collection with a reactive main menu and the first playable Platformer level, **Bay Area Blitz**. the **Endless Runner** (The Codebase Corridor). Beat’em Up and the other platformer levels remain labeled placeholders.
+A Godot 4.7.1 arcade collection with a reactive main menu and the first playable Platformer level, **Bay Area Blitz**, plus the **Endless Runner** (The Codebase Corridor). Beat’em Up and the other platformer levels remain labeled placeholders.
 
 Open `hoppys-adventure-arcade/project.godot` and press **F5**. Choose **Platformer Game → Level Select → Play Bay Area Blitz**.
 
