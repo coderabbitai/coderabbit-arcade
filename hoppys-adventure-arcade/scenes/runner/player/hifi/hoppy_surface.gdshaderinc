@@ -13,9 +13,13 @@ uniform bool has_emission = false;
 uniform bool has_emission_map = false;
 uniform float flash : hint_range(0.0, 1.0) = 0.0;
 uniform float chroma_lock : hint_range(0.0, 1.0) = 1.0;
-uniform vec4 ambient_fill : source_color = vec4(1.0, 0.941176, 0.827451, 1.0);
+uniform vec4 ambient_fill : source_color = vec4(1.0, 0.972549, 0.913725, 1.0);
 uniform float ambient_energy = 0.34;
 uniform float light_gain : hint_range(0.0, 1.0) = 0.5;
+// Neutral front fill (art review r1): the rear chase key never reaches the face, which read
+// tan/grey. A white fill on surfaces facing Hoppy's own forward (-Z) keeps each albedo's hue
+// and saturation and adds nothing to rear-facing surfaces, so the corridor rear view is untouched.
+uniform float front_fill : hint_range(0.0, 1.0) = 0.0;
 // Backpack LED strip: the accessory GLB surface carries COLOR_0 (R = LED, G = segment 0..1).
 // Only surfaces the visual flags with has_led_mask read it; missing COLOR defaults to white.
 uniform bool has_led_mask = false;
@@ -58,7 +62,9 @@ void fragment() {
 		float lit = step(led_mask.y, led_fill + 0.01);
 		baked = mix(baked, led_color.rgb * led_level * lit, step(0.5, led_mask.x));
 	}
-	EMISSION = base * ambient_fill.rgb * ambient_energy * orm.r + baked + vec3(flash * 0.35);
+	vec3 facing = normalize((VIEW_MATRIX * MODEL_MATRIX * vec4(0.0, 0.0, -1.0, 0.0)).xyz);
+	float front = clamp(dot(NORMAL, facing), 0.0, 1.0);
+	EMISSION = base * (ambient_fill.rgb * ambient_energy + vec3(front_fill * front)) * orm.r + baked + vec3(flash * 0.35);
 }
 void light() {
 	float luma = dot(LIGHT_COLOR, vec3(0.2126, 0.7152, 0.0722));

@@ -254,6 +254,27 @@ func check_new_clips(hoppy: Node3D) -> void:
 		hands_high = maxf(hands_high, Capture.limb_bounds(hoppy, ["hand_L", "hand_R"]).end.y)
 	print("A1 VICTORY: top %.4f m, hands up to %.4f m" % [victory_high, hands_high])
 	check(hands_high >= 1.35, "victory raises both paws above the shoulders")
+	# Art review r1: the lean and the celebration must read from the rear chase camera at
+	# 1280x720; measured at the widest in-play FOV (smallest Hoppy), clip only (no runtime lean).
+	for pair: Array in [[&"lane_dash_left", -1.0], [&"lane_dash_right", 1.0]]:
+		var head_peak := 0.0
+		for frame in 17:
+			Capture.pose_for_view(hoppy, pair[0], player.get_animation(pair[0]).length * frame / 16.0)
+			var lateral: float = Capture.chase_metrics(hoppy, Capture.CHASE_FOV_WIDEST).head_lateral_px
+			if absf(lateral) > absf(head_peak):
+				head_peak = lateral
+		print("A1 CHASE DASH %s: head %.2f px off the centreline" % [pair[0], head_peak])
+		check(signf(head_peak) == pair[1] and absf(head_peak) >= 8.0, "chase-camera dash head displacement >= 8 px " + str(pair[0]))
+	var paws_peak := -INF
+	var paws_held := 0
+	for frame in 37:
+		Capture.pose_for_view(hoppy, &"victory", player.get_animation(&"victory").length * frame / 36.0)
+		var above: float = Capture.chase_metrics(hoppy, Capture.CHASE_FOV_WIDEST).paws_above_ears_px
+		paws_peak = maxf(paws_peak, above)
+		if above >= 6.0:
+			paws_held += 1
+	print("A1 CHASE VICTORY: paws up to %.2f px above the ear tips, %d/37 samples >= 6 px" % [paws_peak, paws_held])
+	check(paws_peak >= 6.0 and paws_held >= 18, "chase-camera victory paws >= 6 px above the ear tips for half the clip")
 
 func run() -> void:
 	await process_frame
@@ -327,7 +348,11 @@ func run() -> void:
 	var glass_shader := preload("res://scenes/runner/player/hifi/hoppy_glass.gdshader")
 	var shared := FileAccess.get_file_as_string("res://scenes/runner/player/hifi/hoppy_surface.gdshaderinc")
 	check(not (surface_shader.code + glass_shader.code + shared).contains("TIME"), "surface shaders have no global time")
-	check(shared.contains("ambient_energy * orm.r"), "ambient fill weighted by baked occlusion")
+	check(shared.contains("ambient_energy + vec3(front_fill * front)) * orm.r"), "ambient and front fill weighted by baked occlusion")
+	check(shared.contains("MODEL_MATRIX * vec4(0.0, 0.0, -1.0, 0.0)") and shared.contains("clamp(dot(NORMAL, facing), 0.0, 1.0)"), "front fill is neutral, forward-facing only and never reaches the rear")
+	var rig: Skeleton3D = hoppy.skeleton
+	var eye_z := rig.get_bone_global_rest(rig.find_bone("eye_L")).origin.z
+	check(eye_z < -0.15, "face looks down -Z, the front fill axis")
 	check(glass_shader.code.contains("blend_mix, depth_prepass_alpha, cull_back") and shared.contains("ALPHA = albedo_color.a * texel.a"), "glass preserves alpha with reviewed render modes")
 	check(surface_shader.code.contains("cull_back, depth_draw_opaque") and not surface_shader.code.contains("#define HOPPY_GLASS"), "body remains opaque and back culled")
 	var glass_count := 0
@@ -339,6 +364,19 @@ func run() -> void:
 	check(Capture.measure_goggle_band(band)["pass"], "studio guard accepts authored mint veil")
 	band.fill(Color("62a48c"))
 	check(not Capture.measure_goggle_band(band)["pass"], "studio guard rejects opaque lens regression")
+	# Review r1 capture meters: fur stats read only the fur class, peak luma catches one hot pixel,
+	# and the CPU chase projection puts the camera target on the screen centre.
+	var fur_image := Image.create(4, 1, false, Image.FORMAT_RGB8)
+	var fur_mask := Image.create(4, 1, false, Image.FORMAT_RGB8)
+	fur_image.fill(Color("d9ccb4"))
+	fur_image.set_pixel(3, 0, Color.WHITE)
+	fur_mask.fill(Color(0, 1, 0))
+	fur_mask.set_pixel(3, 0, Color(0, 0, 1))
+	var fur_probe := Capture.fur_stats(fur_image, fur_mask)
+	check(fur_probe.pixels == 3 and absf(fur_probe.saturation - Color("d9ccb4").s) < 0.01, "fur stats read the fur class only")
+	check(Capture.peak_luma(fur_image) > 0.99 and Capture.peak_luma(fur_mask) < 0.72, "peak luma finds the hottest pixel")
+	check(Capture.chase_screen(Capture.CHASE_TARGET, 60.0).distance_to(Capture.CHASE_SIZE * 0.5) < 0.01, "chase projection centres the look target")
+	check(Capture.chase_screen(Vector3(0, 1.8, 0), 60.0).y < Capture.chase_screen(Vector3(0, 0.2, 0), 60.0).y and Capture.chase_screen(Vector3(0.5, 1, 0), 60.0).x > 640.0, "chase projection orientation")
 	for mesh: MeshInstance3D in hoppy._meshes:
 		for surface in mesh.mesh.get_surface_count():
 			var material := mesh.get_active_material(surface) as ShaderMaterial
@@ -355,6 +393,11 @@ func run() -> void:
 			var ambient: float = material.get_shader_parameter("ambient_energy")
 			check(gain >= 0.4 and gain <= 0.7, "compressed direct lighting gain")
 			check(ambient >= 0.25 and ambient <= 0.45, "lifted ambient budget")
+			var ambient_tint: Color = material.get_shader_parameter("ambient_fill")
+			check(ambient_tint.s <= 0.10 and ambient_tint.s >= 0.04 and absf(ambient_tint.h - Capture.Palette.CREAM.h) * 360.0 <= 5.0, "ambient fill is a light cream, softer than CREAM")
+			var fill: float = material.get_shader_parameter("front_fill")
+			check(is_equal_approx(fill, hoppy.FRONT_FILL) and fill >= 0.05 and fill <= 0.5, "neutral front fill in budget")
+			check(mesh.global_basis.is_equal_approx(hoppy.global_basis), "mesh forward is Hoppy forward for the front fill " + mesh.name)
 			check(source.ao_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_RED and source.roughness_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_GREEN and source.metallic_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_BLUE, "glTF ORM channels RGB")
 			check(source.get_texture(BaseMaterial3D.TEXTURE_METALLIC) == source.get_texture(BaseMaterial3D.TEXTURE_ROUGHNESS) and source.get_texture(BaseMaterial3D.TEXTURE_AMBIENT_OCCLUSION) == material.get_shader_parameter("orm_map"), "one shared ORM image")
 	check(glass_count == 1, "exactly one goggle glass surface")

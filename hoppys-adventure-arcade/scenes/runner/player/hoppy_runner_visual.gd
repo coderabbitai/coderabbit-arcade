@@ -33,6 +33,12 @@ const EXPRESSIONS := {
 	&"shield_brace": Vector4(0.4, 0, 0.7, 0), &"powerup_react": Vector4(0, 0.3, 0, 1),
 	&"victory": Vector4(0, 0.2, 0, 1)}
 const FACE_RATE := 14.0
+## Neutral front fill for surfaces facing forward (hoppy_surface.gdshaderinc `front_fill`); tuned
+## so the face fur reads cream (luma 0.65..0.85, saturation <= 0.20) in the corridor (art review r1).
+const FRONT_FILL := 0.22
+## Half-white cream ambient: a full CREAM tint squared the fur toward tan (saturation ~0.30 on the
+## ambient term); the lighter tint keeps the warm cast with a hue closer to each albedo.
+const AMBIENT_FILL := Color(1.0, 0.972549, 0.913725)
 const BLINK_PERIOD := 3.4
 ## Power-up kinds that light the backpack LED strip (colours in _led_colors, same order).
 const LED_KINDS: Array[StringName] = [&"nitro", &"lgtm", &"code_review", &"super_jump", &"auto_fix",
@@ -186,9 +192,10 @@ func _surface_material(source: BaseMaterial3D) -> ShaderMaterial:
 	material.set_shader_parameter("has_emission", source.emission_enabled)
 	material.set_shader_parameter("has_emission_map", source.get_texture(BaseMaterial3D.TEXTURE_EMISSION) != null)
 	material.set_shader_parameter("chroma_lock", 1.0)
-	material.set_shader_parameter("ambient_fill", Palette.CREAM)
+	material.set_shader_parameter("ambient_fill", AMBIENT_FILL)
 	material.set_shader_parameter("ambient_energy", 0.34)
 	material.set_shader_parameter("light_gain", 0.5)
+	material.set_shader_parameter("front_fill", FRONT_FILL)
 	material.set_shader_parameter("flash", 0.0)
 	return material
 

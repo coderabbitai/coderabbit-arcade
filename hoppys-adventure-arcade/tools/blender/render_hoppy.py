@@ -93,7 +93,8 @@ light('fill', (-3, 2, 2), 180, (.6, .9, .85))
 light('rim', (0, -3, 2.5), 350, (.5, .95, .8))
 cam = bpy.data.cameras.new('Hoppy camera'); cam.lens = 60
 co = bpy.data.objects.new('Hoppy camera', cam); scene.collection.objects.link(co); scene.camera = co
-views = {'front': (0, 3.9, 1.3), 'threequarter': (2.6, 2.9, 1.5), 'rear': (0, -3.9, 1.3)}
+# 'chase' sits on the gameplay chase-camera ray (Godot 0,4,8 over Hoppy), pulled in to 3.9 m.
+views = {'front': (0, 3.9, 1.3), 'threequarter': (2.6, 2.9, 1.5), 'rear': (0, -3.9, 1.3), 'chase': (0, -3.64, 2.32)}
 target = Vector((0, 0, .45 if args.action == 'roll' else .92))
 for name, loc in views.items():
     co = bpy.data.objects['Hoppy camera']

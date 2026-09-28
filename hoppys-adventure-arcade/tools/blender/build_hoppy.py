@@ -778,6 +778,11 @@ RUN_GAIT={'lane_dash_left':(0.0,math.pi),'lane_dash_right':(math.pi,math.pi),'la
 GROUNDED=('idle','run')+tuple(RUN_GAIT)
 
 
+VICTORY_ARM_RAISE=2.9
+VICTORY_EAR_BACK=.3
+VICTORY_EAR_SPLAY=1.3
+
+
 def smooth(a, b, x):
     u = max(0.0, min(1.0, (x - a) / (b - a)))
     return u * u * (3 - 2 * u)
@@ -822,8 +827,10 @@ for name,duration in lengths.items():
         spine=rig.pose.bones['spine'];chest=rig.pose.bones['chest'];head=rig.pose.bones['head']
         dash=(1 if name.endswith('right') else -1) if name.startswith('lane_dash') else 0
         if dash:
-            root.rotation_euler.z=-dash*.14*e
-            spine.rotation_euler.z=-dash*.09*e
+            # Art review r1: the lean must read from the rear chase camera (head >= 8 px off the
+            # centreline at 1280x720); chest roll stays inside the 0.12..0.35 rad A1 band.
+            root.rotation_euler.z=-dash*.19*e
+            spine.rotation_euler.z=-dash*.1*e
             chest.rotation_euler.y=dash*.1*e
             head.rotation_euler.z=dash*.1*e
         if name=='land':
@@ -835,7 +842,7 @@ for name,duration in lengths.items():
         if name=='powerup_react':
             spine.rotation_euler.x=-.12+.08*e;head.rotation_euler.x=.1*e
         if name=='victory':
-            spine.rotation_euler.x=-.12+.14*e;head.rotation_euler.x=.15*e
+            spine.rotation_euler.x=-.12+.14*e;head.rotation_euler.x=.22*e
             chest.scale=(1+.03*e,1+.02*e,1+.03*e)
         for side,s in [('L',-1),('R',1)]:
             arm=rig.pose.bones['arm_'+side];leg=rig.pose.bones['leg_'+side]
@@ -894,9 +901,12 @@ for name,duration in lengths.items():
                 ear_tip.rotation_euler.x+=.6*e*math.sin(6*math.pi*t)
                 ear.rotation_euler.z+=s*.12*e*math.sin(4*math.pi*t)
             if name=='victory':
-                arm.rotation_euler.x*=1-e;elbow=lerp(elbow,.55+.3*(1+pump)/2,e)
-                ear.rotation_euler.x=lerp(ear.rotation_euler.x,-.05,e)
-                ear_tip.rotation_euler.x+=.25*e*math.sin(6*math.pi*t)
+                # Art review r1: from the rear chase camera both paws must clear the ear tips,
+                # so the arms punch almost straight up and the ears sweep back and splay.
+                arm.rotation_euler.x*=1-e;elbow=lerp(elbow,.22+.2*(1+pump)/2,e)
+                ear.rotation_euler.x=lerp(ear.rotation_euler.x,VICTORY_EAR_BACK,e)
+                ear.rotation_euler.z-=s*VICTORY_EAR_SPLAY*e
+                ear_tip.rotation_euler.x+=(.35+.15*math.sin(6*math.pi*t))*e
             # Clamp signed bends; arm abduction gives the large paws torso clearance.
             forearm.rotation_euler.x=max(.0,min(1.75,elbow))
             shin.rotation_euler.x=-max(.0,min(1.9,knee))
@@ -907,7 +917,7 @@ for name,duration in lengths.items():
                 ear.rotation_euler.z+=dash*.3*e
             if name=='shield_brace':arm.rotation_euler.z+=s*.28*e
             if name=='powerup_react' and side=='R':arm.rotation_euler.z-=(2.6+.15*pump)*e
-            if name=='victory':arm.rotation_euler.z-=s*(2.5+.2*pump)*e
+            if name=='victory':arm.rotation_euler.z-=s*(VICTORY_ARM_RAISE+.1*pump)*e
             if gait in ('idle','run'):
                 foot_pitch(side, -.3*max(0,(knee-.3)/1.32))
             elif name=='jump':foot_pitch(side,-.65)
