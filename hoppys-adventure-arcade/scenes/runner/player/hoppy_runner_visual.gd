@@ -6,7 +6,38 @@ const Glass = preload("res://scenes/runner/player/hifi/hoppy_glass.gdshader")
 const Surface = preload("res://scenes/runner/player/hifi/hoppy_surface.gdshader")
 const Hologram = preload("res://scenes/runner/player/hifi/energy.gdshader")
 const LaneLook = preload("res://scenes/runner/player/hifi/lane_look.gd")
-const STATES: Array[StringName] = [&"idle", &"run", &"jump", &"fall", &"roll", &"hurt", &"dead"]
+const FaceRig = preload("res://scenes/runner/player/hifi/face_rig.gd")
+const STATES: Array[StringName] = [&"idle", &"run", &"jump", &"fall", &"roll", &"hurt", &"dead",
+	&"lane_dash_left", &"lane_dash_right", &"land", &"shield_brace", &"powerup_react", &"victory"]
+## Backend-owned locomotion; one-shots return to the last of these.
+const LOCOMOTION: Array[StringName] = [&"idle", &"run", &"jump", &"fall", &"roll"]
+## Grounded one-shots authored on the run gait (Blender RUN_GAIT). Each ends on a run pose, so
+## returning to run is seamless; re-requesting their return state does not cut them short.
+const GAIT_ONE_SHOTS: Array[StringName] = [&"lane_dash_left", &"lane_dash_right", &"land",
+	&"shield_brace", &"powerup_react", &"victory"]
+## Clips that keep the run cadence, so set_run_speed scales them like run.
+const PACED: Array[StringName] = [&"run", &"lane_dash_left", &"lane_dash_right", &"shield_brace",
+	&"powerup_react", &"victory"]
+## Run phase (fraction of the run clip) each gait one-shot ends on; hoppy.build.json run_exit.
+const GAIT_EXIT := {&"lane_dash_left": 0.5}
+const GROUNDED_BASE: Array[StringName] = [&"idle", &"run"]
+const AIRBORNE: Array[StringName] = [&"jump", &"fall"]
+const ONE_SHOT_BLEND := 0.08
+const LAND_BLEND := 0.05
+## Face weights per state: x focused, y wide-eyed, z wince, w grin.
+const EXPRESSIONS := {
+	&"idle": Vector4(0, 0, 0, 0.15), &"run": Vector4(1, 0, 0, 0), &"jump": Vector4(0, 1, 0, 0),
+	&"fall": Vector4(0.2, 0.8, 0, 0), &"roll": Vector4(0.7, 0, 0.3, 0), &"hurt": Vector4(0, 0, 1, 0),
+	&"dead": Vector4(0, 0, 0.8, 0), &"lane_dash_left": Vector4(1, 0, 0, 0),
+	&"lane_dash_right": Vector4(1, 0, 0, 0), &"land": Vector4(0.6, 0, 0.4, 0),
+	&"shield_brace": Vector4(0.4, 0, 0.7, 0), &"powerup_react": Vector4(0, 0.3, 0, 1),
+	&"victory": Vector4(0, 0.2, 0, 1)}
+const FACE_RATE := 14.0
+const BLINK_PERIOD := 3.4
+## Power-up kinds that light the backpack LED strip (colours in _led_colors, same order).
+const LED_KINDS: Array[StringName] = [&"nitro", &"lgtm", &"code_review", &"super_jump", &"auto_fix",
+	&"approve_shield"]
+const LED_FLASH_SECONDS := 0.5
 ## Grounded, envelope-filling roll re-baked from the Blender clip by dev/bake_hoppy_roll.gd.
 const BAKED_ROLL := "res://scenes/runner/player/hifi/hoppy_roll.tres"
 ## The roll starts on its first baked frame: any blend from the upright pose would poke above the 0.9 m
@@ -37,6 +68,19 @@ var _glyphs: MultiMeshInstance3D
 var _trail: MultiMeshInstance3D
 var _flash_remaining := 0.0
 var _clock := 0.0
+var _face: SkeletonModifier3D
+## Smoothed face weights (focused, wide, wince, grin).
+var _expression := Vector4.ZERO
+## A victory requested mid-air or mid-roll plays on the next grounded return.
+var _victory_pending := false
+## LED strip: private accessory material copies with the COLOR_0 mask, and per-kind timers.
+var _led_materials: Array[ShaderMaterial] = []
+var _led_colors: Array[Color] = []
+var _led_remaining := PackedFloat32Array()
+var _led_duration := PackedFloat32Array()
+var _led_kind := -1
+var _led_flash := 0.0
+var _led_state := Vector3.ZERO
 
 func _init() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -76,10 +120,21 @@ func _ready() -> void:
 			var source := mesh.get_active_material(index)
 			if not copies.has(source):
 				copies[source] = _surface_material(source as BaseMaterial3D)
+				var opaque := (source as BaseMaterial3D).transparency == BaseMaterial3D.TRANSPARENCY_DISABLED
+				if opaque and mesh.mesh.surface_get_format(index) & Mesh.ARRAY_FORMAT_COLOR:
+					(copies[source] as ShaderMaterial).set_shader_parameter("has_led_mask", true)
+					_led_materials.append(copies[source])
 			mesh.set_surface_override_material(index, copies[source])
 	_look = LaneLook.new()
 	_look.name = "LaneLook"
 	skeleton.add_child(_look)
+	_face = FaceRig.new()
+	_face.name = "FaceRig"
+	skeleton.add_child(_face)
+	_face.bind(skeleton)
+	_led_colors = [Palette.ORANGE, Palette.MINT, Palette.MATRIX, Palette.CREAM, Palette.MATRIX, Palette.MINT]
+	_led_remaining.resize(LED_KINDS.size())
+	_led_duration.resize(LED_KINDS.size())
 	_build_contact_shadow()
 	_build_effects()
 	_configure_cosmetics(self)
@@ -178,10 +233,33 @@ func _build_effects() -> void:
 	_trail = _repeat("DataTrail", 16, _glyph_trail_material)
 
 func set_anim_state(state: StringName) -> void:
-	if state not in STATES or state == anim_state:
+	if state not in STATES:
 		return
+	if state in GAIT_ONE_SHOTS:
+		# Direct requests (fixtures, previews) play the one-shot from any state.
+		if state != anim_state:
+			_start_one_shot(state)
+		return
+	if state == anim_state:
+		return
+	if state in GROUNDED_BASE:
+		if anim_state in GAIT_ONE_SHOTS and state == _return_state:
+			# The backend re-asserting the state we return to (run after land) lets the one-shot finish.
+			return
+		if _victory_pending and anim_state != &"hurt":
+			_start_one_shot(&"victory")
+			_return_state = state
+			return
+	_play(state)
+
+func _play(state: StringName) -> void:
 	if state == &"hurt":
-		_return_state = anim_state if anim_state in [&"idle", &"run", &"jump", &"fall", &"roll"] else &"run"
+		if anim_state in LOCOMOTION:
+			_return_state = anim_state
+		elif anim_state not in GAIT_ONE_SHOTS:
+			_return_state = &"run"
+	if state == &"dead":
+		_victory_pending = false
 	var leaving_roll := anim_state == &"roll"
 	anim_state = state
 	if animation_player != null:
@@ -195,10 +273,31 @@ func set_anim_state(state: StringName) -> void:
 		animation_player.advance(0.0)
 		_process(0.0)
 
+## Plays a grounded one-shot; it returns to the last locomotion state when it finishes.
+func _start_one_shot(state: StringName) -> void:
+	if anim_state in LOCOMOTION:
+		_return_state = &"run" if anim_state in AIRBORNE else anim_state
+	elif anim_state not in GAIT_ONE_SHOTS:
+		_return_state = &"run"
+	var restart := anim_state == state
+	anim_state = state
+	if state == &"victory":
+		_victory_pending = false
+	if animation_player != null:
+		animation_player.play(state, LAND_BLEND if state == &"land" else ONE_SHOT_BLEND)
+		if restart:
+			animation_player.seek(0.0, true)
+		set_run_speed(_speed)
+		animation_player.advance(0.0)
+		_process(0.0)
+
+func _grounded() -> bool:
+	return anim_state in GROUNDED_BASE or anim_state in GAIT_ONE_SHOTS
+
 func set_run_speed(normalized: float) -> void:
 	_speed = clampf(normalized, 0.0, 1.0)
 	if animation_player != null:
-		animation_player.speed_scale = lerpf(0.9, 1.6, _speed) if anim_state == &"run" else 1.0
+		animation_player.speed_scale = lerpf(0.9, 1.6, _speed) if anim_state in PACED else 1.0
 
 func set_lane_lean(direction: float) -> void:
 	_lean = clampf(direction, -1.0, 1.0)
@@ -207,10 +306,66 @@ func set_lane_lean(direction: float) -> void:
 		_look.set("direction", _lean)
 
 func _animation_finished(state: StringName) -> void:
-	# Locomotion transitions are backend-owned. One-shots hold their final pose;
-	# only hurt automatically restores the last requested locomotion state.
-	if state == &"hurt" and anim_state == &"hurt":
-		set_anim_state(_return_state)
+	# Locomotion transitions are backend-owned: jump/roll/dead hold their final pose. hurt and the
+	# grounded one-shots restore the last requested locomotion state.
+	if state != anim_state:
+		return
+	if state == &"hurt":
+		_play(_return_state)
+	elif state in GAIT_ONE_SHOTS:
+		if _victory_pending and _return_state in GROUNDED_BASE:
+			_start_one_shot(&"victory")
+		else:
+			_play(_return_state)
+			if _return_state == &"run" and animation_player != null:
+				# Resume the stride where the one-shot's gait window ended.
+				animation_player.seek(animation_player.current_animation_length * float(GAIT_EXIT.get(state, 0.0)), true)
+
+# --- Round-7 movement and reaction hooks, forwarded by runner_player.gd from RunnerGame signals ---
+
+## player_action lane_left / lane_right / land.
+func play_move(action: StringName) -> void:
+	if action == &"land":
+		if anim_state in AIRBORNE or _grounded():
+			_start_one_shot(&"land")
+	elif action == &"lane_left" or action == &"lane_right":
+		if _grounded():
+			_start_one_shot(&"lane_dash_left" if action == &"lane_left" else &"lane_dash_right")
+
+## damage_blocked with the shield reason.
+func on_shield_block() -> void:
+	_led_flash = LED_FLASH_SECONDS
+	if _grounded():
+		_start_one_shot(&"shield_brace")
+
+## power_up_collected: lights the LED meter for timed kinds and plays the reaction when grounded.
+func on_power_up(kind: StringName, duration: float) -> void:
+	var index := LED_KINDS.find(kind)
+	if index >= 0 and _led_remaining.size() == LED_KINDS.size():
+		_led_remaining[index] = maxf(duration, 0.0)
+		_led_duration[index] = maxf(duration, 0.0)
+		if duration > 0.0:
+			_led_kind = index
+	_led_flash = LED_FLASH_SECONDS
+	if _grounded():
+		_start_one_shot(&"powerup_react")
+
+## power_up_expired.
+func on_power_up_end(kind: StringName) -> void:
+	var index := LED_KINDS.find(kind)
+	if index >= 0 and _led_remaining.size() == LED_KINDS.size():
+		_led_remaining[index] = 0.0
+
+## stage_cleared / boss_defeated. Airborne or rolling, the victory waits for the next grounded return.
+func celebrate() -> void:
+	if anim_state == &"dead":
+		return
+	_led_flash = LED_FLASH_SECONDS
+	if _grounded():
+		if anim_state != &"victory":
+			_start_one_shot(&"victory")
+	else:
+		_victory_pending = true
 
 func on_hit() -> void:
 	flash()
@@ -265,6 +420,61 @@ func _process(delta: float) -> void:
 				for i in mesh.mesh.get_surface_count():
 					var material := mesh.get_surface_override_material(i) as ShaderMaterial
 					material.set_shader_parameter("flash", 0.0)
+	_update_face(delta)
+	_update_leds(delta)
+
+func _update_face(delta: float) -> void:
+	if _face == null:
+		return
+	var target: Vector4 = EXPRESSIONS.get(anim_state, Vector4.ZERO)
+	_expression = _expression.lerp(target, 1.0 - exp(-FACE_RATE * delta))
+	_face.focused = _expression.x
+	_face.wide = _expression.y
+	_face.wince = _expression.z
+	_face.grin = _expression.w
+	# A quick periodic blink, suppressed while wincing or dead.
+	var phase := fmod(_clock, BLINK_PERIOD)
+	var blink := clampf(1.0 - absf(phase - (BLINK_PERIOD - 0.09)) / 0.07, 0.0, 1.0)
+	_face.blink = 0.0 if anim_state == &"dead" else blink * (1.0 - _expression.z)
+
+## Backpack strip: the latest timed power-up shows its colour as a draining meter, a stored shield
+## glows mint, and collections/blocks/celebrations sweep the strip for LED_FLASH_SECONDS.
+## With nothing active, led_level is 0 and the baked MATRIX glow shows unchanged.
+func _update_leds(delta: float) -> void:
+	if _led_materials.is_empty() or _led_remaining.size() != LED_KINDS.size():
+		return
+	var best := -1
+	for i in LED_KINDS.size():
+		if _led_remaining[i] > 0.0:
+			_led_remaining[i] = maxf(_led_remaining[i] - delta, 0.0)
+			if _led_remaining[i] > 0.0 and _led_duration[i] > 0.0 and (best < 0 or i == _led_kind):
+				best = i
+	_led_flash = maxf(_led_flash - delta, 0.0)
+	var level := 0.0
+	var fill := 1.0
+	var color := Palette.MINT
+	if best >= 0:
+		color = _led_colors[best]
+		fill = _led_remaining[best] / _led_duration[best]
+		level = 0.9 + 0.25 * sin(_clock * (14.0 if LED_KINDS[best] == &"nitro" else 5.0))
+	elif _shield_requested:
+		level = 0.8
+	if _led_flash > 0.0:
+		var sweep := 1.0 - _led_flash / LED_FLASH_SECONDS
+		fill = maxf(fill if best >= 0 else 0.0, sweep)
+		color = color.lerp(Palette.CREAM, 0.4)
+		level = maxf(level, 1.4)
+	if level == 0.0 and _led_state.x == 0.0:
+		return
+	_led_state = Vector3(level, fill, float(best))
+	for material in _led_materials:
+		material.set_shader_parameter("led_level", level)
+		material.set_shader_parameter("led_fill", fill)
+		material.set_shader_parameter("led_color", color)
+
+## LED uniforms currently pushed to the strip: (level, fill, active kind index or -1).
+func led_state() -> Vector3:
+	return _led_state
 
 func _particles(id: String, count: int, one_shot: bool) -> GPUParticles3D:
 	var node := GPUParticles3D.new()

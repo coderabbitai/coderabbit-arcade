@@ -56,6 +56,6 @@ def consolidate_atlases(payload, binary):
             source = payload['textures'][mr['index']]['source']
             if not payload['images'][source].get('name', '').endswith('_orm'):
                 raise RuntimeError('[hoppy] Expected shared ORM atlas: ' + material.get('name', ''))
-            # R is baked occlusion (1 for this non-AO bake), G roughness, B metal.
+            # R is baked occlusion (seam and tread grooves; 1 elsewhere), G roughness, B metal.
             material['occlusionTexture'] = dict(mr, strength=1.0)
     return inspect_images(payload, binary)

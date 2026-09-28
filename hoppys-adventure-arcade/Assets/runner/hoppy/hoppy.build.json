@@ -1,14 +1,14 @@
 {
-  "recipe_revision": 6,
+  "recipe_revision": 7,
   "hoodie_linear": [
     0.93,
     0.25,
     0.067
   ],
   "stance_revision": 17,
-  "effect_triangles": 1392,
-  "joint_revision": 14,
-  "contact_revision": 16,
+  "effect_triangles": 1394,
+  "joint_revision": 15,
+  "contact_revision": 17,
   "sole_sweeps": {
     "idle": {
       "hz": 120,
@@ -19,6 +19,42 @@
     "run": {
       "hz": 120,
       "samples": 73,
+      "min_y": -4.5925844460725784e-08,
+      "max_y": 5.061156116425991e-08
+    },
+    "lane_dash_left": {
+      "hz": 120,
+      "samples": 33,
+      "min_y": -6.146728992462158e-08,
+      "max_y": 5.587935447692871e-08
+    },
+    "lane_dash_right": {
+      "hz": 120,
+      "samples": 33,
+      "min_y": -6.146728992462158e-08,
+      "max_y": 5.587935447692871e-08
+    },
+    "land": {
+      "hz": 120,
+      "samples": 25,
+      "min_y": -3.91155481338501e-08,
+      "max_y": 4.842877388000488e-08
+    },
+    "shield_brace": {
+      "hz": 120,
+      "samples": 49,
+      "min_y": -4.470348358154297e-08,
+      "max_y": 5.21540641784668e-08
+    },
+    "powerup_react": {
+      "hz": 120,
+      "samples": 61,
+      "min_y": -4.5925844460725784e-08,
+      "max_y": 5.061156116425991e-08
+    },
+    "victory": {
+      "hz": 120,
+      "samples": 145,
       "min_y": -4.5925844460725784e-08,
       "max_y": 5.061156116425991e-08
     }
@@ -63,43 +99,43 @@
     0.162
   ],
   "back_mark_z": 0.268,
-  "script_sha256": "5ff4a39aadeca3bda630400b0cf0e2e276ba7c1c97150c92c00ca8bca6d9c63a",
-  "atlas_helper_sha256": "33cd94ba483671e156465bde7ea6e0aecf59ce6e7fa84d0cc189509b5d138675",
+  "script_sha256": "e74c8ac3c6f0d642399489f899f0259dfe9b7681114cfaa84606176cd57ca07c",
+  "atlas_helper_sha256": "6e9467f0befabed73b075a4184ab7cc5aa864649d008b7be24d313726920e35a",
   "blender": "5.2.2 LTS",
   "seed": 41027,
-  "triangles": 38416,
+  "triangles": 45040,
   "image_report": [
     {
       "index": 0,
       "name": "accessory_emissive",
       "width": 1024,
       "height": 1024,
-      "bytes": 134728,
-      "sha256": "9298aae1a24af6e457c09406db51e0fb5d42e9df21fcfd9e4a32ebbc8effe1e8"
+      "bytes": 156510,
+      "sha256": "9482b742c443cf22cf233b6c949b4adb1c22e5c1728bacfd0d06e768e9c058a5"
     },
     {
       "index": 1,
       "name": "accessory_normal",
       "width": 1024,
       "height": 1024,
-      "bytes": 592835,
-      "sha256": "27d2ac8f0a90b5bd7da76556b52bd7723887071f4474d20b0f7580fc8009b605"
+      "bytes": 720137,
+      "sha256": "3e24e927125796a95da16e305e3469e22b71307ced761b907d293f12f349069a"
     },
     {
       "index": 2,
       "name": "accessory_albedo",
       "width": 1024,
       "height": 1024,
-      "bytes": 845757,
-      "sha256": "333efd60a6b12d66b590133f80588afc3191a843cf3a32bd9bf227e0b3b64e1e"
+      "bytes": 863135,
+      "sha256": "77d38752366921064ad104a1bba5ef3b5bbe53054f171e918981d180ca0103ab"
     },
     {
       "index": 3,
       "name": "accessory_orm",
       "width": 1024,
       "height": 1024,
-      "bytes": 279821,
-      "sha256": "094b84d6c80a0acc01e0f868af3cd8c55a9ac56f55cbb2bf86c09d24cf25c09d"
+      "bytes": 389215,
+      "sha256": "e1573c9395d06f2caf985195611b8a1a3da02e8bcd5f5560f7d4389a98a31ed8"
     },
     {
       "index": 4,
@@ -114,24 +150,24 @@
       "name": "body_normal",
       "width": 2048,
       "height": 2048,
-      "bytes": 2923775,
-      "sha256": "e661c1b86431eb3e35dc05562008fbaed94a4c2fcb39245ec2b76661a8655756"
+      "bytes": 2902433,
+      "sha256": "a4d7832b0bc8a595b9532985156355b98fef1e1d2db9c4e23e8f048750eb5e6d"
     },
     {
       "index": 6,
       "name": "body_albedo",
       "width": 2048,
       "height": 2048,
-      "bytes": 3043670,
-      "sha256": "fd5fe60971e825430f1e2cc3d6eff49778cfb783e632bf140d1577d127887d20"
+      "bytes": 2957059,
+      "sha256": "3f88123d44aedbee9b1a0b8bc5e2104c53518761926bb1a09a9a8c4bc1e6cdf8"
     },
     {
       "index": 7,
       "name": "body_orm",
       "width": 2048,
       "height": 2048,
-      "bytes": 254073,
-      "sha256": "7eed244c949b2f6ffa279d026171aefdc5c20c2517a1f3402423eba0c345bd41"
+      "bytes": 393313,
+      "sha256": "cafb7112168d471798ac6012e131ee6d165fb9e93bcb5d72b48a57b01f647521"
     }
   ],
   "textures": [
@@ -153,7 +189,13 @@
     "fall",
     "roll",
     "hurt",
-    "dead"
+    "dead",
+    "lane_dash_left",
+    "lane_dash_right",
+    "land",
+    "shield_brace",
+    "powerup_react",
+    "victory"
   ],
   "bones": [
     "root",
@@ -165,9 +207,13 @@
     "ear_L",
     "ear_tip_L",
     "eye_L",
+    "brow_L",
+    "mouth_L",
     "ear_R",
     "ear_tip_R",
     "eye_R",
+    "brow_R",
+    "mouth_R",
     "shoulder_L",
     "arm_L",
     "forearm_L",
@@ -188,6 +234,50 @@
     0.08456936478614807,
     0.8154305219650269
   ],
+  "triangle_cap": 48000,
+  "led_segments": 4,
+  "led_primitives": 2,
+  "face_bones": [
+    "eye_L",
+    "eye_R",
+    "brow_L",
+    "brow_R",
+    "mouth_L",
+    "mouth_R"
+  ],
+  "grounded_clips": [
+    "idle",
+    "run",
+    "lane_dash_left",
+    "lane_dash_right",
+    "land",
+    "shield_brace",
+    "powerup_react",
+    "victory"
+  ],
+  "clip_frames": {
+    "idle": 48,
+    "run": 18,
+    "jump": 15,
+    "fall": 24,
+    "roll": 24,
+    "hurt": 18,
+    "dead": 36,
+    "lane_dash_left": 8,
+    "lane_dash_right": 8,
+    "land": 6,
+    "shield_brace": 12,
+    "powerup_react": 15,
+    "victory": 36
+  },
+  "run_exit": {
+    "lane_dash_left": 0.5,
+    "lane_dash_right": 0.0,
+    "land": 0.0,
+    "shield_brace": 0.0,
+    "powerup_react": 0.0,
+    "victory": 0.0
+  },
   "height": 1.8,
   "forward": [
     0,

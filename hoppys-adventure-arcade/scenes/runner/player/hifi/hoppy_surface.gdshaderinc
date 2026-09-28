@@ -16,6 +16,16 @@ uniform float chroma_lock : hint_range(0.0, 1.0) = 1.0;
 uniform vec4 ambient_fill : source_color = vec4(1.0, 0.941176, 0.827451, 1.0);
 uniform float ambient_energy = 0.34;
 uniform float light_gain : hint_range(0.0, 1.0) = 0.5;
+// Backpack LED strip: the accessory GLB surface carries COLOR_0 (R = LED, G = segment 0..1).
+// Only surfaces the visual flags with has_led_mask read it; missing COLOR defaults to white.
+uniform bool has_led_mask = false;
+uniform vec4 led_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
+uniform float led_level = 0.0;
+uniform float led_fill : hint_range(0.0, 1.0) = 1.0;
+varying vec2 led_mask;
+void vertex() {
+	led_mask = has_led_mask ? COLOR.rg : vec2(0.0);
+}
 void fragment() {
 	vec4 texel = texture(albedo_map, UV);
 #ifdef HOPPY_GLASS
@@ -42,6 +52,11 @@ void fragment() {
 	if (has_emission) {
 		baked = emission_color.rgb * emission_energy;
 		if (has_emission_map) { baked *= texture(emission_map, UV).rgb; }
+	}
+	if (led_level > 0.0) {
+		// Power-up meter: lit segments take the power-up colour, spent ones go dark.
+		float lit = step(led_mask.y, led_fill + 0.01);
+		baked = mix(baked, led_color.rgb * led_level * lit, step(0.5, led_mask.x));
 	}
 	EMISSION = base * ambient_fill.rgb * ambient_energy * orm.r + baked + vec3(flash * 0.35);
 }

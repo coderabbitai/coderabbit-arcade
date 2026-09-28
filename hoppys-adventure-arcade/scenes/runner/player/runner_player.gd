@@ -14,6 +14,10 @@ const SUPER_JUMP_SOURCE := &"super_jump"
 const AURA_KINDS: Array[StringName] = [&"lgtm", &"nitro", &"code_review"]
 ## Dodge hints whose hazard the standing capsule does not fit under.
 const ROLL_HINTS: Array[StringName] = [&"ROLL", &"ROLL_OR_JUMP"]
+## player_action values the visual turns into movement one-shots (lane dashes, landing squash).
+const VISUAL_MOVES: Array[StringName] = [&"lane_left", &"lane_right", &"land"]
+## damage_blocked reason that means the Approve Shield popped (hit_manager.gd REASON_SHIELD).
+const SHIELD_BLOCK_REASON := &"shield"
 ## How long the hurt pose holds before the normal state selection takes over again.
 const HURT_ANIM_SECONDS := 0.25
 ## Small downward bias while grounded so move_and_slide keeps floor contact.
@@ -84,6 +88,7 @@ func setup(runner: RunnerGame) -> void:
 	config = runner.config
 	_apply_body_metrics()
 	_mount_visual()
+	_connect_visual_events()
 	reset()
 
 ## Size the body and hurtbox capsules from the config, so a duplicated or overridden RunConfig
@@ -476,6 +481,49 @@ func _set_anim_state(state: StringName) -> void:
 func _emit_action(action: StringName) -> void:
 	if game != null:
 		game.player_action.emit(action)
+
+# --- visual event forwarding --------------------------------------------------------------------
+# Cosmetic only: existing RunnerGame signals are relayed to optional visual hooks. Nothing here
+# reads or changes player physics, lanes, hit state or timing.
+
+func _connect_visual_events() -> void:
+	if game == null:
+		return
+	var links := [
+		[game.player_action, _forward_action], [game.damage_blocked, _forward_blocked],
+		[game.power_up_collected, _forward_power_up], [game.power_up_expired, _forward_power_up_end],
+		[game.stage_cleared, _forward_stage_cleared], [game.boss_defeated, _forward_boss_defeated]]
+	for link: Array in links:
+		var event: Signal = link[0]
+		if not event.is_connected(link[1]):
+			event.connect(link[1])
+
+func _has_visual_hook(method: StringName) -> bool:
+	return is_instance_valid(visual) and visual.has_method(method)
+
+func _forward_action(action: StringName) -> void:
+	if VISUAL_MOVES.has(action) and _has_visual_hook(&"play_move"):
+		visual.play_move(action)
+
+func _forward_blocked(_kind: StringName, reason: StringName) -> void:
+	if reason == SHIELD_BLOCK_REASON and _has_visual_hook(&"on_shield_block"):
+		visual.on_shield_block()
+
+func _forward_power_up(kind: StringName, duration: float) -> void:
+	if _has_visual_hook(&"on_power_up"):
+		visual.on_power_up(kind, duration)
+
+func _forward_power_up_end(kind: StringName) -> void:
+	if _has_visual_hook(&"on_power_up_end"):
+		visual.on_power_up_end(kind)
+
+func _forward_stage_cleared(_index: int, _bonus: int) -> void:
+	if _has_visual_hook(&"celebrate"):
+		visual.celebrate()
+
+func _forward_boss_defeated(_kind: StringName, _bonus: int) -> void:
+	if _has_visual_hook(&"celebrate"):
+		visual.celebrate()
 
 # --- visual mount -------------------------------------------------------------------------------
 

@@ -65,6 +65,19 @@ func capture() -> void:
 		["rear", Vector3(1.3, 1.55, 2.3), Vector3(0, 0.95, 0), &"idle", false],
 		["roll-gameplay", Vector3(0, 4, 8), Vector3(0, 1, -8), &"roll", false],
 		["roll-shield", Vector3(1.6, 1.25, -2.7), Vector3(0, 0.45, 0), &"roll", true],
+		# Round 7: movement one-shots, face expressions and the power-up LED strip.
+		["dash", Vector3(0, 1.3, -3.3), Vector3(0, 0.9, 0), &"lane_dash_right", false, 4.0 / 30.0],
+		["land", Vector3(2.2, 1.0, -1.4), Vector3(0, 0.75, 0), &"land", false, 0.0],
+		["brace", Vector3(1.6, 1.4, -2.6), Vector3(0, 0.9, 0), &"shield_brace", true, 0.18],
+		["react", Vector3(1.5, 1.4, -2.5), Vector3(0, 1.0, 0), &"powerup_react", false, 0.25],
+		["victory", Vector3(0.9, 1.3, -3.0), Vector3(0, 1.0, 0), &"victory", false, 0.6],
+		["face-focused", Vector3(0.35, 1.32, -1.05), Vector3(0, 1.27, 0), &"run", false, 0.24],
+		["face-wide", Vector3(0.35, 1.32, -1.05), Vector3(0, 1.27, 0), &"jump", false, 0.24],
+		["face-wince", Vector3(0.35, 1.32, -1.05), Vector3(0, 1.27, 0), &"hurt", false, 0.3],
+		["face-grin", Vector3(0.35, 1.32, -1.05), Vector3(0, 1.27, 0), &"victory", false, 0.6],
+		["leds", Vector3(0.8, 1.3, 1.6), Vector3(0, 0.9, 0.2), &"run", false, 0.24, "nitro"],
+		["detail-shoes", Vector3(0.7, 0.45, -0.9), Vector3(0, 0.12, -0.05), &"idle", false, 0.0],
+		["detail-back", Vector3(0.9, 1.25, 1.3), Vector3(0, 1.05, 0.15), &"idle", false, 0.0],
 		["corridor", Vector3(0, 4, 8), Vector3(0, 1, -8), &"run", false],
 		["corridor-close", Vector3(1.35, 1.4, -2.1), Vector3(0, 0.95, 0), &"idle", false]]
 	var palette_ok := true
@@ -80,6 +93,11 @@ func capture() -> void:
 		var pose_time := 0.0 if view[3] == &"roll" else 0.24
 		if view[0] == "run-side":pose_time = 16.5 / 30.0
 		if view[0] == "jump":pose_time = 7.5 / 30.0
+		if view.size() > 5:pose_time = view[5]
+		hoppy.on_power_up_end(&"nitro")
+		if view.size() > 6:
+			hoppy.on_power_up(StringName(view[6]), 6.0)
+			hoppy._process(0.6)
 		if not pose_for_view(hoppy, view[3], pose_time):
 			printerr("ASSET A1 CAPTURE: incorrect animation for " + str(view[0]))
 			await finish(stage, 1)
@@ -99,9 +117,18 @@ func capture() -> void:
 		hoppy.show_aura(&"lgtm", view[4])
 		hoppy.set_run_speed(1)
 		hoppy._process(0.1)
+		# Settle the face on this state's expression; a capture never lands mid-blink.
+		hoppy._expression = hoppy.EXPRESSIONS[view[3]]
+		hoppy._process(0.0)
+		hoppy._face.blink = 0.0
 		if view[0] == "trail":
 			assert(hoppy._trail.visible and hoppy._speed == 1.0, "Trail capture must run at speed")
 		for frame in 2:
+			await process_frame
+		if hoppy._flash_remaining > 0.0:
+			# The hurt clip's flash method keys fire deferred; clear them so face views keep colour.
+			hoppy._process(hoppy._flash_remaining + 0.001)
+			hoppy._face.blink = 0.0
 			await process_frame
 		assert(hoppy.animation_player.current_animation == view[3], "Capture animation mismatch")
 		await RenderingServer.frame_post_draw
@@ -163,6 +190,9 @@ static func pose_for_view(hoppy: Node3D, state: StringName, time: float) -> bool
 	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	player.playback_default_blend_time = 0.0
 	hoppy.set_anim_state(state)
+	if hoppy.anim_state != state:
+		# A gait one-shot defers its own return state; fixtures always sample the requested clip.
+		hoppy._play(state)
 	# Runtime uses an explicit cross-fade; setting the default alone cannot cancel it.
 	player.play(state, 0.0)
 	player.advance(0.0)

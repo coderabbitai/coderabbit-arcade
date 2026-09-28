@@ -3,9 +3,18 @@ const Guard = preload("res://scenes/runner/player/hifi/palette_guard.gd")
 const Capture = preload("res://scenes/runner/player/dev/capture_a1.gd")
 const Hoppy = preload("res://scenes/runner/player/hoppy_runner_visual.tscn")
 const Cleanup = preload("res://scenes/runner/environment/hifi/fixture_cleanup.gd")
-const STATES: Array[StringName] = [&"idle", &"run", &"jump", &"fall", &"roll", &"hurt", &"dead"]
+const STATES: Array[StringName] = [&"idle", &"run", &"jump", &"fall", &"roll", &"hurt", &"dead",
+	&"lane_dash_left", &"lane_dash_right", &"land", &"shield_brace", &"powerup_react", &"victory"]
+## Round-7 grounded one-shots: authored on the run gait and sole-grounded like idle/run.
+const GAIT_CLIPS: Array[StringName] = [&"lane_dash_left", &"lane_dash_right", &"land", &"shield_brace",
+	&"powerup_react", &"victory"]
+const GROUNDED: Array[StringName] = [&"idle", &"run", &"lane_dash_left", &"lane_dash_right", &"land",
+	&"shield_brace", &"powerup_react", &"victory"]
+const FACE_BONES: Array[String] = ["eye_L", "eye_R", "brow_L", "brow_R", "mouth_L", "mouth_R"]
+const TRIANGLE_CAP := 48000
 const BASE := "res://Assets/runner/hoppy/"
 var _skin_centroid := Vector3.ZERO
+var _report: Dictionary = {}
 var checks := 0
 var failures := 0
 var textures: Dictionary = {}
@@ -98,6 +107,10 @@ func sample(hoppy: Node3D, state: StringName, time: float) -> void:
 	check(Capture.pose_for_view(hoppy, state, time), "capture sampler selects " + state)
 	hoppy._process(0.0)
 
+func budget_cap() -> int:
+	var budget: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://tools/blender/hoppy_budget.json"))
+	return int(budget.get("triangle_cap", 0))
+
 func check_joints(hoppy: Node3D) -> void:
 	var sk: Skeleton3D = hoppy.skeleton
 	var player: AnimationPlayer = hoppy.animation_player
@@ -144,16 +157,36 @@ func check_joints(hoppy: Node3D) -> void:
 				check(span.y >= 1.0, "hurt elbow flinch " + name)
 			if state == &"dead":
 				check(span.x >= 0.3 and span.y <= 0.6, "relaxed dead joints " + name)
+			if state in [&"lane_dash_left", &"lane_dash_right"]:
+				# Half stride: the leading leg (dash side) recovers high while the push-off leg
+				# stays in stance and extends; elbows keep the run pump.
+				var leading := name.ends_with("_R") == (state == &"lane_dash_right")
+				if knee and leading:
+					check(span.y >= 1.2, "dash leading knee recovers " + str(state) + " " + name)
+				elif knee:
+					check(span.x <= 0.2 and span.y <= 0.9, "dash push-off leg extends " + str(state) + " " + name)
+				else:
+					check(span.x >= 1.19 and span.y <= 1.61, "dash keeps the run elbow pump " + str(state) + " " + name)
+			if state == &"land":
+				check(span.y >= (0.9 if knee else 0.75), "landing absorption " + name)
+			if state == &"shield_brace" and not knee:
+				check(span.y >= 1.55, "brace guard elbows " + name)
+			if state == &"shield_brace" and knee:
+				check(span.y >= 1.2, "brace crouch knees " + name)
+			if state == &"powerup_react" and name == "forearm_R":
+				check(span.y >= 1.5, "fist-pump elbow " + name)
+			if state == &"victory" and knee:
+				check(span.y >= 1.4, "victory keeps the run stride " + name)
 		values[state] = ranges
 	print("A1 JOINTS: ", values)
-	for state in [&"idle", &"run"]:
+	for state in GROUNDED:
 		for frame in 25:
 			Capture.pose_for_view(hoppy, state, player.get_animation(state).length * frame / 24.0)
 			var left := Capture.limb_bounds(hoppy, ["foot_L"])
 			var right := Capture.limb_bounds(hoppy, ["foot_R"])
 			check(left.position.y >= -0.003 and right.position.y >= -0.003 and absf(minf(left.position.y, right.position.y)) < 0.008, "planted sole %s frame %d: min_y=%.4f left_y=%.4f right_y=%.4f" % [state, frame, minf(left.position.y, right.position.y), left.position.y, right.position.y])
 	# Match the export rate; catch import resampling/optimization regressions too.
-	for state in [&"idle", &"run"]:
+	for state in GROUNDED:
 		var low := INF
 		var high := -INF
 		var steps := int(round(player.get_animation(state).length * 120.0))
@@ -168,7 +201,59 @@ func check_joints(hoppy: Node3D) -> void:
 	var tuck := Capture.jump_tuck_metrics(hoppy)
 	print("A1 JUMP TUCK: ", tuck)
 	check(tuck["pass"], "jump skeleton heel lifts toward hips: " + str(tuck))
+	check_new_clips(hoppy)
 	Capture.pose_for_view(hoppy, &"idle", 0.0)
+
+## Chest tilt from vertical in skeleton space; positive tips the top toward +x.
+func chest_roll(hoppy: Node3D) -> float:
+	var sk: Skeleton3D = hoppy.skeleton
+	sk.force_update_all_bone_transforms()
+	var up := sk.get_bone_global_pose(sk.find_bone("chest")).basis.orthonormalized() * Vector3.UP
+	return atan2(up.x, up.y)
+
+func check_new_clips(hoppy: Node3D) -> void:
+	var player: AnimationPlayer = hoppy.animation_player
+	var sk: Skeleton3D = hoppy.skeleton
+	# Every gait one-shot ends exactly on the run pose the runtime resumes at, so no pop.
+	var exits: Dictionary = _report.get("run_exit", {})
+	check(exits.size() == GAIT_CLIPS.size(), "sidecar run exit phase for every gait clip")
+	for state in GAIT_CLIPS:
+		var exit := float(exits.get(String(state), -1.0))
+		check(is_equal_approx(exit, float(hoppy.GAIT_EXIT.get(state, 0.0))), "runtime resumes run at the authored exit " + state)
+		Capture.pose_for_view(hoppy, &"run", player.get_animation(&"run").length * exit)
+		var run_pose: Array[Quaternion] = []
+		for bone in sk.get_bone_count():
+			run_pose.append(sk.get_bone_pose_rotation(bone))
+		Capture.pose_for_view(hoppy, state, player.get_animation(state).length)
+		var worst := 0.0
+		for bone in sk.get_bone_count():
+			worst = maxf(worst, run_pose[bone].angle_to(sk.get_bone_pose_rotation(bone)))
+		check(worst < 0.02, "%s ends on its run exit pose (worst bone %.4f rad)" % [state, worst])
+	# Lane dashes lean into the dash, within limits, and return upright.
+	for pair: Array in [[&"lane_dash_left", -1.0], [&"lane_dash_right", 1.0]]:
+		var peak := 0.0
+		for frame in 17:
+			Capture.pose_for_view(hoppy, pair[0], player.get_animation(pair[0]).length * frame / 16.0)
+			var roll := chest_roll(hoppy)
+			if absf(roll) > absf(peak):
+				peak = roll
+		print("A1 DASH LEAN %s: peak %.4f rad" % [pair[0], peak])
+		check(signf(peak) == pair[1] and absf(peak) >= 0.12 and absf(peak) <= 0.35, "dash lean direction and limits " + str(pair[0]))
+	# Landing squashes below standing height and stays on the deck; victory stays in bounds.
+	Capture.pose_for_view(hoppy, &"land", 0.0)
+	var land := skin_bounds(hoppy)
+	print("A1 LAND: ", land)
+	check(land.position.y >= -0.003 and land.end.y <= 1.72, "landing squash inside 0..1.72 m")
+	var victory_high := -INF
+	var hands_high := -INF
+	for frame in 13:
+		Capture.pose_for_view(hoppy, &"victory", player.get_animation(&"victory").length * frame / 12.0)
+		var bounds := skin_bounds(hoppy)
+		check(bounds.position.y >= -0.003 and bounds.end.y <= 1.9 and bounds.size.x <= 1.6, "victory bounds frame %d: %s" % [frame, bounds])
+		victory_high = maxf(victory_high, bounds.end.y)
+		hands_high = maxf(hands_high, Capture.limb_bounds(hoppy, ["hand_L", "hand_R"]).end.y)
+	print("A1 VICTORY: top %.4f m, hands up to %.4f m" % [victory_high, hands_high])
+	check(hands_high >= 1.35, "victory raises both paws above the shoulders")
 
 func run() -> void:
 	await process_frame
@@ -176,6 +261,7 @@ func run() -> void:
 	var imported := load(BASE + "hoppy.glb") as PackedScene
 	check(imported != null, "GLB loads")
 	var report: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(BASE + "hoppy.build.json"))
+	_report = report
 	var file := FileAccess.open(BASE + "hoppy.glb", FileAccess.READ)
 	check(file.get_32() == 0x46546c67 and file.get_32() == 2, "GLB header")
 	check(file.get_32() == file.get_length(), "GLB length")
@@ -185,10 +271,10 @@ func run() -> void:
 	check(report.script_sha256 == gltf.asset.extras.build_script_sha256, "sidecar matches embedded generator hash")
 	check(report.generator == gltf.asset.generator and report.blender == "5.2.2 LTS", "generator provenance")
 	check(FileAccess.get_sha256("res://tools/blender/build_hoppy.py") == report.script_sha256, "build script hash matches asset")
-	check(report.get("contact_revision", 0) == 16, "120 Hz contact recipe revision retained")
-	check(report.get("joint_revision", 0) == 14, "round-14 articulated limb bake required")
-	check(report.get("recipe_revision", 0) == 6, "round-6 bake required: palette and brace corrections")
-	if report.get("recipe_revision", 0) == 6:
+	check(report.get("contact_revision", 0) == 17, "120 Hz contact recipe (round 17: grounded one-shots) required")
+	check(report.get("joint_revision", 0) == 15, "round-15 rig required: articulated limbs plus face bones")
+	check(report.get("recipe_revision", 0) == 7, "round-7 bake required: palette, braces and detail pass")
+	if report.get("recipe_revision", 0) == 7:
 		var rgb: Array = report.hoodie_linear
 		check(Vector3(rgb[0], rgb[1], rgb[2]).is_equal_approx(Vector3(0.930, 0.250, 0.067)), "baked recipe uses palette orange")
 		var profile: Array = report.brace_profile
@@ -203,7 +289,11 @@ func run() -> void:
 	var expected: Array = report.animations.duplicate()
 	names.sort()
 	expected.sort()
-	check(names == expected and names.size() == 7, "sidecar action list matches GLB")
+	check(names == expected and names.size() == STATES.size(), "sidecar action list matches GLB")
+	check(report.get("grounded_clips", []) == Array(GROUNDED).map(func(s: StringName) -> String: return String(s)), "sidecar grounded clip list")
+	check(int(report.get("triangle_cap", 0)) == TRIANGLE_CAP and int(report.get("led_primitives", 0)) >= 1, "sidecar triangle cap and LED mask")
+	for bone: String in FACE_BONES:
+		check(bone in report.get("face_bones", []), "sidecar face bone " + bone)
 	var png_names: Array = []
 	for info: Dictionary in report.image_report:
 		png_names.append(info.name + ".png")
@@ -303,7 +393,7 @@ func run() -> void:
 	synthetic.fill(Color.WHITE)
 	check(not Guard.measure(synthetic, mask)["pass"], "synthetic blown highlights rejected")
 	check(hoppy._shield.visible, "shield request before ready")
-	check(player.get_animation_list().size() == 7, "exactly seven actions")
+	check(player.get_animation_list().size() == STATES.size(), "exactly thirteen actions")
 	var import_settings := ConfigFile.new()
 	check(import_settings.load(BASE + "hoppy.glb.import") == OK and import_settings.get_value("params", "animation/fps") == 120, "import preserves 120 Hz animation sampling")
 	var root_position_keys := 0
@@ -312,7 +402,9 @@ func run() -> void:
 		if run_clip.track_get_type(track) == Animation.TYPE_POSITION_3D and str(run_clip.track_get_path(track)).ends_with(":root"):
 			root_position_keys = run_clip.track_get_key_count(track)
 	check(root_position_keys >= 73, "import retains grounded run root keys")
-	var expected_lengths := {&"idle": 1.6, &"run": 0.6, &"jump": 0.5, &"fall": 0.8, &"roll": 0.8, &"hurt": 0.6, &"dead": 1.2}
+	var expected_lengths := {&"idle": 1.6, &"run": 0.6, &"jump": 0.5, &"fall": 0.8, &"roll": 0.8, &"hurt": 0.6, &"dead": 1.2,
+		&"lane_dash_left": 8.0 / 30.0, &"lane_dash_right": 8.0 / 30.0, &"land": 0.2, &"shield_brace": 0.4,
+		&"powerup_react": 0.5, &"victory": 1.2}
 	for state in STATES:
 		check(is_equal_approx(player.get_animation(state).length, expected_lengths[state]), "clip duration preserved " + state)
 		check(player.has_animation(state), "action " + state)
@@ -320,8 +412,11 @@ func run() -> void:
 		check(player.get_animation(state).loop_mode == loop, "loop flag " + state)
 	for bone: String in report.bones:
 		check(hoppy.skeleton.find_bone(bone) >= 0, "bone " + bone)
-	check(hoppy.skeleton.get_bone_count() == 27, "bone count")
-	for hook in ["set_anim_state", "set_run_speed", "set_lane_lean", "show_aura", "show_shield", "on_hit"]:
+	check(hoppy.skeleton.get_bone_count() == 31, "bone count: 27 body bones plus brows and mouth corners")
+	for bone: String in FACE_BONES:
+		check(hoppy.skeleton.find_bone(bone) >= 0, "face bone " + bone)
+	for hook in ["set_anim_state", "set_run_speed", "set_lane_lean", "show_aura", "show_shield", "on_hit",
+			"play_move", "on_shield_block", "on_power_up", "on_power_up_end", "celebrate"]:
 		check(hoppy.has_method(hook), "hook " + hook)
 	var imported_tris := 0
 	for mesh: MeshInstance3D in hoppy._meshes:
@@ -331,7 +426,8 @@ func run() -> void:
 			imported_tris += indices.size() / 3
 	check(imported_tris == model_tris, "Godot imported triangle census matches sidecar")
 	census(hoppy)
-	check(draws <= 40 and triangles <= 40000 and textures.size() <= 8, "whole-visual budgets")
+	check(draws <= 40 and triangles <= TRIANGLE_CAP and textures.size() <= 8, "whole-visual budgets")
+	check(int(budget_cap()) == TRIANGLE_CAP, "shared Blender triangle cap is 48k")
 	var budget: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://tools/blender/hoppy_budget.json"))
 	check(triangles - model_tris == int(budget.effect_triangles), "measured effects match shared Blender budget")
 	for texture: Texture2D in textures.values():
@@ -426,6 +522,9 @@ func run() -> void:
 	player.advance(1.3)
 	await process_frame
 	check(hoppy.anim_state == &"dead", "dead interrupts hurt recovery")
+	await check_one_shots(hoppy)
+	check_face(hoppy)
+	check_leds(hoppy)
 	# Per-instance materials must not affect a second PackedScene instance.
 	var other := Hoppy.instantiate()
 	root.add_child(other)
@@ -453,3 +552,123 @@ func run() -> void:
 	await Cleanup.release(self, [hoppy, other])
 	print("ASSET A1: %s (%d checks)" % ["PASS" if failures == 0 else "FAIL", checks])
 	quit(0 if failures == 0 else 1)
+
+## Round-7 one-shots: triggers, return to locomotion, and backend requests that must not cut them.
+func check_one_shots(hoppy: Node3D) -> void:
+	var player: AnimationPlayer = hoppy.animation_player
+	for clip in GAIT_CLIPS:
+		hoppy.set_anim_state(&"run")
+		hoppy.set_anim_state(clip)
+		check(hoppy.anim_state == clip and player.assigned_animation == clip, "one-shot plays " + clip)
+		hoppy.set_anim_state(&"run")
+		check(hoppy.anim_state == clip, "backend run request does not cut " + clip)
+		check(is_equal_approx(player.speed_scale, lerpf(0.9, 1.6, hoppy._speed)) == (clip != &"land"), "gait one-shot keeps run cadence " + clip)
+		player.advance(player.get_animation(clip).length + 0.01)
+		await process_frame
+		check(hoppy.anim_state == &"run" and player.assigned_animation == &"run", clip + " returns to run")
+	hoppy.set_anim_state(&"idle")
+	hoppy.play_move(&"lane_left")
+	check(hoppy.anim_state == &"lane_dash_left", "lane_left plays the left dash")
+	hoppy.play_move(&"lane_right")
+	check(hoppy.anim_state == &"lane_dash_right", "lane_right retargets to the right dash")
+	player.advance(1.0)
+	await process_frame
+	check(hoppy.anim_state == &"idle", "dash returns to the idle it started from")
+	hoppy.set_anim_state(&"run")
+	hoppy.play_move(&"lane_left")
+	hoppy.set_anim_state(&"jump")
+	check(hoppy.anim_state == &"jump", "jump interrupts a dash")
+	hoppy.play_move(&"lane_right")
+	check(hoppy.anim_state == &"jump", "airborne lane change keeps the jump clip")
+	hoppy.set_anim_state(&"fall")
+	hoppy.play_move(&"land")
+	check(hoppy.anim_state == &"land", "touchdown plays land from fall")
+	hoppy.set_anim_state(&"run")
+	check(hoppy.anim_state == &"land", "land survives the backend's same-tick run request")
+	hoppy.set_anim_state(&"roll")
+	check(hoppy.anim_state == &"roll", "buffered roll interrupts land")
+	hoppy.on_shield_block()
+	check(hoppy.anim_state == &"roll", "no brace while rolling")
+	hoppy.set_anim_state(&"run")
+	hoppy.on_shield_block()
+	check(hoppy.anim_state == &"shield_brace", "shield block braces when grounded")
+	hoppy.on_power_up(&"code_review", 6.0)
+	check(hoppy.anim_state == &"powerup_react", "power-up collection reacts when grounded")
+	hoppy.set_anim_state(&"jump")
+	hoppy.celebrate()
+	check(hoppy.anim_state == &"jump", "airborne celebration waits")
+	hoppy.set_anim_state(&"run")
+	check(hoppy.anim_state == &"victory", "pending victory plays on the grounded return")
+	player.advance(2.0)
+	await process_frame
+	check(hoppy.anim_state == &"run", "victory returns to run")
+	hoppy.celebrate()
+	check(hoppy.anim_state == &"victory", "grounded celebration plays victory")
+	hoppy.set_anim_state(&"hurt")
+	player.advance(0.7)
+	await process_frame
+	check(hoppy.anim_state == &"run", "hurt during a one-shot returns to its locomotion")
+	hoppy.set_anim_state(&"dead")
+	hoppy.play_move(&"lane_left")
+	hoppy.celebrate()
+	check(hoppy.anim_state == &"dead", "dead ignores moves and celebrations")
+
+func check_face(hoppy: Node3D) -> void:
+	var face: SkeletonModifier3D = hoppy._face
+	var sk: Skeleton3D = hoppy.skeleton
+	check(face != null and face.bound(), "face rig bound to the imported face bones")
+	for pair: Array in [[&"hurt", "wince"], [&"victory", "grin"], [&"jump", "wide"], [&"run", "focused"]]:
+		hoppy.set_anim_state(pair[0])
+		hoppy._process(1.0)
+		check(float(face.get(pair[1])) > 0.9, "state %s drives the %s expression" % pair)
+	var eye := sk.find_bone("eye_L")
+	var brow := sk.find_bone("brow_L")
+	var mouth := sk.find_bone("mouth_R")
+	for pair: Array in [[&"hurt", 0.2, 0.5], [&"jump", 1.1, 1.25]]:
+		hoppy.set_anim_state(pair[0])
+		hoppy._process(1.0)
+		face.blink = 0.0
+		face._process_modification()
+		var scale := sk.get_bone_pose_scale(eye)
+		var vertical := minf(scale.x, minf(scale.y, scale.z)) if pair[0] == &"hurt" else maxf(scale.x, maxf(scale.y, scale.z))
+		check(vertical >= pair[1] and vertical <= pair[2], "%s eye scale %.3f" % [pair[0], vertical])
+	hoppy.set_anim_state(&"victory")
+	hoppy._process(1.0)
+	face._process_modification()
+	check(sk.get_bone_pose_position(mouth).y - sk.get_bone_rest(mouth).origin.y > 0.012, "grin lifts the mouth corner")
+	check(sk.get_bone_pose_position(brow).y > sk.get_bone_rest(brow).origin.y, "grin lifts the brow")
+	hoppy.set_anim_state(&"hurt")
+	hoppy._process(1.0)
+	face._process_modification()
+	check(sk.get_bone_pose_position(mouth).y < sk.get_bone_rest(mouth).origin.y, "wince pulls the mouth corner down")
+	check(not sk.get_bone_pose_rotation(brow).is_equal_approx(sk.get_bone_rest(brow).basis.get_rotation_quaternion()), "wince tilts the brow")
+	# Blink closes the eyes without touching the other bones.
+	face.blink = 1.0
+	check(face.eye_openness() < 0.1, "blink closes the eyes")
+	face.blink = 0.0
+
+func check_leds(hoppy: Node3D) -> void:
+	check(hoppy._led_materials.size() == 1, "one LED-masked accessory material")
+	var segments := {}
+	for mesh: MeshInstance3D in hoppy._meshes:
+		for surface in mesh.mesh.get_surface_count():
+			if mesh.mesh.surface_get_format(surface) & Mesh.ARRAY_FORMAT_COLOR:
+				var colors: PackedColorArray = mesh.mesh.surface_get_arrays(surface)[Mesh.ARRAY_COLOR]
+				for color in colors:
+					if color.r > 0.5:
+						segments[snappedf(color.g, 0.05)] = true
+	check(segments.size() == 4, "four LED segments in the mask: " + str(segments.keys()))
+	var material: ShaderMaterial = hoppy._led_materials[0]
+	check(material.get_shader_parameter("has_led_mask") == true, "LED mask enabled on the accessory surface")
+	hoppy.on_power_up(&"nitro", 4.0)
+	hoppy._process(0.5)
+	hoppy._process(1.0)
+	check(hoppy.led_state().z == 0.0 and material.get_shader_parameter("led_level") >= 0.6, "nitro lights the strip")
+	check(absf(material.get_shader_parameter("led_fill") - 2.5 / 4.0) < 0.01, "strip drains with the power-up: " + str(material.get_shader_parameter("led_fill")))
+	hoppy.on_power_up_end(&"nitro")
+	hoppy.show_shield(true)
+	hoppy._process(0.6)
+	check(is_equal_approx(material.get_shader_parameter("led_level"), 0.8), "stored shield glows the strip")
+	hoppy.show_shield(false)
+	hoppy._process(0.1)
+	check(material.get_shader_parameter("led_level") == 0.0, "idle strip returns to the baked glow")

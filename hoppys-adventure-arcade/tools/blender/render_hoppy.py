@@ -12,7 +12,9 @@ from mathutils import Matrix, Vector
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('glb', type=Path)
 parser.add_argument('out', type=Path)
-parser.add_argument('--action', choices=('idle', 'run', 'jump', 'fall', 'roll', 'hurt', 'dead'))
+parser.add_argument('--action', choices=('idle', 'run', 'jump', 'fall', 'roll', 'hurt', 'dead',
+                                         'lane_dash_left', 'lane_dash_right', 'land', 'shield_brace',
+                                         'powerup_react', 'victory'))
 parser.add_argument('--frame', type=float, default=0, help='30 fps action-relative frame, including subframes')
 args = parser.parse_args(sys.argv[sys.argv.index('--') + 1:])
 if not args.glb.is_file():
