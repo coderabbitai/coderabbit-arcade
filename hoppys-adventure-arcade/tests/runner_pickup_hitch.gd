@@ -20,6 +20,11 @@ var via_menu := false
 func _initialize() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg == "via_menu=1": via_menu = true
+	# A window close or app quit request reaches AppRouter, which quits with code 0 a second later:
+	# the run would end silently and look like a pass to anything reading only the exit code.
+	root.close_requested.connect(func():
+		print("PICKUP HITCH: ABORTED (window close / app quit requested before the gate finished)")
+		quit(2))
 	call_deferred("run")
 
 func frame() -> float:

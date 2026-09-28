@@ -95,6 +95,12 @@ static func run(host: Node, camera: Camera3D = null) -> bool:
 	if corridor != null: corridor.notification(Node.NOTIFICATION_PROCESS)
 	var hoppy := _hoppy(host)
 	var stage = stage_for(host, camera, hoppy.global_position if hoppy != null else Vector3.INF)
+	# Label3D builds its mesh in a deferred call, so every label the batches mount draws empty
+	# here. Copies wait on this stage for the deferred pass below (measured: the first pickup tag
+	# of a run compiled for ~8 ms, 20-45 ms under load).
+	var labels = stage_for(host, camera, stage._focus)
+	labels.name = "GpuWarmupLabels"
+	labels._copy_labels(host, [stage, labels])
 	# Batches keep the shared instance-uniform buffer (4096 slots) well inside its limit.
 	for batch in batches():
 		var started := Time.get_ticks_usec()
@@ -106,6 +112,7 @@ static func run(host: Node, camera: Camera3D = null) -> bool:
 		if turn: _pose_turn(corridor, 0.5)
 		# The live Hoppy's auras and shield, under its own lights (restored below; a run opens bare).
 		if hoppy != null and batch == &"characters": _dress(hoppy, true)
+		_sync_transforms(host)
 		for lit in [false, true]:
 			stage._light.visible = lit
 			for i in FRAMES: RenderingServer.force_draw(false, 1.0 / 60.0)
@@ -113,9 +120,51 @@ static func run(host: Node, camera: Camera3D = null) -> bool:
 		if turn: _pose_turn(corridor, 0.0)
 		draw_ms += (Time.get_ticks_usec() - started) / 1000.0
 		retain(stage)
+		labels._copy_labels(stage._group, [])
 		stage.clear()
 	stage.free()
+	# Queued after every copy's own mesh update, so it runs once they are built, in the same
+	# message-queue flush and so before the next frame is drawn.
+	_draw_labels.call_deferred(labels)
 	return true
+
+## One copy of each distinct Label3D setup under `root` (outside `skip`), at the same place.
+## The shader depends on the draw flags, the atlas texture on font and size.
+func _copy_labels(root: Node, skip: Array) -> void:
+	for node in root.find_children("*", "Label3D", true, false):
+		var label := node as Label3D
+		if skip.any(func(s): return s != root and s.is_ancestor_of(label)): continue
+		var key := [label.font, label.font_size, label.outline_size > 0, label.billboard, label.shaded,
+			label.double_sided, label.no_depth_test, label.fixed_size, label.alpha_cut, label.texture_filter,
+			label.alpha_antialiasing_mode, label.render_priority, label.outline_render_priority,
+			roundi(label.global_position.distance_to(_focus) / 5.0)]
+		if _slots.has(key): continue
+		_slots[key] = true
+		var copy := label.duplicate(0) as Label3D
+		copy.visible = true
+		# Placed before it enters the tree: a later move only reaches the renderer with the
+		# next transform flush, after the deferred draw.
+		copy.transform = global_transform.affine_inverse() * label.global_transform
+		add_child(copy)
+
+## The deferred half of run(): draws the label copies under the live and the warm light.
+static func _draw_labels(labels: Node3D) -> void:
+	if not is_instance_valid(labels): return
+	if labels.is_inside_tree():
+		var started := Time.get_ticks_usec()
+		for lit in [false, true]:
+			labels._light.visible = lit
+			for i in FRAMES: RenderingServer.force_draw(false, 1.0 / 60.0)
+		draw_ms += (Time.get_ticks_usec() - started) / 1000.0
+		census["label"] = labels.get_child_count() - 1
+	labels.free()
+
+## A Node3D moved inside the tree reaches the renderer only at the frame's transform flush, which
+## never runs between these forced draws: anything a hook placed after mounting (hazard parts,
+## boss FX, the posed corridor, Hoppy's shells) would draw at a stale spot, often off-screen.
+static func _sync_transforms(root: Node) -> void:
+	for node in root.find_children("*", "Node3D", true, false):
+		(node as Node3D).force_update_transform()
 
 ## RunnerGame queue_free()s its graybox environment once the corridor mounts, but it lives until
 ## the end of this frame: its WorldEnvironment (no fog, no glow, linear tonemap) and second Sun
@@ -165,6 +214,8 @@ static func _dress(hoppy: Node3D, on: bool) -> void:
 	for aura: StringName in [&"lgtm", &"nitro", &"code_review"]:
 		hoppy.call(&"show_aura", aura, on)
 	hoppy.call(&"show_shield", on)
+	# The orbit glyphs follow the aura from the visual's next _process; apply it now, as play would.
+	hoppy.notification(Node.NOTIFICATION_PROCESS)
 
 ## The mounted corridor, found by its public turn hook rather than by path.
 static func _corridor(host: Node) -> Node:
@@ -370,6 +421,7 @@ func _hoppies() -> void:
 			_hook(hoppy, &"show_shield", [true])
 			for aura: StringName in [&"lgtm", &"nitro", &"code_review"]:
 				_hook(hoppy, &"show_aura", [aura, true])
+			hoppy.notification(Node.NOTIFICATION_PROCESS)
 
 ## The HUD's canvas shaders (vignette, scanline portrait, screen-reading grade) compile on first
 ## draw too; the boss HUD and pursuit alert only draw them once their event fires.
