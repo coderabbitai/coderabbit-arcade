@@ -11,6 +11,7 @@ const LIMIT_MS := 25.0
 const COLLECT_FRAMES := 20
 const MENU_SECONDS := 4.0
 const PLACE_Z := -9.0
+const ATTEMPT_SECONDS := 4.0
 var game: Node
 var failures := 0
 var last := 0
@@ -95,7 +96,9 @@ func _grab(kind: StringName, collected: Dictionary) -> float:
 		pickup.setup(game)
 		pickup.reset_physics_interpolation()
 		var after := -1
-		for i in 240:
+		# Time-bounded, not frame-bounded: at 4 ms frames 240 frames end before the pickup arrives.
+		var deadline := Time.get_ticks_msec() + int(ATTEMPT_SECONDS * 1000)
+		while Time.get_ticks_msec() < deadline:
 			worst = maxf(worst, await frame())
 			if game.paused:
 				# The runner pauses itself when its window loses focus; this gate measures play, not that.
