@@ -12,6 +12,14 @@ const PitMouth = preload("res://scenes/runner/hazards/visuals/hifi/pit_mouth.gds
 const Trail = preload("res://scenes/runner/hazards/visuals/hifi/trail.gdshader")
 const BatchRoot = preload("res://scenes/runner/hazards/visuals/hifi/batch_root.gd")
 const LASER_HIGH_Y := 1.3
+## Footprint decal heights: distinct from each other and from the corridor LaneGlow (y 0.012) so no
+## two additive floor layers share a depth plane (z-fighting flicker).
+const MARKER_Y := 0.02
+const SAFE_GAP_Y := 0.03
+## Immutable resources shared by every spawn (none animate per rig): footprint quads and
+## materials, spark draw pass and process materials. Keeping one live reference also keeps each
+## material variant's compiled shader alive after the GPU warm-up.
+static var _shared: Dictionary = {}
 var body: Node3D
 var beams: Node3D
 var scanner: Node3D
@@ -33,6 +41,9 @@ var _plates: Array[Node3D] = []
 var _charge := 0.0
 var _distance_gain := 0.0
 var _pit_mouth: MeshInstance3D
+## Last hit/distance values written, so steady uniforms are not re-sent every frame.
+var _hit_written := -1.0
+var _gain_written := -1.0
 
 func _init() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -102,8 +113,8 @@ func build(kind: StringName, variant: StringName, size: Vector3, offset: Vector3
 	_offset = offset
 	update_view_distance()
 	if kind != &"projectile":
-		_floor_marker("FloorMarker", size, 0.006, Palette.DANGER, 0.35)
-		if kind == &"pr_backlog_high": _floor_marker("SafeGap", size * Vector3(1,1,0.6), 0.009, Palette.MATRIX, 0.25)
+		_floor_marker("FloorMarker", size, MARKER_Y, Palette.DANGER, 0.35)
+		if kind == &"pr_backlog_high": _floor_marker("SafeGap", size * Vector3(1,1,0.6), SAFE_GAP_Y, Palette.MATRIX, 0.25)
 	body = BatchRoot.new()
 	body.process_mode = Node.PROCESS_MODE_PAUSABLE
 	body.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
@@ -130,29 +141,39 @@ func _floor_marker(title: String, size: Vector3, elevation: float, color: Color,
 	node.name = title
 	node.process_mode = Node.PROCESS_MODE_PAUSABLE
 	node.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
-	var quad := QuadMesh.new()
-	quad.size = Vector2(size.x, size.z)
-	node.mesh = quad
+	node.mesh = _marker_quad(Vector2(size.x, size.z))
 	node.position = Vector3(_offset.x, elevation, _offset.z)
 	node.rotation.x = -PI/2.0
-	var mat := Materials.additive(color, opacity).duplicate() as StandardMaterial3D
-	# A bounded border locates the occupied lane without covering its floor.
-	mat.albedo_texture = TextureForge.marker_border()
-	mat.emission_enabled = true
-	mat.emission = color
-	mat.emission_energy_multiplier = 0.9
-	node.material_override = mat
+	node.material_override = _marker_material(color, opacity)
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(node)
 	# Preserve the smoke's footprint metadata, but never paint across the hole.
 	if _kind == &"deprecated_pit" and title == "FloorMarker": node.hide()
-	if _kind == &"pr_backlog_high" and title == "FloorMarker":
-		var border := Materials.additive(color,opacity).duplicate() as StandardMaterial3D
-		border.albedo_texture = TextureForge.marker_border()
-		border.emission_enabled = true
-		border.emission = color
-		border.emission_energy_multiplier = 0.9
-		node.material_override = border
+
+static func _marker_quad(extent: Vector2) -> QuadMesh:
+	var key := "quad:%s" % extent
+	if not _shared.has(key):
+		var quad := QuadMesh.new()
+		quad.size = extent
+		_shared[key] = quad
+	return _shared[key]
+
+## Footprint border material per colour (also the cleared MINT swap); shared, never mutated.
+static func _marker_material(color: Color, opacity: float) -> StandardMaterial3D:
+	var key := "marker:%s:%s" % [color.to_html(), opacity]
+	if not _shared.has(key):
+		var mat := Materials.additive(color, opacity).duplicate() as StandardMaterial3D
+		# A bounded border locates the occupied lane without covering its floor.
+		mat.albedo_texture = TextureForge.marker_border()
+		mat.emission_enabled = true
+		mat.emission = color
+		mat.emission_energy_multiplier = 0.9
+		_shared[key] = mat
+	return _shared[key]
+
+## Drops the shared resources (tests call this before quitting).
+static func release_caches() -> void:
+	_shared.clear()
 
 func _label(text: String, pos: Vector3, width: float, height: float) -> Label3D:
 	# Input layout is normalized; glyph transforms are authored in metres at unit scale.
@@ -413,10 +434,8 @@ func react(cleared: bool) -> void:
 	if cleared:
 		var marker := get_node_or_null("FloorMarker") as MeshInstance3D
 		if marker != null:
-			var mat := marker.material_override.duplicate() as StandardMaterial3D
-			mat.albedo_color = Color(Palette.MINT,0.35)
-			mat.emission = Palette.MINT
-			marker.material_override = mat
+			# Shared cleared variant (albedo MINT at 0.35, MINT emission), not a per-hit duplicate.
+			marker.material_override = _marker_material(Palette.MINT,0.35)
 		if tag != null:
 			tag.text = "AUTO-FIXED"
 			tag.modulate = Palette.MINT
@@ -452,10 +471,13 @@ func advance(delta: float) -> void:
 	_t += delta
 	if _pit_mouth != null: _pit_mouth.material_override.set_shader_parameter("clock",_t)
 	_reaction += delta
+	var hit := maxf(0,1-_reaction*8) if _hit else 0.0
+	var write_hit := hit != _hit_written
+	_hit_written = hit
 	for key: String in _materials:
 		var mat: ShaderMaterial = _materials[key]
 		mat.set_shader_parameter("clock",_t)
-		if mat.shader in [Surface, PitInterior]: mat.set_shader_parameter("hit",maxf(0,1-_reaction*8) if _hit else 0.0)
+		if write_hit and mat.shader in [Surface, PitInterior]: mat.set_shader_parameter("hit",hit)
 	for item in _moving:
 		var node: Node3D = item.node
 		var phase: float = item.phase
@@ -481,6 +503,7 @@ func advance(delta: float) -> void:
 
 func _sparks() -> void:
 	var sparks := GPUParticles3D.new()
+	var key := "sparks:%s" % _size
 	sparks.name = "BoundedSparks"
 	sparks.process_mode = Node.PROCESS_MODE_PAUSABLE
 	sparks.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
@@ -490,29 +513,35 @@ func _sparks() -> void:
 	sparks.preprocess = 0.6
 	sparks.visibility_aabb = AABB(-_size*0.45,_size*0.9)
 	sparks.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var motion := ParticleProcessMaterial.new()
-	motion.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	motion.emission_box_extents = _size*0.27
-	motion.gravity = Vector3.ZERO
-	motion.direction = Vector3.UP
-	motion.initial_velocity_min = 0.01
-	motion.initial_velocity_max = 0.04
-	motion.color = Palette.DANGER
-	motion.anim_offset_min = 0.25
-	motion.anim_offset_max = 0.25
-	sparks.process_material = motion
-	var quad := QuadMesh.new()
-	quad.size = Vector2.ONE*0.025
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	mat.particles_anim_h_frames = 4
-	mat.albedo_texture = TextureForge.maps().albedo
-	mat.albedo_color = Color(Palette.DANGER,0.40)
-	quad.material = mat
-	sparks.draw_pass_1 = quad
+	if not _shared.has(key):
+		var motion := ParticleProcessMaterial.new()
+		motion.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+		motion.emission_box_extents = _size*0.27
+		motion.gravity = Vector3.ZERO
+		motion.direction = Vector3.UP
+		motion.initial_velocity_min = 0.01
+		motion.initial_velocity_max = 0.04
+		motion.color = Palette.DANGER
+		motion.anim_offset_min = 0.25
+		motion.anim_offset_max = 0.25
+		_shared[key] = motion
+	# Each emitter keeps its own copy of the per-size prototype (one process material shared by
+	# several emitters leaked its shader at exit); the draw pass is shared outright.
+	sparks.process_material = (_shared[key] as ParticleProcessMaterial).duplicate()
+	if not _shared.has("sparks_draw"):
+		var quad := QuadMesh.new()
+		quad.size = Vector2.ONE*0.025
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+		mat.particles_anim_h_frames = 4
+		mat.albedo_texture = TextureForge.maps().albedo
+		mat.albedo_color = Color(Palette.DANGER,0.40)
+		quad.material = mat
+		_shared["sparks_draw"] = quad
+	sparks.draw_pass_1 = _shared["sparks_draw"]
 	add_child(sparks)
 
 func update_view_distance() -> void:
@@ -520,5 +549,8 @@ func update_view_distance() -> void:
 	var distance := absf(global_position.z) if is_inside_tree() else 0.0
 	if camera != null: distance = camera.global_position.distance_to(global_position)
 	_distance_gain = clampf((distance-18.0)/42.0,0.0,1.0)*4.5
+	# New materials take _distance_gain when built; existing ones only need a changed value.
+	if _distance_gain == _gain_written: return
+	_gain_written = _distance_gain
 	for material: ShaderMaterial in _materials.values():
 		if material.shader in [Surface,Energy,Trail]: material.set_shader_parameter("distance_gain",_distance_gain)

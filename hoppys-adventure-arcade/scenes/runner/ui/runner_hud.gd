@@ -5,6 +5,11 @@ const Glyph = preload("res://scenes/runner/ui/hud_glyph.gd")
 const Corridor = preload("res://scenes/runner/environment/corridor.gd")
 const TurnFx = preload("res://scenes/runner/environment/turn_fx.gd")
 const Vignette = preload("res://scenes/runner/shaders/vignette.gdshader")
+const PowerUpDefs = preload("res://scenes/runner/powerups/power_up_defs.gd")
+const Burst = preload("res://scenes/runner/powerups/visuals/hifi/collect_burst.gd")
+## Every glyph HUD copy can use; drawn once at ready per toast/chip font size so a first toast or
+## chip never rasterises and uploads new glyphs on the pickup frame.
+const WARM_TEXT := "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 ×\u2014+-:/.,!'"
 var turn_fx: Node3D
 var turn_panel: PanelContainer
 var turn_label: Label
@@ -31,6 +36,10 @@ var nitro_banner: Label
 var hit_flash: ColorRect
 var vignette_material: ShaderMaterial
 var chips := {}
+## Pre-built chip nodes per kind; `chips` holds only the active ones.
+var _chip_pool := {}
+## Toast plate StyleBoxes per accent (already polished: no centre fill).
+var _toast_boxes := {}
 var recovery_seconds := 0.0
 var pursuit_remaining := 0.0
 var displayed_score := 0.0
@@ -159,7 +168,28 @@ func _ready() -> void:
 	turn_icon.position = Vector2(4, 16)
 	turn_icon.size = Vector2(30, 30)
 	turn_icon.pivot_offset = Vector2(15, 15)
+	for kind: StringName in PowerUpDefs.kinds():
+		if kind != &"auto_fix": _chip_for(kind)
+	_warm_fonts()
 	_ignore_mouse(screen)
+
+## Draws WARM_TEXT once at each toast and chip size/outline, invisibly, then frees the labels.
+func _warm_fonts() -> void:
+	var holder := PanelContainer.new()
+	holder.name = "FontWarm"
+	holder.modulate.a = 0.0
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	widgets.add_child(holder)
+	var column := VBoxContainer.new()
+	holder.add_child(column)
+	# Toast copy is built at 28 and re-sized to 18 for teaching; the outline stays at 28's.
+	for size in [28, 18]:
+		var line := Style.label(WARM_TEXT, 28)
+		line.add_theme_font_size_override("font_size", size)
+		column.add_child(line)
+	column.add_child(Style.label(WARM_TEXT, 18, Palette.MINT))
+	# Freed once its lines have drawn (glyphs are cached by then); never outlives the HUD.
+	column.get_child(column.get_child_count() - 1).draw.connect(holder.queue_free, CONNECT_ONE_SHOT | CONNECT_DEFERRED)
 
 func _place(control: Control, preset: int, offset: Vector2, extent: Vector2) -> void:
 	widgets.add_child(control)
@@ -203,6 +233,8 @@ func bind(runner: Node) -> void:
 	if game.has_method("_mount_frontend"):
 		# RunnerGame mounts the sibling alert after binding this HUD.
 		_find_mounted_alert.call_deferred()
+		# The grab burst's in-corridor variant compiles now (invisibly), not on the first grab.
+		_prewarm_burst.call_deferred()
 	else:
 		# v1 facades and the standalone preview have no backend mount owner.
 		var alert_scene := load("res://scenes/runner/ui/pursuit_alert.tscn") as PackedScene
@@ -237,6 +269,12 @@ func bind(runner: Node) -> void:
 	_speed(game.speed, game.normalized_speed)
 	_state(game.state)
 	_paused(game.paused)
+
+func _prewarm_burst() -> void:
+	if not is_instance_valid(game): return
+	var camera := get_viewport().get_camera_3d()
+	var at := Vector3(0.0, 1.0, -30.0) if camera == null else camera.global_transform * Vector3(0.0, -3.0, -38.0)
+	Burst.prewarm(game, at)
 
 func _find_mounted_alert() -> void:
 	if not is_instance_valid(game):
@@ -420,12 +458,20 @@ func _toast(message: String, priority: int = 0, accent: Color = Palette.MINT, du
 	var entry := {"text": message if teaching else message.left(26), "duration": duration, "teaching": teaching, "priority": priority, "accent": accent, "sequence": _next_toast_sequence}
 	_next_toast_sequence += 1
 	if toast_remaining > 0 and priority > toast_priority:
-		toast_queue.append({"text": toast.text, "priority": toast_priority, "accent": toast_accent, "sequence": toast_sequence, "duration": toast_duration, "teaching": toast_teaching})
+		_enqueue({"text": toast.text, "priority": toast_priority, "accent": toast_accent, "sequence": toast_sequence, "duration": toast_duration, "teaching": toast_teaching})
 		_show_toast(entry)
 	else:
-		toast_queue.append(entry)
-	toast_queue.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return a.sequence < b.sequence if a.priority == b.priority else a.priority > b.priority)
+		_enqueue(entry)
+
+## Keeps toast_queue ordered (priority first, then FIFO sequence) without re-sorting it per toast.
+func _enqueue(entry: Dictionary) -> void:
+	var at := toast_queue.size()
+	for i in toast_queue.size():
+		var other: Dictionary = toast_queue[i]
+		if entry.priority > other.priority or (entry.priority == other.priority and entry.sequence < other.sequence):
+			at = i
+			break
+	toast_queue.insert(at, entry)
 
 func _show_toast(entry: Dictionary) -> void:
 	toast.text = entry.text
@@ -439,17 +485,26 @@ func _show_toast(entry: Dictionary) -> void:
 	toast.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART if toast_teaching else TextServer.AUTOWRAP_OFF
 	toast.custom_minimum_size.x = 640 if toast_teaching else 0
 	toast_age = 0.0
-	toast_panel.add_theme_stylebox_override("panel", Style.panel(entry.accent))
+	toast_panel.add_theme_stylebox_override("panel", _toast_box(entry.accent))
 	Style.polish(toast_panel, false)
 	toast_panel.modulate.a = 0.0
 	toast_panel.show()
 	ready_panel.hide()
 	get_ready.hide()
 
-func _powerup(kind: StringName, duration: float) -> void:
-	if kind == &"auto_fix":
-		return
-	_expire(kind)
+func _toast_box(accent: Color) -> StyleBoxFlat:
+	var key := accent.to_html()
+	if not _toast_boxes.has(key):
+		var box := Style.panel(accent)
+		# Same result Style.polish() produced by duplicating per toast: the finish paints the fill.
+		box.draw_center = false
+		_toast_boxes[key] = box
+	return _toast_boxes[key]
+
+## One chip per kind, built once (at ready for every power-up) and re-shown on each activation.
+func _chip_for(kind: StringName) -> Dictionary:
+	if _chip_pool.has(kind):
+		return _chip_pool[kind]
 	var column := VBoxContainer.new()
 	powerups.add_child(column)
 	var title := Style.label(String(kind).replace("_", " ").to_upper(), 18, Palette.MINT)
@@ -467,10 +522,24 @@ func _powerup(kind: StringName, duration: float) -> void:
 	bar.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(bar)
-	bar.value = 1
-	bar.visible = duration > 0
-	chips[kind] = {"node": column, "label": title, "bar": bar, "remaining": duration, "total": duration}
 	_ignore_mouse(column)
+	column.hide()
+	_chip_pool[kind] = {"node": column, "label": title, "bar": bar}
+	return _chip_pool[kind]
+
+func _powerup(kind: StringName, duration: float) -> void:
+	if kind == &"auto_fix":
+		return
+	_expire(kind)
+	var chip := _chip_for(kind)
+	var column: Control = chip.node
+	# Newest activation stays last in the stack, as when it was built fresh.
+	powerups.move_child(column, -1)
+	column.show()
+	chip.label.visible = true
+	chip.bar.value = 1
+	chip.bar.visible = duration > 0
+	chips[kind] = {"node": column, "label": chip.label, "bar": chip.bar, "remaining": duration, "total": duration}
 	if kind == &"nitro":
 		nitro_banner.show()
 		(speed_bar.get_theme_stylebox("fill") as StyleBoxFlat).bg_color = Palette.ORANGE
@@ -478,7 +547,7 @@ func _powerup(kind: StringName, duration: float) -> void:
 
 func _expire(kind: StringName) -> void:
 	if chips.has(kind):
-		chips[kind].node.free()
+		chips[kind].node.hide()
 		chips.erase(kind)
 	if kind == &"nitro":
 		nitro_banner.hide()

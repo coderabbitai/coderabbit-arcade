@@ -148,12 +148,15 @@ func play_catch() -> void:
 func play_retreat() -> void:
 	_build()
 	if _reaction == &"retreat": return
+	# While the backend is still gliding the threat down, its next set_threat() cancels a retreat on
+	# the following tick; starting one here only flashed the light off and the pose back for a frame.
+	if _threat > 0.001: return
 	show()
 	_reaction = &"retreat"
 	_reaction_time = 0
 	_start_pose = _last_threat_pose
 	_wall.transform = _start_pose
-	_light.light_energy = 0
+	_set_light(0.0)
 func _process(delta: float) -> void:
 	_t += delta
 	if _wall == null: return
@@ -166,7 +169,7 @@ func _process(delta: float) -> void:
 			_wall.position.z += 2.3*u
 			_wall.position.y += 0.65*sin(u*PI*0.5)
 			_wall.rotation.x = -0.22*sin(u*PI)
-			_light.light_energy = 3.0
+			_set_light(3.0)
 		else:
 			var u := clampf(_reaction_time/0.7,0,1)
 			_wall.position.z -= 2*u
@@ -192,4 +195,8 @@ func _apply() -> void:
 	_wall.rotation.z = sin(_t*1.7)*0.035
 	_wall.rotation.x = -0.08*_threat
 	if _threat > 0.001: _last_threat_pose = _wall.transform
-	_light.light_energy = 1.5*_threat
+	_set_light(1.5*_threat)
+# The light is re-posed every frame; only a visible energy change is worth a renderer update.
+func _set_light(energy: float) -> void:
+	if absf(_light.light_energy - energy) >= 0.01 or (energy == 0.0 and _light.light_energy != 0.0):
+		_light.light_energy = energy

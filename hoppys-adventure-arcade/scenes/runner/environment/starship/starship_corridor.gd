@@ -24,10 +24,20 @@ func _ready() -> void:
 	_environment.adjustment_saturation = 0.95
 	_sun.light_energy = 0.68
 	_sun.rotation_degrees = Vector3(-48,-28,0)
-	var key := get_node("KeyLight") as OmniLight3D
+	# The legacy KeyLight keeps its palette tuning for the legacy fixtures and is switched off; the
+	# starship's own key sits in the same place, so the lit result is unchanged.
+	var legacy_key := get_node("KeyLight") as OmniLight3D
+	legacy_key.visible = false
+	var key := OmniLight3D.new()
+	key.name = "StarshipKeyLight"
+	key.position = legacy_key.position
 	key.light_color = Color("e9edf5")
 	key.light_energy = 0.35
 	key.omni_range = 5.0
+	key.shadow_enabled = false
+	key.process_mode = Node.PROCESS_MODE_PAUSABLE
+	key.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	add_child(key)
 	set_pursuit(_pursuit)
 	starship.sync(_offset,_clock,bend,global_transform,boss_arena,0.0)
 

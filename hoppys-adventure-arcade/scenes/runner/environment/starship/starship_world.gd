@@ -66,6 +66,9 @@ func _ready() -> void:
 	deck_light.omni_range = 12
 	deck_light.shadow_enabled = false
 	add_child(deck_light)
+	# Built after the corridor configured its cosmetics: freeze every part with the pause menu.
+	for child in find_children("*", "Node", true, false):
+		child.process_mode = Node.PROCESS_MODE_PAUSABLE
 
 func _plane(title: String, size: Vector2, location: Vector3, material: ShaderMaterial) -> void:
 	var mesh := PlaneMesh.new()

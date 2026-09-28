@@ -390,7 +390,8 @@ func check_hazard_bounds(visual: Node3D, context: String) -> void:
 	var marker: MeshInstance3D = art.get_node("FloorMarker")
 	var footprint := marker.transform * marker.get_aabb()
 	check(is_equal_approx(footprint.size.x, size.x) and is_equal_approx(footprint.size.z, size.z), context + " exact floor footprint")
-	check(is_equal_approx(marker.position.y, 0.006), context + " ground marker")
+	# Raised from 0.006 to a plane of its own, clear of the corridor LaneGlow (y 0.012).
+	check(is_equal_approx(marker.position.y, art.MARKER_Y) and absf(art.MARKER_Y - 0.012) >= 0.005 and art.MARKER_Y <= 0.05, context + " ground marker")
 	var material := marker.material_override as StandardMaterial3D
 	var expected := Color("79e0c4", 0.35) if art._cleared else Color("ff4d3d", 0.35)
 	check(material.albedo_color.is_equal_approx(expected), context + " cleared/spawned marker alpha 0.35")

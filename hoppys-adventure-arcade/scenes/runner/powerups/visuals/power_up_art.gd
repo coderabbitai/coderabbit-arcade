@@ -29,7 +29,23 @@ var _rear_mix := 0.0
 var _beam_offset := 0.0
 var _last_affordance_clock := 0.0
 const PICKUP_GROUP := &"a4_pickup_art"
+## Ring and halo projection height: clear of the corridor LaneGlow decal (y 0.012) so the two
+## additive floor layers never share a depth plane and z-fight.
+const POOL_Y := 0.04
+## Per-kind immutable build output (meshes, tag size, glyph coverage), shared by every spawn so a
+## pickup entering the corridor never re-runs MeshForge, font measuring or a texture readback.
+static var _kind_cache: Dictionary = {}
+static var _plate_mesh: ArrayMesh
+static var _plate_material: ShaderMaterial
+static var _glyph_quad: QuadMesh
+## One snapshot of every live pickup per process frame, instead of a group scan per pickup.
+static var _peer_frame := -1
+static var _peers: Array[Dictionary] = []
 var _materials: Array[ShaderMaterial] = []
+## Surface materials that take range_boost, collected once instead of per frame.
+var _surface_materials: Array[ShaderMaterial] = []
+var _phase := 0.0
+var _range_boost := -1.0
 var _t := 0.0
 var _collect_time := -1.0
 var _accent := Palette.MINT
@@ -48,11 +64,76 @@ func build(kind: StringName) -> void:
 	_pivot = Node3D.new()
 	_pivot.name = "Pivot"
 	add_child(_pivot)
+	var shapes := kind_shapes(_kind)
+	_phase = float(TAGS.keys().find(_kind))*0.37
+	var frame_mesh: ArrayMesh = shapes.frame
+	var frame_tint := Palette.CREAM
+	# Lift only the magnifier diffuse plating; mint mix retains saturation.
+	if _kind == &"code_review": frame_tint = Palette.CREAM
+	var frame_material := Finish.material(frame_tint,0.12)
+	frame_material.set_shader_parameter("inlay_tint",Palette.ORANGE if is_tool else BODY_MINT)
+	_add_mesh("Ring",frame_mesh,frame_material,_pivot)
+	if kind == &"auto_fix": frame_material.set_shader_parameter("emission_inset",0.26)
+	if shapes.core != null:
+		_core_node = _add_mesh("InnerCore",shapes.core,Finish.material(_accent,4.8),_pivot)
+		_core_node.material_override.set_shader_parameter("emission_fill",0.65)
+	# Filter prongs are part of the solid cartridge core.
+	if not is_tool:
+		# Opaque frame contributes the same broad patch as ORANGE tool frames.
+		# Diffuse frame and all sculpture emission remain in the MINT family.
+		for material in _materials: material.set_shader_parameter("emission_tint",BODY_MINT)
+	# Unlit (energy 0) NAVY backing: its clock never reaches the image, so one material serves all.
+	_tag_plate = _add_mesh("TagPlate",_plate_mesh,_plate_material,self,false)
+	_tag_plate.position = Vector3(0,-0.50,0.01)
+	_tag = Label3D.new()
+	_tag.name = "Tag"
+	_tag.text = TAGS.get(kind,"PICKUP")
+	_tag.pixel_size = 0.0045
+	_tag.outline_size = 6
+	# Fitted once per kind in kind_shapes(); the larger world pixel size is kept.
+	_tag.font_size = shapes.tag_size
+	_tag.outline_modulate = Palette.NAVY_BG
+	_tag.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	_tag.modulate = Palette.CREAM
+	_tag.position = Vector3(0,-0.50,0.045)
+	_tag.no_depth_test = false
+	add_child(_tag)
+	var friendly := Palette.ORANGE if is_tool else Palette.MINT
+	_pool = _add_mesh("BeaconRingHalo",Grab.mesh(),Grab.material(friendly),self)
+	# Shader-expanded sheath must also have an honest culling bound.
+	_pool.custom_aabb = AABB(Vector3(-1.9,0,-1.2),Vector3(3.8,3.2,2.4))
+	_pool.material_override.set_shader_parameter("beam_core_gain",1.12 if is_tool else 1.0)
+	_pool.set_meta("ring_diameter",1.392)
+	_pool.set_meta("halo_diameter",2.4)
+	_pool.position.y = -1.0 + POOL_Y
+	_glyph = _add_mesh("HologramGlyph",_glyph_quad,Grab.material(friendly,_kind),self)
+	_glyph.position.y = 1.15
+	# Measured from the CPU raster; get_image() on the uploaded texture was a GPU readback stall.
+	_glyph_coverage = shapes.coverage
+	for material in _materials:
+		if material.shader == Finish.template("opaque").shader or material.shader == Finish.template("glass").shader:
+			_surface_materials.append(material)
+	_set_modes(self)
+
+## Builds (once per kind) every immutable piece of a pickup: merged frame, core, tag fit and glyph
+## coverage. Also a warm-up hook: calling it before play moves all of that CPU work off the run.
+static func kind_shapes(kind: StringName) -> Dictionary:
+	if not TAGS.has(kind): kind = &"approve_shield"
+	if _kind_cache.has(kind): return _kind_cache[kind]
+	if _plate_mesh == null:
+		var plate := Forge.new()
+		plate.bar(Vector3.ZERO,Vector2(0.72,0.16),0.0,0.025)
+		_plate_mesh = plate.finish()
+		_plate_material = Finish.material(Palette.NAVY_2)
+		_glyph_quad = QuadMesh.new()
+		_glyph_quad.size = Vector2.ONE
+	var builder = new()
 	var metal := Forge.new()
 	var glass := Forge.new()
 	var core := Forge.new()
-	_build_icon(_kind,metal,glass,core)
-	if _kind in BACKED_KINDS:
+	builder._build_icon(kind,metal,glass,core)
+	builder.free()
+	if kind in BACKED_KINDS:
 		# Closed, thick core behind the thin icon, merged into its frame draw.
 		# The depth keeps a solid silhouette during the existing sculpture spin.
 		var disc := PackedVector2Array()
@@ -74,70 +155,42 @@ func build(kind: StringName) -> void:
 	var frame_mesh := metal.finish()
 	frame_mesh.set_meta("expected_triangles",metal.vertex_count/3)
 	frame_mesh.set_meta("inlay_bounds",glass.panel_bounds.duplicate())
-	var frame_tint := Palette.CREAM
-	# Lift only the magnifier diffuse plating; mint mix retains saturation.
-	if _kind == &"code_review": frame_tint = Palette.CREAM
-	var frame_material := Finish.material(frame_tint,0.12)
-	frame_material.set_shader_parameter("inlay_tint",Palette.ORANGE if is_tool else BODY_MINT)
-	_add_mesh("Ring",frame_mesh,frame_material,_pivot)
-	if kind == &"auto_fix": frame_material.set_shader_parameter("emission_inset",0.26)
-	if core.vertex_count > 0:
-		_core_node = _add_mesh("InnerCore",core.finish(),Finish.material(_accent,4.8),_pivot)
-		_core_node.material_override.set_shader_parameter("emission_fill",0.65)
-	# Filter prongs are part of the solid cartridge core.
-	if not is_tool:
-		# Opaque frame contributes the same broad patch as ORANGE tool frames.
-		# Diffuse frame and all sculpture emission remain in the MINT family.
-		for material in _materials: material.set_shader_parameter("emission_tint",BODY_MINT)
-	var plate := Forge.new()
-	plate.bar(Vector3.ZERO,Vector2(0.72,0.16),0.0,0.025)
-	_tag_plate = _add_mesh("TagPlate",plate.finish(),Finish.material(Palette.NAVY_2),self)
-	_tag_plate.position = Vector3(0,-0.50,0.01)
-	_tag = Label3D.new()
-	_tag.name = "Tag"
-	_tag.text = TAGS.get(kind,"PICKUP")
-	_tag.font_size = 32
-	_tag.pixel_size = 0.0045
-	_tag.outline_size = 6
-	# Keep the larger world pixel size; fit the longest tag inside the plate.
+	# Fit the longest tag inside the plate at the fixed 0.0045 world pixel size.
+	var text: String = TAGS[kind]
+	var tag_size := 32
 	var tag_font: Font = ThemeDB.fallback_font
-	while (tag_font.get_string_size(_tag.text,HORIZONTAL_ALIGNMENT_LEFT,-1,_tag.font_size).x+_tag.outline_size*2)*_tag.pixel_size > 0.70:
-		_tag.font_size -= 1
-	_tag.outline_modulate = Palette.NAVY_BG
-	_tag.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
-	_tag.modulate = Palette.CREAM
-	_tag.position = Vector3(0,-0.50,0.045)
-	_tag.no_depth_test = false
-	add_child(_tag)
-	var friendly := Palette.ORANGE if is_tool else Palette.MINT
-	_pool = _add_mesh("BeaconRingHalo",Grab.mesh(),Grab.material(friendly),self)
-	# Shader-expanded sheath must also have an honest culling bound.
-	_pool.custom_aabb = AABB(Vector3(-1.9,0,-1.2),Vector3(3.8,3.2,2.4))
-	_pool.material_override.set_shader_parameter("beam_core_gain",1.12 if is_tool else 1.0)
-	_pool.set_meta("ring_diameter",1.392)
-	_pool.set_meta("halo_diameter",2.4)
-	_pool.position.y = -1.0 + 0.012
-	var glyph_quad := QuadMesh.new()
-	glyph_quad.size = Vector2.ONE
-	_glyph = _add_mesh("HologramGlyph",glyph_quad,Grab.material(friendly,_kind),self)
-	_glyph.position.y = 1.15
-	var glyph_texture: Texture2D = _glyph.material_override.get_shader_parameter("glyph")
-	_glyph_coverage = float(glyph_texture.get_image().get_used_rect().size.y)/glyph_texture.get_height()
-	_set_modes(self)
+	while (tag_font.get_string_size(text,HORIZONTAL_ALIGNMENT_LEFT,-1,tag_size).x+6*2)*0.0045 > 0.70:
+		tag_size -= 1
+	var shapes := {"frame": frame_mesh, "core": core.finish() if core.vertex_count > 0 else null, "tag_size": tag_size, "coverage": Grab.coverage(kind)}
+	_kind_cache[kind] = shapes
+	return shapes
+
+## Warm-up hook: every per-kind CPU cache (meshes, glyph raster, tag fit) for `kind`.
+static func warm_kind(kind: StringName) -> void:
+	kind_shapes(kind)
+
+## Drops the static caches (tests call this before quitting, like Finish.cache.clear()).
+static func release_caches() -> void:
+	_kind_cache.clear()
+	_plate_mesh = null
+	_plate_material = null
+	_glyph_quad = null
+	_peers.clear()
+	_peer_frame = -1
 
 func _set_modes(node: Node) -> void:
 	node.process_mode = Node.PROCESS_MODE_PAUSABLE
 	node.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	for child in node.get_children(): _set_modes(child)
 
-func _add_mesh(title: String, shape: Mesh, material: ShaderMaterial, parent: Node3D) -> MeshInstance3D:
+func _add_mesh(title: String, shape: Mesh, material: ShaderMaterial, parent: Node3D, animated := true) -> MeshInstance3D:
 	var mesh := MeshInstance3D.new()
 	mesh.name = title
 	mesh.mesh = shape
 	mesh.material_override = material
 	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(mesh)
-	_materials.append(material)
+	if animated: _materials.append(material)
 	return mesh
 
 func _polygon(forge: RefCounted, points: Array, depth := 0.07, z := 0.0) -> void:
@@ -287,6 +340,7 @@ func reset() -> void:
 	_rear_mix = 0.0
 	_beam_offset = 0.0
 	_last_affordance_clock = 0.0
+	_range_boost = -1.0
 	_collect_time = -1.0
 	_pivot.transform = Transform3D.IDENTITY
 	if _core_node != null: _core_node.transform = Transform3D.IDENTITY
@@ -303,17 +357,16 @@ func collect() -> void:
 	if _collect_time >= 0.0: return
 	_collect_time = 0.0
 	_glyph.hide()
-	var burst := Burst.new()
 	# Use the enclosing live scene, never Window or backend-owned Tools/Chunks.
 	# The arena counts all direct children of Tools, not just gameplay groups.
 	var host: Node = self
 	while host.get_parent() != null and host.get_parent() != get_tree().root:
 		host = host.get_parent()
 	if host == self or host == get_parent() or host == get_tree().root:
-		burst.free()
 		_pool.hide()
 		return
-	host.add_child(burst)
+	# Pooled under the host: a repeat grab restarts an idle burst instead of building one.
+	var burst := Burst.acquire(host)
 	burst.global_position = global_position
 	burst.start(_accent)
 	_pool.hide()
@@ -321,15 +374,15 @@ func collect() -> void:
 func _process(delta: float) -> void:
 	if _pivot == null: return
 	_t += delta
+	var clock := _t*(1.0+_phase*0.12)+_phase
 	for material in _materials:
-		var phase := float(TAGS.keys().find(_kind))*0.37
-		material.set_shader_parameter("clock",_t*(1.0+phase*0.12)+phase)
+		material.set_shader_parameter("clock",clock)
 	# A bounded display-rock keeps each solid icon readable throughout its idle cycle.
 	_pivot.rotation.y = 0.0 if _is_tool else sin(_t * 1.6) * 0.28
 	_pivot.position.y = 0.06*sin(_t*(3.6 if _is_tool else 2.4))
 	# Ground projection follows actual backend spawn height, including jump tools.
-	_pool.global_position.y = 0.012
-	_update_affordance()
+	_pool.global_position.y = POOL_Y
+	_update_affordance(true)
 	_signature_idle()
 	if _collect_time < 0.0: return
 	_collect_time += delta
@@ -361,37 +414,61 @@ func _glyph_rect(camera: Camera3D, center: Vector3, size: float) -> Rect2:
 	var radius := camera.unproject_position(center+camera.global_basis.y*size*0.5).distance_to(screen)
 	return Rect2(screen-Vector2.ONE*radius,Vector2.ONE*radius*2.0)
 
-func _update_affordance() -> void:
+## Screen data other pickups compare against: depth, lateral offset and grown glyph rect.
+func _peer_entry(camera: Camera3D) -> Dictionary:
+	var local := camera.to_local(global_position)
+	var center: Vector3 = global_position+Vector3.UP*0.9
+	return {"art": self, "depth": -local.z, "x": local.x, "rect": _glyph_rect(camera,center,_glyph_size(camera,center)).grow(3.0)}
+
+## Live peers. `shared` (the per-frame _process path) reuses one snapshot per process frame;
+## direct calls rebuild it so callers that move pickups between calls see fresh poses.
+static func _peer_snapshot(tree: SceneTree, camera: Camera3D, shared: bool) -> Array[Dictionary]:
+	var stamp := Engine.get_process_frames()
+	if shared and stamp == _peer_frame: return _peers
+	_peer_frame = stamp if shared else -1
+	_peers.clear()
+	for other in tree.get_nodes_in_group(PICKUP_GROUP):
+		if not is_instance_valid(other) or not other.is_visible_in_tree() or other._collect_time >= 0.0: continue
+		_peers.append(other._peer_entry(camera))
+	return _peers
+
+func _set_if_changed(material: ShaderMaterial, key: StringName, value: float) -> void:
+	# Per-instance uniforms are only rewritten when they move, not every frame.
+	if material.get_shader_parameter(key) != value: material.set_shader_parameter(key,value)
+
+func _update_affordance(shared := false) -> void:
 	var camera := get_viewport().get_camera_3d()
 	if camera == null: return
 	var depth := -camera.to_local(global_position).z
 	var player_distance := maxf(0.0,depth-8.0)
 	_near_fade = smoothstep(0.0,6.0,player_distance)
-	_pool.material_override.set_shader_parameter("near_fade",_near_fade)
+	_set_if_changed(_pool.material_override,&"near_fade",_near_fade)
 	var pixel_metres := 2.0*maxf(0.1,depth)*tan(deg_to_rad(camera.fov)*0.5)/maxf(1.0,get_viewport().get_visible_rect().size.y)
 	# Soft flared sheath stays narrower than half a lane at every distance.
 	_beam_width = clampf(8.0*pixel_metres,0.35,0.9)
-	_pool.material_override.set_shader_parameter("beam_width",_beam_width)
+	_set_if_changed(_pool.material_override,&"beam_width",_beam_width)
 	_pool.global_rotation.y = camera.global_rotation.y
-	for material in _materials:
-		if material.shader == Finish.template("opaque").shader or material.shader == Finish.template("glass").shader:
-			material.set_shader_parameter("range_boost",lerpf(1.0,3.0,smoothstep(10.0,60.0,player_distance)))
+	var boost := lerpf(1.0,3.0,smoothstep(10.0,60.0,player_distance))
+	if boost != _range_boost:
+		_range_boost = boost
+		for material in _surface_materials: material.set_shader_parameter("range_boost",boost)
 	_glyph.position = Vector3(0,0.9,0)
 	var center := _glyph.global_position
 	var size := _glyph_size(camera,center)
 	var rear := false
 	var same_lane_rear := false
 	var same_lane_front := false
-	for other in get_tree().get_nodes_in_group(PICKUP_GROUP):
-		if other == self or not is_instance_valid(other) or not other.is_visible_in_tree() or other._collect_time >= 0.0: continue
-		var other_depth := -camera.to_local(other.global_position).z
+	var own_x := camera.to_local(global_position).x
+	var own_rect := _glyph_rect(camera,center,size)
+	for other: Dictionary in _peer_snapshot(get_tree(),camera,shared):
+		if other.art == self: continue
+		var other_depth: float = other.depth
 		if other_depth <= 0.0: continue
-		var same_lane := absf(camera.to_local(other.global_position).x-camera.to_local(global_position).x) < 0.75
+		var same_lane := absf(float(other.x)-own_x) < 0.75
 		if other_depth >= depth-0.1:
 			same_lane_front = same_lane_front or same_lane
 			continue
-		var other_center: Vector3 = other.global_position+Vector3.UP*0.9
-		var overlap := _glyph_rect(camera,center,size).intersects(other._glyph_rect(camera,other_center,other._glyph_size(camera,other_center)).grow(3.0))
+		var overlap := own_rect.intersects(other.rect)
 		rear = rear or same_lane or overlap
 		same_lane_rear = same_lane_rear or same_lane
 	# The pausable art clock controls a half-second smooth transition, never a hide.
@@ -404,10 +481,10 @@ func _update_affordance() -> void:
 	# Opposed narrow beam centers provide a second positional cue within the lane.
 	var target_offset := 0.65 if same_lane_rear else (-0.45 if same_lane_front else 0.0)
 	_beam_offset = move_toward(_beam_offset,target_offset,elapsed*2.2)
-	_pool.material_override.set_shader_parameter("beam_offset",_beam_offset)
+	_set_if_changed(_pool.material_override,&"beam_offset",_beam_offset)
 	_glyph.position.x = _beam_offset
 	size = minf(size,_glyph_size(camera,_glyph.global_position))
 	_glyph.scale = Vector3.ONE*size
 	_glyph.global_basis = camera.global_basis.orthonormalized()*Basis.from_scale(_glyph.scale)
-	_glyph.material_override.set_shader_parameter("depth_alpha",_depth_alpha)
+	_set_if_changed(_glyph.material_override,&"depth_alpha",_depth_alpha)
 	_glyph.visible = _collect_time < 0.0
