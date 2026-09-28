@@ -9,8 +9,9 @@ const LaneLook = preload("res://scenes/runner/player/hifi/lane_look.gd")
 const STATES: Array[StringName] = [&"idle", &"run", &"jump", &"fall", &"roll", &"hurt", &"dead"]
 ## Grounded, envelope-filling roll re-baked from the Blender clip by dev/bake_hoppy_roll.gd.
 const BAKED_ROLL := "res://scenes/runner/player/hifi/hoppy_roll.tres"
-## Blend into and out of the roll so Hoppy visibly curls down instead of popping to ball size.
-const ROLL_BLEND_IN := 0.07
+## The roll starts on its first baked frame: any blend from the upright pose would poke above the 0.9 m
+## roll envelope (the barrier clearance). Leaving the roll blends so Hoppy uncurls instead of popping.
+const ROLL_BLEND_IN := 0.0
 const ROLL_BLEND_OUT := 0.1
 ## The bake tool reads the imported clip, so it switches the baked one off.
 var use_baked_roll := true
