@@ -36,6 +36,10 @@ const MAX_RECORDS := 8
 ## Seconds a record's marks fade out after its telegraph ran out.
 const TAIL := 0.3
 const LANE_WIDTH := 2.0
+## Art review r1: the committed flaky column's DANGER fill alpha (never below 0.5).
+const COMMIT_FILL_ALPHA := 0.55
+## Art review r1: the legacy wall's MINT gap lines, metres (>= 4 px at the boss from the chase camera).
+const GAP_LINE_WIDTH := 0.24
 var records: Array[Dictionary] = []
 var marks: Marks
 ## Shared empties, so a plain beat or a missing key allocates nothing.
@@ -314,7 +318,8 @@ func _tile_column(lane: int, from_z: float, step: float, alpha: float, jitter: f
 		var z := from_z + 1.5 + k * 1.75
 		var seed := step * 1.3 + k * 7.1 + lane * 13.7
 		if glitch and _hash(seed) < 0.14: continue
-		var color := Palette.DANGER if glitch and _hash(seed + 3.3) > 0.72 else Palette.MATRIX
+		# DANGER tiles with a MATRIX glitch now and then: a candidate is a threat, never a pickup.
+		var color := Palette.MATRIX if glitch and _hash(seed + 3.3) > 0.72 else Palette.DANGER
 		var x := lane_x(lane) + (_hash(seed + 1.1) - 0.5) * jitter
 		marks.add(x, z, size, size, 0.0, Color(color, alpha))
 
@@ -333,13 +338,17 @@ func _flaky(record: Dictionary, from_z: float, fade: float) -> void:
 	for lane in 3:
 		if not record.mask & (1 << lane) and not record.commit_mask & (1 << lane): continue
 		if record.commit_mask & (1 << lane):
-			# Tiles lock into one solid column and the edges light up.
+			# Tiles lock into one solid DANGER column (alpha >= COMMIT_FILL_ALPHA, so the committed
+			# lane can never read as a safe one) and its edges light up; one MATRIX seam per tile
+			# is all that is left of the glitch.
 			for k in 7:
 				var z := from_z + 1.5 + k * 1.75
-				marks.add(lane_x(lane), z, lerpf(0.62, 1.5, snap), lerpf(0.62, 1.7, snap), 0.0, Color(Palette.MATRIX, flash * 0.6 * fade))
+				# A steady fill: additive DANGER at full alpha over the red lane washes out to pink.
+				marks.add(lane_x(lane), z, lerpf(0.62, 1.5, snap), lerpf(0.62, 1.7, snap), 0.0, Color(Palette.DANGER, COMMIT_FILL_ALPHA * fade))
+				marks.add(lane_x(lane), z + 0.9, lerpf(0.3, 1.2, snap), 0.07, 0.0, Color(Palette.MATRIX, 0.5 * fade))
 			for side_index in 2:
 				var side := side_index * 2.0 - 1.0
-				marks.segment(Vector2(lane_x(lane) + side * 0.92, from_z + 0.8), Vector2(lane_x(lane) + side * 0.92, 0.0), 0.08, Color(Palette.MATRIX, flash * fade))
+				marks.segment(Vector2(lane_x(lane) + side * 0.92, from_z + 0.8), Vector2(lane_x(lane) + side * 0.92, 0.0), 0.14, Color(Palette.DANGER, flash * fade))
 		else:
 			# The losing candidate scatters out and is gone within 0.15 s.
 			var gone: float = clampf(record.commit_age / 0.15, 0.0, 1.0)
@@ -355,7 +364,7 @@ func _scatter(record: Dictionary, from_z: float, fade: float, progress: float) -
 	var z := from_z + 1.2
 	var k := 0
 	while z < split_z - 0.4:
-		if _hash(step + k * 3.7) > 0.12: marks.add((_hash(step * 2.0 + k) - 0.5) * 0.3, z, 0.5, 0.5, 0.0, Color(Palette.MATRIX, 0.7 * fade))
+		if _hash(step + k * 3.7) > 0.12: marks.add((_hash(step * 2.0 + k) - 0.5) * 0.3, z, 0.5, 0.5, 0.0, Color(Palette.DANGER, 0.7 * fade))
 		z += 0.9
 		k += 1
 	marks.diamond(0.0, split_z, 0.8, Color(Palette.MATRIX, fade))
@@ -477,17 +486,18 @@ func _legacy_wall(record: Dictionary, from_z: float, fade: float, accent: Color)
 			_fissure(lane, from_z + 1.0, shift_z, Color(accent, 0.7 * fade))
 		else:
 			_fissure(lane, from_z + 1.0, 0.0, Color(accent, 0.7 * fade))
+	# GAP_LINE_WIDTH keeps the MINT gap lines >= 4 px wide even at the boss end of the lane.
 	for side_index in 2:
 		var side := side_index * 2.0 - 1.0
-		marks.segment(Vector2(lane_x(gap_from) + side * 0.9, from_z + 1.0), Vector2(lane_x(gap_from) + side * 0.9, shift_z), 0.09, safe)
-		marks.segment(Vector2(lane_x(gap_to) + side * 0.9, shift_end), Vector2(lane_x(gap_to) + side * 0.9, 0.0), 0.09, safe)
+		marks.segment(Vector2(lane_x(gap_from) + side * 0.9, from_z + 1.0), Vector2(lane_x(gap_from) + side * 0.9, shift_z), GAP_LINE_WIDTH, safe)
+		marks.segment(Vector2(lane_x(gap_to) + side * 0.9, shift_end), Vector2(lane_x(gap_to) + side * 0.9, 0.0), GAP_LINE_WIDTH, safe)
 	var tail := Vector2(lane_x(gap_from), shift_z)
 	var tip := Vector2(lane_x(gap_to), shift_end)
-	marks.segment(tail, tip, 0.2, safe)
+	marks.segment(tail, tip, 0.32, safe)
 	var back := (tail - tip).normalized()
 	for side_index in 2:
 		var side := side_index * 2.0 - 1.0
-		marks.segment(tip, tip + back.rotated(side * 0.55) * 0.75, 0.18, safe)
+		marks.segment(tip, tip + back.rotated(side * 0.55) * 0.9, 0.28, safe)
 
 ## Monolith debris: one shadow per slab at the spot it lands, growing until the telegraph fires,
 ## with a dashed drop line from the boss.

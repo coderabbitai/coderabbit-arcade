@@ -220,6 +220,7 @@ func run() -> void:
 	fx.clear()
 	await check_signature_fx(fx)
 	await check_projectiles()
+	check_sizes()
 	fx.clear()
 	for i in 6:
 		fx._arrival(&"unit_test", 1, Vector3.ZERO)
@@ -543,6 +544,9 @@ func check_signature_reactions(visual: Node3D) -> Vector2i:
 		visual.on_spawned()
 		visual.set_phase(pair[0])
 		visual._process(1.0)
+		var calm := true
+		for i in art.accent_materials.size(): calm = calm and Color(art.accent_materials[i].get_shader_parameter("accent")).is_equal_approx(art.accent_colors[i])
+		check(calm, "C4 idle accents keep the boss colour")
 		var variant := StringName(attack.variant)
 		var total := float(attack.telegraph)
 		var commit_at := float(attack.get("commit_at", -1.0))
@@ -550,9 +554,16 @@ func check_signature_reactions(visual: Node3D) -> Vector2i:
 		var t := 0.0
 		var committed := commit_at < 0.0
 		var rest_spread := swarm_spread(art)
+		var hot_seen := false
 		while t < total:
 			visual._process(0.05)
 			t += 0.05
+			# Art review r1: attack-state accents are DANGER on the boss body.
+			if art.state == &"telegraph" and art.age >= 0.12:
+				var hot: bool = art.accent_materials.size() >= 3 and art.accent_light.light_color.is_equal_approx(Palette.DANGER)
+				for material: ShaderMaterial in art.accent_materials: hot = hot and Color(material.get_shader_parameter("accent")).is_equal_approx(Palette.DANGER)
+				hot_seen = hot_seen or hot
+				check(hot, "C4 telegraph accents DANGER %s %s t=%.2f" % [visual.kind, signature, t])
 			if not committed and t >= commit_at:
 				committed = true
 				visual.play_commit(int(attack.mask), variant, total - commit_at)
@@ -573,7 +584,12 @@ func check_signature_reactions(visual: Node3D) -> Vector2i:
 					if int(attack.telegraph_mask) & (1 << lane): pushed = pushed or dz > 0.2
 					else: check(absf(dz) < 0.001, "C4 gap column stays for the wall")
 				check(pushed, "C4 monolith slabs push out for the wall")
+		check(hot_seen, "C4 attack-state accents DANGER %s %s" % [visual.kind, signature])
 		visual.play_attack(variant)
+		visual._process(0.02)
+		var fired: bool = art.accent_light.light_color.is_equal_approx(Palette.DANGER)
+		for material: ShaderMaterial in art.accent_materials: fired = fired and Color(material.get_shader_parameter("accent")).is_equal_approx(Palette.DANGER)
+		check(fired, "C4 accents stay DANGER through the attack %s %s" % [visual.kind, signature])
 		if visual.kind == &"legacy_monolith" and signature == BossAttacks.SIG_QUAKE:
 			check(art.state == &"slam", "C4 monolith body slams for the quake")
 		for frame in 8:
@@ -666,7 +682,10 @@ func check_signature_fx(fx: Node3D) -> void:
 	var gain_b: float = fx.telegraphs[lanes[1]].gain
 	check(gain_a > 0.9 and gain_b < 0.3, "C4 first flaky candidate shows, the other dims")
 	var showing_before: int = fx.showing_mask(record)
-	var tiles_a := mark_count(fx, Palette.MATRIX, func(o: Vector3, _s: Vector2) -> bool: return absf(o.x - fx.lane_x(lanes[0])) < 0.5)
+	# Art review r1: the candidate tiles are DANGER with MATRIX glitches (was MATRIX tiles).
+	var near_a := func(o: Vector3, _s: Vector2) -> bool: return absf(o.x - fx.lane_x(lanes[0])) < 0.5
+	var tiles_a := mark_count(fx, Palette.DANGER, near_a) + mark_count(fx, Palette.MATRIX, near_a)
+	check(mark_count(fx, Palette.DANGER, near_a) > mark_count(fx, Palette.MATRIX, near_a), "C4 flaky candidate tiles DANGER-dominant")
 	for i in 3: fx._process(swap / 3.0)
 	check(fx.showing_mask(record) != showing_before, "C4 flaky candidates alternate at the swap rate")
 	check(fx.telegraphs[lanes[0]].gain < 0.3 and fx.telegraphs[lanes[1]].gain > 0.9, "C4 red lanes alternate with the tiles")
@@ -678,9 +697,28 @@ func check_signature_fx(fx: Node3D) -> void:
 	check(record.committed and not fx.telegraphs[lost].has_entry(record.id) and fx.telegraphs[won].has_entry(record.id), "C4 commit drops the losing candidate lane")
 	fx._process(0.2)
 	check(not fx.telegraphs[lost].active and fx.telegraphs[won].gain > 0.99, "C4 committed lane solid")
-	var snapped := mark_count(fx, Palette.MATRIX, func(o: Vector3, s: Vector2) -> bool: return absf(o.x - fx.lane_x(won)) < 0.2 and s.x > 1.4)
-	check(snapped >= 6, "C4 tiles snap into the committed column")
-	check(mark_count(fx, Palette.MATRIX, func(o: Vector3, _s: Vector2) -> bool: return absf(o.x - fx.lane_x(lost)) < 0.6) == 0, "C4 losing candidate tiles gone")
+	# Art review r1: the committed column is a DANGER fill (alpha >= 0.5), never a safe-looking lane.
+	var snapped := 0
+	var fill_alpha := 1.0
+	for i in fx.marks.used:
+		var o: Vector3 = fx.marks.origins[i]
+		var s: Vector2 = fx.marks.sizes[i]
+		if absf(o.x - fx.lane_x(won)) < 0.2 and s.x > 1.4 and color_near(fx.marks.colors[i], Palette.DANGER):
+			snapped += 1
+			fill_alpha = minf(fill_alpha, fx.marks.colors[i].a)
+	check(snapped >= 6, "C4 tiles snap into the committed DANGER column")
+	check(fill_alpha >= 0.5 and fx.COMMIT_FILL_ALPHA >= 0.5, "C4 committed column DANGER fill alpha >= 0.5 (%.2f)" % fill_alpha)
+	var lost_near := func(o: Vector3, _s: Vector2) -> bool: return absf(o.x - fx.lane_x(lost)) < 0.6
+	check(mark_count(fx, Palette.MATRIX, lost_near) + mark_count(fx, Palette.DANGER, lost_near) == 0, "C4 losing candidate tiles gone")
+	var covered := 0.0
+	var accent := 0.0
+	for i in fx.marks.used:
+		if absf(fx.marks.origins[i].x - fx.lane_x(won)) > 1.0: continue
+		var area: float = fx.marks.sizes[i].x * fx.marks.sizes[i].y * fx.marks.colors[i].a
+		if color_near(fx.marks.colors[i], Palette.DANGER): covered += area
+		else: accent += area
+	check(covered >= 3.0 * accent, "C4 committed column DANGER-dominant (%.1f vs %.1f m2)" % [covered, accent])
+	print("C4 FLAKY COMMIT: DANGER fill alpha %.2f, %d tiles, DANGER %.1f m2 vs accent %.1f m2" % [fill_alpha, snapped, covered, accent])
 	var danger: Color = fx.telegraphs[won].countdown_material.get_shader_parameter("color")
 	check(color_near(danger, Palette.DANGER), "C4 DANGER stays the base telegraph")
 	fx.clear()
@@ -738,6 +776,14 @@ func check_signature_fx(fx: Node3D) -> void:
 	check(mark_count(fx, Palette.MINT, func(o: Vector3, _s: Vector2) -> bool: return absf(absf(o.x - gap_x) - 0.9) < 0.05 and o.z < shift_z) >= 2, "C4 wall gap lane highlighted")
 	check(mark_count(fx, Palette.MINT, func(o: Vector3, _s: Vector2) -> bool: return absf(absf(o.x - target_x) - 0.9) < 0.05 and o.z > shift_z) >= 2, "C4 wall shift target shown from the start")
 	check(mark_count(fx, Palette.MINT, func(o: Vector3, _s: Vector2) -> bool: return absf(o.x - (gap_x + target_x) * 0.5) < 0.3) >= 1, "C4 wall shift arrow")
+	# Art review r1: gap lines >= 4 px wide at their far (boss) end from the chase camera.
+	var thinnest := INF
+	for i in fx.marks.used:
+		if color_near(fx.marks.colors[i], Palette.MINT): thinnest = minf(thinnest, fx.marks.sizes[i].x)
+	var far := Vector3(gap_x + 0.9, 0.0, -13.0)
+	var gap_px := thinnest * chase_pixels_per_metre(far)
+	check(gap_px >= 4.0, "C4 wall gap lines >= 4 px at the boss end (%.1f px)" % gap_px)
+	print("C4 GAP LINES: %.2f m = %.1f px at z -13 from the chase camera (target >= 4)" % [thinnest, gap_px])
 	fx.clear()
 	# Debris shadows grow until impact.
 	record = open(fx, first_attack(2, BossAttacks.SIG_DEBRIS))
@@ -783,6 +829,62 @@ func check_signature_fx(fx: Node3D) -> void:
 
 ## Every per-boss projectile look, from the real shots its attack fires: envelope (110 % of the
 ## hitbox, ground projections exempt on y), draws, shared resources, split, shadow, pause.
+## Chase camera (run_config camera_position / fov, 1280x720): screen pixels per metre of an object
+## at `point`, facing the camera.
+static func chase_pixels_per_metre(point: Vector3) -> float:
+	return 720.0 / (2.0 * tan(deg_to_rad(30.0)) * point.distance_to(Vector3(0, 4, 8)))
+
+## Art review r1 size targets, measured on the real meshes from the chase camera.
+func check_sizes() -> void:
+	# Hydra heads: >= 40 px wide at the fight distance.
+	var visual: Node3D = load("res://scenes/runner/boss/visuals/merge_conflict_hydra_visual.tscn").instantiate()
+	var mount := Node3D.new()
+	mount.position = Vector3(0, 2.6, -14)
+	root.add_child(mount)
+	visual.hover_z = -14.0
+	mount.add_child(visual)
+	visual.on_spawned()
+	var art: Node3D = visual._art
+	var narrowest := INF
+	for head: Node3D in art.heads:
+		var shell := head.get_child(0) as MeshInstance3D
+		var box: AABB = head.global_transform * shell.transform * shell.get_aabb()
+		narrowest = minf(narrowest, box.size.x * chase_pixels_per_metre(box.get_center()))
+	check(narrowest >= 40.0, "C4 hydra heads >= 40 px wide at fight distance (%.1f px)" % narrowest)
+	print("C4 HYDRA HEADS: %.1f px wide at fight distance (target >= 40)" % narrowest)
+	mount.free()
+	# Bolts and the serpent: >= 16 px at 30 m; wall slabs >= 60 px tall where they are fired.
+	var at_30 := 720.0 / (2.0 * tan(deg_to_rad(30.0)) * 30.0)
+	var scene := load("res://scenes/runner/hazards/visuals/projectile_visual.tscn") as PackedScene
+	for spec: Array in [[ProjectileArt.HYDRA_HEAD, "x", 16.0], [ProjectileArt.HYDRA_SWEEP, "x", 16.0], [ProjectileArt.MONOLITH_SLAB, "y", 60.0]]:
+		var look: StringName = spec[0]
+		var row: Array = ProjectileArt.LOOKS[look]
+		var shot: Dictionary = first_attack(KINDS.find(String(row[0])), row[2]).shots[0]
+		var def := HazardDefs.get_def(&"projectile", StringName(shot.variant))
+		var shell: Node3D = scene.instantiate()
+		shell.variant = StringName(shot.variant)
+		shell.projectile_variant = StringName(shot.variant)
+		shell.boss_kind = row[0]
+		shell.signature = row[2]
+		shell.motion = shot
+		shell.hitbox_size = def.size
+		shell.hitbox_offset = Vector3(0, float(def.y_min) + def.size.y * 0.5, 0)
+		root.add_child(shell)
+		shell.position = Vector3(0, 0, -14.0)
+		shell.on_spawned()
+		var box := AABB()
+		var first := true
+		for node: MeshInstance3D in shell._art.find_children("*", "MeshInstance3D", true, false):
+			if not node.is_visible_in_tree() or node.has_meta("ground_projection"): continue
+			var part: AABB = node.global_transform * node.get_aabb()
+			box = part if first else box.merge(part)
+			first = false
+		var metres: float = box.size.x if spec[1] == "x" else box.size.y
+		var pixels: float = metres * (at_30 if spec[1] == "x" else chase_pixels_per_metre(box.get_center()))
+		check(pixels >= spec[2], "C4 %s size %.1f px (target >= %.0f)" % [look, pixels, spec[2]])
+		print("C4 SIZE: %s %.2f m = %.1f px %s (target >= %.0f)" % [look, metres, pixels, "at 30 m" if spec[1] == "x" else "tall at the boss (z -14)", spec[2]])
+		shell.free()
+
 func check_projectiles() -> void:
 	var scene := load("res://scenes/runner/hazards/visuals/projectile_visual.tscn") as PackedScene
 	var looks_seen: Dictionary = {}
@@ -842,6 +944,11 @@ func check_projectiles() -> void:
 						shadow_small = minf(shadow_small, node.scale.x)
 						shadow_big = maxf(shadow_big, node.scale.x)
 				peak = maxi(peak, draws)
+				# Art review r1: DANGER-dominant bodies, accents only as glyphs and trims.
+				var share: Vector2 = art.palette_area()
+				var lit := share.x + share.y
+				if art.is_visible_in_tree(): check(lit > 0.0 and share.x >= 0.5 * lit and share.y <= 0.25 * lit, "C4 projectile palette %s t=%.2f DANGER %.2f accent %.2f" % [look, t, share.x, share.y])
+				if t == 0.0 and lit > 0.0: print("C4 PALETTE: %s DANGER %.0f%% accent %.0f%% of lit front area" % [look, 100.0 * share.x / lit, 100.0 * share.y / lit])
 				if look == ProjectileArt.SWARM_SCATTER:
 					var split: bool = art._split_at >= 0.0 and art.age >= art._split_at
 					if bool(shot.twin): check(art.visible == split, "C4 scatter twin hidden until the split")

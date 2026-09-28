@@ -44,9 +44,18 @@ const GLITCH_STEP := 1.0 / 11.0
 ## Floor-projection height: above the telegraph inset (0.025) is not needed, these move with the
 ## shot, and stay under the hazard markers' 0.02 / 0.03 planes only in the shot's own footprint.
 const GROUND_Y := 0.022
-const MATERIAL_KEYS := ["plating", "dark", "stone", "serpent", "screen_tile", "screen_merge",
+## Art review r1: every projectile is DANGER (art bible). Bodies use the danger_* metals and the
+## DANGER glows; MATRIX / LILAC / ORANGE survive only as glyphs and thin accents (<= 25 % of the lit
+## area, a5_check "C4 projectile palette").
+const MATERIAL_KEYS := ["danger_body", "danger_dark", "danger_stone", "dark", "screen_tile", "screen_merge",
 	"glow_matrix", "glow_danger", "glow_lilac", "glow_orange", "glow_cream",
-	"add_orange", "add_orange_strong"]
+	"add_danger", "add_danger_strong"]
+## Palette role of each material key for the lit-area share check: DANGER body/glow, accent
+## (MATRIX / LILAC / ORANGE / CREAM), or neither (unlit navy; screens, whose glyph is mostly dark).
+const DANGER_KEYS := ["danger_body", "danger_dark", "danger_stone", "glow_danger", "add_danger", "add_danger_strong"]
+const ACCENT_KEYS := ["glow_matrix", "glow_lilac", "glow_orange", "glow_cream"]
+## Fraction of its box a crack mesh (five thin strokes) actually covers, for the area share.
+const CRACK_COVERAGE := 0.14
 const MESH_KEYS := ["box", "sphere", "wedge", "shard", "quad", "floor", "tile_check", "tile_cross",
 	"crack", "quake_crest", "quake_glow", "quake_ripple"]
 
@@ -112,11 +121,11 @@ static func material(key: String) -> Material:
 	if _cache.has(id): return _cache[id]
 	var result: Material
 	match key:
-		# Lit metal with a faint self-glow, so a shot still reads against the dim corridor.
-		"plating": result = _lifted(Forge.metal(Palette.SLATE.lerp(Palette.CREAM, 0.32)), Palette.CREAM, 0.12)
+		# DANGER metals with a self-glow, so every shot reads as a hazard against the corridor.
+		"danger_body": result = _lifted(Forge.metal(Palette.DANGER.lerp(Palette.NAVY_2, 0.3)), Palette.DANGER, 0.55)
+		"danger_dark": result = _lifted(Forge.metal(Palette.DANGER.lerp(Palette.NAVY_2, 0.58)), Palette.DANGER, 0.3)
+		"danger_stone": result = _lifted(Forge.metal(Palette.DANGER.lerp(Palette.SLATE, 0.45)), Palette.DANGER, 0.4)
 		"dark": result = Forge.metal(Palette.NAVY_2)
-		"stone": result = _lifted(Forge.metal(Palette.SLATE.lerp(Palette.CREAM, 0.16)), Palette.ORANGE, 0.08)
-		"serpent": result = _lifted(Forge.metal(Palette.LILAC.lerp(Palette.NAVY_2, 0.45)), Palette.LILAC, 0.45)
 		"screen_tile", "screen_merge":
 			var screen := ShaderMaterial.new()
 			screen.shader = Screen
@@ -164,7 +173,7 @@ static func mesh(key: String) -> Mesh:
 		"tile_check", "tile_cross": result = _tile_quad(Palette.MATRIX if key == "tile_check" else Palette.DANGER)
 		"crack": result = _crack()
 		"quake_crest": result = _arc(0.42, 0.16, 0.0)
-		"quake_glow": result = _arc(0.2, 0.05, 0.13)
+		"quake_glow": result = _arc(0.1, 0.05, 0.13)
 		"quake_ripple": result = _arc(0.0, 0.2, -0.12)
 	_cache[id] = result
 	return result
@@ -256,6 +265,7 @@ func _part(title: String, mesh_key: String, material_key: String, pos: Vector3, 
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	node.mesh = mesh(mesh_key)
 	node.material_override = material(material_key)
+	node.set_meta("material_key", material_key)
 	node.position = pos
 	node.rotation = rotation_value
 	node.scale = size
@@ -286,40 +296,43 @@ func build(value: StringName, size: Vector3, offset: Vector3, shot: Dictionary =
 	var c := offset
 	match look:
 		SWARM_TILE:
-			_part("TileFrame", "box", "plating", c, Vector3(0.86, 0.74, 0.34))
+			_part("TileFrame", "box", "danger_body", c, Vector3(0.86, 0.74, 0.34))
 			_part("TileScreen", "tile_cross", "screen_tile", c + Vector3(0, 0, 0.176), Vector3(0.64, 0.52, 1))
 			for i in 3:
-				_part("GlitchShard%d" % i, "box", "glow_matrix" if i % 2 == 0 else "glow_danger", c + Vector3((i - 1) * 0.5, 0.2 - i * 0.18, -0.1), Vector3(0.2, 0.16, 0.08))
+				_part("GlitchShard%d" % i, "box", "glow_matrix" if i == 1 else "glow_danger", c + Vector3((i - 1) * 0.5, 0.2 - i * 0.18, -0.1), Vector3(0.2, 0.16, 0.08))
 		SWARM_SCATTER:
 			for side: int in [-1, 1]:
 				var half := "L" if side < 0 else "R"
-				_part(half + "Half", "box", "plating", c + Vector3(side * 0.23, 0, 0), Vector3(0.42, 0.6, 0.42))
+				_part(half + "Half", "box", "danger_body", c + Vector3(side * 0.23, 0, 0), Vector3(0.42, 0.6, 0.42))
 				_part(half + "Screen", "tile_cross" if side < 0 else "tile_check", "screen_tile", c + Vector3(side * 0.23, 0, 0.212), Vector3(0.3, 0.4, 1))
 			_part("SplitSeam", "box", "glow_matrix", c, Vector3(0.04, 0.62, 0.44))
 		HYDRA_HEAD:
-			_part("UpperJaw", "wedge", "plating", c + Vector3(0, 0.1, 0.04), Vector3(0.9, 0.34, 0.86))
-			_part("LowerJaw", "wedge", "dark", c + Vector3(0, -0.17, 0.02), Vector3(0.78, 0.2, 0.76), Vector3(0, 0, PI))
-			_part("Maw", "quad", "glow_lilac", c + Vector3(0, -0.04, 0.24), Vector3(0.62, 0.2, 1))
-			_part("Eyes", "box", "glow_lilac", c + Vector3(0, 0.25, 0.12), Vector3(0.6, 0.09, 0.06))
+			# Wide enough to read from the chase camera (>= 16 px at 30 m): 1.3 m of DANGER jaw.
+			_part("UpperJaw", "wedge", "danger_body", c + Vector3(0, 0.1, 0.04), Vector3(1.3, 0.4, 0.9))
+			_part("LowerJaw", "wedge", "dark", c + Vector3(0, -0.17, 0.02), Vector3(1.1, 0.22, 0.8), Vector3(0, 0, PI))
+			_part("Maw", "quad", "glow_danger", c + Vector3(0, -0.04, 0.25), Vector3(0.92, 0.2, 1))
+			_part("Eyes", "box", "glow_lilac", c + Vector3(0, 0.25, 0.12), Vector3(0.8, 0.09, 0.06))
 			for i in 2:
-				_part("Neck%d" % i, "box", "serpent", c + Vector3(0, 0.02, -0.38 - i * 0.14), Vector3(0.36 - i * 0.06, 0.3 - i * 0.05, 0.2))
+				_part("Neck%d" % i, "box", "danger_dark", c + Vector3(0, 0.02, -0.38 - i * 0.14), Vector3(0.5 - i * 0.08, 0.32 - i * 0.05, 0.2))
 		HYDRA_SWEEP:
+			# The rebase serpent: five DANGER segments, 0.9 m across at the head.
 			for i in 5:
 				var taper := lerpf(1.0, 0.5, i / 4.0)
-				_part("Segment%d" % i, "sphere", "plating" if i == 0 else "serpent", c + Vector3(0, -0.02 * i, 0.34 - i * 0.2), Vector3(0.46, 0.36, 0.42) * taper)
-			_part("SerpentEyes", "box", "glow_lilac", c + Vector3(0, 0.06, 0.52), Vector3(0.36, 0.08, 0.05))
+				_part("Segment%d" % i, "sphere", "danger_body" if i == 0 else "danger_dark", c + Vector3(0, -0.02 * i, 0.2 - i * 0.18), Vector3(0.9, 0.5, 0.44) * taper)
+			_part("SerpentEyes", "box", "glow_lilac", c + Vector3(0, 0.07, 0.38), Vector3(0.5, 0.08, 0.05))
 		HYDRA_FORCE_PUSH:
-			_part("MergeBlock", "box", "plating", c + Vector3(0, 0, -0.08), Vector3(3.3, 0.86, 0.8))
-			_part("ConflictFace", "box", "dark", c + Vector3(0, 0, 0.33), Vector3(3.0, 0.62, 0.06))
+			_part("MergeBlock", "box", "danger_body", c + Vector3(0, 0, -0.08), Vector3(3.3, 0.86, 0.8))
+			_part("ConflictFace", "box", "danger_dark", c + Vector3(0, 0, 0.33), Vector3(3.0, 0.62, 0.06))
 			_part("MergeGlyph", "quad", "screen_merge", c + Vector3(0, 0, 0.365), Vector3(1.3, 0.54, 1))
 			for side: int in [-1, 1]:
 				_part("Seam" + ("Top" if side > 0 else "Bottom"), "box", "glow_lilac", c + Vector3(0, side * 0.4, 0.33), Vector3(3.2, 0.04, 0.05))
-				_part("PushPlate%d" % side, "box", "glow_lilac", c + Vector3(side * 1.7, 0, -0.08), Vector3(0.06, 0.8, 0.72))
+				_part("PushPlate%d" % side, "box", "glow_danger", c + Vector3(side * 1.7, 0, -0.08), Vector3(0.06, 0.8, 0.72))
 		MONOLITH_SLAB:
-			_part("StoneSlab", "box", "stone", c, Vector3(1.66, 2.3, 0.9))
-			_part("Fissure", "crack", "glow_orange", c + Vector3(0, 0, 0.456), Vector3(0.9, 2.0, 1))
+			# 2.5 m of DANGER stone (>= 60 px tall from the chase camera at the boss).
+			_part("StoneSlab", "box", "danger_stone", c + Vector3(0, 0.05, 0), Vector3(1.8, 2.5, 0.9))
+			_part("Fissure", "crack", "glow_orange", c + Vector3(0, 0.05, 0.456), Vector3(0.9, 2.2, 1))
 			for side: int in [-1, 1]:
-				_part("GapEdge%d" % side, "box", "glow_orange", c + Vector3(side * 0.85, 0, 0.44), Vector3(0.05, 2.2, 0.05))
+				_part("GapEdge%d" % side, "box", "glow_orange", c + Vector3(side * 0.92, 0.05, 0.44), Vector3(0.05, 2.4, 0.05))
 			var chevron := Node3D.new()
 			chevron.name = "SlideChevron"
 			chevron.process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -331,22 +344,22 @@ func build(value: StringName, size: Vector3, offset: Vector3, shot: Dictionary =
 				_part("ChevronArm%d" % arm, "box", "glow_cream", Vector3(0, arm * 0.13, 0), Vector3(0.36, 0.07, 0.03), Vector3(0, 0, -arm * 0.8), chevron)
 			_rest["SlideChevron"] = chevron.transform
 			parts["SlideChevron"] = chevron
-			_part("FloorSkirt", "floor", "add_orange", Vector3(c.x, GROUND_Y, c.z), Vector3(1.7, 1, 1.1)).set_meta("ground_projection", true)
+			_part("FloorSkirt", "floor", "add_danger", Vector3(c.x, GROUND_Y, c.z), Vector3(1.9, 1, 1.1)).set_meta("ground_projection", true)
 		MONOLITH_QUAKE:
 			var floor_level := c - Vector3(0, _size.y * 0.5, 0)
-			_part("QuakeCrest", "quake_crest", "stone", floor_level, Vector3.ONE)
+			_part("QuakeCrest", "quake_crest", "danger_stone", floor_level, Vector3.ONE)
 			_part("QuakeGlow", "quake_glow", "glow_orange", floor_level, Vector3.ONE)
-			_part("QuakeRipple", "quake_ripple", "add_orange", floor_level + Vector3(0, GROUND_Y, 0), Vector3.ONE).set_meta("ground_projection", true)
+			_part("QuakeRipple", "quake_ripple", "add_danger", floor_level + Vector3(0, GROUND_Y, 0), Vector3.ONE).set_meta("ground_projection", true)
 			for i in 4:
 				var angle := lerpf(-0.5, 0.5, i / 3.0)
 				var point := Vector3(sin(angle) * 4.9, 0, cos(angle) * 4.9 - 4.4)
-				_part("Rubble%d" % i, "shard", "stone", c + Vector3(point.x, -0.1, point.z - 0.08), Vector3.ONE * 0.16, Vector3(i, i * 2.0, 0))
+				_part("Rubble%d" % i, "shard", "danger_stone", c + Vector3(point.x, -0.1, point.z - 0.08), Vector3.ONE * 0.16, Vector3(i, i * 2.0, 0))
 		MONOLITH_DEBRIS:
-			_part("DebrisChunk", "box", "stone", c, Vector3(0.7, 0.6, 0.7))
+			_part("DebrisChunk", "box", "danger_stone", c, Vector3(0.7, 0.6, 0.7))
 			_part("DebrisCrack", "crack", "glow_orange", c + Vector3(0, 0, 0.356), Vector3(0.36, 0.56, 1))
 			for side: int in [-1, 1]:
-				_part("DebrisShard%d" % side, "shard", "stone", c + Vector3(side * 0.4, -0.18, side * 0.08), Vector3(0.26, 0.26, 0.26), Vector3(0, side, 0))
-			_part("GroundShadow", "floor", "add_orange", Vector3(c.x, GROUND_Y, c.z), Vector3(0.5, 1, 0.4)).set_meta("ground_projection", true)
+				_part("DebrisShard%d" % side, "shard", "danger_stone", c + Vector3(side * 0.4, -0.18, side * 0.08), Vector3(0.26, 0.26, 0.26), Vector3(0, side, 0))
+			_part("GroundShadow", "floor", "add_danger", Vector3(c.x, GROUND_Y, c.z), Vector3(0.5, 1, 0.4)).set_meta("ground_projection", true)
 	advance(0.0)
 
 ## Metres the shot is lifted above its landed y range at `t` (only a falling debris slab is).
@@ -394,7 +407,8 @@ func _advance_tile() -> void:
 			var h := _hash(step * 3.1 + i * 7.3)
 			shard.visible = h > 0.25
 			shard.position = _offset + Vector3((_hash(step + i) - 0.5) * 1.3, (_hash(step * 2.0 + i) - 0.5) * 0.7, (_hash(step * 5.0 + i) - 0.5) * 0.9)
-			shard.material_override = material("glow_matrix" if h > 0.62 else "glow_danger")
+			# Mostly DANGER; one shard in five glitches MATRIX.
+			shard.material_override = material("glow_matrix" if h > 0.8 else "glow_danger")
 		else:
 			var angle := age * 5.0 + i * TAU / 3.0
 			shard.position = _offset + Vector3(cos(angle) * 0.58, sin(angle) * 0.3, -0.1)
@@ -412,7 +426,8 @@ func _advance_scatter() -> void:
 		var screen := _pose(half + "Screen") as MeshInstance3D
 		body.visible = shown
 		screen.visible = shown
-		screen.mesh = mesh("tile_cross" if (half == "L") == (_hash(step) > 0.35) else "tile_check")
+		# A FAIL cross that glitches to PASS now and then (MATRIX stays a glyph accent).
+		screen.mesh = mesh("tile_check" if _hash(step + (0.0 if half == "L" else 5.0)) > 0.82 else "tile_cross")
 	var seam := _pose("SplitSeam")
 	if split:
 		# The torn face glows on the inside of each half while it slides out.
@@ -490,4 +505,24 @@ func _advance_debris() -> void:
 	var grow := lerpf(0.35, 1.0, fall * fall)
 	var impact := 0.0 if falling else clampf(1.0 - (age - _land_at) / 0.25, 0.0, 1.0)
 	shadow.scale = Vector3(1.5 * grow * (1.0 + 0.12 * impact), 1, 1.1 * grow * (1.0 + 0.12 * impact))
-	shadow.material_override = material("add_orange_strong" if impact > 0.0 or fall > 0.8 else "add_orange")
+	shadow.material_override = material("add_danger_strong" if impact > 0.0 or fall > 0.8 else "add_danger")
+
+# --- palette share (art review r1) ---
+
+## The front (camera-facing) area of the visible parts split by palette role, as
+## Vector2(DANGER area, accent area), in m². Screens and unlit navy count as neither. Used by
+## a5_check to keep every look DANGER-dominant; the corridor capture measures the real pixels.
+## Needs the look inside the tree.
+func palette_area() -> Vector2:
+	var result := Vector2.ZERO
+	for title: String in parts:
+		var node := parts[title] as MeshInstance3D
+		if node == null or not node.is_visible_in_tree(): continue
+		var key := String(node.get_meta("material_key", ""))
+		if node.has_meta("ground_projection"): continue
+		var box: AABB = global_transform.affine_inverse() * node.global_transform * node.get_aabb()
+		var area := box.size.x * box.size.y
+		if node.mesh == mesh("crack"): area *= CRACK_COVERAGE
+		if DANGER_KEYS.has(key): result.x += area
+		elif ACCENT_KEYS.has(key): result.y += area
+	return result

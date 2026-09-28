@@ -95,7 +95,8 @@ func _process(delta: float) -> void:
 	if was_intro and _art.state != &"intro": _art.tag.visible = _intro_tag_visible
 	if _art.state == &"intro": return
 	var period := maxf(sway_period * (1 - 0.12 * (_art.phase - 1)), 0.1)
-	position.x = sin(_clock * TAU / period) * minf(sway_amplitude, 0.2)
+	# 0.12 m sway cap (was 0.2): the review-r1 wider heads keep the 7 m envelope while swaying.
+	position.x = sin(_clock * TAU / period) * minf(sway_amplitude, 0.12)
 	position.y = 0.04 + sin(_clock * 2) * 0.04
 	if _art.state == &"phase_change": position.y += 0.12 * sin(PI * minf(_art.age / 0.9, 1))
 	if _art.state == &"retreat": position.y += minf(_art.age, 0.95) * 0.12

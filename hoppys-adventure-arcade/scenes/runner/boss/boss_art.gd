@@ -42,6 +42,17 @@ const HEAD_RECOIL := 0.38
 const SIGNATURE_MODES := {&"slab": &"wall", &"quake": &"quake", &"debris": &"debris"}
 const WALL_PUSH := 0.5
 const QUAKE_RISE := 0.22
+## Art review r1: Hydra heads read >= 40 px wide at fight distance from the chase camera.
+const HEAD_SCALE := Vector3(1.32, 1.04, 1.1)
+## Art review r1: attack-state accents are DANGER. Every accent material (its boss colour in
+## accent_colors) blends to DANGER through a telegraph and the attack after it; `heat` is that blend.
+var accent_materials: Array[ShaderMaterial] = []
+var accent_colors: Array[Color] = []
+var accent_light: OmniLight3D
+var accent_light_color := Color.WHITE
+var mote_material: StandardMaterial3D
+var mote_color := Color.WHITE
+var heat := 0.0
 
 static func shape(parent: Node3D, mesh: Mesh, pos: Vector3, material: Material) -> MeshInstance3D:
 	var node := MeshInstance3D.new()
@@ -125,6 +136,7 @@ func screen(parent: Node3D, pos: Vector3, size: Vector2, accent: Color) -> MeshI
 	material.shader = Screen
 	material.set_shader_parameter("accent", accent)
 	shader_materials.append(material)
+	_heats(material, accent)
 	return shape(parent, mesh, pos, material)
 
 func build(value: StringName) -> void:
@@ -160,6 +172,7 @@ func build(value: StringName) -> void:
 			arc_material.shader = ArcMetal
 			arc_material.set_shader_parameter("base_color", PLATING)
 			arc_material.set_shader_parameter("accent", Palette.MATRIX)
+			_heats(arc_material, Palette.MATRIX)
 			for key in Forge.textures(): arc_material.set_shader_parameter(key + "_map", Forge.textures()[key])
 			arcs.material_override = arc_material
 			shader_materials.append(arc_material)
@@ -174,6 +187,7 @@ func build(value: StringName) -> void:
 			var heart_material := ShaderMaterial.new()
 			heart_material.shader = preload("res://scenes/runner/boss/hifi/reactor.gdshader")
 			heart_material.set_shader_parameter("accent",Palette.MATRIX)
+			_heats(heart_material, Palette.MATRIX)
 			shader_materials.append(heart_material)
 			shape(core,Forge.reactor_heart(),Vector3.ZERO,heart_material).name = "ReactorHeart"
 		&"merge_conflict_hydra":
@@ -190,6 +204,7 @@ func build(value: StringName) -> void:
 				pivot.process_mode = Node.PROCESS_MODE_PAUSABLE
 				add_child(pivot)
 				pivot.position = Vector3((i - 1.5) * 1.65, 1.65, 0.28)
+				pivot.scale = HEAD_SCALE
 				heads.append(pivot)
 				shape(pivot, Forge.hydra_head(), Vector3(0, 0.93, 0), Forge.metal(PLATING))
 				var jaw := box(pivot, Vector3(0, 0.48, 0.08), Vector3(1.05, 0.24, 0.93), Palette.NAVY_2)
@@ -378,6 +393,7 @@ func advance(delta: float) -> void:
 	for node: Node3D in rest_poses:
 		node.transform = rest_poses[node]
 	var charge := u if state == &"telegraph" else 0.0
+	_apply_heat(clampf(age / 0.12, 0.0, 1.0) if state == &"telegraph" else (1.0 if state in [&"attack", &"slam"] else 0.0))
 	var converge := 0.5 * smoothstep(0.0, 0.12, commit_age) if boss_kind == &"flaky_test_swarm" and state == &"telegraph" and commit_age >= 0.0 else 0.0
 	var wall_push := 0.0
 	if boss_kind == &"legacy_monolith" and mode == &"wall":
@@ -409,7 +425,7 @@ func advance(delta: float) -> void:
 			if boss_kind == &"flaky_test_swarm":
 				if b <= 1:
 					current.origin = _swarm_point(i, converge) + Vector3(0, 0, 0.145 if b == 1 else 0.0)
-					color = PLATING if b == 0 else (Palette.DANGER if converge > 0.0 else tile_accent(i, clock))
+					color = PLATING if b == 0 else (Palette.DANGER if converge > 0.0 or heat >= 1.0 else tile_accent(i, clock))
 				elif converge > 0.0:
 					current = swarm_arc_between(_swarm_point(i, converge), _swarm_point((i + 1) % 24, converge)) if not (phase >= 2 and i % 8 == 7) else Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO)
 				else:
@@ -445,7 +461,7 @@ func advance(delta: float) -> void:
 			var kick := sin(PI * head_recoil[i] / HEAD_RECOIL)
 			heads[i].position.z -= 0.34 * kick
 			heads[i].rotation.x = -0.4 * kick
-		if state == &"intro": heads[i].scale = Vector3.ONE * lerpf(0.86, 1.0, smoothstep(0.1, 0.9, u))
+		if state == &"intro": heads[i].scale = HEAD_SCALE * lerpf(0.86, 1.0, smoothstep(0.1, 0.9, u))
 		var jaw := heads[i].get_node("Jaw") as Node3D
 		jaw.rotation.x = 0.05 + charge * 0.7 + (sin(u * PI) * 0.9 if state == &"attack" else 0.0)
 		jaw.position.y = 0.48 - charge * 0.18 - (0.22 * sin(u * PI) if state == &"attack" else 0.0)
@@ -495,7 +511,26 @@ func luminous(color: Color) -> ShaderMaterial:
 	material.set_shader_parameter("accent_path", true)
 	material.set_shader_parameter("accent_gain", 0.55)
 	shader_materials.append(material)
+	_heats(material, color)
 	return material
+
+## Registers a per-boss accent material that turns DANGER while the boss attacks.
+func _heats(material: ShaderMaterial, color: Color) -> void:
+	if color.is_equal_approx(Palette.DANGER): return
+	accent_materials.append(material)
+	accent_colors.append(color)
+
+## Blends every accent to DANGER by `value` (0 idle, 1 attacking). Writes only on a change, and
+## only existing shader parameters and the light colour: nothing is allocated.
+func _apply_heat(value: float) -> void:
+	if _heat_written and value == heat: return
+	heat = value
+	_heat_written = true
+	for i in accent_materials.size():
+		accent_materials[i].set_shader_parameter("accent", accent_colors[i].lerp(Palette.DANGER, heat))
+	if accent_light != null: accent_light.light_color = accent_light_color.lerp(Palette.DANGER, heat)
+	if mote_material != null: mote_material.albedo_color = mote_color.lerp(Palette.DANGER, heat)
+var _heat_written := false
 
 func add_motes(color: Color) -> void:
 	motes = GPUParticles3D.new()
@@ -527,6 +562,8 @@ func add_motes(color: Color) -> void:
 	material.albedo_texture = Forge.glyph_atlas()
 	material.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	material.particles_anim_h_frames = 4
+	mote_material = material
+	mote_color = color
 	quad.material = material
 	motes.draw_pass_1 = quad
 	add_child(motes)
@@ -586,6 +623,8 @@ func add_accent_light() -> void:
 	light.position = Vector3(0, 1.2, 0)
 	light.light_color = Palette.LILAC if boss_kind == &"merge_conflict_hydra" else (Palette.ORANGE if boss_kind == &"legacy_monolith" else Palette.MATRIX)
 	light.light_energy = 1.3
+	accent_light = light
+	accent_light_color = light.light_color
 	# Light influence is included by the shared contract envelope validator.
 	light.omni_range = 1.25
 	light.shadow_enabled = false
