@@ -94,7 +94,8 @@ func _ready() -> void:
 	showcase.preview_changed.connect(_preview_changed)
 	_preview_changed(showcase.active_index)
 	get_viewport().size_changed.connect(_layout)
-	_layout()
+	# Deferred: sizing full-rect-anchored controls inside _ready is overridden (and warned about).
+	_layout.call_deferred()
 	buttons[0].grab_focus()
 
 func _process(delta: float) -> void:
