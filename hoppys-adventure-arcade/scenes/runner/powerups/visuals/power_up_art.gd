@@ -11,7 +11,9 @@ const PropScene = preload("res://Assets/runner/props/pickup_props.glb")
 const FRAME_ENERGY := 0.40
 const CORE_ENERGY := 0.55
 const BACKED_KINDS := [&"approve_shield",&"auto_fix",&"lgtm",&"nitro",&"super_jump",&"code_review",&"review_comment",&"lint_rule",&"unit_test",&"auto_fix_patch"]
-const BODY_MINT := Color(115.5/255.0,230.25/255.0,191.5/255.0) # MINT.lerp(MATRIX,0.25)
+## Deeper body mint (art review r1): the hue of MINT.lerp(MATRIX,0.25) at saturation 0.62 and 95% of
+## its value; Blender bakes the same colour (build_props.py BODY_MINT, 53daad).
+const BODY_MINT := Color(83.0/255.0,218.0/255.0,173.0/255.0)
 static var FRAME_MINT := Palette.SLATE.lerp(Palette.MINT,0.45).lightened(0.18)
 static var FRAME_REVIEW := FRAME_MINT.lightened(0.10).lerp(Palette.MINT,0.12)
 static var FRAME_ORANGE := Palette.ORANGE.lerp(Palette.CREAM,0.15)
@@ -75,7 +77,7 @@ func build(kind: StringName) -> void:
 	var shapes := kind_shapes(_kind)
 	_phase = float(TAGS.keys().find(_kind))*0.37
 	# Neutral CREAM shell with baked MINT / ORANGE inlays; all sculpture emission stays in the family.
-	var glow := Palette.ORANGE if is_tool else BODY_MINT
+	var glow := Grab.TOOL_ORANGE if is_tool else BODY_MINT
 	_add_mesh("Ring",shapes.frame,Finish.prop(Palette.CREAM,FRAME_ENERGY,glow),_pivot)
 	if shapes.core != null:
 		_core_node = _add_mesh("InnerCore",shapes.core,Finish.prop(_accent,CORE_ENERGY,glow),_pivot)
@@ -97,7 +99,7 @@ func build(kind: StringName) -> void:
 	_tag.position = Vector3(0,-0.50,0.045)
 	_tag.no_depth_test = false
 	add_child(_tag)
-	var friendly := Palette.ORANGE if is_tool else Palette.MINT
+	var friendly := Grab.TOOL_BEAM if is_tool else Palette.MINT
 	_pool = _add_mesh("BeaconRingHalo",Grab.mesh(),Grab.material(friendly),self)
 	# Shader-expanded sheath must also have an honest culling bound.
 	_pool.custom_aabb = AABB(Vector3(-1.9,0,-1.2),Vector3(3.8,3.2,2.4))

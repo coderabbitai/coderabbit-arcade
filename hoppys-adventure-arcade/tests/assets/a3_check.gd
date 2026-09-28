@@ -111,14 +111,56 @@ func _run() -> void:
 	check(not capture_loop.contains("quit(1)") and not capture_loop.contains("return"),"R5 view loop accumulates failures without early exits")
 	var occlusion_loop := capture_source.get_slice("for pose in",1).get_slice("func _finalize",0)
 	check(not occlusion_loop.contains("return") and not occlusion_loop.contains("quit("),"R5 both occlusion views saved after guard failure")
-	check(capture_source.contains("root.scaling_3d_scale = 0.5"),"R5 fixture matches gameplay render scale")
+	# Review r1: captures render inside the shipping corridor, which applies the gameplay retro scale itself.
+	check(capture_source.contains("CORRIDOR.instantiate()") and not capture_source.contains("scaling_3d_scale"),"R5 capture renders at the shipping corridor's own gameplay render scale")
 	check(capture_source.contains("camera.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF"),"R9 exact camera pose for saved-image probes")
 	check(not capture_source.contains("fixture frame exposure") and not capture_source.contains("Metrics.frame_median"),"R9 no frame-wide exposure guard")
 	check(capture_source.contains("_check_exposure(saved_image,visual,slug+\"/occlusion-\""),"R9 occlusion views also check floor exposure")
 
-	check(capture_source.contains("environment.environment = CorridorMaterials.environment()"),"R6 shared corridor environment")
-	for setting in ["key.rotation_degrees = Vector3(-50,-25,0)","key.light_color = Palette.MATRIX","key.light_energy = 0.35","fill.position = Vector3(0,3,1)","fill.light_energy = 1.6","fill.omni_range = 9.0"]:
-		check(capture_source.contains(setting),"R8 shipped corridor fixture light: "+setting)
+	check(capture_source.contains('const CORRIDOR = preload("res://scenes/runner/environment/corridor.tscn")') and not capture_source.contains("WorldEnvironment.new()"),"R6 shipping corridor environment, never a fixture copy")
+	check(not capture_source.contains("DirectionalLight3D") and not capture_source.contains("OmniLight3D") and not capture_source.contains("_panel("),"R8 shipping corridor lights and walls only; no fixture panels or lights")
+	check(capture_source.contains("GAMEPLAY_POSITION := Vector3(0,4,8)") and capture_source.contains("GAMEPLAY_LOOK_AT := Vector3(0,1,-8)") and capture_source.contains("camera.near = 0.15") and capture_source.contains("camera.far = 200.0"),"r1 gameplay chase camera (runner_game.tscn / run_config.gd)")
+	check(capture_source.contains('"gameplay": 20.0, "distance40": 40.0, "distance60": 60.0') and capture_source.contains("Metrics.corridor_exposure(image,probes)"),"r1 gameplay-camera distance views and corridor exposure guard")
+	check(capture_source.contains('"approach": 6.0') and capture_source.contains('and view != "gameplay"'),"r1 pit mouth contrast enforced at the 6 m approach and oblique views, reported at 20 m")
+	check(capture_source.contains("await _measure_danger(visual,background,slug)") and capture_source.contains("DANGER_SHARE_MIN := 0.08") and capture_source.contains('DANGER_GUARDED := ["pr_backlog_low","pr_backlog_high","merge_conflict","comment_flood"]'),"r1 DANGER share guard at 40 m on the flagged kinds")
+	check(capture_source.contains("await _measure_ink(visual,slug,view)") and capture_source.contains("INK_CONTRAST_MIN := 0.15") and capture_source.contains("_measure_beetles(visual,slug)") and capture_source.contains("await _motion_strip(visual,entry)"),"r1 ink contrast, beetle size and motion strips wired")
+	# Review r1 pixel oracles (synthetic): corridor exposure band, DANGER classifier, box share, ink contrast.
+	var metrics := load("res://scenes/runner/hazards/visuals/hifi/capture_metrics.gd") as GDScript
+	var floor_image := Image.create(4,4,false,Image.FORMAT_RGBAF)
+	var floor_probes: Array[Vector2i] = []
+	for y in 4:
+		for x in 4: floor_probes.append(Vector2i(x,y))
+	for sample: Array in [[41.0,63.0,true],[46.0,190.0,true],[3.0,20.0,false],[120.0,150.0,false],[41.0,250.0,false],[10.0,8.0,false]]:
+		for pixel in floor_probes:
+			var shade: float = (sample[0] if pixel.y < 3 else sample[1])/255.0
+			floor_image.set_pixelv(pixel,Color(shade,shade,shade))
+		check(metrics.corridor_exposure(floor_image,floor_probes).pass == sample[2],"r1 corridor exposure band pin %s" % str(sample))
+	check(metrics.is_danger(Palette.DANGER) and metrics.is_danger(Palette.DANGER.darkened(0.6)) and not metrics.is_danger(Palette.DANGER.darkened(0.85)),"r1 DANGER classifier accepts lit and shaded DANGER, rejects near-black")
+	check(not metrics.is_danger(Palette.ORANGE) and not metrics.is_danger(Color.from_hsv(Palette.ORANGE.h,0.86,0.9)) and not metrics.is_danger(Palette.LILAC) and not metrics.is_danger(Palette.CREAM) and not metrics.is_danger(Palette.MINT),"r1 DANGER classifier rejects ORANGE, LILAC, CREAM and MINT")
+	var box_bg := Image.create(10,10,false,Image.FORMAT_RGBA8)
+	box_bg.fill(Palette.NAVY_BG)
+	var box_image := box_bg.duplicate() as Image
+	for x in 10:
+		box_image.set_pixel(x,0,Palette.DANGER)
+		box_image.set_pixel(x,1,Palette.SLATE)
+	box_image.set_pixel(0,5,Palette.DANGER.darkened(0.3))
+	var share: Vector2 = metrics.danger_share(box_image,box_bg,Rect2i(0,0,10,10))
+	check(is_equal_approx(share.x,0.11) and is_equal_approx(share.y,11.0/21.0),"r1 DANGER share of box and of hazard pixels")
+	check(metrics.danger_share(box_bg,box_bg,Rect2i(0,0,10,10)).x == 0.0,"r1 unchanged background never counts as DANGER")
+	var ink_mask := Image.create(8,8,false,Image.FORMAT_RGBA8)
+	var ink_lit := Image.create(8,8,false,Image.FORMAT_RGBA8)
+	for y in 8:
+		for x in 8:
+			var is_ink := y >= 2 and y <= 4
+			ink_mask.set_pixel(x,y,Color(0.6,0,0) if is_ink else Color(0,0.6,0))
+			ink_lit.set_pixel(x,y,Color(0.5,0.5,0.5) if is_ink else Color(0.1,0.1,0.1))
+	var no_labels: Array[Rect2] = []
+	var ink: Dictionary = metrics.ink_contrast(ink_lit,ink_mask,Rect2i(0,0,8,8),no_labels,false)
+	check(is_equal_approx(ink.contrast,0.4) and ink.ink == 24 and ink.slab == 40,"r1 ink contrast is lit ink minus lit slab luminance")
+	var eroded: Dictionary = metrics.ink_contrast(ink_lit,ink_mask,Rect2i(0,0,8,8),no_labels,true)
+	check(eroded.ink == 6 and eroded.slab < 40,"r1 eroded ink keeps only interior line pixels")
+	var labelled: Array[Rect2] = [Rect2(0,0,8,8)]
+	check(metrics.ink_contrast(ink_lit,ink_mask,Rect2i(0,0,8,8),labelled,false).ink == 0,"r1 label rectangles are excluded from ink sampling")
 
 
 	# One shared four-map atlas set for every Blender hazard prop.
@@ -133,6 +175,11 @@ func _run() -> void:
 	check(Art.PROP_EMISSION_GAIN <= 1.2,"R2 B4 capped prop emission gain")
 	var build: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://Assets/runner/props/props.build.json"))
 	check(not build.get("quick",true) and build.get("seed") != null,"baked (non-quick) deterministic Blender build")
+	# Review r1: the grey-scenery hazards carry a real DANGER glow (baked emissive area 3%..40%).
+	for root_name in ["HZ_pr_backlog_low","HZ_pr_backlog_high","HZ_merge_conflict","HZ_comment_flood"]:
+		var emissive: float = build.hazards.emission_share.get(root_name,0.0)
+		print("A3 EMISSIVE SHARE: %s %.3f (baked area; target 0.03..0.40)" % [root_name,emissive])
+		check(emissive >= 0.03 and emissive <= 0.40,"r1 %s baked emissive share %.3f within 3..40 percent" % [root_name,emissive])
 	var atlas: Image = maps.albedo.get_image()
 	for tile in 4:
 		var lit := 0

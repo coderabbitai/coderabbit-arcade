@@ -59,6 +59,8 @@ clock-driven shaders. Pickup emission bakes as a grey mask tinted by the family 
 a hazard hue. Blender's UV solvers are not bit-stable, so checks pin properties (budgets, envelope, palette
 shares, emissive share, silhouettes), never atlas bytes.
 
+Hazard label backings are DANGER red; tool accents use the deeper `TOOL_ORANGE` (palette ORANGE hue,
+higher saturation, no extra luminance) and power-up bodies the deeper `BODY_MINT` (art review r1).
 Prop budgets: each hazard <= 14 draws and <= 6000 triangles (<= 9000 only with measured justification in the
 asset doc); each pickup draws+1 <= 8 and <= 3000 triangles (<= 4500 only if justified); every mesh piece and
 label inside 110 % of its hitbox; emissive <= 40 % of the baked surface.

@@ -5,7 +5,8 @@ const Forge = preload("res://scenes/runner/powerups/visuals/hifi/mesh_forge.gd")
 const Finish = preload("res://scenes/runner/powerups/visuals/hifi/pickup_materials.gd")
 const Textures = preload("res://scenes/runner/powerups/visuals/hifi/texture_forge.gd")
 const Burst = preload("res://scenes/runner/powerups/visuals/hifi/collect_burst.gd")
-const Capture = preload("res://scenes/runner/powerups/dev/capture_a4.gd")
+## The capture logic lives in the job (capture_a4.gd is its standalone runner; capture_a3.gd batches it).
+const Capture = preload("res://scenes/runner/powerups/dev/capture_a4_job.gd")
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 const KINDS := [&"approve_shield",&"auto_fix",&"lgtm",&"nitro",&"super_jump",&"code_review",&"review_comment",&"lint_rule",&"unit_test",&"auto_fix_patch"]
 var checks := 0
@@ -157,7 +158,15 @@ func material_checks() -> void:
 	var emission_baseline: Variant = Finish.template("opaque").get_shader_parameter("emission_tint")
 	a.set_shader_parameter("emission_tint",Art.BODY_MINT)
 	check(b.get_shader_parameter("emission_tint") == Palette.ORANGE and Finish.template("opaque").get_shader_parameter("emission_tint") == emission_baseline,"R7 emission tint never mutates another instance or cache")
-	check(Grab.TOOL_GLYPH_TINT.is_equal_approx(Palette.ORANGE.darkened(0.08)),"R9 tool glyph tint is derived from palette ORANGE")
+	# Review r1: a deeper ORANGE (same hue, more saturation), never more gain than the old glyph tint.
+	var old_glyph := Palette.ORANGE.darkened(0.08)
+	for tone: Color in [Grab.TOOL_ORANGE,Grab.TOOL_GLYPH_TINT,Grab.TOOL_BEAM]:
+		check(absf(tone.h-Palette.ORANGE.h)*360.0 <= 1.0 and tone.s >= Palette.ORANGE.s+0.09,"R9 tool ORANGE tones keep palette ORANGE's hue at a higher saturation")
+	check(Capture.luminance(Grab.TOOL_ORANGE) < Capture.luminance(old_glyph) and Capture.luminance(Grab.TOOL_GLYPH_TINT) < Capture.luminance(old_glyph) and Grab.TOOL_GLYPH_TINT.v <= Palette.ORANGE.v,"r1 deeper tool body / glyph ORANGE carries no extra gain (lower luminance than ORANGE.darkened(0.08))")
+	check(Capture.luminance(Grab.TOOL_BEAM) <= Capture.luminance(Palette.ORANGE),"r1 deeper tool beam is no brighter than palette ORANGE")
+	var danger_gap := absf(Grab.TOOL_GLYPH_TINT.h-Palette.DANGER.h)
+	check(minf(danger_gap,1.0-danger_gap) >= 0.04,"r1 deeper tool ORANGE stays clear of the hazard DANGER hue")
+	check(Art.BODY_MINT.s >= 0.6 and absf(Art.BODY_MINT.h-Palette.MINT.lerp(Palette.MATRIX,0.25).h)*360.0 <= 2.0,"r1 deeper body mint keeps the MINT/MATRIX body hue")
 	var baseline: Variant = Finish.template("opaque").get_shader_parameter("clock")
 	a.set_shader_parameter("clock",19.0)
 	a.set_shader_parameter("tint",Palette.DANGER)
@@ -273,7 +282,7 @@ func run() -> void:
 		for node in visual.find_children("*","",true,false):
 			check(node.physics_interpolation_mode == Node.PHYSICS_INTERPOLATION_MODE_OFF,"interpolation OFF " + node.name)
 			if node is GeometryInstance3D and node.material_override is ShaderMaterial:
-				check(node.material_override.get_shader_parameter("tint") in [Palette.MINT,Palette.MATRIX,Palette.ORANGE,Palette.CREAM,Palette.SLATE,Palette.NAVY_2,Grab.TOOL_GLYPH_TINT,Art.FRAME_MINT,Art.FRAME_ORANGE,Art.FRAME_REVIEW],"friendly or neutral material, never DANGER " + kind)
+				check(node.material_override.get_shader_parameter("tint") in [Palette.MINT,Palette.MATRIX,Palette.ORANGE,Palette.CREAM,Palette.SLATE,Palette.NAVY_2,Grab.TOOL_GLYPH_TINT,Grab.TOOL_BEAM,Art.FRAME_MINT,Art.FRAME_ORANGE,Art.FRAME_REVIEW],"friendly or neutral material, never DANGER " + kind)
 			check(node.process_mode == Node.PROCESS_MODE_PAUSABLE,"pausable " + node.name)
 			check(not node is CollisionObject3D and not node is CollisionShape3D,"cosmetic only")
 			if node is MeshInstance3D:
@@ -369,7 +378,8 @@ func run() -> void:
 	quit(0 if failures == 0 else 1)
 
 func affordance_checks(art: Art, camera: Camera3D, kind: StringName) -> void:
-	var hue := Palette.ORANGE if art._is_tool else Palette.MINT
+	# Tool beams, rings and glyphs share the deeper tool ORANGE (review r1); power-ups stay MINT.
+	var hue := Grab.TOOL_BEAM if art._is_tool else Palette.MINT
 	check(art.has_node("BeaconRingHalo") and art.has_node("HologramGlyph"),"beam ring halo and glyph exist " + kind)
 	check(art._pool.mesh.get_aabb().size.is_equal_approx(Vector3(2.4,3.2,2.4)),"beacon height and halo bounds")
 	check(art._pool.get_meta("ring_diameter") >= 1.2 and art._pool.get_meta("ring_diameter") <= 1.6,"ring diameter")
@@ -418,6 +428,9 @@ func affordance_checks(art: Art, camera: Camera3D, kind: StringName) -> void:
 			var pixel := camera.unproject_position(art._pivot.to_global(point))
 			contains_body = contains_body and pixel.x >= projected.position.x+1 and pixel.y >= projected.position.y+1 and pixel.x <= projected.end.x-1 and pixel.y <= projected.end.y-1
 	check(contains_body,"R8 projected animated sculpture bounds include one-pixel dilation")
+	# Review r1: exact projected sculpture size at 60 m from the chase camera (undilated vertex extent).
+	var exact := Capture.projected_vertex_rect(camera,art._pivot)
+	print("A4 BODY SIZE %s 60m: exact=%.1fx%.1fpx dilated_bbox=%dx%d" % [kind,exact.size.x,exact.size.y,projected.size.x,projected.size.y])
 	var center := art._glyph.global_position
 	var up := camera.global_basis.y*art._glyph.scale.y*art._glyph_coverage*0.5
 	var pixels := camera.unproject_position(center+up).distance_to(camera.unproject_position(center-up))
@@ -513,7 +526,8 @@ func round5_fixture_checks() -> void:
 		check(corridor.has_node(title),"shipping capture fixture includes " + title)
 	check(corridor.get_node("Floor").material_override.shader.resource_path.ends_with("floor_grid.gdshader"),"capture includes emissive shipping floor")
 	corridor.free()
-	var source := FileAccess.get_file_as_string("res://scenes/runner/powerups/dev/capture_a4.gd")
+	var source := FileAccess.get_file_as_string("res://scenes/runner/powerups/dev/capture_a4.gd")+FileAccess.get_file_as_string("res://scenes/runner/powerups/dev/capture_a4_job.gd")
+	check(source.contains("Job.new(self).capture()"),"standalone runner executes the shared capture job")
 	check(source.contains("backdrop+0.15") and source.contains("percentile(region_values(background,rect),0.5)"),"paired same-region shipping backdrop median plus 0.15")
 	check(source.contains('"stacked-tools"') and source.contains("visual.position.x = 0.0"),"capture includes stacked lane views")
 	check(source.contains("body_image_guard(body,background,visual)"),"body-only guard cannot pass on a detached glyph")
@@ -555,7 +569,19 @@ func round5_fixture_checks() -> void:
 		check(not Capture.body_accepts(distance,0.164,0.204,23,Vector2(0.30,0.03)),"R11 dark nearby body at backdrop plus 0.04 fails")
 	check(Capture.body_accepts(20.0,0.164,0.250,23,Vector2(0.30,0.03)),"R11 measured APPROVE 0.250 versus 0.164 passes")
 	check(Capture.body_accepts(60.0,0.062,0.098,3,Vector2(0.30,0.03)),"R11 measured stacked PATCH presence passes")
-	check(source.contains("brightness_min=%.3f lit_pixels_min=%d saturation_min=0.25 white_ratio_max=0.05"),"R11 guard logs all acceptance thresholds")
+	check(source.contains("brightness_min=%.3f lit_pixels_min=%d saturation_min=0.28 white_ratio_max=0.05"),"R11 guard logs all acceptance thresholds")
+	# Review r1 targets are enforced guards: body/glyph saturation 0.28, glyph white 3%, shell and shield.
+	check(Capture.BODY_SATURATION_MIN >= 0.28 and Capture.GLYPH_SATURATION_MIN >= 0.28 and Capture.GLYPH_WHITE_MAX <= 0.03,"r1 saturation 0.28 and glyph white 3% guards")
+	check(Capture.body_accepts(20.0,0.10,0.60,60,Vector2(0.28,0.02)) and not Capture.body_accepts(20.0,0.10,0.60,60,Vector2(0.279,0.02)),"r1 body saturation boundary at 0.28")
+	check(Capture.SHELL_LUMINANCE == Vector2(0.55,0.75) and Capture.SHELL_SATURATION == Vector2(0.08,0.18) and Capture.SHELL_HUE == Vector2(30.0,45.0) and Capture.SHELL_WHITE_MAX <= 0.03 and Capture.SHIELD_EMISSIVE_MAX <= 0.35,"r1 shell and shield targets")
+	check(source.contains("shell_guard(body,mask,visual,view == \"closeup\")") and source.contains("emissive_guard(body,dark,mask,visual)") and source.contains("tool_size_report(visual)"),"r1 shell, emissive-share and body-size measurements wired")
+	check(Capture.GAMEPLAY_POSITION == Vector3(0,4,8) and Capture.GAMEPLAY_LOOK_AT == Vector3(0,1,-8),"r1 gameplay views use the contract chase camera")
+	var mask := Image.create(3,1,false,Image.FORMAT_RGBA8)
+	mask.set_pixel(0,0,Color(0.6,0.0,0.0))
+	mask.set_pixel(1,0,Color(0.0,0.6,0.0))
+	mask.set_pixel(2,0,Color(0.05,0.05,0.08))
+	check(Capture.mask_class(mask,0,0) == 2 and Capture.mask_class(mask,1,0) == 1 and Capture.mask_class(mask,2,0) == 0 and Capture.mask_class(mask,5,0) == 0,"r1 shell mask classes")
+	check(Capture.MASK_CODE.contains("unshaded") and Capture.MASK_CODE.contains("fog_disabled") and not Capture.MASK_CODE.contains("source_color"),"r1 mask pass classifies raw baked texels without lighting, fog or colour conversion")
 	check(not Capture.body_accepts(60.0,0.10,1.0,60,Vector2(0.01,1.0)),"R9 white blowout fails despite brightness")
 	check(not Capture.body_accepts(20.0,0.10,0.60,60,Vector2(0.30,0.06)),"R9 white fraction above five percent fails")
 	var clipped: Array[Color] = []

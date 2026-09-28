@@ -323,7 +323,8 @@ func _label(text: String, pos: Vector3, width: float, height: float) -> Label3D:
 	label.position = _offset+Vector3(pos.x*_size.x,clampf(pos.y*_size.y,-_size.y*0.30,_size.y*0.30),_size.z*0.515)
 	label.no_depth_test = false
 	add_child(label)
-	var plate := _piece(self,label.position-Vector3(0,0,0.025),Vector3(width_m,height_m+0.015,0.025),"dark")
+	# DANGER-red backing (review r1): the hazard's own warning text carries its threat colour at range.
+	var plate := _piece(self,label.position-Vector3(0,0,0.025),Vector3(width_m,height_m+0.015,0.025),"edge")
 	plate.name = "TextBacking%d" % _labels.size()
 	_labels.append(label)
 	_plates.append(plate)
@@ -533,9 +534,9 @@ func advance(delta: float) -> void:
 		match item.style:
 			"card", "grind": node.position.x += sin(_t*2.5+phase)*0.005
 			"jam":
-				# Crates shudder against the jammed queue gates.
-				node.position.y += absf(sin(_t*9.0+phase*1.7))*0.006
-				node.rotation.z += sin(_t*17.0+phase*1.3)*0.012
+				# Crates shudder against the jammed queue gates (review r1: large enough to read in play).
+				node.position.y += absf(sin(_t*9.0+phase*1.7))*0.014
+				node.rotation.z += sin(_t*17.0+phase*1.3)*0.03
 			"scan": node.position.x += sin(_t*1.1+phase*PI)*1.05
 			"swing": node.rotation.z += sin(_t*1.8+phase)*0.10
 			"flutter":

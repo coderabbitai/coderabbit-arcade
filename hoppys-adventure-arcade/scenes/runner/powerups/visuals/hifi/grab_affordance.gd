@@ -2,7 +2,14 @@ extends RefCounted
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 ## Shared vector glyphs and one merged beam/ring/halo surface. No engine TIME.
 const TOOL_KINDS := [&"review_comment",&"lint_rule",&"unit_test",&"auto_fix_patch"]
-static var TOOL_GLYPH_TINT: Color = Palette.ORANGE.darkened(0.08)
+## Deeper tool ORANGE (art review r1): palette ORANGE's hue at saturation 0.92 and 94% of its value, so
+## tool bodies and glyphs read their family hue without any extra gain (lower luminance than the old
+## ORANGE.darkened(0.08) glyph tint). Blender bakes the same colour (build_props.py DEEP_ORANGE).
+static var TOOL_ORANGE: Color = Color.from_hsv(Palette.ORANGE.h,0.92,Palette.ORANGE.v*0.94)
+## Glyph: the deepest tool ORANGE (same hue, saturation 0.99), still no brighter than the old glyph.
+static var TOOL_GLYPH_TINT: Color = Color.from_hsv(Palette.ORANGE.h,0.99,Palette.ORANGE.v*0.94)
+## Beam sheath / ring: deeper than ORANGE (saturation 0.86) at no more luminance than ORANGE itself.
+static var TOOL_BEAM: Color = Color.from_hsv(Palette.ORANGE.h,0.86,1.0)
 const GLYPHS := {
  &"approve_shield": '<path d="M16 5L27 10V20L16 28L5 20V10Z"/><path d="M10 16L14 20L23 11"/>',
  &"auto_fix": '<path d="M7 26L20 13M19 5L17 11L22 16L28 14M7 23L9 25M6 5V11M3 8H9"/>',

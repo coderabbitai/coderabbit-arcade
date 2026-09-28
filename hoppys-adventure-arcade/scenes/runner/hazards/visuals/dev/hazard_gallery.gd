@@ -29,6 +29,7 @@ var pursuer: PursuerVisualBase
 var _threat_slider: HSlider
 var visuals: Array[HazardVisualBase] = []
 var wires: Array[MeshInstance3D] = []
+var pickup_wires: Array[MeshInstance3D] = []
 var _camera: Camera3D
 var _status: Label
 var _selected := 0
@@ -70,6 +71,7 @@ func _ready() -> void:
 		var wire := pickup_sphere()
 		wire.position = pickup.position
 		add_child(wire)
+		pickup_wires.append(wire)
 	pursuer = $PursuerVisual as PursuerVisualBase
 	pursuer.position.z = -float(CASES.size() + POWERUPS.size()) * 7.0 + 4.5
 	pursuer.set_threat(1.0)
@@ -163,7 +165,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			for i in visuals.size():
 				visuals[i].on_spawned()
 				wires[i].position.y = CASES[i][3]
-				wires[i].show()
+				wires[i].set_meta("wanted", true)
 		KEY_T:
 			_sweep = not _sweep
 			if not _sweep:
@@ -173,7 +175,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			for i in visuals.size():
 				visuals[i].set_laser_state(state)
 				if CASES[i][1] == &"timed":
-					wires[i].visible = state != &"off"
+					wires[i].set_meta("wanted", state != &"off")
 					if state != &"off": wires[i].position.y = 1.3 if state == &"high" else 0.3
 	_focus()
 
@@ -183,19 +185,49 @@ func _set_threat(value: float) -> void:
 	_focus()
 
 func _focus() -> void:
-	var origin := fixtures[_selected].position
-	var title := "UNREVIEWED PR BACKLOG / threat %.2f" % _threat_slider.value
-	if _selected < CASES.size():
-		title = "%s %s" % [CASES[_selected][0], CASES[_selected][1]]
-	elif _selected < CASES.size() + POWERUPS.size():
-		title = POWERUPS[_selected - CASES.size()]
-		origin.y = 0.0
-	else:
+	frame(_selected, 0.0)
+
+## Floor point the selected fixture stands on.
+func _origin(index: int) -> Vector3:
+	var origin := fixtures[index].position
+	if index >= CASES.size() + POWERUPS.size():
 		origin = Vector3(0, 0, -float(CASES.size() + POWERUPS.size()) * 7.0)
-	get_node("Corridor").position.z = origin.z
-	_camera.position = origin + Vector3(0, 4, 8)
-	_camera.look_at(origin + Vector3(0, 1, -8))
-	_status.text = "%02d / %02d  %s" % [_selected + 1, fixtures.size(), title]
+	origin.y = 0.0
+	return origin
+
+## Gameplay chase camera with the fixture `distance` metres ahead of the player (0 = the player's own
+## spot). The corridor is laid around the player, and every fixture standing between the camera and
+## the framed one is hidden, so a neighbour can never block the view (the old comment-flood-in-front-of-
+## shockwave framing).
+func frame(index: int, distance: float) -> void:
+	var origin := _origin(index)
+	var title := "UNREVIEWED PR BACKLOG / threat %.2f" % _threat_slider.value
+	if index < CASES.size():
+		title = "%s %s" % [CASES[index][0], CASES[index][1]]
+	elif index < CASES.size() + POWERUPS.size():
+		title = POWERUPS[index - CASES.size()]
+	var player := origin + Vector3(0, 0, distance)
+	get_node("Corridor").position.z = player.z
+	_camera.position = player + Vector3(0, 4, 8)
+	_camera.look_at(player + Vector3(0, 1, -8))
+	for i in fixtures.size():
+		var between := i != index and _between(fixtures[i].position.z, origin.z)
+		fixtures[i].visible = not between
+		if i < wires.size(): wires[i].visible = not between and bool(wires[i].get_meta("wanted", true))
+	for i in pickup_wires.size(): pickup_wires[i].visible = not _between(pickup_wires[i].position.z, origin.z)
+	_status.text = "%02d / %02d  %s%s" % [index + 1, fixtures.size(), title, "" if distance <= 0.0 else "  @ %d m" % int(distance)]
+
+## True for a fixture strictly between the framed fixture (target_z) and the camera.
+func _between(z: float, target_z: float) -> bool:
+	return z > target_z + 1.0 and z < _camera.position.z
+
+## Visible fixtures between the camera and the framed one (0 after frame()).
+func occluders(index: int, _distance: float) -> int:
+	var count := 0
+	var target := _origin(index).z
+	for i in fixtures.size():
+		if i != index and fixtures[i].visible and _between(fixtures[i].position.z, target): count += 1
+	return count
 
 static func pickup_sphere() -> MeshInstance3D:
 	var lines := ImmediateMesh.new()

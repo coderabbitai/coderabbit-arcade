@@ -29,7 +29,7 @@ import props_kit as K  # noqa: E402
 from props_kit import Part, linear, xform  # noqa: E402
 
 SEED = 52019
-REVISION = 1
+REVISION = 2
 HERE = Path(__file__).resolve().parent
 BUDGET = json.loads((HERE / 'props_budget.json').read_text())
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
@@ -52,7 +52,13 @@ def log(message):
 NAVY_BG, NAVY, NAVY_2, SLATE = linear('08111c'), linear('101d2d'), linear('142735'), linear('435464')
 CREAM, MINT, MATRIX, ORANGE = linear('fff0d3'), linear('79e0c4'), linear('63f9b2'), linear('f78949')
 DANGER, LILAC = linear('ff4d3d'), linear('a99bff')
-BODY_MINT = linear('73e6bf')  # MINT.lerp(MATRIX, 0.25), power_up_art.gd BODY_MINT
+# Deeper family colours (art review r1): same hues as MINT.lerp(MATRIX, 0.25) / ORANGE at a higher
+# saturation, so pickups read their family hue at range without any extra emission gain.
+BODY_MINT = linear('53daad')  # power_up_art.gd BODY_MINT: hsv(h(73e6bf), 0.62, v*0.95)
+DEEP_ORANGE = linear('e86113')  # grab_affordance.gd TOOL_ORANGE: hsv(h(ORANGE), 0.92, v*0.94)
+# Pickup shell: a slightly warmer cream than CREAM (hue ~31 deg, same low saturation) so the lit shell
+# reads cream rather than yellow-grey in the corridor (x0.26 base, measured 0.55-0.75 in the corridor).
+SHELL = linear('ffe7ce')
 WHITE = (1.0, 1.0, 1.0)
 
 
@@ -70,11 +76,11 @@ FINISHES = {
     'hz_rubber': dict(base=linear('15181c'), rough=0.86, metal=0.0, kind='rubber', tread=46.0, grunge=0.1),
     'hz_stripe': dict(base=linear('1b2129'), stripe_colour=scaled(DANGER, 0.75), rough=0.48, metal=0.3,
                       kind='stripe', stripes=4.0),
-    'hz_red': dict(base=scaled(DANGER, 0.55), rough=0.38, metal=0.35, kind='paint', period=0.4, wear=0.2),
+    'hz_red': dict(base=scaled(DANGER, 0.75), rough=0.38, metal=0.35, kind='paint', period=0.4, wear=0.2),
     'hz_glow': dict(base=DANGER, rough=0.3, metal=0.0, kind='plain', emit=DANGER, emit_strength=1.0,
                     grunge=0.05),
     'hz_scan': dict(base=scaled(DANGER, 0.35), rough=0.25, metal=0.0, kind='plain', emit=DANGER,
-                    emit_strength=0.9, emit_mask='scan', scan_rows=70.0, grunge=0.05),
+                    emit_strength=0.9, emit_mask='scan', scan_rows=36.0, grunge=0.05),
     'hz_crate': dict(base=linear('2c3b4b'), rough=0.46, metal=0.5, kind='paint', period=0.21, wear=0.3),
     'hz_label': dict(base=linear('131d28'), rough=0.5, metal=0.2, kind='lines', rows=22.0, dash=11.0,
                      ink=scaled(CREAM, 0.42), period=2.0),
@@ -97,21 +103,29 @@ FINISHES = {
     'hz_crest': dict(base=linear('5a1a14'), rough=0.3, metal=0.2, kind='plain', emit=DANGER, emit_strength=1.0,
                      emit_mask='rise', rise_from=0.07, rise_to=0.22, grunge=0.1),
     'hz_lens': dict(base=linear('06080b'), rough=0.08, metal=0.3, kind='plain', grunge=0.02),
-    'pk_shell': dict(base=scaled(CREAM, 0.26), rough=0.45, metal=0.06, kind='shell', period=0.34, wear=0.0,
-                     wear_colour=scaled(CREAM, 0.42), grunge=0.08, grunge_scale=20.0),
+    # Merge-conflict diff screens: few, thick code lines whose ink glows faintly (lit screen text), so
+    # the lines survive gameplay distance instead of averaging into a blank grey slab.
+    'hz_diff': dict(base=linear('070d14'), rough=0.5, metal=0.1, kind='lines', rows=11.0, dash=6.0, wear=0.0,
+                    ink=scaled(CREAM, 0.85), period=2.0, segment_scale=3.0, emit=scaled(CREAM, 0.85),
+                    emit_strength=0.15, emit_mask='ink', grunge=0.06),
+    'hz_lilac_diff': dict(base=linear('0f0c22'), rough=0.5, metal=0.1, kind='lines', rows=11.0, dash=6.0, wear=0.0,
+                          ink=tuple(c * 0.65 + 0.35 for c in LILAC), period=2.0, segment_scale=3.0,
+                          emit=LILAC, emit_strength=0.18, emit_mask='ink', grunge=0.06),
+    'pk_shell': dict(base=scaled(SHELL, 0.26), rough=0.45, metal=0.06, kind='shell', period=0.34, wear=0.0,
+                     wear_colour=scaled(SHELL, 0.50), grunge=0.08, grunge_scale=20.0),
     'pk_grip': dict(base=linear('1f2830'), rough=0.8, metal=0.0, kind='rubber', tread=140.0, grunge=0.1),
     'pk_chrome': dict(base=linear('7d8a95'), rough=0.28, metal=0.85, kind='paint', period=0.12, wear=0.15),
     'pk_mint': dict(base=BODY_MINT, rough=0.28, metal=0.1, kind='plain', emit=WHITE, emit_strength=0.9,
                     grunge=0.05),
     'pk_mint_paint': dict(base=BODY_MINT, rough=0.35, metal=0.1, kind='plain', grunge=0.08),
-    'pk_orange_paint': dict(base=ORANGE, rough=0.35, metal=0.1, kind='plain', grunge=0.08),
+    'pk_orange_paint': dict(base=DEEP_ORANGE, rough=0.35, metal=0.1, kind='plain', grunge=0.08),
     'pk_mint_core': dict(base=MINT, rough=0.25, metal=0.05, kind='plain', emit=WHITE, emit_strength=1.0,
                          grunge=0.04),
     'pk_mint_glass': dict(base=linear('2b6f63'), rough=0.06, metal=0.2, kind='plain', emit=WHITE,
                           emit_strength=0.6, grunge=0.03),
-    'pk_orange': dict(base=ORANGE, rough=0.3, metal=0.1, kind='plain', emit=WHITE, emit_strength=0.9,
+    'pk_orange': dict(base=DEEP_ORANGE, rough=0.3, metal=0.1, kind='plain', emit=WHITE, emit_strength=0.9,
                       grunge=0.05),
-    'pk_orange_core': dict(base=ORANGE, rough=0.26, metal=0.05, kind='plain', emit=WHITE,
+    'pk_orange_core': dict(base=DEEP_ORANGE, rough=0.26, metal=0.05, kind='plain', emit=WHITE,
                            emit_strength=1.0, grunge=0.04),
     'pk_orange_glass': dict(base=linear('7a4424'), rough=0.06, metal=0.2, kind='plain', emit=WHITE,
                             emit_strength=0.55, grunge=0.03),
@@ -201,7 +215,8 @@ def pr_backlog_low(fam):
     bed = Part('pr_backlog_low__Conveyor')
     for z in (-0.5, 0.5):
         bed.box('hz_steel', (5.5, 0.12, 0.09), xform((0, -0.385, z)), bevel=0.018)
-        bed.box('hz_glow', (4.9, 0.016, 0.01), xform((0, -0.36, z + 0.047 * (1 if z > 0 else -1))))
+        # DANGER running light along each rail face (review r1: the queue read as grey scenery).
+        bed.box('hz_glow', (5.1, 0.045, 0.012), xform((0, -0.375, z + 0.049 * (1 if z > 0 else -1))))
     bed.box('hz_rubber', (5.32, 0.05, 0.92), xform((0, -0.315, 0)), bevel=0.012)
     bed.box('hz_hull', (5.4, 0.10, 0.86), xform((0, -0.40, 0)), bevel=0.01)
     for x in (-2.68, 2.68):
@@ -213,7 +228,7 @@ def pr_backlog_low(fam):
     for side in (-1, 1):
         x = side * 2.86
         for z in (-0.42, 0.42):
-            bed.box('hz_hull', (0.20, 0.92, 0.26), xform((x, -0.04, z)), bevel=0.025)
+            bed.box('hz_red', (0.20, 0.92, 0.26), xform((x, -0.04, z)), bevel=0.025)
         bed.box('hz_stripe', (0.24, 0.13, 1.12), xform((x, 0.38, 0)), bevel=0.02)
         bed.cylinder('hz_dark', 0.075, 0.05, xform((x, 0.465, 0)), segments=12)
         bed.cylinder('hz_glow', 0.055, 0.07, xform((x, 0.51, 0)), segments=12, bevel=0.01)
@@ -225,8 +240,12 @@ def pr_backlog_low(fam):
     crate.box('hz_dark', (0.67, 0.05, 0.65), xform((0, 0.175, 0)), bevel=0.014, segments=1)
     crate.box('hz_label', (0.42, 0.21, 0.02), xform((-0.03, -0.02, 0.315)), bevel=0.006, segments=1)
     for x in (-0.25, 0.25):
-        crate.box('hz_red', (0.05, 0.405, 0.63), xform((x, 0, 0)))
-    crate.box('hz_glow', (0.07, 0.03, 0.012), xform((0.19, 0.12, 0.317)))
+        crate.box('hz_red', (0.09, 0.405, 0.63), xform((x, 0, 0)))
+    # BLOCKED status band wrapping all four walls: the queue's DANGER read from every angle.
+    for z in (-0.319, 0.319):
+        crate.box('hz_glow', (0.58, 0.06, 0.012), xform((0, 0.115, z)))
+    for x in (-0.326, 0.326):
+        crate.box('hz_glow', (0.012, 0.06, 0.58), xform((x, 0.115, 0)))
     crate.box('hz_glow', (0.03, 0.03, 0.012), xform((0.19, 0.06, 0.317)))
     template = None
     layout = [(-2.24, -0.09, 0.05, 0.10, 0.0), (-1.55, -0.09, -0.06, -0.08, 0.0), (-0.84, -0.075, 0.02, 0.16, 0.07),
@@ -259,12 +278,12 @@ def pr_backlog_high(fam):
     for side in (-1, 1):
         x = side * 2.80
         for z in (-0.36, 0.36):
-            g.box('hz_hull', (0.20, 1.74, 0.24), xform((x, 0.0, z)), bevel=0.03)
+            g.box('hz_red', (0.20, 1.74, 0.24), xform((x, 0.0, z)), bevel=0.03)
             g.box('hz_stripe', (0.22, 0.32, 0.26), xform((x, -0.58, z)), bevel=0.02)
         g.box('hz_dark', (0.16, 0.14, 0.60), xform((x, 0.10, 0)), bevel=0.015)
         g.tube('hz_steel', [(x, -0.75, -0.30), (x, 0.70, 0.30)], 0.024, sides=6)
     # Review fascia: a red scanline "REVIEW REQUIRED" band behind the ROLL tag.
-    g.box('hz_dark', (4.9, 0.34, 0.07), xform((0, 0.56, 0.48)), bevel=0.012)
+    g.box('hz_scan', (4.9, 0.34, 0.07), xform((0, 0.56, 0.48)), bevel=0.012)
     g.box('hz_scan', (4.7, 0.05, 0.012), xform((0, 0.69, 0.52)))
     g.box('hz_scan', (4.7, 0.05, 0.012), xform((0, 0.43, 0.52)))
     # Scanner rail, hangers and the underside sensor bar (the edge you roll beneath).
@@ -274,7 +293,7 @@ def pr_backlog_high(fam):
     for x in (-1.3, 1.3):
         g.box('hz_dark', (0.06, 0.30, 0.06), xform((x, -0.68, 0.30)))
     g.box('hz_dark', (5.3, 0.07, 0.14), xform((0, -0.84, 0.30)), bevel=0.012)
-    g.box('hz_glow', (5.1, 0.02, 0.02), xform((0, -0.873, 0.372)))
+    g.box('hz_glow', (5.1, 0.04, 0.03), xform((0, -0.87, 0.372)))
     for z, sag in ((-0.20, -0.30), (-0.05, -0.22)):
         pts = [(-2.0 + 0.4 * k, 0.30 + sag * math.sin(PI * k / 10.0), z) for k in range(11)]
         g.tube('hz_rubber', pts, 0.022, sides=6)
@@ -324,7 +343,12 @@ def bug_body():
             b.tube('hz_dark', [(side * 0.10, -0.04, z0), (side * 0.22, 0.035, z0 + dz),
                                (side * 0.30, -0.205, z0 + dz * 1.6)], 0.016, sides=5, radius_end=0.007)
             b.ellipsoid('hz_steel', (0.02, 0.02, 0.02), xform((side * 0.22, 0.035, z0 + dz)), u=6, v=4)
+    # Art review r1: beetles read too small from the chase camera; the whole body grows by BUG_SCALE.
+    b.scale((BUG_SCALE,) * 3)
     return b
+
+
+BUG_SCALE = 1.25
 
 
 def bug_swarm(fam):
@@ -337,9 +361,11 @@ def bug_swarm(fam):
     teardrop += [(-x, y) for x, y in reversed(teardrop[1:-1])]
     wing.prism('hz_wing', teardrop, 0.006, xform((0, 0, 0), (PI / 2, 0, 0)))
     wing.tube('hz_dark', [(0, 0, 0), (0.0, 0.0, -0.26)], 0.005, sides=4, radius_end=0.002)
+    wing.scale((BUG_SCALE,) * 3)
     body_template = None
     wing_template = None
-    layout = [(-0.44, -0.24, 0.10, 0.16, 0.35), (0.0, 0.12, -0.12, -0.05, 0.75), (0.44, -0.24, 0.05, -0.18, 0.35)]
+    # Lower pair sits higher so the larger legs keep clear of the floor through the idle bob.
+    layout = [(-0.42, -0.16, 0.10, 0.10, 0.35), (0.0, 0.14, -0.12, -0.05, 0.75), (0.42, -0.16, 0.05, -0.12, 0.35)]
     for i, (x, y, z, yaw, spread) in enumerate(layout):
         bug = K.empty(COLLECTION, 'bug_swarm__Bug__%d' % i, xform((x, y, z), (0, yaw, 0)), root)
         if body_template is None:
@@ -347,7 +373,8 @@ def bug_swarm(fam):
         else:
             fam.inst(body_template, 'bug_swarm__BugBody__%d' % i, None, bug)
         for side, tag in ((-1, 'L'), (1, 'R')):
-            matrix = xform((side * 0.06, 0.10, 0.03), (0.0, -side * (0.35 + spread * 0.3), side * spread * 0.5))
+            matrix = xform((side * 0.06 * BUG_SCALE, 0.10 * BUG_SCALE, 0.03 * BUG_SCALE),
+                           (0.0, -side * (0.35 + spread * 0.3), side * spread * 0.5))
             name = 'bug_swarm__Wing__%d%s' % (i, tag)
             if wing_template is None:
                 wing_template = fam.mesh(wing, bug, matrix, name=name)
@@ -365,8 +392,8 @@ def merge_half(side, finishes):
     s = -side  # local +x points at the fracture
     mirrored = [(x * s, y) for x, y in outline]
     part.prism(body, mirrored, 0.44, bevel=0.018, segments=2)
-    part.box(label, (1.36, 0.60, 0.02), xform((-0.06 * s, 0.02, 0.228)), bevel=0.006, segments=1)
-    part.box('hz_dark', (1.50, 0.12, 0.03), xform((-0.04 * s, 0.39, 0.232)), bevel=0.008, segments=1)
+    part.box(label, (1.36, 0.52, 0.02), xform((-0.06 * s, -0.02, 0.228)), bevel=0.006, segments=1)
+    part.box('hz_stripe', (1.50, 0.12, 0.03), xform((-0.04 * s, 0.39, 0.232)), bevel=0.008, segments=1)
     for k in range(3):
         cx = (-0.62 + k * 0.10) * s
         pts = [(cx + 0.03 * s, 0.43, 0.0), (cx - 0.02 * s, 0.39, 0.0), (cx + 0.03 * s, 0.35, 0.0)]
@@ -379,12 +406,17 @@ def merge_half(side, finishes):
         if side > 0:
             part.box(glow, (0.014, 0.045, 0.01), xform((-0.76 * s, y, 0.244)))
     # Fracture glow along the front lip of the jagged edge.
-    part.tube(glow, [(x * s - 0.012 * s, y, 0.222) for x, y in edge], 0.011, sides=5)
-    part.box('hz_hull' if side < 0 else body, (1.72, 0.08, 0.52), xform((-0.02 * s, -0.47, 0)), bevel=0.012)
-    # Conflict warning: striped kick plate along the base and a red header band on both halves.
+    part.tube(glow, [(x * s - 0.012 * s, y, 0.222) for x, y in edge], 0.02, sides=6)
+    part.box('hz_red', (1.72, 0.08, 0.52), xform((-0.02 * s, -0.47, 0)), bevel=0.012)
+    # Conflict warning: striped kick plate, a glowing DANGER header bar over both screens (the conflict
+    # itself is the hazard; LILAC stays the "theirs" identity colour) and red end plates.
     part.box('hz_stripe', (1.60, 0.07, 0.02), xform((-0.02 * s, -0.47, 0.262)))
-    part.box('hz_red', (1.50, 0.02, 0.032), xform((-0.04 * s, 0.315, 0.232)))
-    part.box('hz_red', (0.02, 0.86, 0.46), xform((-0.845 * s, 0.0, 0.0)))
+    part.box('hz_glow', (1.50, 0.07, 0.03), xform((-0.04 * s, 0.285, 0.232)))
+    # Glowing DANGER bezel around the diff screen (bottom and both sides; the header is the top).
+    part.box('hz_glow', (1.44, 0.04, 0.03), xform((-0.06 * s, -0.30, 0.232)))
+    for bx in (-0.74, 0.62):
+        part.box('hz_glow', (0.04, 0.60, 0.03), xform((bx * s, -0.02, 0.232)))
+    part.box('hz_red', (0.05, 0.86, 0.46), xform((-0.83 * s, 0.0, 0.0)))
     bolts(part, 'hz_steel', (-0.80 * s, -0.40, 0.235), (-0.80 * s, 0.30, 0.235), 5)
     bolts(part, 'hz_steel', (-0.45 * s, -0.40, 0.235), (0.45 * s, -0.40, 0.235), 5)
     return part
@@ -393,8 +425,8 @@ def merge_half(side, finishes):
 def merge_conflict(fam):
     """Split diff slab: <<<<<<< ours | >>>>>>> theirs (LILAC only on theirs). 3.6 x 1.0 x 1.2."""
     root = fam.root('HZ_merge_conflict')
-    ours = merge_half(-1, ('hz_hull', 'hz_label', 'hz_glow'))
-    theirs = merge_half(1, ('hz_lilac_body', 'hz_lilac_label', 'hz_lilac_glow'))
+    ours = merge_half(-1, ('hz_hull', 'hz_diff', 'hz_glow'))
+    theirs = merge_half(1, ('hz_lilac_body', 'hz_lilac_diff', 'hz_lilac_glow'))
     fam.mesh(ours, root, xform((-0.90, 0.0, 0.0), (0, 0.035, 0)), name='merge_conflict__Ours__0')
     fam.mesh(theirs, root, xform((0.90, 0.0, 0.0), (0, -0.035, 0)), name='merge_conflict__Theirs__0')
 
@@ -505,17 +537,21 @@ def comment_flood(fam):
     root = fam.root('HZ_comment_flood')
     spine = Part('comment_flood__Spine')
     for x in (-1.2, 0.0, 1.2):
-        spine.cylinder('hz_steel', 0.014, 3.86, xform((x - 0.30, 0.0, -0.12)), segments=8)
+        # Square DANGER thread rails: broad faces keep their own atlas texels (thin tubes bled).
+        spine.box('hz_red', (0.05, 3.86, 0.05), xform((x - 0.30, 0.0, -0.12)), bevel=0.008, segments=1)
         for k in range(8):
             spine.box('hz_dark', (0.05, 0.05, 0.08), xform((x - 0.30, -1.62 + k * 0.46 - 0.18, -0.08)))
-    spine.box('hz_dark', (3.5, 0.10, 0.22), xform((0, 1.93, -0.12)), bevel=0.015)
+    spine.box('hz_stripe', (3.5, 0.10, 0.22), xform((0, 1.93, -0.12)), bevel=0.015)
     spine.box('hz_hull', (3.5, 0.12, 0.52), xform((0, -1.94, 0)), bevel=0.02)
     spine.box('hz_stripe', (3.52, 0.05, 0.53), xform((0, -1.865, 0)), bevel=0.008)
     fam.mesh(spine, root, name='comment_flood__Spine__0')
     card = Part('comment_flood__Card')
     card.box('hz_card', (0.92, 0.32, 0.06), bevel=0.022, segments=1)
     card.cylinder('hz_avatar', 0.07, 0.02, xform((-0.35, 0.05, 0.035), (PI / 2, 0, 0)), segments=12)
-    card.box('hz_glow', (0.04, 0.26, 0.02), xform((0.435, 0, 0.022)))
+    # CHANGES REQUESTED: a glowing DANGER status bar and header on every thread card.
+    card.box('hz_glow', (0.10, 0.30, 0.02), xform((0.405, 0, 0.022)))
+    card.box('hz_glow', (0.62, 0.04, 0.014), xform((0.05, 0.13, 0.034)))
+    card.box('hz_red', (0.92, 0.025, 0.064), xform((0, -0.1475, 0)))
     card.box('hz_card', (0.10, 0.07, 0.04), xform((-0.30, -0.18, -0.01)))
     first = None
     index = 0
@@ -615,12 +651,14 @@ def approve_shield(fam, inlay, core_finish):
     shell.prism('pk_shell', outline, 0.10, xform((0, 0, 0.02)), bevel=0.02, segments=2)
     shell.prism(paint(inlay), outline_scale(outline, 0.78, 0, 0.01), 0.012, xform((0, 0, 0.074)))
     loop = outline_scale(outline, 0.84, 0, 0.005)
-    shell.tube(inlay, [(x, y, 0.078) for x, y in loop + loop[:1]], 0.011, sides=5, caps=False)
+    shell.tube(inlay, [(x, y, 0.078) for x, y in loop + loop[:1]], 0.008, sides=5, caps=False)
     ear = [(0.0, 0.0), (0.045, 0.05), (0.05, 0.15), (0.025, 0.225), (0.0, 0.24), (-0.025, 0.225), (-0.05, 0.15),
            (-0.045, 0.05)]
     for side in (-1, 1):
         shell.prism('pk_shell', ear, 0.05, xform((side * 0.11, 0.19, -0.01), (0, 0, -side * 0.2)), bevel=0.012)
-        shell.prism(inlay, outline_scale(ear, 0.6, 0, 0.04), 0.02, xform((side * 0.11, 0.19, 0.022), (0, 0, -side * 0.2)))
+        # Painted (not glowing) inner ears: the check mark stays the one bright read (emission <= 35%).
+        shell.prism(paint(inlay), outline_scale(ear, 0.6, 0, 0.04), 0.02,
+                    xform((side * 0.11, 0.19, 0.022), (0, 0, -side * 0.2)))
     shell.cylinder('pk_chrome', 0.13, 0.12, xform((0, -0.02, -0.09), (PI / 2, 0, 0)), segments=20, bevel=0.012)
     shell.cylinder('pk_grip', 0.09, 0.04, xform((0, -0.02, -0.165), (PI / 2, 0, 0)), segments=16)
     core = Part('approve_shield__InnerCore')
@@ -629,23 +667,30 @@ def approve_shield(fam, inlay, core_finish):
 
 
 def code_review(fam, inlay, core_finish):
+    """Reviewer's magnifier (one lens + handle, matching its hologram glyph): a deep loupe barrel so it
+    keeps physical depth, a MINT-banded rim, a rubber-gripped handle down to the right."""
     shell = Part('code_review__Ring')
-    for side in (-1, 1):
-        x = side * 0.135
-        shell.cylinder('pk_shell', 0.105, 0.30, xform((x, 0, 0), (PI / 2, 0, 0)), segments=20, bevel=0.012)
-        shell.cylinder(paint(inlay), 0.12, 0.07, xform((x, 0, 0.14), (PI / 2, 0, 0)), segments=20, bevel=0.01)
-        shell.cylinder('pk_grip', 0.075, 0.07, xform((x, 0, -0.18), (PI / 2, 0, 0)), segments=16)
-        shell.cylinder('pk_grip', 0.108, 0.05, xform((x, 0, -0.05), (PI / 2, 0, 0)), segments=20)
-        shell.tube(inlay, [(x + 0.109 * math.cos(a * PI / 10), 0.109 * math.sin(a * PI / 10), 0.05) for a in range(21)],
-                   0.009, sides=5, caps=False)
-    shell.box('pk_chrome', (0.14, 0.08, 0.18), xform((0, 0.03, 0)), bevel=0.015)
-    shell.cylinder('pk_grip', 0.045, 0.07, xform((0, 0.10, 0.0), (0, 0, PI / 2)), segments=14)
-    shell.tube('pk_grip', [(-0.23, 0.06, -0.08), (-0.18, 0.22, -0.08), (0.0, 0.30, -0.08), (0.18, 0.22, -0.08),
-                           (0.23, 0.06, -0.08)], 0.014, sides=6)
+    cx, cy, rim = -0.07, 0.10, 0.19
+    face = (PI / 2, 0, 0)  # lathe / cylinder / ring axis (Godot Y) turned onto Godot Z (the lens axis)
+    shell.lathe('pk_shell', [(rim - 0.005, -0.17), (rim + 0.022, -0.15), (rim + 0.022, 0.03), (rim + 0.01, 0.05)],
+                xform((cx, cy, 0.0), face), segments=28, cap_top=False, cap_bottom=True)
+    shell.ring('pk_shell', rim + 0.005, 0.03, xform((cx, cy, 0.05), face), segments=28, sides=8)
+    shell.cylinder(paint(inlay), rim + 0.026, 0.05, xform((cx, cy, -0.055), face), segments=28)
+    shell.ring(inlay, rim - 0.022, 0.009, xform((cx, cy, 0.074), face), segments=28, sides=5)
+    shell.cylinder(paint(inlay), rim - 0.012, 0.014, xform((cx, cy, 0.03), face), segments=28)
+    # Handle: chrome collar at the rim, rubber grip, cream end cap, one MINT band.
+    a = -PI / 4
+    d = Vector((math.cos(a), math.sin(a), 0.0))
+    start = Vector((cx, cy, -0.02)) + d * (rim + 0.03)
+    shell.tube('pk_chrome', [tuple(start), tuple(start + d * 0.07)], 0.05, sides=12)
+    shell.tube('pk_grip', [tuple(start + d * 0.07), tuple(start + d * 0.30)], 0.046, sides=12)
+    shell.tube(paint(inlay), [tuple(start + d * 0.17), tuple(start + d * 0.20)], 0.049, sides=12)
+    shell.ellipsoid('pk_shell', (0.055, 0.055, 0.055), xform(tuple(start + d * 0.31)), u=12, v=7)
     core = Part('code_review__InnerCore')
-    for side in (-1, 1):
-        core.cylinder(core_finish, 0.092, 0.014, xform((side * 0.135, 0, 0), (PI / 2, 0, 0)), segments=20)
-    pickup(fam, 'code_review', shell, core, (0, 0, 0.178))
+    # Two code lines floating in the lens, like the glyph's; the part bobs as if reading them.
+    for y, w in ((0.035, 0.20), (-0.035, 0.14)):
+        core.box(core_finish, (w, 0.03, 0.012), xform((-0.02 - (0.20 - w) / 2, y, 0)), bevel=0.004, segments=1)
+    pickup(fam, 'code_review', shell, core, (cx, cy, 0.05))
 
 
 def super_jump(fam, inlay, core_finish):
@@ -732,8 +777,12 @@ def lgtm(fam, inlay, core_finish):
     shell.cylinder('pk_grip', 0.075, 0.04, xform((0, 0.12, 0)), segments=18, bevel=0.008)
     shell.box('pk_shell', (0.46, 0.15, 0.30), xform((0, 0.02, 0)), bevel=0.03, segments=2)
     shell.box(inlay, (0.465, 0.025, 0.305), xform((0, 0.07, 0)))
+    # MINT stamp top: the face the chase camera sees at range carries the family colour.
+    shell.box(paint(inlay), (0.40, 0.012, 0.24), xform((0, 0.101, 0)), bevel=0.004, segments=1)
     for z in (0.152, -0.152):
-        shell.box(paint(inlay), (0.40, 0.07, 0.012), xform((0, 0.015, z)), bevel=0.004, segments=1)
+        shell.box(paint(inlay), (0.42, 0.10, 0.012), xform((0, 0.012, z)), bevel=0.004, segments=1)
+    for x in (0.232, -0.232):
+        shell.box(paint(inlay), (0.012, 0.10, 0.26), xform((x, 0.012, 0)), bevel=0.004, segments=1)
     shell.box('pk_grip', (0.44, 0.05, 0.28), xform((0, -0.08, 0)), bevel=0.01)
     core = Part('lgtm__InnerCore')
     core.box(core_finish, (0.30, 0.016, 0.16), xform((0, -0.02, 0)))
@@ -752,17 +801,24 @@ def review_comment(fam, inlay, core_finish):
         a = PI / 2 + k * PI / 16
         bubble.append((-0.21 + 0.05 * math.cos(a), 0.12 + 0.05 * math.sin(a)))
     bubble += [(-0.26, -0.11), (-0.20, -0.16), (-0.19, -0.27), (-0.10, -0.16), (0.21, -0.16), (0.26, -0.11)]
-    shell.prism('pk_shell', bubble, 0.05, xform((0, 0.02, 0)), bevel=0.014)
-    shell.box(paint(inlay), (0.44, 0.05, 0.012), xform((0, 0.155, 0.026)), bevel=0.004, segments=1)
+    # ORANGE speech bubble with a dark comment screen, rolled on chrome scroll rods (review r1: the
+    # all-cream bubble read as a pale blank at range).
+    shell.prism(paint(inlay), bubble, 0.05, xform((0, 0.02, 0)), bevel=0.014)
+    shell.box('pk_shell', (0.44, 0.05, 0.012), xform((0, 0.155, 0.026)), bevel=0.004, segments=1)
+    shell.box('pk_grip', (0.40, 0.19, 0.012), xform((0, 0.02, 0.026)), bevel=0.004, segments=1)
     for y in (0.215, -0.165):
-        shell.cylinder(paint(inlay), 0.042, 0.56, xform((0, y, -0.01), (0, 0, PI / 2)), segments=16)
+        shell.cylinder('pk_chrome', 0.042, 0.56, xform((0, y, -0.01), (0, 0, PI / 2)), segments=16)
         for side in (-1, 1):
             shell.cylinder(inlay, 0.05, 0.03, xform((side * 0.29, y, -0.01), (0, 0, PI / 2)), segments=16, bevel=0.006)
     shell.box('pk_grip', (0.16, 0.20, 0.20), xform((0, 0.02, -0.12)), bevel=0.03)
     core = Part('review_comment__InnerCore')
     for y, w in ((0.07, 0.34), (0.01, 0.28), (-0.05, 0.20)):
         core.box(core_finish, (w, 0.03, 0.014), xform((-0.02 - (0.34 - w) / 2, y, 0)), bevel=0.004, segments=1)
-    pickup(fam, 'review_comment', shell, core, (0, 0.02, 0.031))
+    # Art review r1: the scroll read ~8 px at 60 m; grow it to the pickup envelope (hitbox unchanged).
+    shell.scale(TOOL_SCALE['review_comment'])
+    core.scale(TOOL_SCALE['review_comment'])
+    k = TOOL_SCALE['review_comment']
+    pickup(fam, 'review_comment', shell, core, (0, 0.02 * k[1], 0.031 * k[2]))
 
 
 def lint_rule(fam, inlay, core_finish):
@@ -770,7 +826,7 @@ def lint_rule(fam, inlay, core_finish):
     shell.lathe('pk_shell', [(0.045, -0.34), (0.06, -0.30), (0.10, -0.22), (0.20, -0.07), (0.215, 0.20),
                              (0.235, 0.24), (0.235, 0.30), (0.20, 0.305)], segments=22, cap_top=False, cap_bottom=True)
     shell.ring('pk_grip', 0.22, 0.02, xform((0, 0.305, 0)), segments=28, sides=6)
-    shell.cylinder(paint(inlay), 0.2195, 0.12, xform((0, 0.03, 0)), segments=22)
+    shell.cylinder(paint(inlay), 0.2195, 0.25, xform((0, 0.065, 0)), segments=22)
     shell.cylinder(inlay, 0.222, 0.02, xform((0, 0.10, 0)), segments=22)
     shell.cylinder('pk_chrome', 0.04, 0.08, xform((0, -0.37, 0)), segments=12)
     shell.cylinder('pk_grip', 0.205, 0.02, xform((0, 0.25, 0)), segments=22)
@@ -780,14 +836,20 @@ def lint_rule(fam, inlay, core_finish):
         w = 2 * math.sqrt(max(0.0, 0.19 ** 2 - z ** 2))
         core.box(core_finish, (w, 0.02, 0.028), xform((0, 0, z)), bevel=0.004, segments=1)
     core.box(core_finish, (0.028, 0.02, 0.36), bevel=0.004, segments=1)
-    pickup(fam, 'lint_rule', shell, core, (0, 0.275, 0))
+    # Art review r1: a wider, taller lint funnel filling the pickup envelope (hitbox unchanged).
+    k, lift = TOOL_SCALE['lint_rule'], 0.045
+    shell.scale(k, (0, lift, 0))
+    core.scale(k)
+    pickup(fam, 'lint_rule', shell, core, (0, 0.275 * k[1] + lift, 0))
 
 
 def unit_test(fam, inlay, core_finish):
     shell = Part('unit_test__Ring')
     for y in (0.30, -0.30):
         shell.cylinder(paint(inlay), 0.20, 0.06, xform((0, y, 0), (0, PI / 6, 0)), segments=6, bevel=0.012)
-        shell.cylinder(inlay, 0.205, 0.015, xform((0, y + (0.02 if y < 0 else -0.02), 0), (0, PI / 6, 0)), segments=6)
+        # Cream collar rings (not glowing) keep the grown module's glow share clear of the 40% cap.
+        shell.cylinder('pk_shell', 0.205, 0.015, xform((0, y + (0.02 if y < 0 else -0.02), 0), (0, PI / 6, 0)),
+                       segments=6)
     for k in range(3):
         a = PI / 6 + k * 2 * PI / 3
         shell.cylinder('pk_chrome', 0.02, 0.56, xform((0.16 * math.sin(a), 0, 0.16 * math.cos(a))), segments=8)
@@ -797,13 +859,18 @@ def unit_test(fam, inlay, core_finish):
                segments=18, cap_top=True, cap_bottom=False)
     shell.lathe('pk_shell', [(0.0705, -0.07), (0.0705, 0.20), (0.05, 0.23)], segments=18, cap_top=True, cap_bottom=False)
     check_mark(core, core_finish, (0.0, 0.20, 0.18), 0.8, 0.02)
+    k = TOOL_SCALE['unit_test']
+    shell.scale(k)
+    core.scale(k)
     pickup(fam, 'unit_test', shell, core, (0, 0.0, 0))
 
 
 def auto_fix_patch(fam, inlay, core_finish):
     shell = Part('auto_fix_patch__Ring')
-    shell.box('pk_shell', (0.54, 0.34, 0.09), xform((0, 0.03, 0.03)), bevel=0.022, segments=2)
+    # ORANGE cassette body with a cream top label (review r1: the cream box out-shone its inlays).
+    shell.box(paint(inlay), (0.54, 0.34, 0.09), xform((0, 0.03, 0.03)), bevel=0.022, segments=2)
     shell.box(inlay, (0.44, 0.10, 0.012), xform((0, 0.12, 0.078)))
+    shell.box('pk_shell', (0.50, 0.012, 0.07), xform((0, 0.206, 0.03)), bevel=0.004, segments=1)
     shell.box('pk_grip', (0.28, 0.12, 0.012), xform((0, -0.02, 0.078)), bevel=0.004, segments=1)
     shell.prism('pk_grip', [(-0.18, 0.0), (0.18, 0.0), (0.14, 0.07), (-0.14, 0.07)], 0.02, xform((0, -0.14, 0.07)))
     for x in (-0.23, 0.23):
@@ -818,9 +885,17 @@ def auto_fix_patch(fam, inlay, core_finish):
             core.box(core_finish, (0.012, 0.05, 0.02), xform((x, 0, 0.004), (0, 0, k * PI / 3)))
     core.box(core_finish, (0.10, 0.022, 0.012), xform((0, 0.0, 0.0)))
     core.box(core_finish, (0.022, 0.07, 0.012), xform((0, 0.0, 0.0)))
-    pickup(fam, 'auto_fix_patch', shell, core, (0, -0.02, 0.08))
+    k = TOOL_SCALE['auto_fix_patch']
+    shell.scale(k)
+    core.scale(k)
+    pickup(fam, 'auto_fix_patch', shell, core, (0, -0.02 * k[1], 0.08 * k[2]))
 
 
+# Per-axis growth of the two smallest tools, bounded by the pickup radius (0.373) and half height (0.46).
+# Review r1 asked for >= 12 px at 60 m; the lint funnel and comment scroll are grown most (they were
+# the ~8 px ones), the test module and patch cassette as far as their shapes allow.
+TOOL_SCALE = {'review_comment': (1.18, 1.72, 1.18), 'lint_rule': (1.5, 1.22, 1.5), 'unit_test': (1.6, 1.3, 1.6),
+              'auto_fix_patch': (1.25, 1.45, 1.25)}
 POWER_UPS = [('approve_shield', approve_shield), ('code_review', code_review), ('super_jump', super_jump),
              ('nitro', nitro), ('auto_fix', auto_fix), ('lgtm', lgtm)]
 TOOLS = [('review_comment', review_comment), ('lint_rule', lint_rule), ('unit_test', unit_test),
@@ -831,7 +906,7 @@ TEXEL_WEIGHTS = {'pr_backlog_low__Crate': 2.2, 'pr_backlog_high__Ticket': 2.0, '
                  'laser_grid__Emitter': 1.7, 'merge_conflict__Ours': 1.5, 'merge_conflict__Theirs': 1.5,
                  'build_shockwave__Shard': 1.2, 'pr_backlog_low__Conveyor': 0.8, 'pr_backlog_high__Gantry': 0.7,
                  'build_shockwave__Pipe': 0.85, 'deprecated_pit__RimFull': 0.75, 'deprecated_pit__RimTwoLane': 0.75,
-                 'comment_flood__Spine': 0.6}
+                 'comment_flood__Spine': 0.9}
 HAZARD_SIZES = {'pr_backlog_low': (5.6, 1.0, 1.2), 'pr_backlog_high': (5.6, 1.8, 1.2), 'bug_swarm': (1.6, 0.9, 1.2),
                 'merge_conflict': (3.6, 1.0, 1.2), 'deprecated_pit_full': (5.6, 0.4, 3.0),
                 'deprecated_pit_two_lane': (3.6, 0.4, 3.0), 'laser_grid': (5.6, 0.4, 1.2),

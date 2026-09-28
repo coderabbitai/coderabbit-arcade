@@ -227,6 +227,13 @@ class Part:
         bmesh.ops.recalc_face_normals(tmp, faces=tmp.faces)
         self._merge(tmp, finish, matrix)
 
+    def scale(self, factors, offset=(0.0, 0.0, 0.0)):
+        """Scale every vertex built so far about the origin, then shift (resizes a whole template)."""
+        bmesh.ops.scale(self.bm, vec=Vector(factors), verts=self.bm.verts)
+        bmesh.ops.translate(self.bm, vec=Vector(offset), verts=self.bm.verts)
+        if factors[0] * factors[1] * factors[2] < 0:
+            bmesh.ops.reverse_faces(self.bm, faces=self.bm.faces)
+
     # --- finishing -----------------------------------------------------------------------------
     def triangles(self):
         return sum(len(f.verts) - 2 for f in self.bm.faces)
@@ -417,6 +424,7 @@ def make_finish(name, spec):
     if kind == 'rubber':
         tread = nodes.math('SINE', nodes.math('MULTIPLY', x, spec.get('tread', 40.0)))
         height = nodes.math('ADD', height, nodes.math('MULTIPLY', tread, 0.5))
+    ink = None
     if kind == 'lines':
         axis = {'x': x, 'y': y, 'z': z}[spec.get('line_axis', 'y')]
         across = {'x': x, 'y': y, 'z': z}[spec.get('along_axis', 'x')]
@@ -433,6 +441,10 @@ def make_finish(name, spec):
     if spec.get('emit_mask') == 'scan':
         scan = nodes.band(nodes.math('SINE', nodes.math('MULTIPLY', y, spec.get('scan_rows', 60.0))), 0.1, 0.8)
         emission = nodes.scale_colour(emission, scan)
+    if spec.get('emit_mask') == 'ink':
+        # Lit screen text: only the code-line ink glows, the screen behind it stays dark.
+        require(ink is not None, 'ink emission needs a lines finish: ' + name)
+        emission = nodes.scale_colour(emission, ink)
     if spec.get('emit_mask') == 'rise':
         emission = nodes.scale_colour(emission, nodes.band(y, spec.get('rise_from', 0.0), spec.get('rise_to', 0.2)))
     if spec.get('emit_mask') == 'veins':
