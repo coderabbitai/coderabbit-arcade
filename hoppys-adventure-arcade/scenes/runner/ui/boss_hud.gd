@@ -6,7 +6,7 @@ const Glyph = preload("res://scenes/runner/ui/hud_glyph.gd")
 # Frontend copy lives in this table only. Unknown kinds show the supplied name.
 const TAUNTS := {
 	&"flaky_test_swarm": "PASSED LOCALLY. FAILS ON CI.",
-	&"merge_conflict_hydra": "<<<<<<< HEAD  \u2014  THREE BRANCHES, ZERO AGREEMENT.",
+	&"merge_conflict_hydra": "<<<<<<< HEAD  \u2014  3 BRANCHES, SOON 4. ZERO AGREEMENT.",
 	&"legacy_monolith": "@deprecated SINCE 2011. STILL IN PRODUCTION.",
 }
 var intro_card: PanelContainer

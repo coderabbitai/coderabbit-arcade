@@ -153,6 +153,22 @@ extends Resource
 @export var boss_kill_bonus_per_stage := 200
 ## A timed-out boss pays the kill bonus times this ratio, scaled by the damage it took.
 @export var boss_retreat_bonus_ratio := 0.35
+## Signature attacks (contract 2.4 §11.6, §11.10). A flaky telegraph alternates between two candidate
+## lanes for this long before it commits to one of them.
+@export var boss_flaky_candidate_seconds := 0.45
+## Seconds per candidate while a flaky telegraph alternates (cosmetic cadence, carried to the visuals).
+@export var boss_flaky_swap_seconds := 0.15
+## A flaky telegraph commits at least this long before it fires, so the telegraph-plus-travel and the
+## jump-launch budgets of runner_boss_validator.gd B1 / B3 hold measured from the commit.
+@export var boss_commit_min := 0.60
+## The scatter orb splits when its centre is this many metres ahead of the player (track z).
+@export var boss_scatter_split_distance := 10.0
+## Cap on a signature beat's own speed after its speed_scale (the force push runs above the
+## projectile cap on purpose, and pays for it with a longer telegraph).
+@export var boss_signature_speed_max := 44.0
+## Reaction floor every commit, split, gap shift, sweep and debris drop must leave before the latest
+## moment its cheapest answer can start (runner_boss_validator.gd B6).
+@export var boss_signature_reaction_min := 0.35
 
 @export_group("Tools")
 @export var boss_tool_spawn_z := -55.0

@@ -11,7 +11,15 @@ extends SceneTree
 ## B3 the launch window for the body actions is at least 0.35 s wide and opens 0.35 s after the
 ##    telegraph, so the shot can be answered on reaction rather than on reflex;
 ## B4 the bot takes zero hits, beat by beat and across whole pattern cycles at the real interval;
-## B5 an accepted tool is reachable inside boss_tool_guarantee_seconds.
+## B5 an accepted tool is reachable inside boss_tool_guarantee_seconds;
+## B6 (contract 2.4) every signature event — a flaky commit, a scatter split, a rebase sweep, a legacy
+##    gap shift, a debris shadow and its landing, a branching volley — leaves, from every lane, a
+##    survivable answer that can still be started boss_signature_reaction_min (0.35 s) after it.
+##
+## Since contract 2.4 the shots are not assumed to fly straight: every beat is resolved through
+## boss/boss_attacks.gd (the same code boss_encounter.gd fires from), the bot hears the encounter's
+## own boss_attack_planned / boss_attack_telegraph / boss_attack_committed, and every collision is
+## tested against the motion API (x_at / y_range_at / z_at) the live projectile flies.
 ##
 ## Nothing here writes user:// and nothing instantiates runner_game.tscn, so there is no board to
 ## point anywhere: the facade is a bare runner_game.gd object that never enters the tree.
@@ -22,6 +30,7 @@ extends SceneTree
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
 const HazardDefs = preload("res://scenes/runner/hazards/hazard_defs.gd")
 const BossDefs = preload("res://scenes/runner/boss/boss_defs.gd")
+const BossAttacks = preload("res://scenes/runner/boss/boss_attacks.gd")
 const ToolDefs = preload("res://scenes/runner/powerups/tool_defs.gd")
 const CONFIG_PATH := "res://scenes/runner/data/run_config.tres"
 const TICK := 1.0 / 60.0
@@ -33,7 +42,7 @@ const CYCLES := 5
 const MIN_REACTION := 0.98
 ## Systems spec §1.1: the choice-reaction slice of that budget.
 const MIN_LAUNCH_WINDOW := 0.35
-## Mask streams the pattern sweep replays; each one follows boss_encounter's own no-repeat rule.
+## Attack streams the pattern sweep replays; each one follows boss_encounter's own no-repeat rule.
 const MASK_STREAM_SEEDS := [1, 2, 3]
 ## Pattern cycles one sequence pass plays through.
 const PATTERN_CYCLES := 2
@@ -172,7 +181,6 @@ func step(delta: float, standing_clear: bool) -> void:
 			if queued != 0:
 				request_lane(queued)
 """
-
 var failures := 0
 var checks := 0
 var config: RunConfig
@@ -184,6 +192,10 @@ var tool_node: Node3D
 var junk: Array[Node] = []
 ## Per-fight log lines, printed when that fight fails anything.
 var fight_log: Array[String] = []
+## Signature events B6 measured, by name, so the report can say they were all reached, and the
+## tightest window each kind left.
+var event_counts := {}
+var event_min := {}
 
 func _initialize() -> void:
 	call_deferred("run")
@@ -228,6 +240,8 @@ func run() -> void:
 	tool_node = Node3D.new()
 	root.add_child(tool_node)
 	junk.append(tool_node)
+	check(game.has_signal(&"boss_attack_planned") and game.has_signal(&"boss_attack_committed"),
+		"the facade does not declare boss_attack_planned / boss_attack_committed (contract 2.4 §11.4)")
 
 	print("RUNNER BOSS: validating %d bosses x %d cycles x %d phases"
 		% [BossDefs.SLOTS.size(), CYCLES, BossDefs.PHASE_COUNT])
@@ -236,6 +250,7 @@ func run() -> void:
 			var stage_index := cycle * BossDefs.SLOTS.size() + slot + 1
 			_validate_fight(stage_index)
 	_check_escalation_floors()
+	_check_signature_coverage()
 	_report()
 
 ## Every phase of one stage's fight: the beat sweep, the pattern sweep and the tool guarantee.
@@ -255,48 +270,74 @@ func _validate_fight(stage_index: int) -> void:
 			for line in fight_log:
 				print("  " + line)
 
-# --- B1 / B2 / B3 / B4: one beat at a time ---
+# --- B1 / B2 / B3 / B4 / B6: one beat at a time ---
 
+## Every option of every beat (each random lane draw a beat can make, contract 2.4 boss_attacks.gd
+## beat_options), each attack of that option, and every entry lane.
 func _check_beats(tag: String, def: Dictionary, phase: int) -> void:
-	var telegraph := BossDefs.telegraph_for(def, phase)
-	var closing := float(def["projectile_speed"])
 	for beat in BossDefs.pattern_for(def, phase):
-		var variant: StringName = (beat as Dictionary).get("variant", &"orb")
-		var arrival: float = bot.telegraph_arrival(telegraph, closing, variant)
-		# B1: the whole reaction budget, telegraph plus travel, at this cycle's escalation.
-		check(arrival >= MIN_REACTION - EPS,
-			"%s: %s leaves %.3f s from telegraph to impact, need %.2f"
-				% [tag, variant, arrival, MIN_REACTION])
-		fight_log.append("%s telegraph %.2f speed %.1f arrival %.3f" % [variant, telegraph, closing, arrival])
-		_check_launch_window(tag, variant, closing, arrival)
-		for mask in _beat_masks(beat):
-			var slice: Dictionary = bot.attack_slice(mask, variant, closing)
-			# B2: something in the corridor answers this beat.
-			check(not _free_lanes(mask).is_empty() or bool(slice["jumpable"]) or bool(slice["rollable"]),
-				"%s: %s on lanes %d blocks the corridor with no free lane and no body answer"
-					% [tag, variant, mask])
+		var options := BossAttacks.beat_options(beat, def, phase, config)
+		check(not options.is_empty(), "%s: a beat resolves to no attack at all: %s" % [tag, beat])
+		for item in options:
+			var option: Array = item
+			var span := 0.0
+			for attack_item in option:
+				var attack: Dictionary = attack_item
+				_check_attack(tag, attack)
+				span = maxf(span, float(attack["exit"]))
+			# B6: every signature event (and a branching volley as a whole) leaves a reaction window.
+			_check_events(tag, option)
+			var stream: Array[Dictionary] = []
+			for attack_item in option:
+				stream.append({"at": 0.0, "attack": attack_item})
 			for lane in LANE_COUNT:
-				var shots: Array[Dictionary] = [{
-					"at": 0.0, "mask": mask, "variant": variant,
-					"telegraph": telegraph, "closing_v": closing
-				}]
-				var result := _simulate(int(def["stage_index"]), shots, [], lane, arrival + 1.0)
+				var result := _simulate(int(def["stage_index"]), stream, [], lane, span + 1.0)
 				# B4: zero hits, from every entry lane.
 				check(String(result["hit"]).is_empty(),
-					"%s: the bot was hit from lane %d by %s on lanes %d: %s"
-						% [tag, lane, variant, mask, result["hit"]])
+					"%s: the bot was hit from lane %d by %s: %s"
+						% [tag, lane, _option_label(option), result["hit"]])
+
+## B1 / B2 / B3 for one attack, all measured from the moment its lanes are final: the telegraph for
+## every attack but a flaky one, whose clock starts at the commit (contract 2.4 boss_commit_min).
+func _check_attack(tag: String, attack: Dictionary) -> void:
+	var variant: StringName = attack.get("variant", &"orb")
+	var from_t := maxf(float(attack.get("commit_at", -1.0)), 0.0)
+	var arrival := float(attack["enter"]) - from_t
+	check(not (attack["shots"] as Array).is_empty(), "%s: %s fires no projectile" % [tag, _attack_label(attack)])
+	# B1: the whole reaction budget, telegraph (or commit) plus travel, at this cycle's escalation.
+	check(arrival >= MIN_REACTION - EPS,
+		"%s: %s leaves %.3f s from telegraph to impact, need %.2f"
+			% [tag, _attack_label(attack), arrival, MIN_REACTION])
+	fight_log.append("%s telegraph %.2f speed %.1f arrival %.3f" % [_attack_label(attack),
+		float(attack["telegraph"]), float(attack["speed"]), arrival])
+	# A plain shot keeps the v2.0 number the bot has always planned with.
+	if StringName(attack.get("signature", BossAttacks.SIG_PLAIN)) == BossAttacks.SIG_PLAIN:
+		var plain: float = bot.telegraph_arrival(float(attack["telegraph"]), float(attack["speed"]), variant)
+		check(is_equal_approx(plain, float(attack["enter"])),
+			"%s: the motion API puts a straight %s at %.4f s, the planner at %.4f s"
+				% [tag, variant, float(attack["enter"]), plain])
+	# B2: something in the corridor answers this attack where it passes the player.
+	var impact := int(attack["impact_mask"])
+	check(not _free_lanes(impact).is_empty() or bool(attack["jumpable"]) or bool(attack["rollable"]),
+		"%s: %s blocks the corridor with no free lane and no body answer" % [tag, _attack_label(attack)])
+	_check_launch_window(tag, attack, arrival)
 
 ## B3: the span of launch times that still clears the shot, and how long the bot has to choose one.
-## A jumpable variant is measured against the jump arc, a roll-only one against the roll window; the
-## budget is the same either way (systems spec §1.1 reaction budget).
-func _check_launch_window(tag: String, variant: StringName, closing: float, arrival: float) -> void:
+## A jumpable variant is measured against the jump arc over its impact height, a roll-only one
+## against the roll window, both at the attack's own closing speed (systems spec §1.1).
+func _check_launch_window(tag: String, attack: Dictionary, arrival: float) -> void:
+	var variant: StringName = attack.get("variant", &"orb")
 	var def := HazardDefs.get_def(HazardDefs.PROJECTILE_KIND, variant)
 	var hint: StringName = def.get("dodge_hint", &"")
-	var pass_seconds := _pass_seconds(variant, closing)
+	var pass_seconds := _pass_seconds(variant, float(attack["speed"]))
 	if HazardDefs.JUMP_HINTS.has(hint):
-		var span := _clear_span(float(def.get("y_max", 0.0)))
-		check(span.y > span.x,
-			"%s: %s at y %.2f cannot be jumped at all" % [tag, variant, float(def.get("y_max", 0.0))])
+		# A jump-hinted shot must be in its final geometry by the time it passes (a debris slab has
+		# landed), or the hint is a lie.
+		check(bool(attack["jumpable"]),
+			"%s: %s is jump-hinted but not in its landed geometry for the pass" % [tag, _attack_label(attack)])
+		var height := float(attack["clear_height"])
+		var span := _clear_span(height)
+		check(span.y > span.x, "%s: %s at y %.2f cannot be jumped at all" % [tag, variant, height])
 		var window := (span.y - span.x) - pass_seconds
 		check(window >= MIN_LAUNCH_WINDOW - EPS,
 			"%s: the %s jump launch window is %.3f s wide, need %.2f" % [tag, variant, window, MIN_LAUNCH_WINDOW])
@@ -312,59 +353,148 @@ func _check_launch_window(tag: String, variant: StringName, closing: float, arri
 	check(arrival - float(config.roll_duration) + pass_seconds >= 0.0,
 		"%s: a %s roll cannot be started late enough to still cover the pass" % [tag, variant])
 
+## B6 (contract 2.4): every commit, split, sweep, gap shift and debris shadow / landing — and a
+## branching volley as a whole — leaves, from every lane the player can be standing in at that
+## moment, a survivable answer whose latest start is at least boss_signature_reaction_min after the
+## event. The answer is searched over every final lane and every body action (none / jump / roll)
+## against the attacks' impact geometry; lane changes cost one lane_change_time per step.
+func _check_events(tag: String, option: Array) -> void:
+	var floor_seconds := float(config.boss_signature_reaction_min)
+	check(floor_seconds >= MIN_LAUNCH_WINDOW - EPS,
+		"boss_signature_reaction_min %.2f is below the %.2f s choice-reaction budget" % [floor_seconds, MIN_LAUNCH_WINDOW])
+	var moments: Array[Dictionary] = []
+	for item in option:
+		var attack: Dictionary = item
+		for event in BossAttacks.events(attack):
+			moments.append({"name": event["name"], "at": float(event["at"]), "attacks": [attack]})
+	if option.size() > 1:
+		moments.append({"name": &"volley", "at": 0.0, "attacks": option})
+	for moment in moments:
+		var name: StringName = moment["name"]
+		event_counts[name] = int(event_counts.get(name, 0)) + 1
+		var attacks: Array = moment["attacks"]
+		var at := float(moment["at"])
+		var first_enter := INF
+		for item in attacks:
+			first_enter = minf(first_enter, float((item as Dictionary)["enter"]))
+		check(at < first_enter - EPS, "%s: the %s of %s happens %.3f s after it already reached the player"
+			% [tag, name, _option_label(option), at - first_enter])
+		for lane in LANE_COUNT:
+			var best := _best_answer(attacks, lane)
+			var window := float(best["latest"]) - at
+			check(not String(best["answer"]).is_empty() and window >= floor_seconds - EPS,
+				"%s: after the %s of %s, lane %d has %s with %.3f s to start it, need %.2f"
+					% [tag, name, _option_label(option), lane,
+						best["answer"] if not String(best["answer"]).is_empty() else "no answer", window, floor_seconds])
+			fight_log.append("B6 %s %s lane %d -> %s, %.3f s" % [_option_label(option), name, lane, best["answer"], window])
+			event_min[name] = minf(float(event_min.get(name, INF)), window)
+
+## The answer with the latest start, as {answer, latest} (latest in seconds after the telegraph).
+func _best_answer(attacks: Array, lane: int) -> Dictionary:
+	var best := {"answer": "", "latest": -INF}
+	for goal in LANE_COUNT:
+		for body: StringName in [&"none", &"jump", &"roll"]:
+			var latest := _answer_latest(attacks, lane, goal, body)
+			if latest > float(best["latest"]):
+				best = {"answer": "lane %d%s" % [goal, "" if body == &"none" else " + " + String(body)],
+					"latest": latest}
+	return best
+
+## Latest start of "end in `goal`, then `body`" against `attacks`, or -INF when it does not survive.
+func _answer_latest(attacks: Array, lane: int, goal: int, body: StringName) -> float:
+	var latest := INF
+	var body_in := INF
+	var body_out := -INF
+	var height := 0.0
+	for item in attacks:
+		var attack: Dictionary = item
+		var impact := int(attack["impact_mask"])
+		if (impact & (1 << goal)) != 0:
+			if body == &"jump" and bool(attack["jumpable"]):
+				pass
+			elif body == &"roll" and bool(attack["rollable"]):
+				pass
+			else:
+				return -INF
+			body_in = minf(body_in, float(attack["enter"]))
+			body_out = maxf(body_out, float(attack["exit"]))
+			height = maxf(height, float(attack["clear_height"]))
+		if goal != lane:
+			for crossed in range(mini(lane, goal), maxi(lane, goal) + 1):
+				if (impact & (1 << crossed)) != 0:
+					latest = minf(latest, float(attack["enter"]) - float(config.lane_change_time) * absi(goal - lane))
+					break
+	if body_in < INF:
+		if body == &"jump":
+			var span := _clear_span(height)
+			if span.y <= span.x or body_out - span.y > body_in - span.x:
+				return -INF
+			latest = minf(latest, body_in - span.x)
+		elif body == &"roll":
+			if body_out - float(config.roll_duration) > body_in:
+				return -INF
+			latest = minf(latest, body_in)
+	return latest
+
 # --- B4: whole pattern cycles at the real attack interval ---
 
 func _check_pattern_sequences(tag: String, def: Dictionary, phase: int) -> void:
 	var pattern := BossDefs.pattern_for(def, phase)
 	if pattern.is_empty():
 		return
-	var telegraph := BossDefs.telegraph_for(def, phase)
 	var interval := BossDefs.attack_interval_for(def, phase)
-	var closing := float(def["projectile_speed"])
-	for stream in MASK_STREAM_SEEDS:
-		var shots := _mask_stream(pattern, int(stream), telegraph, closing, interval)
-		var last: Dictionary = shots[shots.size() - 1]
-		var tail: float = bot.telegraph_arrival(telegraph, closing, StringName(last["variant"]))
-		var span := float(last["at"]) + tail + 1.0
+	for stream_seed in MASK_STREAM_SEEDS:
+		var stream := _attack_stream(pattern, def, phase, int(stream_seed), interval)
+		var span := 0.0
+		for item in stream:
+			span = maxf(span, float(item["at"]) + float((item["attack"] as Dictionary)["exit"]))
 		for lane in LANE_COUNT:
-			var result := _simulate(int(def["stage_index"]), shots, [], lane, span)
+			var result := _simulate(int(def["stage_index"]), stream, [], lane, span + 1.0)
 			check(String(result["hit"]).is_empty(),
 				"%s: the bot was hit from lane %d during pattern stream %d (%s): %s"
-					% [tag, lane, int(stream), _stream_label(shots), result["hit"]])
+					% [tag, lane, int(stream_seed), _stream_label(stream), result["hit"]])
 
-## `PATTERN_CYCLES` laps of the beat list, with the random beats resolved the way boss_encounter's
-## `_pick_mask` resolves them: never a straight repeat of the previous mask while there is a choice.
-func _mask_stream(pattern: Array, stream_seed: int, telegraph: float, closing: float,
+## `PATTERN_CYCLES` laps of the beat list, every beat resolved the way boss_encounter's _queue_beat
+## resolves it: boss_attacks.pick_option, never a straight repeat of the previous beat's impact lanes
+## while there is a choice. A branching volley puts all its heads on the same beat.
+func _attack_stream(pattern: Array, def: Dictionary, phase: int, stream_seed: int,
 		interval: float) -> Array[Dictionary]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = stream_seed
-	var shots: Array[Dictionary] = []
-	var last_mask := 0
+	var stream: Array[Dictionary] = []
+	var last_key := 0
 	var at := 0.0
 	for lap in PATTERN_CYCLES:
 		for beat in pattern:
-			var options := _beat_masks(beat)
-			var choices: Array[int] = []
-			for option in options:
-				if option != last_mask:
-					choices.append(option)
-			if choices.is_empty():
-				choices = options
-			var mask := choices[rng.randi_range(0, choices.size() - 1)]
-			last_mask = mask
-			shots.append({
-				"at": at, "mask": mask, "variant": (beat as Dictionary).get("variant", &"orb"),
-				"telegraph": telegraph, "closing_v": closing
-			})
+			var options := BossAttacks.beat_options(beat, def, phase, config)
+			var pick := BossAttacks.pick_option(options, last_key, rng, true)
+			if pick < 0:
+				continue
+			var option: Array = options[pick]
+			last_key = BossAttacks.option_key(option)
+			for attack in option:
+				stream.append({"at": at, "attack": attack})
 			at += interval
-	return shots
+	return stream
 
-func _stream_label(shots: Array) -> String:
+func _stream_label(stream: Array) -> String:
 	var parts := PackedStringArray()
-	for item in shots:
-		var shot: Dictionary = item
-		parts.append("%s/%d@%.2f" % [shot["variant"], int(shot["mask"]), float(shot["at"])])
+	for item in stream:
+		parts.append("%s@%.2f" % [_attack_label(item["attack"]), float(item["at"])])
 	return " ".join(parts)
+
+func _option_label(option: Array) -> String:
+	var parts := PackedStringArray()
+	for attack in option:
+		parts.append(_attack_label(attack))
+	return "+".join(parts)
+
+func _attack_label(attack: Dictionary) -> String:
+	var signature := String(attack.get("signature", BossAttacks.SIG_PLAIN))
+	var label := "%s/%d" % [attack.get("variant", &"orb"), int(attack.get("impact_mask", 0))]
+	if signature.is_empty():
+		return label
+	return "%s[%s tel %d]" % [label, signature, int(attack.get("telegraph_mask", 0))]
 
 # --- B5: an accepted tool is reachable inside the guarantee window ---
 
@@ -378,14 +508,12 @@ func _check_tool_guarantee(tag: String, def: Dictionary, phase: int) -> void:
 		"%s: tools come every %.2f s, past the %.2f s guarantee"
 			% [tag, float(def["tool_interval"]), guarantee])
 	var pattern := BossDefs.pattern_for(def, phase)
-	var telegraph := BossDefs.telegraph_for(def, phase)
 	var interval := BossDefs.attack_interval_for(def, phase)
-	var closing := float(def["projectile_speed"])
 	var corridor := float(config.max_speed) + _stage_speed_bonus(int(def["stage_index"]))
 	var travel := absf(float(config.boss_tool_spawn_z)) / corridor
 	check(travel <= guarantee + EPS,
 		"%s: a tool needs %.2f s to reach the player, past the %.2f s guarantee" % [tag, travel, guarantee])
-	var shots := _mask_stream(pattern, MASK_STREAM_SEEDS[0], telegraph, closing, interval)
+	var stream := _attack_stream(pattern, def, phase, MASK_STREAM_SEEDS[0], interval)
 	var kinds := BossDefs.accepted_tools(def, phase)
 	check(not kinds.is_empty(), "%s: the phase accepts no tool at all" % tag)
 	if kinds.is_empty():
@@ -400,7 +528,7 @@ func _check_tool_guarantee(tag: String, def: Dictionary, phase: int) -> void:
 					"at": offset, "lane": lane, "kind": kind,
 					"y": _tool_height(StringName(kind))
 				}]
-				var result := _simulate(int(def["stage_index"]), shots, tools, 1,
+				var result := _simulate(int(def["stage_index"]), stream, tools, 1,
 					offset + travel + 1.0, corridor)
 				if bool(result["collected"]) and String(result["hit"]).is_empty():
 					best = "%s in lane %d at +%.2f s, collected after %.2f s" \
@@ -417,11 +545,13 @@ func _check_tool_guarantee(tag: String, def: Dictionary, phase: int) -> void:
 
 # --- the simulation ---
 
-## One pass. `shots` are telegraphs scheduled at `at` seconds, fed to the bot through the facade's
-## own `boss_attack_telegraph`; `tools` are pickups that appear at `boss_tool_spawn_z` and ride the
-## corridor in. The bot is the real autopilot, ticked through its own `_physics_process`.
+## One pass. `stream` holds attacks scheduled at `at` seconds, fed to the bot through the facade's
+## own signals in the encounter's order — boss_attack_planned, boss_attack_telegraph, and for a
+## flaky attack boss_attack_committed at its commit — and flown through the boss_attacks.gd motion
+## API when their telegraph runs out. `tools` are pickups that appear at `boss_tool_spawn_z` and ride
+## the corridor in. The bot is the real autopilot, ticked through its own `_physics_process`.
 ## Returns {hit, collected, collected_at}.
-func _simulate(stage_index: int, shots: Array, tools: Array, entry_lane: int, duration: float,
+func _simulate(stage_index: int, stream: Array, tools: Array, entry_lane: int, duration: float,
 		corridor_v := 0.0) -> Dictionary:
 	var corridor := corridor_v if corridor_v > 0.0 else float(config.max_speed)
 	bot.reset()
@@ -432,8 +562,9 @@ func _simulate(stage_index: int, shots: Array, tools: Array, entry_lane: int, du
 	game.phase = &"boss"
 	game.speed = corridor
 	game.elapsed = 0.0
-	var pending_shots := shots.duplicate()
+	var pending_attacks := stream.duplicate()
 	var pending_tools := tools.duplicate()
+	var commits: Array[Dictionary] = []
 	var live: Array[Dictionary] = []
 	var tool_live := {}
 	_park_tool()
@@ -442,16 +573,25 @@ func _simulate(stage_index: int, shots: Array, tools: Array, entry_lane: int, du
 	var collected_at := -1.0
 	var steps := mini(int(duration / TICK) + 2, STEP_GUARD)
 	for step in steps:
-		# 1. Telegraphs the boss sends this tick, through the facade signal the bot listens to.
-		while not pending_shots.is_empty() and float((pending_shots[0] as Dictionary)["at"]) <= time + EPS:
-			var shot: Dictionary = pending_shots.pop_front()
-			game.boss_attack_telegraph.emit(int(shot["mask"]), StringName(shot["variant"]),
-				float(shot["telegraph"]))
-			live.append({
-				"spawn_t": time + float(shot["telegraph"]),
-				"mask": shot["mask"], "variant": shot["variant"], "closing_v": shot["closing_v"]
-			})
-		# 2. Tools entering the corridor.
+		# 1. Attacks the boss sends this tick, through the facade signals the bot listens to.
+		while not pending_attacks.is_empty() and float((pending_attacks[0] as Dictionary)["at"]) <= time + EPS:
+			var item: Dictionary = pending_attacks.pop_front()
+			var attack: Dictionary = item["attack"]
+			game.boss_attack_planned.emit(attack)
+			game.boss_attack_telegraph.emit(int(attack["telegraph_mask"]), StringName(attack["variant"]),
+				float(attack["telegraph"]))
+			if float(attack.get("commit_at", -1.0)) >= 0.0:
+				commits.append({"t": time + float(attack["commit_at"]), "attack": attack})
+			var fire_t := time + float(attack["telegraph"])
+			for shot in attack["shots"]:
+				live.append({"spawn_t": fire_t, "shot": shot})
+		# 2. Flaky telegraphs settling.
+		while not commits.is_empty() and float(commits[0]["t"]) <= time + EPS:
+			var commit: Dictionary = commits.pop_front()
+			var settled: Dictionary = commit["attack"]
+			game.boss_attack_committed.emit(int(settled["mask"]), StringName(settled["variant"]),
+				float(settled["telegraph"]) - float(settled["commit_at"]))
+		# 3. Tools entering the corridor.
 		while not pending_tools.is_empty() and float((pending_tools[0] as Dictionary)["at"]) <= time + EPS:
 			var entry: Dictionary = pending_tools.pop_front()
 			tool_live = {
@@ -459,9 +599,9 @@ func _simulate(stage_index: int, shots: Array, tools: Array, entry_lane: int, du
 				"z": float(config.boss_tool_spawn_z)
 			}
 			_place_tool(tool_live)
-		# 3. The bot: its own entry point, so the live code decides everything.
+		# 4. The bot: its own entry point, so the live code decides everything.
 		bot._physics_process(TICK)
-		# 4. The virtual runner, then the world.
+		# 5. The virtual runner, then the world.
 		player.step(TICK, _standing_clear(live, time))
 		time += TICK
 		game.elapsed = time
@@ -478,8 +618,8 @@ func _simulate(stage_index: int, shots: Array, tools: Array, entry_lane: int, du
 		hit = _collision(live, time)
 		if not hit.is_empty():
 			break
-		if pending_shots.is_empty() and pending_tools.is_empty() and live.is_empty() \
-				and tool_live.is_empty():
+		if pending_attacks.is_empty() and commits.is_empty() and pending_tools.is_empty() \
+				and live.is_empty() and tool_live.is_empty():
 			break
 		_retire(live, time)
 	_park_tool()
@@ -489,29 +629,25 @@ func _simulate(stage_index: int, shots: Array, tools: Array, entry_lane: int, du
 ## Shots that have swept past the player are done with; the list stays short across a long pattern.
 func _retire(live: Array[Dictionary], time: float) -> void:
 	for index in range(live.size() - 1, -1, -1):
-		if _shot_z(live[index], time) > float(config.despawn_z):
+		var since := time - float(live[index]["spawn_t"])
+		if since >= 0.0 and BossAttacks.z_at(live[index]["shot"], since) > float(config.despawn_z):
 			live.remove_at(index)
-
-func _shot_z(shot: Dictionary, time: float) -> float:
-	var since := time - float(shot["spawn_t"])
-	if since < 0.0:
-		return float(config.boss_z) - 1000.0
-	return float(config.boss_z) + float(shot["closing_v"]) * since
 
 ## The first shot the runner is inside this tick, or "" when the pass is still clean.
 func _collision(live: Array[Dictionary], time: float) -> String:
 	var body := _player_box()
 	for item in live:
-		var shot: Dictionary = item
-		var z := _shot_z(shot, time)
-		if z < float(config.boss_z) - 1.0:
+		var since := time - float(item["spawn_t"])
+		if since < 0.0:
 			continue
-		for group in _lane_groups(int(shot["mask"]), StringName(shot["variant"])):
-			if not _shot_box(group, StringName(shot["variant"]), z).intersects(body):
-				continue
-			return "%s lanes %d at z %.2f, t %.2f (player x %.2f y %.2f%s)" % [
-				shot["variant"], group, z, time, float(player.at_x), float(player.at_y),
-				", rolling" if bool(player.rolling) else ""]
+		var shot: Dictionary = item["shot"]
+		var box := _shot_box(shot, since)
+		if not box.intersects(body):
+			continue
+		return "%s lanes %d at x %.2f z %.2f y %.2f, t %.2f (player x %.2f y %.2f%s)" % [
+			shot["variant"], BossAttacks.lane_mask_at(shot, since, config), box.get_center().x,
+			box.get_center().z, box.position.y, time, float(player.at_x), float(player.at_y),
+			", rolling" if bool(player.rolling) else ""]
 	return ""
 
 ## Systems spec §3: stay crouched while something overhead still needs rolling under.
@@ -520,17 +656,15 @@ func _standing_clear(live: Array[Dictionary], time: float) -> bool:
 	standing.position.z -= float(config.max_speed) * 2.0 * TICK + 0.3
 	standing.size.z += float(config.max_speed) * 2.0 * TICK + 0.3
 	for item in live:
-		var shot: Dictionary = item
-		var variant := StringName(shot["variant"])
-		var hint: StringName = HazardDefs.get_def(HazardDefs.PROJECTILE_KIND, variant).get("dodge_hint", &"")
+		var since := time - float(item["spawn_t"])
+		if since < 0.0:
+			continue
+		var shot: Dictionary = item["shot"]
+		var hint: StringName = BossAttacks.shot_def(shot).get("dodge_hint", &"")
 		if not HazardDefs.ROLL_HINTS.has(hint):
 			continue
-		var z := _shot_z(shot, time)
-		if z < float(config.boss_z) - 1.0:
-			continue
-		for group in _lane_groups(int(shot["mask"]), variant):
-			if _shot_box(group, variant, z).intersects(standing):
-				return false
+		if _shot_box(shot, since).intersects(standing):
+			return false
 	return true
 
 # --- geometry ---
@@ -549,44 +683,16 @@ func _tool_box(entry: Dictionary) -> AABB:
 		Vector3(_lane_x(int(entry["lane"])) - radius, float(entry["y"]) - radius, float(entry["z"]) - radius),
 		Vector3(radius * 2.0, radius * 2.0, radius * 2.0))
 
-## The hitbox one lane group of a shot occupies, from the contract §11.6 table.
-func _shot_box(group: int, variant: StringName, z: float) -> AABB:
-	var def := HazardDefs.get_def(HazardDefs.PROJECTILE_KIND, variant)
-	var size: Vector3 = def.get("size", Vector3.ONE)
-	var y_min := float(def.get("y_min", 0.0))
-	var y_max := float(def.get("y_max", 0.0))
+## The hitbox of one shot `since` seconds after it was fired, straight off the motion API: x from
+## x_at, y from y_range_at, z from z_at, the extent from the contract §11.6 table.
+func _shot_box(shot: Dictionary, since: float) -> AABB:
+	var size: Vector3 = BossAttacks.shot_def(shot).get("size", Vector3.ONE)
+	var y := BossAttacks.y_range_at(shot, since)
+	var x := BossAttacks.x_at(shot, since)
+	var z := BossAttacks.z_at(shot, since)
 	return AABB(
-		Vector3(_mask_center_x(group) - size.x * 0.5, y_min, z - size.z * 0.5),
-		Vector3(size.x, maxf(y_max - y_min, 0.01), size.z))
-
-## boss_encounter._lane_groups: one projectile per contiguous run of at most `lanes_wide` lanes.
-func _lane_groups(mask: int, variant: StringName) -> Array[int]:
-	var width := HazardDefs.lanes_wide(HazardDefs.get_def(HazardDefs.PROJECTILE_KIND, variant))
-	var groups: Array[int] = []
-	var run: Array[int] = []
-	for lane in range(LANE_COUNT + 1):
-		if lane < LANE_COUNT and (mask & (1 << lane)) != 0:
-			run.append(lane)
-			continue
-		var index := 0
-		while index < run.size():
-			var group := 0
-			for offset in range(index, mini(index + width, run.size())):
-				group |= 1 << run[offset]
-			groups.append(group)
-			index += width
-		run.clear()
-	return groups
-
-func _mask_center_x(mask: int) -> float:
-	var total := 0.0
-	var count := 0
-	for lane in LANE_COUNT:
-		if (mask & (1 << lane)) == 0:
-			continue
-		total += _lane_x(lane)
-		count += 1
-	return total / float(count) if count > 0 else 0.0
+		Vector3(x - size.x * 0.5, y.x, z - size.z * 0.5),
+		Vector3(size.x, maxf(y.y - y.x, 0.01), size.z))
 
 func _lane_x(lane: int) -> float:
 	return (float(clampi(lane, 0, LANE_COUNT - 1)) - 1.0) * float(config.lane_width)
@@ -625,17 +731,6 @@ func _stage_speed_bonus(stage_index: int) -> float:
 	return clampf(float(config.stage_speed_step) * float(maxi(stage_index, 1) - 1),
 		0.0, maxf(float(config.stage_speed_bonus_max), 0.0))
 
-## The lane masks one beat can fire on: the fixed one, or every option the random rolls draw from.
-func _beat_masks(beat: Variant) -> Array[int]:
-	var row: Dictionary = beat
-	var mode: StringName = row.get("lanes", BossDefs.LANES_FIXED)
-	if mode == BossDefs.LANES_RANDOM_SINGLE:
-		return BossDefs.SINGLE_LANE_MASKS.duplicate()
-	if mode == BossDefs.LANES_RANDOM_ADJACENT:
-		return BossDefs.ADJACENT_LANE_MASKS.duplicate()
-	var fixed: Array[int] = [int(row.get("mask", BossDefs.LANE_ALL))]
-	return fixed
-
 # --- the escalation floors the whole sweep rests on ---
 
 ## Cycle 4 is where every growth curve has bottomed out (contract §11.10), so this pins that the
@@ -654,6 +749,29 @@ func _check_escalation_floors() -> void:
 				"%s p%d: cycle %d telegraph is %.3f, expected the %.2f floor"
 					% [def["kind"], phase, CYCLES - 1, BossDefs.telegraph_for(def, phase),
 						float(config.boss_telegraph_min)])
+
+## Contract 2.4: every signature the roster uses was actually swept, each boss owns its own, and B6
+## reached every event kind — so a pattern edit that drops a signature cannot pass silently.
+func _check_signature_coverage() -> void:
+	var expected := {
+		&"flaky_test_swarm": [BossAttacks.SIG_FLAKY, BossAttacks.SIG_SCATTER],
+		&"merge_conflict_hydra": [BossAttacks.SIG_BRANCHING, BossAttacks.SIG_SWEEP, BossAttacks.SIG_FORCE_PUSH],
+		&"legacy_monolith": [BossAttacks.SIG_LEGACY_WALL, BossAttacks.SIG_QUAKE, BossAttacks.SIG_DEBRIS]
+	}
+	for entry in BossDefs.SLOTS:
+		var kind: StringName = entry["kind"]
+		var seen := {}
+		for row in entry["patterns"]:
+			for beat in row:
+				seen[StringName((beat as Dictionary).get("signature", BossAttacks.SIG_PLAIN))] = true
+		for signature in expected.get(kind, []):
+			check(seen.has(signature), "%s no longer fires its %s signature" % [kind, signature])
+	for name: StringName in [&"commit", &"split", &"sweep", &"shift", &"shadow", &"land", &"volley"]:
+		check(int(event_counts.get(name, 0)) > 0, "B6 never measured a %s event" % name)
+	var tightest := PackedStringArray()
+	for name in event_min:
+		tightest.append("%s %.3f s" % [name, float(event_min[name])])
+	print("RUNNER BOSS: B6 events measured %s; tightest windows: %s" % [event_counts, ", ".join(tightest)])
 
 # --- harness ---
 

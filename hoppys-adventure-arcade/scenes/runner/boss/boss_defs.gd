@@ -20,10 +20,12 @@ const LANE_RIGHT_PAIR := 0b110
 const SINGLE_LANE_MASKS: Array[int] = [LANE_LEFT, LANE_MIDDLE, LANE_RIGHT]
 const ADJACENT_LANE_MASKS: Array[int] = [LANE_LEFT_PAIR, LANE_RIGHT_PAIR]
 
-## How a beat picks its lanes: a fixed mask, one random lane, or a random adjacent pair.
+## How a beat picks its lanes: a fixed mask, one random lane, a random adjacent pair, or either of
+## the last two (the debris drop's one-or-two lanes).
 const LANES_FIXED: StringName = &"fixed"
 const LANES_RANDOM_SINGLE: StringName = &"random_single"
 const LANES_RANDOM_ADJACENT: StringName = &"random_adjacent"
+const LANES_RANDOM_SINGLE_OR_ADJACENT: StringName = &"random_single_or_adjacent"
 
 ## Every boss runs three phases (contract §11.10 boss_phase_thresholds).
 const PHASE_COUNT := 3
@@ -33,6 +35,20 @@ const ACCEPTS_ALL: Array[StringName] = []
 ## Slot order is the stage cycle order. `telegraph` / `attack_interval` are per phase (1, 2, 3);
 ## `patterns` holds one beat list per phase, cycled a beat at a time; `accepted` holds the tools a
 ## phase takes damage from. `color` is graybox only.
+##
+## A beat is {variant, lanes[, mask]} (contract §11.6). A signature beat (contract 2.4 §11.6) adds
+## `signature` plus that signature's optional keys, all read by boss/boss_attacks.gd:
+##   flaky        `candidates` (a lanes mode): alternates two candidate masks, then commits to one
+##   scatter      an orb down the middle that splits into the two outer lanes
+##   branching    `heads` [{delay}]: one telegraph per head on distinct random lanes, staggered
+##   sweep        `sweep_fraction`: a low shot sliding outer lane -> outer lane in flight
+##   force_push   a fast wide, telegraphed longer
+##   legacy_wall  `shift_fraction`: slabs leaving one gap that shifts once to the next lane
+##   quake        a full-width ground shockwave (jump only)
+##   debris       `drop_height`, `land_fraction`: slabs falling onto floor shadows in 1-2 lanes
+## and any beat may carry `speed_scale` (x the fight's projectile speed, capped by
+## boss_signature_speed_max) and `telegraph_scale` (x the phase telegraph, floored by
+## boss_telegraph_min). A beat with neither key nor signature behaves exactly as in contract 2.3.
 const SLOTS := [
 	{
 		"kind": &"flaky_test_swarm",
@@ -44,11 +60,18 @@ const SLOTS := [
 		"tool_interval": 2.6,
 		"color": Color("8fd14f"),
 		"patterns": [
-			[{"variant": &"orb", "lanes": LANES_RANDOM_SINGLE}],
-			[{"variant": &"orb", "lanes": LANES_RANDOM_ADJACENT}],
+			[
+				{"variant": &"orb", "lanes": LANES_RANDOM_SINGLE},
+				{"variant": &"orb", "signature": &"flaky", "candidates": LANES_RANDOM_SINGLE}
+			],
+			[
+				{"variant": &"orb", "lanes": LANES_RANDOM_ADJACENT},
+				{"variant": &"orb", "signature": &"flaky", "candidates": LANES_RANDOM_ADJACENT}
+			],
 			[
 				{"variant": &"high", "lanes": LANES_FIXED, "mask": LANE_ALL},
-				{"variant": &"low", "lanes": LANES_FIXED, "mask": LANE_ALL}
+				{"variant": &"low", "lanes": LANES_FIXED, "mask": LANE_ALL},
+				{"variant": &"scatter", "signature": &"scatter", "speed_scale": 0.5}
 			]
 		],
 		"accepted": [ACCEPTS_ALL, ACCEPTS_ALL, ACCEPTS_ALL]
@@ -63,14 +86,26 @@ const SLOTS := [
 		"tool_interval": 2.3,
 		"color": Color("d46ad4"),
 		"patterns": [
-			[{"variant": &"wide", "lanes": LANES_RANDOM_ADJACENT}],
+			[
+				{"variant": &"wide", "lanes": LANES_RANDOM_ADJACENT},
+				{
+					"variant": &"orb", "signature": &"branching", "lanes": LANES_RANDOM_SINGLE,
+					"heads": [{"delay": 0.0}, {"delay": 0.3}]
+				}
+			],
 			[
 				{"variant": &"orb", "lanes": LANES_FIXED, "mask": LANE_OUTER},
 				{"variant": &"orb", "lanes": LANES_FIXED, "mask": LANE_OUTER},
-				{"variant": &"high", "lanes": LANES_FIXED, "mask": LANE_ALL}
+				{"variant": &"high", "lanes": LANES_FIXED, "mask": LANE_ALL},
+				# Phase 2 grows the fourth head, and the fourth head force-pushes.
+				{
+					"variant": &"force_push", "signature": &"force_push", "lanes": LANES_RANDOM_ADJACENT,
+					"speed_scale": 1.3, "telegraph_scale": 1.6
+				}
 			],
 			[
 				{"variant": &"wide", "lanes": LANES_RANDOM_ADJACENT},
+				{"variant": &"sweep", "signature": &"sweep", "speed_scale": 0.55, "sweep_fraction": 0.7},
 				{"variant": &"low", "lanes": LANES_FIXED, "mask": LANE_ALL}
 			]
 		],
@@ -86,16 +121,27 @@ const SLOTS := [
 		"tool_interval": 2.0,
 		"color": Color("6a7ba2"),
 		"patterns": [
-			[{"variant": &"low", "lanes": LANES_FIXED, "mask": LANE_ALL}],
+			[
+				{"variant": &"quake", "signature": &"quake", "lanes": LANES_FIXED, "mask": LANE_ALL},
+				{"variant": &"slab", "signature": &"legacy_wall", "speed_scale": 0.4, "shift_fraction": 0.3}
+			],
 			[
 				{"variant": &"wide", "lanes": LANES_FIXED, "mask": LANE_LEFT_PAIR},
+				{
+					"variant": &"debris", "signature": &"debris", "lanes": LANES_RANDOM_SINGLE_OR_ADJACENT,
+					"speed_scale": 0.55, "drop_height": 4.0, "land_fraction": 0.2
+				},
 				{"variant": &"wide", "lanes": LANES_FIXED, "mask": LANE_RIGHT_PAIR},
 				{"variant": &"high", "lanes": LANES_FIXED, "mask": LANE_ALL}
 			],
 			[
-				{"variant": &"low", "lanes": LANES_FIXED, "mask": LANE_ALL},
+				{"variant": &"quake", "signature": &"quake", "lanes": LANES_FIXED, "mask": LANE_ALL},
 				{"variant": &"high", "lanes": LANES_FIXED, "mask": LANE_ALL},
-				{"variant": &"orb", "lanes": LANES_RANDOM_SINGLE}
+				{
+					"variant": &"debris", "signature": &"debris", "lanes": LANES_RANDOM_SINGLE_OR_ADJACENT,
+					"speed_scale": 0.55, "drop_height": 4.0, "land_fraction": 0.2
+				},
+				{"variant": &"slab", "signature": &"legacy_wall", "speed_scale": 0.4, "shift_fraction": 0.3}
 			]
 		],
 		"accepted": [ACCEPTS_ALL, [&"auto_fix_patch", &"review_comment"], [&"unit_test"]]
@@ -177,7 +223,8 @@ static func telegraph_for(def: Dictionary, phase: int) -> float:
 static func attack_interval_for(def: Dictionary, phase: int) -> float:
 	return _phase_value(def, &"attack_interval", phase, 1.5)
 
-## The beat list a 1-based phase cycles; each beat is {variant, lanes[, mask]}.
+## The beat list a 1-based phase cycles; each beat is {variant, lanes[, mask]} plus the optional
+## signature keys above.
 static func pattern_for(def: Dictionary, phase: int) -> Array:
 	var patterns: Array = def.get("patterns", [])
 	if patterns.is_empty():

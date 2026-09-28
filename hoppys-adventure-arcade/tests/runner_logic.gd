@@ -15,6 +15,7 @@ const RunnerLeaderboard = preload("res://scenes/runner/systems/runner_leaderboar
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
 const StageDefs = preload("res://scenes/runner/data/stage_defs.gd")
 const BossDefs = preload("res://scenes/runner/boss/boss_defs.gd")
+const BossAttacks = preload("res://scenes/runner/boss/boss_attacks.gd")
 const ToolDefs = preload("res://scenes/runner/powerups/tool_defs.gd")
 const CONFIG_PATH := "res://scenes/runner/data/run_config.tres"
 const ARENA_SCENE := "res://scenes/runner/boss/boss_arena.tscn"
@@ -150,6 +151,7 @@ func run() -> void:
 	_test_leaderboard_migration()
 	_test_turn_camera_profile()
 	_test_boss_intro()
+	_test_boss_signatures()
 	# Last: this is the only section that drives a real chunk_spawner.gd, and the hazards it sweeps
 	# are the whole runner_hazards group, so nothing else may still be leaning on it.
 	_test_stage_banner_window()
@@ -2121,6 +2123,371 @@ func _test_boss_intro() -> void:
 	check(events["boss_log"] == [&"intro", &"spawned"],
 		"28: neither entrance signal repeats, got %s" % [events["boss_log"]])
 	_free_rig(rig)
+
+# --- 30. Boss signature attacks: beat data, shot motion, live encounter (contract 2.4 §11.6) ---
+
+## The data half is pure (boss_attacks.gd off the shipped defs and config); the live half runs the
+## real arena and real projectiles, ticked by hand, so the commit signal, the split, the gap shift,
+## the sweep and the falling slab are seen doing on the node what the data says they do.
+func _test_boss_signatures() -> void:
+	var c := base_config
+	var eps := 0.0005
+	# Flaky commit timing, at cycle 0 and at the cycle 4 floors.
+	for stage in [1, 13]:
+		var def := BossDefs.fight_def(stage, c)
+		var flaky := _beat_with(def, 1, BossAttacks.SIG_FLAKY)
+		var options := BossAttacks.beat_options(flaky, def, 1, c)
+		check(options.size() == 6, "30: a single-lane flaky beat has 3 pairs x 2 commits, got %d" % options.size())
+		for option in options:
+			var attack: Dictionary = option[0]
+			var commit := float(attack["commit_at"])
+			var candidates: Array = attack["candidates"]
+			check(is_equal_approx(commit, float(c.boss_flaky_candidate_seconds)),
+				"30: stage %d flaky commits %.3f s in, expected boss_flaky_candidate_seconds" % [stage, commit])
+			check(float(attack["telegraph"]) - commit >= float(c.boss_commit_min) - eps,
+				"30: stage %d flaky commits only %.3f s before fire, need boss_commit_min %.2f"
+					% [stage, float(attack["telegraph"]) - commit, float(c.boss_commit_min)])
+			check(is_equal_approx(float(attack["telegraph"]) - commit,
+				maxf(BossDefs.telegraph_for(def, 1), float(c.boss_commit_min))),
+				"30: the commit window is the phase telegraph, floored at boss_commit_min")
+			check(candidates.size() == 2 and int(candidates[0]) != int(candidates[1])
+				and candidates.has(int(attack["mask"]))
+				and int(attack["telegraph_mask"]) == (int(candidates[0]) | int(candidates[1])),
+				"30: the telegraph shows both candidates and fires one of them, got %s" % [attack])
+			check(int(attack["impact_mask"]) == int(attack["mask"]),
+				"30: a flaky orb hits the lane it committed to")
+	var adjacent := BossAttacks.beat_options(_beat_with(BossDefs.fight_def(1, c), 2, BossAttacks.SIG_FLAKY),
+		BossDefs.fight_def(1, c), 2, c)
+	check(adjacent.size() == 2 and int(adjacent[0][0]["telegraph_mask"]) == BossDefs.LANE_ALL,
+		"30: an adjacent-pair flaky alternates the two pairs, got %d option(s)" % adjacent.size())
+
+	# Scatter: one orb down the middle, two outer halves after the split.
+	var swarm := BossDefs.fight_def(1, c)
+	var scatter: Dictionary = BossAttacks.beat_options(_beat_with(swarm, 3, BossAttacks.SIG_SCATTER), swarm, 3, c)[0][0]
+	var halves: Array = scatter["shots"]
+	var split := float(scatter["split_at"])
+	check(halves.size() == 2, "30: the scatter orb fires two halves, got %d" % halves.size())
+	check(is_equal_approx(BossAttacks.z_at(halves[0], split), -float(c.boss_scatter_split_distance)),
+		"30: the split happens at track z %.2f, expected -boss_scatter_split_distance"
+			% BossAttacks.z_at(halves[0], split))
+	var xs: Array[float] = []
+	for half in halves:
+		check(BossAttacks.lane_mask_at(half, 0.0, c) == BossDefs.LANE_MIDDLE
+			and is_zero_approx(BossAttacks.x_at(half, split - 0.01)),
+			"30: before the split both halves fly the middle lane")
+		xs.append(BossAttacks.x_at(half, split + BossAttacks.SPLIT_SECONDS))
+	xs.sort()
+	check(is_equal_approx(xs[0], -float(c.lane_width)) and is_equal_approx(xs[1], float(c.lane_width)),
+		"30: after the split the halves sit on the outer lanes, got %s" % [xs])
+	check(int(scatter["impact_mask"]) == BossDefs.LANE_OUTER and int(scatter["telegraph_mask"]) == BossDefs.LANE_MIDDLE,
+		"30: the scatter telegraphs the middle and hits the outer lanes, got %s / %s"
+			% [scatter["telegraph_mask"], scatter["impact_mask"]])
+	check(split + BossAttacks.SPLIT_SECONDS < BossAttacks.pass_window(halves[0]).x,
+		"30: the split is over before the halves reach the player")
+
+	# Legacy wall: exactly one gap, shifting once to the next lane.
+	var monolith := BossDefs.fight_def(3, c)
+	var walls := BossAttacks.beat_options(_beat_with(monolith, 1, BossAttacks.SIG_LEGACY_WALL), monolith, 1, c)
+	check(walls.size() == 4, "30: the gap can shift 0->1, 1->0, 1->2, 2->1, got %d option(s)" % walls.size())
+	for option in walls:
+		var wall: Dictionary = option[0]
+		var from := int(wall["gap_from"])
+		var to := int(wall["gap_to"])
+		var shift := float(wall["shift_at"])
+		var at_fire := 0
+		var at_impact := 0
+		var movers := 0
+		for slab in wall["shots"]:
+			at_fire |= BossAttacks.lane_mask_at(slab, 0.0, c)
+			at_impact |= BossAttacks.impact_mask(slab, c)
+			if not is_equal_approx(BossAttacks.x_at(slab, 0.0), BossAttacks.x_at(slab, 99.0)):
+				movers += 1
+				check(BossAttacks.lane_mask_at(slab, shift - 0.01, c) == 1 << to
+					and BossAttacks.lane_mask_at(slab, shift + BossAttacks.SHIFT_SECONDS, c) == 1 << from,
+					"30: the moving slab leaves the new gap for the old one at the shift")
+		check(absi(from - to) == 1 and movers == 1, "30: one slab moves one lane, got %d mover(s)" % movers)
+		check(at_fire == BossDefs.LANE_ALL & ~(1 << from) and at_impact == BossDefs.LANE_ALL & ~(1 << to),
+			"30: the wall leaves gap %d at fire and gap %d at impact, got %d / %d" % [from, to, at_fire, at_impact])
+		check(int(wall["telegraph_mask"]) == at_fire and shift > 0.0
+			and shift + BossAttacks.SHIFT_SECONDS < BossAttacks.pass_window(wall["shots"][0]).x,
+			"30: the wall telegraphs its first gap and shifts mid-flight")
+		check(not bool(wall["jumpable"]) and not bool(wall["rollable"]),
+			"30: the legacy wall is answered by the gap, never by the body")
+
+	# Rebase sweep: outer lane to outer lane, low enough to jump.
+	var hydra := BossDefs.fight_def(2, c)
+	var sweeps := BossAttacks.beat_options(_beat_with(hydra, 3, BossAttacks.SIG_SWEEP), hydra, 3, c)
+	check(sweeps.size() == 2, "30: the sweep runs both ways, got %d option(s)" % sweeps.size())
+	for option in sweeps:
+		var sweep: Dictionary = option[0]
+		var shot: Dictionary = sweep["shots"][0]
+		var end := float(sweep["sweep_end"])
+		var from_x := c.lane_x(int(sweep["sweep_from"]))
+		var to_x := c.lane_x(int(sweep["sweep_to"]))
+		check(is_equal_approx(BossAttacks.x_at(shot, 0.0), from_x) and is_equal_approx(BossAttacks.x_at(shot, end), to_x)
+			and is_equal_approx(BossAttacks.x_at(shot, end * 0.5), (from_x + to_x) * 0.5),
+			"30: the sweep slides %.1f -> %.1f linearly over %.3f s" % [from_x, to_x, end])
+		check(int(sweep["impact_mask"]) == 1 << int(sweep["sweep_to"]) and int(sweep["telegraph_mask"]) == BossDefs.LANE_ALL,
+			"30: the sweep telegraphs its whole path and hits its end lane")
+		check(bool(sweep["jumpable"]) and end < BossAttacks.pass_window(shot).x,
+			"30: the sweep stays low (jumpable) and has finished sliding before it arrives")
+
+	# Debris: shadows in one or two lanes, slabs landing before they arrive.
+	var drops := BossAttacks.beat_options(_beat_with(monolith, 2, BossAttacks.SIG_DEBRIS), monolith, 2, c)
+	check(drops.size() == 5, "30: debris falls in any one lane or adjacent pair, got %d option(s)" % drops.size())
+	for option in drops:
+		var drop: Dictionary = option[0]
+		var land := float(drop["land_at"])
+		var lanes := 0
+		for slab in drop["shots"]:
+			lanes |= BossAttacks.lane_mask_at(slab, 0.0, c)
+			check(is_equal_approx(BossAttacks.y_range_at(slab, 0.0).x, float(drop["drop_height"]))
+				and is_equal_approx(BossAttacks.y_range_at(slab, land).x, 0.0)
+				and BossAttacks.y_range_at(slab, land * 0.5).x > 0.0,
+				"30: a slab starts drop_height up and is on the floor at land_at")
+			check(land < BossAttacks.pass_window(slab).x and BossAttacks.lane_mask_at(slab, land, c)
+				== BossAttacks.lane_mask_at(slab, 0.0, c), "30: a slab falls straight down onto its shadow")
+		check(lanes == int(drop["mask"]) and int(drop["telegraph_mask"]) == lanes and int(drop["impact_mask"]) == lanes,
+			"30: the shadows are the lanes the slabs land in, got %d / %d" % [lanes, int(drop["telegraph_mask"])])
+		check(bool(drop["jumpable"]), "30: a landed slab is jumpable")
+
+	# Branching and force push.
+	var volley: Array = BossAttacks.beat_options(_beat_with(hydra, 1, BossAttacks.SIG_BRANCHING), hydra, 1, c)[0]
+	check(volley.size() == 2 and int(volley[0]["impact_mask"]) != int(volley[1]["impact_mask"])
+		and is_equal_approx(float(volley[1]["telegraph"]) - float(volley[0]["telegraph"]), 0.3),
+		"30: a branching volley is two heads on distinct lanes, 0.3 s apart, got %s" % [volley])
+	var push: Dictionary = BossAttacks.beat_options(_beat_with(hydra, 2, BossAttacks.SIG_FORCE_PUSH), hydra, 2, c)[0][0]
+	check(is_equal_approx(float(push["speed"]), minf(float(hydra["projectile_speed"]) * 1.3, float(c.boss_signature_speed_max)))
+		and is_equal_approx(float(push["telegraph"]), BossDefs.telegraph_for(hydra, 2) * 1.6),
+		"30: the force push is 1.3x fast and telegraphed 1.6x long, got %.2f m/s / %.3f s"
+			% [float(push["speed"]), float(push["telegraph"])])
+
+	# Plain beats resolve exactly as before, and a fixed beat never touches the fight RNG.
+	var plain := BossAttacks.beat_options({"variant": &"orb", "lanes": BossDefs.LANES_RANDOM_SINGLE}, swarm, 1, c)
+	check(plain.size() == 3 and int(plain[1][0]["impact_mask"]) == BossDefs.LANE_MIDDLE
+		and (plain[1][0]["shots"] as Array).size() == 1
+		and (plain[1][0]["shots"][0]["x_keys"] as PackedVector2Array).size() == 1,
+		"30: a plain orb beat is one straight shot per lane option")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var state := rng.state
+	var fixed_beat := {"variant": &"low", "lanes": BossDefs.LANES_FIXED, "mask": BossDefs.LANE_ALL}
+	var fixed := BossAttacks.beat_options(fixed_beat, swarm, 3, c)
+	check(BossAttacks.pick_option(fixed, 0, rng, BossAttacks.draws_random(fixed_beat, fixed)) == 0 and rng.state == state,
+		"30: a fixed beat is drawn without a roll, so the v2.0 lane stream replays")
+
+	_test_boss_signatures_live()
+	_test_boss_signatures_bot()
+
+## The first beat of `phase` carrying `signature`.
+func _beat_with(def: Dictionary, phase: int, signature: StringName) -> Dictionary:
+	for beat in BossDefs.pattern_for(def, phase):
+		if StringName((beat as Dictionary).get("signature", &"")) == signature:
+			return beat
+	check(false, "30: %s phase %d has no %s beat" % [def.get("kind", &""), phase, signature])
+	return {}
+
+## The real arena queuing and firing signature beats.
+func _test_boss_signatures_live() -> void:
+	var rig := _boss_rig({"boss_intro_seconds": 0.0, "boss_outro_seconds": 0.0, "boss_timeout_seconds": 999.0})
+	var game: Node3D = rig["game"]
+	var arena: Node3D = rig["arena"]
+	var log: Array = []
+	game.boss_attack_planned.connect(func(attack: Dictionary) -> void:
+		log.append([&"planned", attack]))
+	game.boss_attack_telegraph.connect(func(mask: int, kind: StringName, seconds: float) -> void:
+		log.append([&"telegraph", mask, kind, seconds]))
+	game.boss_attack_committed.connect(func(mask: int, kind: StringName, seconds: float) -> void:
+		log.append([&"committed", mask, kind, seconds, float(arena._fight_timer)]))
+	var fired: Array = []
+	game.boss_projectile_fired.connect(func(projectile: Area3D, mask: int, kind: StringName, speed: float) -> void:
+		fired.append([projectile, mask, kind, speed]))
+	arena.start(1)
+	# Beat 2 of the Swarm's phase 1 is the flaky one.
+	arena._beat = 1
+	arena._attack_timer = 0.0
+	arena.tick(TICK)
+	check(log.size() == 2 and log[0][0] == &"planned" and log[1][0] == &"telegraph",
+		"30: boss_attack_planned goes out right before its telegraph, got %s" % [log.map(func(e): return e[0])])
+	if log.size() < 2:
+		_free_rig(rig)
+		return
+	var attack: Dictionary = log[0][1]
+	var queued_at := float(arena._fight_timer)
+	check(StringName(attack["signature"]) == BossAttacks.SIG_FLAKY and int(log[1][1]) == int(attack["telegraph_mask"])
+		and is_equal_approx(float(log[1][3]), float(attack["telegraph"])),
+		"30: the telegraph carries the candidate mask and the whole flaky telegraph")
+	var row: Dictionary = arena.get_boss_info()["pending_attacks"][0]
+	check(not bool(row["committed"]) and int(row["lane_mask"]) == int(attack["telegraph_mask"]),
+		"30: pending_attacks shows the uncommitted candidates, got %s" % [row])
+	var guard := 0
+	while fired.is_empty() and guard < 400:
+		arena.tick(TICK)
+		guard += 1
+	var commits: Array = log.filter(func(e): return e[0] == &"committed")
+	check(commits.size() == 1 and int(commits[0][1]) == int(attack["mask"]) and StringName(commits[0][2]) == &"orb",
+		"30: the flaky telegraph commits once, to its fire mask, got %s" % [commits])
+	if commits.size() == 1:
+		var commit_time := float(commits[0][4]) - queued_at
+		check(absf(commit_time - float(attack["commit_at"])) <= TICK + eps_tick(),
+			"30: the commit lands %.3f s after the telegraph, expected %.3f" % [commit_time, float(attack["commit_at"])])
+		check(absf(float(commits[0][3]) - (float(attack["telegraph"]) - float(attack["commit_at"]))) <= TICK + eps_tick(),
+			"30: boss_attack_committed carries the %.3f s left before fire, got %.3f"
+				% [float(attack["telegraph"]) - float(attack["commit_at"]), float(commits[0][3])])
+	check(fired.size() == 1 and int(fired[0][1]) == int(attack["mask"]),
+		"30: the flaky orb fires on the committed lane, got %s" % [fired])
+	if fired.size() == 1:
+		var orb: Area3D = fired[0][0]
+		check(StringName(orb.get(&"boss_kind")) == &"flaky_test_swarm" and StringName(orb.get(&"signature")) == BossAttacks.SIG_FLAKY
+			and (orb.get(&"motion") as Dictionary).is_empty(),
+			"30: the shot carries its boss kind and signature, and a straight shot no motion")
+
+	# Scatter: two halves spawned in the middle, on the outer lanes after the split.
+	arena._clear_projectiles()
+	fired.clear()
+	arena.phase = 3
+	arena._beat = 2
+	arena._attack_timer = 0.0
+	arena.tick(TICK)
+	guard = 0
+	while fired.is_empty() and guard < 400:
+		arena.tick(TICK)
+		guard += 1
+	check(fired.size() == 2 and StringName(fired[0][2]) == &"scatter", "30: the scatter fires two halves, got %s" % [fired])
+	if fired.size() == 2:
+		check(arena._blocked_lane_mask() == BossDefs.LANE_OUTER,
+			"30: the tool-lane rule blocks where the halves will hit (outer), got %d" % arena._blocked_lane_mask())
+		var half: Area3D = fired[0][0]
+		var other: Area3D = fired[1][0]
+		check(half.lanes_mask() == BossDefs.LANE_MIDDLE and half.lane_mask_at(0.0) == BossDefs.LANE_MIDDLE
+			and half.impact_lane_mask() | other.impact_lane_mask() == BossDefs.LANE_OUTER,
+			"30: a scatter half starts in the middle and is planned against the outer lanes")
+		# The bot's live-shot fallback reads the same impact lanes off the node.
+		var reader: Node = autopilot_script.new()
+		junk.append(reader)
+		reader.setup(game)
+		var live_slices: Array = reader.slices_for([half], 24.0, 0.0)
+		check(live_slices.size() == 1 and int(live_slices[0]["blocked"]) == half.impact_lane_mask(),
+			"30: a live split shot is sliced on its impact lanes, got %s" % [live_slices])
+		# The halves' own motion says when the split is over: the last x key.
+		var keys: PackedVector2Array = (half.get(&"motion") as Dictionary).get("x_keys", PackedVector2Array())
+		check(keys.size() == 3, "30: a scatter half carries its split in its motion, got %s" % [keys])
+		_fly([half, other], (keys[keys.size() - 1].x if not keys.is_empty() else 0.0) + 0.05)
+		var outer := [half.position.x, other.position.x]
+		outer.sort()
+		check(is_equal_approx(outer[0], -2.0) and is_equal_approx(outer[1], 2.0),
+			"30: after the split the live halves are on x -2 / +2, got %s" % [outer])
+		check(half.lanes_mask() | other.lanes_mask() == BossDefs.LANE_OUTER,
+			"30: the live hitboxes moved with them, got %d" % (half.lanes_mask() | other.lanes_mask()))
+		# The fallback visual draws the base look for a variant it does not know.
+		if is_instance_valid(half.visual) and &"variant" in half.visual and not (&"signature_variants" in half.visual):
+			check(StringName(half.visual.get(&"variant")) == &"orb",
+				"30: a scatter half is drawn with the orb look until a visual opts in, got %s" % half.visual.get(&"variant"))
+	_free_rig(rig)
+
+	# Legacy wall and debris on the Monolith.
+	var mono_rig := _boss_rig({"boss_intro_seconds": 0.0, "boss_outro_seconds": 0.0, "boss_timeout_seconds": 999.0})
+	var mono_game: Node3D = mono_rig["game"]
+	var mono: Node3D = mono_rig["arena"]
+	var shots: Array = []
+	var planned: Array = []
+	mono_game.boss_projectile_fired.connect(func(projectile: Area3D, _m: int, _k: StringName, _s: float) -> void:
+		shots.append(projectile))
+	mono_game.boss_attack_planned.connect(func(attack: Dictionary) -> void:
+		planned.append(attack))
+	mono.start(3)
+	mono._beat = 1
+	mono._attack_timer = 0.0
+	mono.tick(TICK)
+	guard = 0
+	while shots.is_empty() and guard < 400:
+		mono.tick(TICK)
+		guard += 1
+	check(shots.size() == 2 and not planned.is_empty(), "30: the legacy wall fires two slabs, got %d" % shots.size())
+	if shots.size() == 2 and not planned.is_empty():
+		var wall: Dictionary = planned[planned.size() - 1]
+		var mask_at_fire := int(shots[0].lanes_mask()) | int(shots[1].lanes_mask())
+		_fly(shots, float(wall["shift_at"]) + BossAttacks.SHIFT_SECONDS + 0.05)
+		var mask_after := int(shots[0].lanes_mask()) | int(shots[1].lanes_mask())
+		check(mask_at_fire == BossDefs.LANE_ALL & ~(1 << int(wall["gap_from"]))
+			and mask_after == BossDefs.LANE_ALL & ~(1 << int(wall["gap_to"])),
+			"30: the live wall's gap moved %d -> %d, got masks %d -> %d"
+				% [int(wall["gap_from"]), int(wall["gap_to"]), mask_at_fire, mask_after])
+	mono._clear_projectiles()
+	shots.clear()
+	mono.phase = 2
+	mono._beat = 1
+	mono._attack_timer = 0.0
+	mono.tick(TICK)
+	guard = 0
+	while shots.is_empty() and guard < 400:
+		mono.tick(TICK)
+		guard += 1
+	check(not shots.is_empty() and StringName(shots[0].variant) == &"debris", "30: the Monolith drops debris in phase 2")
+	if not shots.is_empty():
+		var slab: Area3D = shots[0]
+		var drop: Dictionary = slab.get(&"motion")
+		check(slab.position.y > 1.0 and slab.get_world_aabb().position.y > 1.0,
+			"30: a slab is fired high above its shadow, got y %.2f" % slab.position.y)
+		_fly(shots, float(drop.get("land_at", 0.0)) + 0.02)
+		check(is_zero_approx(slab.position.y) and is_equal_approx(slab.get_world_aabb().position.y, 0.0),
+			"30: a slab has landed on its shadow by land_at, got y %.2f" % slab.position.y)
+	_free_rig(mono_rig)
+
+func eps_tick() -> float:
+	return 0.0005
+
+## Advance hand-ticked projectiles by `seconds` on their own motion.
+func _fly(projectiles: Array, seconds: float) -> void:
+	var steps := int(ceilf(seconds / TICK))
+	for i in steps:
+		for node in projectiles:
+			if is_instance_valid(node) and not node.is_queued_for_deletion():
+				node._physics_process(TICK)
+
+## The planner half: a flaky telegraph is planned against both candidates until it commits, and a
+## branching volley is answered with the one lane both heads leave free.
+func _test_boss_signatures_bot() -> void:
+	var game := _make_game()
+	game.speed = 24.0
+	var bot: Node = autopilot_script.new()
+	junk.append(bot)
+	bot.setup(game)
+	var c: RunConfig = game.config
+	var swarm := BossDefs.fight_def(1, c)
+	var flaky: Dictionary = BossAttacks.beat_options(_beat_with(swarm, 1, BossAttacks.SIG_FLAKY), swarm, 1, c)[0][0]
+	game.boss_attack_planned.emit(flaky)
+	game.boss_attack_telegraph.emit(int(flaky["telegraph_mask"]), &"orb", float(flaky["telegraph"]))
+	var pending: Array = bot.pending_attacks()
+	check(pending.size() == 1 and int(pending[0]["mask"]) == int(flaky["telegraph_mask"]) and not bool(pending[0]["committed"]),
+		"30: an uncommitted flaky attack blocks both candidates, got %s" % [pending])
+	check(is_equal_approx(float(pending[0]["arrival"]), float(flaky["enter"])),
+		"30: the planner's arrival is the motion API's pass window")
+	game.boss_attack_committed.emit(int(flaky["mask"]), &"orb", float(flaky["telegraph"]) - float(flaky["commit_at"]))
+	check(int(pending[0]["mask"]) == int(flaky["mask"]) and bool(pending[0]["committed"]),
+		"30: the commit narrows the plan to the committed lane, got %s" % [pending[0]])
+	bot.reset()
+	var hydra := BossDefs.fight_def(2, c)
+	for option in BossAttacks.beat_options(_beat_with(hydra, 1, BossAttacks.SIG_BRANCHING), hydra, 1, c):
+		var heads: Array = option
+		bot.reset()
+		for head in heads:
+			game.boss_attack_planned.emit(head)
+			game.boss_attack_telegraph.emit(int(head["telegraph_mask"]), &"orb", float(head["telegraph"]))
+		var free_lane := -1
+		var blocked := 0
+		for head in heads:
+			blocked |= int(head["impact_mask"])
+		for lane in 3:
+			if (blocked & (1 << lane)) == 0:
+				free_lane = lane
+		var group: Array = bot.pending_attacks().duplicate()
+		for lane in 3:
+			if lane == free_lane:
+				continue
+			var plan: Dictionary = bot.plan_group(group, lane)
+			check(StringName(plan["action"]) == bot.ACTION_LANE and int(plan["lane"]) == free_lane,
+				"30: from lane %d the volley %d is answered in lane %d, got %s" % [lane, blocked, free_lane, plan])
 
 # --- 29. The stage-entrance window: nothing blocking while the banner is up (contract §11.1) ---
 

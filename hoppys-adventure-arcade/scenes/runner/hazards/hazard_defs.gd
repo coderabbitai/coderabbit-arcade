@@ -126,14 +126,77 @@ const DEFS := {
 				"y_max": 1.0,
 				"lanes_wide": 2,
 				"dodge_hint": &"LANE"
+			},
+			## Signature variants (contract 2.4 §11.6). Each names the base `look` the fallback
+			## projectile visual draws until a frontend visual opts into the variant itself.
+			## Flaky Test Swarm P3: the orb that splits into the two outer lanes mid-flight.
+			## Lower than a plain orb: it flies at half speed, so its pass is longer and a jump has to
+			## clear it for longer.
+			&"scatter": {
+				"size": Vector3(1.6, 0.7, 1.2),
+				"y_min": 0.0,
+				"y_max": 0.7,
+				"look": &"orb"
+			},
+			## Merge Conflict Hydra: the low rebase sweep that slides across the lanes in flight.
+			&"sweep": {
+				"size": Vector3(1.6, 0.6, 1.2),
+				"y_min": 0.0,
+				"y_max": 0.6,
+				"lanes_wide": 1,
+				"dodge_hint": &"JUMP_OR_LANE",
+				"look": &"orb"
+			},
+			## Merge Conflict Hydra P2, the fourth head: a fast two-lane wall, telegraphed longer.
+			&"force_push": {
+				"size": Vector3(3.6, 1.0, 1.2),
+				"y_min": 0.0,
+				"y_max": 1.0,
+				"lanes_wide": 2,
+				"dodge_hint": &"LANE",
+				"look": &"wide"
+			},
+			## Legacy Monolith: one slab of the slow wall whose single gap shifts once in flight.
+			## Too tall to jump and floor-standing, so the gap lane is the only answer.
+			&"slab": {
+				"size": Vector3(1.8, 2.4, 1.2),
+				"y_min": 0.0,
+				"y_max": 2.4,
+				"lanes_wide": 1,
+				"dodge_hint": &"LANE",
+				"look": &"wide"
+			},
+			## Legacy Monolith: the deprecation quake, a full-width ground shockwave that must be jumped.
+			&"quake": {
+				"size": Vector3(5.6, 0.5, 1.2),
+				"y_min": 0.0,
+				"y_max": 0.5,
+				"lanes_wide": 3,
+				"dodge_hint": &"JUMP",
+				"look": &"low"
+			},
+			## Legacy Monolith: a cracked slab that falls onto its floor shadow, one lane per slab.
+			## The y range is the landed one; boss_attacks.gd lifts it while it falls.
+			&"debris": {
+				"size": Vector3(1.6, 0.8, 1.2),
+				"y_min": 0.0,
+				"y_max": 0.8,
+				"lanes_wide": 1,
+				"dodge_hint": &"JUMP_OR_LANE",
+				"look": &"wide"
 			}
 		}
 	}
 }
 
-## The boss projectile kind and its variants (contract §11.6), in table order.
+## The boss projectile kind and its four base variants (contract §11.6), in table order. These are
+## also the four looks every other variant falls back to.
 const PROJECTILE_KIND: StringName = &"projectile"
 const PROJECTILE_VARIANTS: Array[StringName] = [&"orb", &"low", &"high", &"wide"]
+## The signature variants the boss attacks add (contract 2.4 §11.6), in table order.
+const SIGNATURE_PROJECTILE_VARIANTS: Array[StringName] = [
+	&"scatter", &"sweep", &"force_push", &"slab", &"quake", &"debris"
+]
 
 ## Dodge hints whose only safe answer is rolling (used for standing clearance and the bot).
 const ROLL_HINTS := [&"ROLL", &"ROLL_OR_JUMP"]
@@ -173,3 +236,12 @@ static func lanes_wide(def: Dictionary) -> int:
 
 static func kinds() -> Array:
 	return DEFS.keys()
+
+## The base look (one of PROJECTILE_VARIANTS) a projectile variant is drawn with by a visual that
+## does not know the variant itself: the variant for the four base ones, its `look` otherwise.
+static func projectile_look(variant: StringName) -> StringName:
+	if PROJECTILE_VARIANTS.has(variant):
+		return variant
+	var def := get_def(PROJECTILE_KIND, variant)
+	var look: StringName = def.get("look", &"orb")
+	return look if PROJECTILE_VARIANTS.has(look) else &"orb"

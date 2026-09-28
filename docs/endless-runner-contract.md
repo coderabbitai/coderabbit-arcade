@@ -1,6 +1,6 @@
 # Endless Runner — Backend/Frontend Contract
 
-Version 2.0 · 2026-09-19 · GDScript · v2 (stages, turns, bosses) is specified in §11 and overrides §2–§8 where they conflict
+Version 2.4 · 2026-09-28 · GDScript · v2 (stages, turns, bosses) is specified in §11 and overrides §2–§8 where they conflict
 
 **Engine version policy.** The project pins **Godot 4.7.1** (GDD). The editor installed on the build
 machine during this cycle is **4.7.0 stable** (`4.7.stable.official.5b4e0cb0f`), so every verification
@@ -334,6 +334,7 @@ mouse-hover failures on a clean `main`; the docs validated it on 4.7.1. New runn
 
 ## 10. Change log
 
+- 2.4 (2026-09-28): §11.4/§11.5/§11.6/§11.10/§11.12 — boss signature attacks. Beats may carry a `signature` (boss_defs.gd): Flaky Test Swarm `flaky` (the telegraph alternates two candidate lanes for `boss_flaky_candidate_seconds`, then commits at least `boss_commit_min` before fire) and `scatter` (a half-speed orb down the middle that splits into the two outer lanes at track z −`boss_scatter_split_distance`); Merge Conflict Hydra `branching` (staggered heads, each telegraphed up front on its own lane), `sweep` (the low rebase sweep sliding outer lane → outer lane in flight) and `force_push` (phase 2's fourth head: a fast `wide`, telegraphed 1.6× longer); Legacy Monolith `legacy_wall` (a slow wall of slabs with one gap that shifts once to the next lane), `quake` (full-width ground shockwave, jump only) and `debris` (slabs falling onto floor shadows in 1–2 lanes). New facade signals `boss_attack_planned(attack)` and `boss_attack_committed(lane_mask, kind, seconds)`; `boss_attack_telegraph` now carries the candidate mask for a flaky beat; six new projectile variants (`scatter`, `sweep`, `force_push`, `slab`, `quake`, `debris`), each mapped to a base look for visuals that do not opt in; projectiles expose `boss_kind`, `signature`, `motion`, `age` and the motion API `lane_mask_at(t)` / `y_range_at(t)` / `impact_lane_mask()` (boss/boss_attacks.gd); the autopilot and `runner_boss_validator.gd` plan against that API, and the validator gains **B6**. Beats without a `signature` behave exactly as in 2.3. The Hydra taunt now matches its head count (3 heads, 4 from phase 2).
 - 2.3 (2026-09-22): §11.1/§11.8/§11.10 — the stage-entrance guarantee. The `STAGE n` banner covers the lanes, so for `stage_banner_clear_seconds` (3.5) after every `stage_started`, stage 1 included, no blocking hazard may reach the player, and when that window ends the nearest one is still `stage_banner_reaction_seconds` (1.0) × speed metres away. `chunk_spawner.gd` gains `begin_clear_road(seconds)`, which the StageManager calls immediately before switching placement back on: it clamps a frontier left stale by a drained corridor to at least 6 m ahead (so the first chunk of a stage is never parked at the player's feet), sweeps anything already inbound **silently** (no `hazard_cleared`, no `hazards_blasted`, no bonus, no score, no `hazards_dodged`), and restricts placement to hazard-free `breather` chunks until a hazard-bearing one would arrive late enough. `breather`-tagged chunks are now required to carry zero hazards. `ui/stage_banner.tscn` must be off screen within `stage_banner_clear_seconds − stage_banner_reaction_seconds`.
 - 2.2 (2026-09-21): §11.3/§11.8 — `ui/post_fx.tscn` sanctioned as an optional HUD mount (CanvasLayer 9, PAUSABLE, idempotent `has_signal`-guarded `bind(game)`): one full-screen post pass for grade, grain, vignette, aberration, letterbox, speed streaks and Nitro lift, with the HUD keeping the pursuit vignette and corner bars unless the frontend hands them over via `post_fx.set_settings()`.
 - 2.1 (2026-09-21): §11.4 — `turn_incoming(direction, seconds)` announces the corner `turn_warning_seconds` (3.0) ahead of the bend on the direction `turn_started` then repeats, with `next_turn_direction` on the facade; `boss_intro(kind, name, seconds)` opens the fight immediately before `boss_spawned`. §11.9/§11.10 — the camera swing becomes a ramp–hold–return envelope (`turn_swing_in_fraction` / `turn_swing_out_fraction` 0.3) and is retuned to `turn_camera_yaw_degrees` 55 / `turn_camera_bank_degrees` 12 / `turn_seconds` 2.4; `boss_intro_seconds` 1.2 → 3.0.
@@ -430,8 +431,10 @@ Signals (additive; §4.1 unchanged):
 | `boss_spawned(kind: StringName, hp: int)` | BossEncounter | right after `boss_intro`: the moment the boss is visible and armed. Attacks begin `seconds` later, when the intro `boss_intro` announced has run down |
 | `boss_health_changed(hp: int, max_hp: int)` | BossEncounter | |
 | `boss_phase_changed(phase: int)` | BossEncounter | 1-based; at 100 % / 66 % / 33 % HP |
-| `boss_attack_telegraph(lane_mask: int, kind: StringName, seconds: float)` | BossEncounter | `lane_mask` bit i = lane index i (§11.7); `kind` = projectile variant |
-| `boss_projectile_fired(projectile: Area3D, lane_mask: int, kind: StringName, speed: float)` | BossEncounter | at the end of the telegraph |
+| `boss_attack_planned(attack: Dictionary)` | BossEncounter | v2.4: immediately **before** every `boss_attack_telegraph`, on the same tick: the full attack that telegraph announces (§11.6 attack dictionary). A branching volley sends one pair per head |
+| `boss_attack_telegraph(lane_mask: int, kind: StringName, seconds: float)` | BossEncounter | `lane_mask` bit i = lane index i (§11.7); `kind` = projectile variant. v2.4: `lane_mask` is the *telegraphed* lanes — both candidates for a flaky beat, the whole path for a sweep, the first gap's slabs for a legacy wall, the middle for a scatter; `seconds` is the whole telegraph (candidates + commit for a flaky beat) |
+| `boss_attack_committed(lane_mask: int, kind: StringName, seconds: float)` | BossEncounter | v2.4: a flaky telegraph stopped alternating and settled on `lane_mask` (one of its candidates); `seconds` = what is left before it fires, always ≥ `boss_commit_min`. Commits arrive in telegraph order |
+| `boss_projectile_fired(projectile: Area3D, lane_mask: int, kind: StringName, speed: float)` | BossEncounter | at the end of the telegraph, once per projectile; `lane_mask` = the lanes that projectile starts in, `kind` = its variant, `speed` = its own closing speed (a signature beat may scale it) |
 | `boss_defeated(kind: StringName, bonus: int)` / `boss_retreated(kind: StringName, bonus: int)` | BossEncounter | exactly one of the two per fight |
 | `tool_collected(kind: StringName, damage: int)` | BossEncounter | `damage` 0 when the boss's phase resists the tool |
 | `pursuit_alert(kind: StringName, seconds_to_catch: float)` | HitManager | `warn` at pursuit start, `critical` when `recovery_remaining ≤ pursuit_critical_seconds`, `clear` on recovery or catch |
@@ -444,7 +447,9 @@ window picks the seam's direction — so already set when `turn_incoming` fires 
 `boss_max_hp`, `boss_phase: int`. Methods: `get_stage_info() -> Dictionary`
 (`index, name, phase, distance, target, speed_bonus, difficulty_floor`), `get_boss_info() -> Dictionary`
 (`kind, name, hp, max_hp, phase, phase_count, accepted_tools, pending_attacks`; `phase_count` is the fight's own
-phase count, 3 today, and 0 in the empty block). `result` gains `stages_cleared`,
+phase count, 3 today, and 0 in the empty block; each `pending_attacks` row is `{lane_mask, kind, remaining}` plus,
+v2.4, `{impact_mask, signature, committed, commit_remaining, attack}`, where `lane_mask` switches from the candidates
+to the committed lanes at the commit). `result` gains `stages_cleared`,
 `stage_reached`, `bosses_defeated`, `bosses_escaped`, `tools_used`, `boss_damage_dealt`, `turns_taken` (all int).
 Projectiles count in `hazards_dodged` (it is a stat, not a score input). `camera_rig.shake(0.35)` fires on every
 damaging tool hit (backend-owned, as in §4.2).
@@ -461,6 +466,7 @@ Kinds: `flaky_test_swarm`, `merge_conflict_hydra`, `legacy_monolith`. Base vars 
 | `set_phase(phase: int)` | on `boss_phase_changed` |
 | `set_health(hp: int, max_hp: int)` | on `boss_health_changed` |
 | `play_telegraph(lane_mask: int, kind: StringName, seconds: float)` | on `boss_attack_telegraph` |
+| `play_commit(lane_mask: int, kind: StringName, seconds: float)` | v2.4, optional (`has_method`-guarded): on `boss_attack_committed` |
 | `play_attack(kind: StringName)` | at fire |
 | `play_hit(tool_kind: StringName, damage: int)` | damaging tool |
 | `play_resist(tool_kind: StringName)` | resisted tool (damage 0) |
@@ -487,6 +493,44 @@ boss and moving +Z at `closing_speed` relative to the player.
 
 Visuals ≤ 110 % of the hitbox (ground-projection quads exempt on y as in §5.2). Reaction budget guaranteed by
 `tests/runner_boss_validator.gd`: telegraph + travel ≥ 0.98 s at maximum escalation, jump reaction ≥ 0.35 s.
+
+**Signature variants (v2.4).** Same rules as the four above; `look` is the base variant a visual that has not opted in
+is handed as `variant` (so nothing is ever invisible), `boss` the boss that fires it:
+
+| variant | W × H × D (m) | y range | lanes | dodge_hint | look | boss / signature |
+|---|---|---|---|---|---|---|
+| `scatter` | 1.6 × 0.7 × 1.2 | 0–0.7 | 1 | JUMP_OR_LANE | `orb` | Swarm `scatter` (half speed) |
+| `sweep` | 1.6 × 0.6 × 1.2 | 0–0.6 | 1 (moving) | JUMP_OR_LANE | `orb` | Hydra `sweep` (0.55× speed) |
+| `force_push` | 3.6 × 1.0 × 1.2 | 0–1.0 | 2 adjacent | LANE | `wide` | Hydra `force_push` (1.3× speed, 1.6× telegraph) |
+| `slab` | 1.8 × 2.4 × 1.2 | 0–2.4 | 1 | LANE | `wide` | Monolith `legacy_wall` (0.4× speed) |
+| `quake` | 5.6 × 0.5 × 1.2 | 0–0.5 | all | JUMP | `low` | Monolith `quake` |
+| `debris` | 1.6 × 0.8 × 1.2 | 0–0.8 landed | 1 | JUMP_OR_LANE | `wide` | Monolith `debris` (0.55× speed) |
+
+`flaky` and `branching` fire plain `orb`s. A signature beat's speed is the fight's projectile speed × its `speed_scale`,
+capped at `boss_signature_speed_max`; its telegraph is the phase telegraph × `telegraph_scale`, floored at
+`boss_telegraph_min`.
+
+**Motion (v2.4).** `boss/boss_attacks.gd` is the single source (pure, static). A *shot* is one projectile's motion,
+a function of `t` = seconds since that projectile was fired: `z(t) = from_z + speed·t` (every shot still flies +Z at a
+constant speed; `from_z = boss_z`), `x(t)` piecewise linear through `x_keys` `[(t, x), …]`, and a y lift that only a
+falling `debris` slab has (`drop_height·(1 − (t/land_at)²)` until `land_at`, 0 after). The projectile node exposes
+`boss_kind: StringName`, `signature: StringName`, `motion: Dictionary` (the shot; empty for a straight shot, which
+moves exactly as in 2.3), `age: float` (= t), and `lane_mask_at(t) -> int` (lanes its hitbox touches at t, by the
+`occupies_lane` rule), `y_range_at(t) -> Vector2` (world y min/max at t) and `impact_lane_mask() -> int` (the lanes
+it covers while its z range overlaps the player's, which is what a dodge and the §11.7 tool-lane rule answer). The
+root follows the motion (x and y), so `get_world_aabb()` and the physics hitbox are always where the motion says.
+
+**Attack dictionary** (`boss_attack_planned`, `pending_attacks[].attack`): `signature`, `variant`, `boss_kind`,
+`telegraph_mask`, `mask` (the lanes at fire, the committed lanes for a flaky beat), `impact_mask`, `telegraph`,
+`speed`, `from_z`, `shots` (Array of shot dictionaries: `variant, speed, from_z, lanes, x_keys, drop_height,
+land_at, twin`), `enter` / `exit` (seconds after the telegraph during which it passes the player), `jumpable`,
+`rollable`, `clear_height`, and per signature: flaky `commit_at` (seconds after the telegraph), `candidates`
+(the two masks), `swap_seconds`; scatter `split_at` (seconds after fire), `split_mask`; branching `head`, `heads`,
+`delay`; sweep `sweep_from`, `sweep_to` (lane indices), `sweep_end` (seconds after fire); legacy wall `gap_from`,
+`gap_to`, `shift_at`; debris `drop_height`, `land_at`. A scatter's second half carries `twin: true` in its shot (it
+flies inside the first until the split, so a visual may hide it until then). A visual that wants the real variant
+declares `var signature_variants := true`; any visual declaring `projectile_variant`, `boss_kind`, `signature` or
+`motion` receives them before `on_spawned()`.
 
 ### 11.7 Tools — `powerups/visuals/<kind>_visual.tscn` extends `powerups/power_up_visual_base.gd`
 
@@ -580,6 +624,9 @@ Tools:     boss_tool_spawn_z -55.0, boss_tool_interval_growth 0.93, boss_tool_in
            boss_tool_guarantee_seconds 4.0, boss_tool_lane_clearance 3.0, boss_shield_tool_bias 0.7, tool_bonus 20
 Pursuit:   pursuit_critical_seconds 5.0, pursuer_distance_epsilon 0.01
 Autopilot: autopilot_telegraph_lead 0.12, autopilot_tool_greed 1.0
+Signature (v2.4): boss_flaky_candidate_seconds 0.45, boss_flaky_swap_seconds 0.15 (cosmetic cadence),
+           boss_commit_min 0.60 (a flaky commit is at least this long before fire), boss_scatter_split_distance 10.0 (m),
+           boss_signature_speed_max 44.0, boss_signature_reaction_min 0.35 (the B6 floor)
 ```
 
 Boss base table (slot → kind, HP, projectile speed, telegraph P1/P2/P3, attack interval P1/P2/P3, tool interval):
@@ -598,7 +645,13 @@ version > 2.
 ### 11.12 Verification (extends §9)
 
 New: `tests/runner_boss_validator.gd` (every boss × phase × pattern × entry lane × cycle 0–4 is dodgeable by the
-real autopilot planner from the telegraph; tools reachable within `boss_tool_guarantee_seconds`). `runner_smoke.gd`
+real autopilot planner from the telegraph; tools reachable within `boss_tool_guarantee_seconds`). v2.4: every beat is
+resolved through `boss_attacks.gd` into every option it can draw, the bot hears `boss_attack_planned` /
+`boss_attack_telegraph` / `boss_attack_committed` in the encounter's order, collisions use the motion API, B1/B3 are
+measured from the commit for a flaky beat, and **B6** proves that every commit, split, sweep, gap shift, debris shadow
+and landing, and every branching volley, leaves from each lane a survivable answer (final lane plus at most one jump
+or roll against the impact geometry) whose latest start is ≥ `boss_signature_reaction_min` after the event.
+`runner_smoke.gd`
 proves stage 1 → turn → boss 1 → stage clear → stage 2 with zero projectile hits under a shortened config, and a
 catch mid-fight ending the run once. `runner_visual_smoke.gd` gains `HUD LEGIBILITY`, `PURSUIT ALERT`,
 `BOSS VISUALS`, `TOOLS AND PROJECTILES`, `TURN` sections and a 30-recipe audio census (voices ≤ 10); the full loop

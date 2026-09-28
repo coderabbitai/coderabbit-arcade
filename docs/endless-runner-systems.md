@@ -605,11 +605,29 @@ end of the outro — which is the same shape `RunnerGame.get_boss_info()` return
 `phase_count` is the fight's own phase count (`BossDefs.PHASE_COUNT`, 3 today), so a HUD can draw "2 / 3" from the one
 dictionary; the facade mirror fills in the same constant when no arena is mounted.
 
-Patterns (beat lists; `L` = random single lane, `Ladj` = two adjacent lanes leaving one free, `alt` = alternate):
-Swarm P1 `orb L`; P2 `orb Ladj` (two orbs); P3 `high, low` alt. Hydra P1 `wide (one lane free)`; P2 `orb lane0 +
-orb lane2`, every 3rd beat `high`; P3 `wide, low` alt. Monolith P1 `low`; P2 `wide alt sides`, every 3rd beat
-`high`; P3 `low, high, orb L`. Accepted tools: all, except Hydra P2 {`unit_test`, `lint_rule`}, Monolith P2
+Patterns (beat lists, cycled; `L` = random single lane, `Ladj` = two adjacent lanes leaving one free; v2.4 signature
+beats in *italics* — contract §11.6): Swarm P1 `orb L`, *flaky L*; P2 `orb Ladj`, *flaky Ladj* (left pair vs right
+pair); P3 `high`, `low`, *scatter*. Hydra P1 `wide Ladj`, *branching* (2 heads on distinct lanes, 0.3 s apart);
+P2 `orb lane0 + lane2` ×2, `high`, *force_push* (the 4th head); P3 `wide Ladj`, *sweep*, `low`. Monolith P1 *quake*,
+*legacy_wall*; P2 `wide` left pair, *debris* (1 lane or an adjacent pair), `wide` right pair, `high`; P3 *quake*,
+`high`, *debris*, *legacy_wall*. Accepted tools: all, except Hydra P2 {`unit_test`, `lint_rule`}, Monolith P2
 {`auto_fix_patch`, `review_comment`}, Monolith P3 {`unit_test`}.
+
+**Signature attacks (v2.4).** `boss/boss_attacks.gd` (pure, static) turns a beat into its *options* (every random
+draw it can make; each option is an Array of attacks, more than one only for a branching volley) and each attack into
+its *shots* (one projectile motion each). `_queue_beat()` calls `beat_options()` and `pick_option()` (the v2.0
+no-repeat rule, compared on each option's impact lanes; a fixed plain beat draws without a roll, so v2.0 lane
+streams replay), then per attack queues `{mask (telegraph lanes), variant, remaining, attack, impact_mask,
+commit_remaining, committed}` and emits `boss_attack_planned(attack)` then `boss_attack_telegraph(...)`.
+`_advance_telegraphs()` first counts every uncommitted flaky entry's `commit_remaining` down and, at zero, sets
+`mask` to the committed lanes and emits `boss_attack_committed(mask, variant, remaining)` + `visual.play_commit`;
+then fires as before. `_fire()` spawns one projectile per shot (`kind`, `variant`, `closing_speed = shot.speed`,
+`boss_kind`, `signature`, `motion` — empty for a straight shot — all set before `add_child`) at the shot's t = 0
+position, and emits `boss_projectile_fired` per projectile. The tool-lane rule reads `projectile.impact_lane_mask()`
+for live shots and `impact_mask` for queued ones (a split, a sweep or a shifting gap does not hit where it is
+telegraphed). `projectile.gd` advances `age` and z every physics tick and, with a motion, sets x / y from
+`x_at(age)` / `y_offset_at(age)`. Nothing is allocated beyond the v2.0 per-shot instance: the options and shots are
+plain dictionaries built at queue time.
 
 ### 10.4 `hazards/projectile.gd/.tscn` and `powerups/tool_pickup.gd/.tscn`
 
@@ -705,6 +723,17 @@ trigger distance is computed from it; projectile entries never merge with chunk-
 over `runner_tools`, skipping lanes a pending attack will block, scaled by `autopilot_tool_greed`. Planning stays
 pure so `runner_boss_validator.gd` can drive it offline.
 
+v2.4: the bot keeps the `boss_attack_planned` attack and builds its planning row from it (`attack_entry()`:
+`mask` = impact lanes, or impact ∪ candidates until a flaky attack commits; `arrival` / `exit` = the attack's pass
+window; `jumpable` / `rollable` / `clear_height` from the impact geometry); a bare telegraph falls back to
+`boss_attacks.plain_attack()`. `boss_attack_committed` narrows the oldest matching uncommitted row and drops its
+plan. The next attack is the unanswered one that arrives first; every attack whose window is within 0.6 s of it is
+planned with it (`plan_group()`: one final lane plus at most one body action that survives every member, answered
+members included so a new move never undoes an old answer), timed by `group_act_in()` (a lane move completes a lead
+before the first shot in a lane it crosses; a jump / roll is clamped so the arc / roll covers the whole pass, which
+only ever moves a slow shot's jump). A body action is held while the player is still airborne from the previous one.
+A live projectile with `impact_lane_mask()` is sliced on that mask.
+
 ### 10.7 HitManager, Pursuer, DebugOverlay, score
 
 HitManager emits `pursuit_alert(&"warn", recovery_seconds)` with `pursuit_started`, `&"critical"` once when
@@ -737,7 +766,11 @@ respect the lane rule above (live projectile, queued telegraph, full-width exemp
 no-repeat and y ∈ {1.0, 2.2}. New `runner_boss_validator.gd`: every boss × phase × pattern × entry lane × cycle 0–4 through the virtual
 runner (gravity 28, jump 9.8/0.70 s, roll 0.70 s, lane tween 0.13 s) driven by the real autopilot planner from the
 telegraph: zero hits; `telegraph + travel ≥ 0.98 s`; jump launch window leaves ≥ 0.35 s; every pattern leaves a free
-lane or is jumpable/rollable; an accepted tool is reachable at least once per `boss_tool_guarantee_seconds`.
+lane or is jumpable/rollable; an accepted tool is reachable at least once per `boss_tool_guarantee_seconds`. v2.4: beats
+are resolved through `boss_attacks.gd` (every option), shots fly the motion API, and B6 checks every signature event
+(commit, split, sweep, shift, debris shadow and landing, branching volley) leaves ≥ `boss_signature_reaction_min` from
+every lane (contract §11.12). `runner_logic.gd` §30 covers the beat data (flaky commit timing, split geometry, gap
+shift, sweep path, debris shadows, branching, force push) and the live arena firing them.
 `runner_scaffold_check.gd`: new tree paths (`World/TurnRig/...`, `Systems/StageManager`), new signals/properties,
 optional UI mounts tolerated when absent. Every test that instantiates RunnerGame keeps the `leaderboard_path`
 override before `add_child`.

@@ -1854,7 +1854,7 @@ func check_boss_intro() -> void:
 	overlay.set_process(false)
 	var expected_taunts := {
 		&"flaky_test_swarm": "PASSED LOCALLY. FAILS ON CI.",
-		&"merge_conflict_hydra": "<<<<<<< HEAD  \u2014  THREE BRANCHES, ZERO AGREEMENT.",
+		&"merge_conflict_hydra": "<<<<<<< HEAD  \u2014  3 BRANCHES, SOON 4. ZERO AGREEMENT.",
 		&"legacy_monolith": "@deprecated SINCE 2011. STILL IN PRODUCTION.",
 	}
 	for kind: StringName in expected_taunts:

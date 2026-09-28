@@ -11,6 +11,8 @@ extends Node3D
 const RunnerGame = preload("res://scenes/runner/runner_game.gd")
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
 const BossDefs = preload("res://scenes/runner/boss/boss_defs.gd")
+## Beats -> attacks -> shots, and the shot motion (contract 2.4 §11.6); pure, shared with the planner.
+const BossAttacks = preload("res://scenes/runner/boss/boss_attacks.gd")
 const ToolDefs = preload("res://scenes/runner/powerups/tool_defs.gd")
 const HazardDefs = preload("res://scenes/runner/hazards/hazard_defs.gd")
 const ScoreManager = preload("res://scenes/runner/systems/score_manager.gd")
@@ -72,7 +74,10 @@ var boss: Node3D
 @onready var projectiles_root: Node3D = $Projectiles
 @onready var tools_root: Node3D = $Tools
 
-## Telegraphs in flight: {mask: int, variant: StringName, remaining: float}.
+## Telegraphs in flight: {mask: int, variant: StringName, remaining: float} plus, for every beat
+## queued by this arena, {attack, impact_mask, commit_remaining, committed} (contract 2.4). `mask`
+## is what the telegraph currently shows: a flaky beat's two candidates until it commits, then the
+## committed lanes. A bare {mask, variant, remaining} entry (a test's) still fires a straight shot.
 var _pending: Array[Dictionary] = []
 var _active := false
 var _intro := 0.0
@@ -221,7 +226,8 @@ func apply_tool(tool_kind: StringName) -> void:
 # --- facade reads ---
 
 ## Contract §11.4 get_boss_info(). `pending_attacks` lists the telegraphs still in flight, newest
-## last: {lane_mask, kind, remaining}. Outside a fight — before the first one and from the moment
+## last: {lane_mask, kind, remaining} plus the contract 2.4 {impact_mask, signature, committed,
+## commit_remaining, attack}. Outside a fight — before the first one and from the moment
 ## the outro ends — every key reads empty, which is the same shape RunnerGame.get_boss_info()
 ## returns with no arena mounted, so a HUD never sees the last boss lingering on a cleared stage.
 func get_info() -> Dictionary:
@@ -230,10 +236,16 @@ func get_info() -> Dictionary:
 	var pending: Array[Dictionary] = []
 	for entry in _pending:
 		var variant: StringName = entry.get("variant", &"")
+		var attack: Dictionary = entry.get("attack", {})
 		pending.append({
 			"lane_mask": int(entry.get("mask", 0)),
 			"kind": variant,
-			"remaining": float(entry.get("remaining", 0.0))
+			"remaining": float(entry.get("remaining", 0.0)),
+			"impact_mask": int(entry.get("impact_mask", entry.get("mask", 0))),
+			"signature": attack.get("signature", BossAttacks.SIG_PLAIN),
+			"committed": bool(entry.get("committed", true)),
+			"commit_remaining": float(entry.get("commit_remaining", -1.0)),
+			"attack": attack
 		})
 	return {
 		"kind": kind,
@@ -286,8 +298,15 @@ func tool_count() -> int:
 
 # --- attacks ---
 
-## Count every telegraph down; the ones that reach zero fire this tick.
+## Count every telegraph down; a flaky one commits on the way, and the ones that reach zero fire
+## this tick. Commits run oldest first, so boss_attack_committed follows the telegraph order.
 func _advance_telegraphs(delta: float) -> void:
+	for entry in _pending:
+		if bool(entry.get("committed", true)):
+			continue
+		entry["commit_remaining"] = float(entry.get("commit_remaining", 0.0)) - delta
+		if float(entry["commit_remaining"]) <= 0.0:
+			_commit(entry, float(entry.get("remaining", 0.0)) - delta)
 	for index in range(_pending.size() - 1, -1, -1):
 		var entry := _pending[index]
 		entry["remaining"] = float(entry.get("remaining", 0.0)) - delta
@@ -296,14 +315,29 @@ func _advance_telegraphs(delta: float) -> void:
 		_pending.remove_at(index)
 		_fire(entry)
 
+## A flaky telegraph stops alternating and shows the lanes it will really fire on (contract 2.4
+## §11.4 boss_attack_committed); `seconds` is what is left of the telegraph.
+func _commit(entry: Dictionary, seconds: float) -> void:
+	var attack: Dictionary = entry.get("attack", {})
+	var mask := int(attack.get("mask", entry.get("mask", 0)))
+	var variant: StringName = entry.get("variant", &"orb")
+	entry["committed"] = true
+	entry["commit_remaining"] = 0.0
+	entry["mask"] = mask
+	var left := maxf(seconds, 0.0)
+	_emit(&"boss_attack_committed", [mask, variant, left])
+	_visual_call(&"play_commit", [mask, variant, left])
+
 func _advance_attacks(delta: float) -> void:
 	_attack_timer -= delta
 	if _attack_timer > 0.0:
 		return
 	_queue_beat()
 
-## Telegraph the next beat of this phase's pattern. Patterns cycle a fixed beat list; a beat that
-## asks for random lanes never repeats the mask it used last.
+## Telegraph the next beat of this phase's pattern. Patterns cycle a fixed beat list; a beat with a
+## random draw never repeats the impact lanes it used last. boss_attacks.gd resolves the beat into
+## its attacks (one, or one per head of a branching volley); each one is announced with
+## boss_attack_planned (the full attack, contract 2.4) immediately before its boss_attack_telegraph.
 func _queue_beat() -> void:
 	var pattern := BossDefs.pattern_for(def, phase)
 	_attack_timer = _attack_interval()
@@ -311,77 +345,60 @@ func _queue_beat() -> void:
 		return
 	var beat: Dictionary = pattern[_beat % pattern.size()]
 	_beat += 1
-	var variant: StringName = beat.get("variant", &"orb")
-	var mask := _resolve_mask(beat)
-	var seconds := _telegraph_seconds()
-	_pending.append({"mask": mask, "variant": variant, "remaining": seconds})
-	_last_mask = mask
-	_emit(&"boss_attack_telegraph", [mask, variant, seconds])
-	_visual_call(&"play_telegraph", [mask, variant, seconds])
+	var options := BossAttacks.beat_options(beat, def, phase, config)
+	var pick := BossAttacks.pick_option(options, _last_mask, fight_rng, BossAttacks.draws_random(beat, options))
+	if pick < 0:
+		return
+	var option: Array = options[pick]
+	_last_mask = BossAttacks.option_key(option)
+	for item in option:
+		var attack: Dictionary = item
+		var variant: StringName = attack.get("variant", &"orb")
+		var mask := int(attack.get("telegraph_mask", 0))
+		var seconds := float(attack.get("telegraph", _telegraph_seconds()))
+		var commit_at := float(attack.get("commit_at", -1.0))
+		_pending.append({
+			"mask": mask,
+			"variant": variant,
+			"remaining": seconds,
+			"attack": attack,
+			"impact_mask": int(attack.get("impact_mask", mask)),
+			"commit_remaining": commit_at,
+			"committed": commit_at < 0.0
+		})
+		_emit(&"boss_attack_planned", [attack])
+		_emit(&"boss_attack_telegraph", [mask, variant, seconds])
+		_visual_call(&"play_telegraph", [mask, variant, seconds])
 
-func _resolve_mask(beat: Dictionary) -> int:
-	var mode: StringName = beat.get("lanes", BossDefs.LANES_FIXED)
-	if mode == BossDefs.LANES_RANDOM_SINGLE:
-		return _pick_mask(BossDefs.SINGLE_LANE_MASKS)
-	if mode == BossDefs.LANES_RANDOM_ADJACENT:
-		return _pick_mask(BossDefs.ADJACENT_LANE_MASKS)
-	return int(beat.get("mask", BossDefs.LANE_ALL))
-
-## One of `options`, avoiding a straight repeat of the previous mask while there is a choice.
-func _pick_mask(options: Array[int]) -> int:
-	var choices: Array[int] = []
-	for option in options:
-		if option != _last_mask:
-			choices.append(option)
-	if choices.is_empty():
-		choices = options.duplicate()
-	if choices.is_empty():
-		return BossDefs.LANE_ALL
-	return choices[fight_rng.randi_range(0, choices.size() - 1)]
-
-## The telegraph ran out: one projectile per lane group of the mask, all fired from the boss.
+## The telegraph ran out: one projectile per shot of the attack, all fired from the boss. An entry
+## without an attack (a bare test entry) fires the v2.0 straight shots on its mask.
 func _fire(entry: Dictionary) -> void:
-	var mask := int(entry.get("mask", 0))
 	var variant: StringName = entry.get("variant", &"orb")
-	var speed := _projectile_speed()
+	var attack: Dictionary = entry.get("attack", {})
+	if attack.is_empty():
+		attack = BossAttacks.plain_attack(int(entry.get("mask", 0)), variant, 0.0, _projectile_speed(), config)
+	var speed := float(attack.get("speed", _projectile_speed()))
+	var signature: StringName = attack.get("signature", BossAttacks.SIG_PLAIN)
 	var fired := 0
-	for group in _lane_groups(mask, variant):
-		var projectile := _spawn_projectile(group, variant, speed)
+	for item in attack.get("shots", []):
+		var shot: Dictionary = item
+		var projectile := _spawn_projectile(shot, signature)
 		if projectile == null:
 			continue
 		fired += 1
-		_emit(&"boss_projectile_fired", [projectile, group, variant, speed])
+		_emit(&"boss_projectile_fired", [projectile, int(shot.get("lanes", 0)), variant, speed])
 	if fired > 0:
 		_visual_call(&"play_attack", [variant])
 
-## Split a lane mask into one group per projectile: `orb` covers one lane, `wide` two adjacent
-## ones, `low` / `high` the full width, so a two-lane orb beat fires two orbs and a two-lane wide
-## beat fires one wall.
+## Split a lane mask into one group per projectile (boss_attacks.lane_groups): `orb` covers one
+## lane, `wide` two adjacent ones, `low` / `high` the full width.
 func _lane_groups(mask: int, variant: StringName) -> Array[int]:
-	var width := HazardDefs.lanes_wide(HazardDefs.get_def(HazardDefs.PROJECTILE_KIND, variant))
-	var groups: Array[int] = []
-	var run: Array[int] = []
-	for lane in range(LANE_COUNT + 1):
-		if lane < LANE_COUNT and (mask & (1 << lane)) != 0:
-			run.append(lane)
-			continue
-		groups.append_array(_split_run(run, width))
-		run.clear()
-	return groups
+	return BossAttacks.lane_groups(mask, variant)
 
-## One contiguous run of lanes, cut into groups of at most `width` lanes.
-func _split_run(run: Array[int], width: int) -> Array[int]:
-	var groups: Array[int] = []
-	var index := 0
-	while index < run.size():
-		var group := 0
-		for offset in range(index, mini(index + width, run.size())):
-			group |= 1 << run[offset]
-		groups.append(group)
-		index += width
-	return groups
-
-func _spawn_projectile(mask: int, variant: StringName, speed: float) -> Area3D:
+## One projectile flying `shot` (a boss_attacks.gd motion). kind / variant / closing_speed /
+## boss_kind / signature / motion are all set before add_child, so the visual sees them before
+## on_spawned(); the root starts where the motion says it is at t = 0.
+func _spawn_projectile(shot: Dictionary, signature: StringName = BossAttacks.SIG_PLAIN) -> Area3D:
 	if projectiles_root == null or not is_instance_valid(projectiles_root):
 		return null
 	var scene := _packed(PROJECTILE_SCENE)
@@ -392,11 +409,19 @@ func _spawn_projectile(mask: int, variant: StringName, speed: float) -> Area3D:
 		push_warning("Runner boss encounter: %s did not instantiate as a projectile.gd Area3D" % PROJECTILE_SCENE)
 		return null
 	projectile.kind = HazardDefs.PROJECTILE_KIND
-	projectile.variant = variant
-	projectile.closing_speed = speed
+	projectile.variant = StringName(shot.get("variant", &"orb"))
+	projectile.closing_speed = float(shot.get("speed", _projectile_speed()))
+	projectile.boss_kind = kind
+	projectile.signature = signature
+	# A straight shot carries no motion, so it flies (and reads) exactly like a v2.0 one.
+	var keys: PackedVector2Array = shot.get("x_keys", PackedVector2Array())
+	var moving := keys.size() > 1 or float(shot.get("drop_height", 0.0)) > 0.0
+	projectile.motion = shot if moving else {}
 	# Fired from the boss, projected down to the lane centres: the y range of the variant (contract
-	# §11.6) is measured from the floor, so the root stays at y 0 and the hitbox offset does the rest.
-	projectile.position = Vector3(_mask_center_x(mask), 0.0, _boss_z())
+	# §11.6) is measured from the floor, so the root stays at y 0 (a falling slab starts lifted) and
+	# the hitbox offset does the rest.
+	projectile.position = Vector3(BossAttacks.x_at(shot, 0.0), BossAttacks.y_offset_at(shot, 0.0),
+		float(shot.get("from_z", _boss_z())))
 	projectiles_root.add_child(projectile)
 	projectile.setup(game)
 	return projectile
@@ -469,9 +494,11 @@ func _blocked_lane_mask() -> int:
 		var projectile := node as Projectile
 		if projectile == null or not projectile.is_blocking() or not _projectile_is_live(projectile):
 			continue
-		mask |= _lane_mask_of(projectile.lanes_mask())
+		mask |= _lane_mask_of(projectile.impact_lane_mask())
+	# A queued attack blocks the lanes it will hit, which for a split, a sweep or a shifting gap is
+	# not the lane its telegraph starts on.
 	for entry in _pending:
-		mask |= _lane_mask_of(int(entry.get("mask", 0)))
+		mask |= _lane_mask_of(int(entry.get("impact_mask", entry.get("mask", 0))))
 	return mask
 
 ## `mask` unless it covers the whole width, in which case it blocks nothing.
@@ -505,7 +532,7 @@ func _lane_block_progress(lane: int) -> float:
 		var projectile := node as Projectile
 		if projectile == null or not projectile.is_blocking() or not _projectile_is_live(projectile):
 			continue
-		if (_lane_mask_of(projectile.lanes_mask()) & (1 << lane)) == 0:
+		if (_lane_mask_of(projectile.impact_lane_mask()) & (1 << lane)) == 0:
 			continue
 		progress = maxf(progress, _track_z(projectile))
 	return progress
@@ -814,18 +841,6 @@ func _lane_x(lane: int) -> float:
 		return config.lane_x(lane)
 	return (float(lane) - 1.0) * 2.0
 
-## Centre x of a lane group, so a two-lane wall sits between its lanes.
-func _mask_center_x(mask: int) -> float:
-	var total := 0.0
-	var count := 0
-	for lane in LANE_COUNT:
-		if (mask & (1 << lane)) == 0:
-			continue
-		total += _lane_x(lane)
-		count += 1
-	if count == 0:
-		return 0.0
-	return total / float(count)
 
 ## One seeding per run: the run seed with the fight salt, so the lane and tool streams replay.
 func _seed_rng() -> void:

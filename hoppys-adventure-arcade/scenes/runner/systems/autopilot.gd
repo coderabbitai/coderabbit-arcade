@@ -10,6 +10,9 @@ const HazardDefs = preload("res://scenes/runner/hazards/hazard_defs.gd")
 ## Only for the projectile speed of the fight in progress: boss_attack_telegraph carries the lane
 ## mask, the variant and the telegraph, but not how fast the shot will close (contract §11.4).
 const BossDefs = preload("res://scenes/runner/boss/boss_defs.gd")
+## Contract 2.4: the attack / shot motion API every boss plan is made against, so a split, a sweep,
+## a shifting gap or a falling slab is answered where it will be, not where it was telegraphed.
+const BossAttacks = preload("res://scenes/runner/boss/boss_attacks.gd")
 
 enum Mode { PREFER_LANE, PREFER_JUMP, GREEDY_PICKUP }
 
@@ -43,6 +46,12 @@ const ATTACK_GRACE := 0.5
 ## Slack on "this telegraph has run out", in seconds: the fire signal and the last countdown tick
 ## land in the same frame, so the two clocks can differ by one physics step.
 const FIRE_MATCH_SLACK := 1.0 / 30.0
+## Attacks whose pass windows come within this many seconds of each other are planned as one group
+## (contract 2.4): a staggered volley or a slow wall overlapping a fast shot needs one answer that
+## survives all of them, not a lane change into the next one.
+const GROUP_WINDOW := 0.6
+## Safety margin on the body-action windows, in seconds.
+const BODY_MARGIN := 0.02
 
 var game: RunnerGame
 var config: RunConfig
@@ -65,11 +74,16 @@ var _pending := {}
 ## consumed, or falls out of the scan range.
 var _slice_keys := {}
 ## Telegraphed boss attacks still worth planning, oldest first (systems spec §10.6):
-## {key, mask, variant, telegraph, closing_v, arrival, elapsed}. `key` is a serial rather than an
-## instance id, because a telegraph has no node until it fires; it shares the `_done` / `_pending`
-## bookkeeping with the slice keys, which is what lets one plan span several ticks.
+## {key, mask, variant, telegraph, closing_v, arrival, exit, jumpable, rollable, clear_height,
+## committed, telegraph_mask, attack, elapsed}. `mask` is what the attack blocks while it passes
+## the player (both candidates while a flaky one is uncommitted); `arrival` / `exit` bound that pass
+## in seconds after the telegraph. `key` is a serial rather than an instance id, because a telegraph
+## has no node until it fires; it shares the `_done` / `_pending` bookkeeping with the slice keys,
+## which is what lets one plan span several ticks.
 var _attacks: Array[Dictionary] = []
 var _attack_serial := 0
+## boss_attack_planned details waiting for the boss_attack_telegraph they announce (contract 2.4).
+var _planned: Array[Dictionary] = []
 
 func setup(runner: RunnerGame) -> void:
 	game = runner
@@ -88,6 +102,12 @@ func _connect(runner: RunnerGame) -> void:
 	if runner.has_signal(&"boss_projectile_fired") \
 			and not runner.boss_projectile_fired.is_connected(_on_boss_projectile_fired):
 		runner.boss_projectile_fired.connect(_on_boss_projectile_fired)
+	if runner.has_signal(&"boss_attack_planned") \
+			and not runner.is_connected(&"boss_attack_planned", _on_boss_attack_planned):
+		runner.connect(&"boss_attack_planned", _on_boss_attack_planned)
+	if runner.has_signal(&"boss_attack_committed") \
+			and not runner.is_connected(&"boss_attack_committed", _on_boss_attack_committed):
+		runner.connect(&"boss_attack_committed", _on_boss_attack_committed)
 	if runner.has_signal(&"phase_changed") and not runner.phase_changed.is_connected(_on_phase_changed):
 		runner.phase_changed.connect(_on_phase_changed)
 
@@ -106,6 +126,7 @@ func reset(new_config: RunConfig = null) -> void:
 	_slice_keys = {}
 	_attacks.clear()
 	_attack_serial = 0
+	_planned.clear()
 
 func set_enabled(on: bool) -> void:
 	enabled = on
@@ -389,7 +410,7 @@ func pending_lane_mask(attacks: Array) -> int:
 	var mask := 0
 	for item in attacks:
 		var entry: Dictionary = item
-		var lanes := int(entry.get("mask", entry.get("lane_mask", 0))) & LANE_ALL
+		var lanes := int(entry.get("mask", entry.get("impact_mask", entry.get("lane_mask", 0)))) & LANE_ALL
 		if lanes == LANE_ALL:
 			continue
 		mask |= lanes
@@ -454,18 +475,73 @@ func boss_closing_speed(fallback: float) -> float:
 func pending_attacks() -> Array[Dictionary]:
 	return _attacks
 
+## Contract 2.4: the full attack arrives just ahead of its telegraph; keep it for that telegraph.
+func _on_boss_attack_planned(attack: Dictionary) -> void:
+	_planned.append(attack)
+
 func _on_boss_attack_telegraph(lane_mask: int, kind: StringName, seconds: float) -> void:
-	var closing := boss_closing_speed(float(game.speed) if game != null else 0.1)
+	var attack := _take_planned(lane_mask, kind)
+	if attack.is_empty():
+		# An older emitter (or a test) only sends the telegraph: a straight shot at this fight's speed.
+		var closing := boss_closing_speed(float(game.speed) if game != null else 0.1)
+		attack = BossAttacks.plain_attack(lane_mask, kind, seconds, closing, config)
 	_attack_serial += 1
-	_attacks.append({
-		"key": _attack_serial,
-		"mask": lane_mask & LANE_ALL,
-		"variant": kind,
-		"telegraph": maxf(seconds, 0.0),
-		"closing_v": closing,
-		"arrival": telegraph_arrival(seconds, closing, kind),
+	var entry := attack_entry(attack, maxf(seconds, 0.0))
+	entry["key"] = _attack_serial
+	_attacks.append(entry)
+
+## The planned attack this telegraph announces, or {} when none came with it.
+func _take_planned(lane_mask: int, kind: StringName) -> Dictionary:
+	for index in _planned.size():
+		var attack: Dictionary = _planned[index]
+		if StringName(attack.get("variant", &"")) == kind \
+				and int(attack.get("telegraph_mask", -1)) == (lane_mask & LANE_ALL):
+			# Anything queued ahead of the match was never telegraphed; drop it with the match.
+			var found := attack
+			_planned = _planned.slice(index + 1)
+			return found
+	_planned.clear()
+	return {}
+
+## The planning row for one attack: pure, so the validator can read what the bot will plan against.
+## An uncommitted flaky attack blocks both candidates until boss_attack_committed narrows it.
+func attack_entry(attack: Dictionary, telegraph: float) -> Dictionary:
+	var committed := float(attack.get("commit_at", -1.0)) < 0.0
+	var impact := int(attack.get("impact_mask", attack.get("mask", 0))) & LANE_ALL
+	var shown := int(attack.get("telegraph_mask", impact)) & LANE_ALL
+	return {
+		"key": 0,
+		"mask": impact if committed else (impact | shown),
+		"telegraph_mask": shown,
+		"variant": attack.get("variant", &"orb"),
+		"telegraph": telegraph,
+		"closing_v": maxf(float(attack.get("speed", 0.1)), 0.1),
+		"arrival": float(attack.get("enter", telegraph)),
+		"exit": float(attack.get("exit", telegraph)),
+		"jumpable": bool(attack.get("jumpable", false)),
+		"rollable": bool(attack.get("rollable", false)),
+		"clear_height": float(attack.get("clear_height", 0.0)),
+		"committed": committed,
+		"attack": attack,
 		"elapsed": 0.0
-	})
+	}
+
+## A flaky telegraph settled: the oldest uncommitted attack of this kind whose candidates hold the
+## committed lanes now blocks only those, and whatever the bot had planned for it is planned again.
+func _on_boss_attack_committed(lane_mask: int, kind: StringName, _seconds: float) -> void:
+	var lanes := lane_mask & LANE_ALL
+	for entry in _attacks:
+		if bool(entry.get("committed", true)) or StringName(entry.get("variant", &"")) != kind:
+			continue
+		if (int(entry.get("telegraph_mask", 0)) & lanes) != lanes:
+			continue
+		var attack: Dictionary = entry.get("attack", {})
+		entry["committed"] = true
+		entry["mask"] = int(attack.get("impact_mask", lanes)) & LANE_ALL
+		var key := StringName(str(entry["key"]))
+		_done.erase(key)
+		_pending.erase(key)
+		return
 
 ## The shot the bot already stepped aside for must not earn a second manoeuvre once it exists as a
 ## real hazard, so the projectile inherits the telegraph's answered flag. A mask that fires more
@@ -501,15 +577,229 @@ func _age_attacks(delta: float) -> void:
 		if float(entry["elapsed"]) > float(entry["arrival"]) + ATTACK_GRACE:
 			_attacks.remove_at(index)
 
-## The oldest telegraph the bot has not already answered or ignored.
+## The unanswered telegraph that reaches the player first (oldest first on a tie). With one speed
+## per fight that is simply the oldest; a slow wall telegraphed before a fast shot is not.
 func _next_attack() -> Dictionary:
+	var best := {}
+	var best_in := INF
 	for item in _attacks:
 		var entry: Dictionary = item
 		var key := StringName(str(entry["key"]))
 		if _done.has(key) or _ignored.has(key):
 			continue
-		return entry
-	return {}
+		if _seconds_to_exit(entry) <= 0.0:
+			continue
+		var t_in := _seconds_to_arrival(entry)
+		if t_in < best_in - 0.0001:
+			best = entry
+			best_in = t_in
+	return best
+
+func _seconds_to_arrival(entry: Dictionary) -> float:
+	return float(entry["arrival"]) - float(entry["elapsed"])
+
+func _seconds_to_exit(entry: Dictionary) -> float:
+	return float(entry.get("exit", entry["arrival"])) - float(entry["elapsed"])
+
+## Every unanswered attack still to pass whose window comes within GROUP_WINDOW of `target`'s,
+## target first. Answered ones are out: their answer is already under way.
+func _attack_group(target: Dictionary) -> Array[Dictionary]:
+	var group: Array[Dictionary] = [target]
+	var t_in := _seconds_to_arrival(target)
+	var t_out := _seconds_to_exit(target)
+	for item in _attacks:
+		var entry: Dictionary = item
+		var entry_key := StringName(str(entry["key"]))
+		if int(entry["key"]) == int(target["key"]) or _ignored.has(entry_key) or _done.has(entry_key):
+			continue
+		if _seconds_to_exit(entry) <= 0.0:
+			continue
+		if _seconds_to_arrival(entry) > t_out + GROUP_WINDOW or _seconds_to_exit(entry) < t_in - GROUP_WINDOW:
+			continue
+		group.append(entry)
+	return group
+
+## The answered attacks inside the same window. They are planned alongside the group — a new answer
+## must not undo theirs (step into a lane one of them was dodged by leaving) — except where the body
+## action already under way is what clears them (_body_clears).
+func _attack_obstacles(target: Dictionary) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var t_in := _seconds_to_arrival(target)
+	var t_out := _seconds_to_exit(target)
+	for item in _attacks:
+		var entry: Dictionary = item
+		var entry_key := StringName(str(entry["key"]))
+		if int(entry["key"]) == int(target["key"]) or not _done.has(entry_key) or _ignored.has(entry_key):
+			continue
+		if _seconds_to_exit(entry) <= 0.0:
+			continue
+		if _seconds_to_arrival(entry) > t_out + GROUP_WINDOW or _seconds_to_exit(entry) < t_in - GROUP_WINDOW:
+			continue
+		out.append(entry)
+	return out
+
+## The player's body action in progress (set per tick by _plan_next_attack): a shot it clears is
+## not in the way of a lane move made from under it.
+var _airborne_now := false
+var _rolling_now := false
+
+func _body_clears(entry: Dictionary) -> bool:
+	return (_airborne_now and bool(entry.get("jumpable", false))) \
+		or (_rolling_now and bool(entry.get("rollable", false)))
+
+
+## The slice one planning row presents, from its impact geometry.
+func entry_slice(entry: Dictionary) -> Dictionary:
+	var half_depth := projectile_depth(StringName(entry.get("variant", &"orb"))) * 0.5
+	return {
+		"key": entry.get("key", 0),
+		"front_z": half_depth,
+		"back_z": -half_depth,
+		"blocked": int(entry.get("mask", 0)) & LANE_ALL,
+		"jumpable": bool(entry.get("jumpable", false)),
+		"rollable": bool(entry.get("rollable", false)),
+		"closing_v": maxf(float(entry.get("closing_v", 0.1)), 0.1),
+		"projectile": true,
+		"hazards": []
+	}
+
+## The answer to a group of attacks from `lane`: {action, lane, steps}. One attack is plan_for()
+## exactly as before; several are searched for one final lane plus at most one body action that
+## survives every member, in the mode's order of preference. A lane plan comes back first even when
+## a body action has to follow it: the next tick re-plans from the new lane and finds the body half.
+## No common answer falls back to plan_for() on the target alone, flagged `solo`, and is then timed
+## and booked against the target alone.
+func plan_group(group: Array, lane: int) -> Dictionary:
+	var target: Dictionary = group[0]
+	if group.size() == 1:
+		return plan_for(entry_slice(target), lane)
+	var bodies: Array[StringName] = [ACTION_NONE, ACTION_JUMP, ACTION_ROLL]
+	var lanes := _lanes_by_distance(lane)
+	var order: Array = []
+	if mode == Mode.PREFER_JUMP:
+		order.append([lane, ACTION_NONE])
+		order.append([lane, ACTION_JUMP])
+		order.append([lane, ACTION_ROLL])
+		for candidate in lanes:
+			for body in bodies:
+				order.append([candidate, body])
+	else:
+		for candidate in [lane] + lanes:
+			order.append([candidate, ACTION_NONE])
+		for candidate in [lane] + lanes:
+			order.append([candidate, ACTION_JUMP])
+			order.append([candidate, ACTION_ROLL])
+	for pair in order:
+		var goal := int(pair[0])
+		var body := StringName(pair[1])
+		if not _group_answer_works(group, goal, body, lane):
+			continue
+		if goal != lane:
+			return {"action": ACTION_LANE, "lane": goal, "steps": absi(goal - lane)}
+		return {"action": body, "lane": lane, "steps": 0}
+	var solo := plan_for(entry_slice(target), lane)
+	solo["solo"] = true
+	return solo
+
+## True when ending in `goal` with `body` survives every member, and the members the body has to
+## clear fit inside one jump arc / one roll. Staying in `lane` keeps whatever the body action under
+## way is clearing.
+func _group_answer_works(group: Array, goal: int, body: StringName, lane: int) -> bool:
+	var body_in := INF
+	var body_out := -INF
+	var height := 0.0
+	for item in group:
+		var entry: Dictionary = item
+		if not _lane_blocked(int(entry.get("mask", 0)), goal):
+			continue
+		if goal == lane and _body_clears(entry):
+			continue
+		if body == ACTION_JUMP and bool(entry.get("jumpable", false)):
+			pass
+		elif body == ACTION_ROLL and bool(entry.get("rollable", false)):
+			pass
+		else:
+			return false
+		body_in = minf(body_in, _seconds_to_arrival(entry))
+		body_out = maxf(body_out, _seconds_to_exit(entry))
+		height = maxf(height, float(entry.get("clear_height", 0.0)))
+	if body == ACTION_NONE or body_in == INF:
+		return true
+	if body == ACTION_JUMP:
+		var span := jump_clear_span(height)
+		return span.y - span.x >= body_out - body_in + BODY_MARGIN * 2.0
+	return roll_duration() >= body_out - body_in + BODY_MARGIN * 2.0
+
+## Seconds from now at which `plan` has to start to answer `group` (systems spec §10.6): a lane plan
+## finishes a lead before the first member that blocks a lane on its way; a body action is centred
+## on the members it clears, and never so early or so late that the arc / roll misses one of them.
+## For a single fast shot this is exactly telegraph_act_at(): the clamp only moves a slow shot's jump.
+func group_act_in(group: Array, plan: Dictionary, lane: int) -> float:
+	var action := StringName(plan.get("action", ACTION_NONE))
+	var goal := int(plan.get("lane", lane))
+	if action == ACTION_LANE:
+		var first := INF
+		for item in group:
+			var entry: Dictionary = item
+			var blocked := int(entry.get("mask", 0))
+			for crossed in range(mini(lane, goal), maxi(lane, goal) + 1):
+				if not _lane_blocked(blocked, crossed):
+					continue
+				# The lane it is standing in does not hurry the move while the body clears that shot.
+				if crossed == lane and _body_clears(entry):
+					continue
+				first = minf(first, _seconds_to_arrival(entry))
+				break
+		if first == INF:
+			first = _seconds_to_arrival(group[0])
+		return first - manoeuvre_cost(action, int(plan.get("steps", 0))) - telegraph_lead()
+	var body_in := INF
+	var body_out := -INF
+	var height := 0.0
+	for item in group:
+		var entry: Dictionary = item
+		if not _lane_blocked(int(entry.get("mask", 0)), lane) or _body_clears(entry):
+			continue
+		body_in = minf(body_in, _seconds_to_arrival(entry))
+		body_out = maxf(body_out, _seconds_to_exit(entry))
+		height = maxf(height, float(entry.get("clear_height", 0.0)))
+	if body_in == INF:
+		body_in = _seconds_to_arrival(group[0])
+		body_out = _seconds_to_exit(group[0])
+	var preferred := body_in - manoeuvre_cost(action, 0) - telegraph_lead()
+	var earliest := -INF
+	var latest := INF
+	if action == ACTION_JUMP:
+		var span := jump_clear_span(height)
+		earliest = body_out - span.y + BODY_MARGIN
+		latest = body_in - span.x - BODY_MARGIN
+	elif action == ACTION_ROLL:
+		earliest = body_out - roll_duration() + BODY_MARGIN
+		latest = body_in - BODY_MARGIN
+	if earliest > latest:
+		return preferred
+	return clampf(preferred, earliest, latest)
+
+## The window (t_low, t_high) after a launch in which the feet are above `height`, from the contract
+## §7 arc y(t) = jump_velocity t - gravity t^2 / 2; (0, 0) when the arc never gets there.
+func jump_clear_span(height: float) -> Vector2:
+	var v := _float_config(&"jump_velocity", 9.8)
+	var g := _float_config(&"gravity", 28.0)
+	var disc := v * v - 2.0 * g * maxf(height, 0.0)
+	if disc <= 0.0 or g <= 0.0:
+		return Vector2.ZERO
+	var root := sqrt(disc)
+	return Vector2((v - root) / g, (v + root) / g)
+
+## Lanes other than `lane`, nearest first, left before right on a tie (plan_for's order).
+func _lanes_by_distance(lane: int) -> Array[int]:
+	var out: Array[int] = []
+	for distance: int in [1, 2]:
+		for direction: int in [-1, 1]:
+			var candidate := lane + direction * distance
+			if candidate >= 0 and candidate < LANE_COUNT:
+				out.append(candidate)
+	return out
 
 ## Lane index 0/1/2 nearest to a world x.
 func lane_from_x(x: float) -> int:
@@ -599,23 +889,71 @@ func _plan_next_attack(player: Node, lane: int) -> bool:
 	if attack.is_empty():
 		return false
 	var key := StringName(str(attack["key"]))
-	var slice := attack_slice(int(attack["mask"]), StringName(attack["variant"]),
-		float(attack["closing_v"]))
-	slice["key"] = attack["key"]
-	var plan := _pending_plan(key, slice, lane)
+	_airborne_now = _is_airborne(player)
+	_rolling_now = _is_rolling(player)
+	var group := _attack_group(attack)
+	group.append_array(_attack_obstacles(attack))
+	var plan := _pending_group_plan(key, group, lane)
+	if bool(plan.get("solo", false)):
+		group = [attack]
 	var action := StringName(plan.get("action", ACTION_NONE))
 	if action == ACTION_NONE:
-		# This lane is already safe: nothing to do, and the tool pass may have the tick.
+		# This lane is already safe (or nothing answers the target at all): nothing to do, and the
+		# tool pass may have the tick.
 		_done[key] = true
+		_mark_answered(group, lane, ACTION_NONE)
 		return false
-	var elapsed := float(attack["elapsed"])
-	var act_at := telegraph_act_at(float(attack["arrival"]), action, int(plan.get("steps", 0)))
-	if elapsed >= act_at:
+	var act_in := group_act_in(group, plan, lane)
+	if act_in <= 0.0:
+		if action != ACTION_LANE and _is_airborne(player):
+			# Still in the air from the previous answer: a jump or roll asked for now would only sit
+			# in a buffer that may run out before touchdown, so hold it and fire it on landing.
+			return true
 		_perform(plan, player, key)
+		if _done.has(key):
+			# _perform() calls a finished lane change done; a member still blocking the lane it ended
+			# in (the half of a group answer a body action has to finish) is not, yet.
+			_done.erase(key)
+			_mark_answered(group, _player_lane(player), action)
 		return true
 	# Still early. Hold the tick — and with it the lane — once the attack is close enough that a
 	# tool detour could not be walked back in time; before that the greedy pass owns the gap.
-	return elapsed >= act_at - lane_change_time() * float(LANE_COUNT - 1)
+	return act_in <= lane_change_time() * float(LANE_COUNT - 1)
+
+## _pending_plan() for a group: a lane change under way is carried on while its goal lane stays
+## clear of every member, and planned again from scratch the moment it is not.
+func _pending_group_plan(key: StringName, group: Array, lane: int) -> Dictionary:
+	if not _pending.has(key):
+		return plan_group(group, lane)
+	var plan: Dictionary = _pending[key]
+	var goal := clampi(int(plan.get("lane", lane)), 0, LANE_COUNT - 1)
+	var blocked := 0
+	for item in group:
+		blocked |= int((item as Dictionary).get("mask", 0))
+	if goal == lane or not _lane_blocked(blocked, goal):
+		return plan
+	# A body action can still answer what blocks the goal: keep heading there.
+	if group.size() > 1 and (_group_answer_works(group, goal, ACTION_JUMP, lane) \
+			or _group_answer_works(group, goal, ACTION_ROLL, lane)):
+		return plan
+	_pending.erase(key)
+	return plan_group(group, lane)
+
+## After a plan ran (or turned out unnecessary), every member it answers is done: those that do not
+## block the lane the bot ends in, and those the body action just taken clears. A lane change is
+## also the one thing that can undo an earlier answer, so after one every member that blocks the new
+## lane — an answered one included — is open again, and gets its body action on a later tick.
+func _mark_answered(group: Array, lane: int, action: StringName) -> void:
+	for item in group:
+		var entry: Dictionary = item
+		var key := StringName(str(entry["key"]))
+		var blocked := _lane_blocked(int(entry.get("mask", 0)), lane)
+		var cleared := (action == ACTION_JUMP and bool(entry.get("jumpable", false))) \
+			or (action == ACTION_ROLL and bool(entry.get("rollable", false)))
+		if not blocked or cleared:
+			_done[key] = true
+		elif action == ACTION_LANE and not _body_clears(entry):
+			_done.erase(key)
 
 ## The plan for this slice: a lane change already under way is carried on rather than re-planned
 ## from the lane the player is only passing through (which would read as "this lane is free" and
@@ -672,6 +1010,22 @@ func _perform(plan: Dictionary, player: Node, key: StringName) -> void:
 	if key != &"":
 		_done[key] = true
 
+## True while the player is in a roll (runner_player.is_rolling, or a stand-in's `rolling`).
+func _is_rolling(player: Node) -> bool:
+	if &"is_rolling" in player:
+		return bool(player.get(&"is_rolling"))
+	if &"rolling" in player:
+		return bool(player.get(&"rolling"))
+	return false
+
+## True while the player is off the floor (runner_player.is_airborne, or a stand-in's `airborne`).
+func _is_airborne(player: Node) -> bool:
+	if &"is_airborne" in player:
+		return bool(player.get(&"is_airborne"))
+	if &"airborne" in player:
+		return bool(player.get(&"airborne"))
+	return false
+
 ## True when the player already has a change queued behind a running tween: it only keeps one, so a
 ## further request_lane would overwrite it and every later tick would repeat the same request.
 func _lane_change_queued(player: Node) -> bool:
@@ -698,12 +1052,16 @@ func _hazard_entry(hazard: Variant, v: float, now: float) -> Dictionary:
 		if hint == &"":
 			return {}
 	var blocked := 0
-	for lane in LANE_COUNT:
-		if node.has_method("occupies_lane"):
-			if node.occupies_lane(lane):
+	if node.has_method("impact_lane_mask"):
+		# Contract 2.4: a moving shot is answered in the lanes it will pass the player in.
+		blocked = int(node.impact_lane_mask()) & LANE_ALL
+	else:
+		for lane in LANE_COUNT:
+			if node.has_method("occupies_lane"):
+				if node.occupies_lane(lane):
+					blocked |= 1 << lane
+			elif absf(_lane_x(lane) - bounds.get_center().x) < bounds.size.x * 0.5 + 0.4:
 				blocked |= 1 << lane
-		elif absf(_lane_x(lane) - bounds.get_center().x) < bounds.size.x * 0.5 + 0.4:
-			blocked |= 1 << lane
 	return {
 		"key": node.get_instance_id(),
 		"front_z": bounds.end.z,

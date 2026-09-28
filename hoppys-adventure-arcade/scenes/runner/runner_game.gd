@@ -93,6 +93,12 @@ signal boss_health_changed(hp: int, max_hp: int)
 signal boss_phase_changed(phase: int)
 signal boss_attack_telegraph(lane_mask: int, kind: StringName, seconds: float)
 signal boss_projectile_fired(projectile: Area3D, lane_mask: int, kind: StringName, speed: float)
+## Contract 2.4 §11.4: the full attack behind the boss_attack_telegraph that follows it on the same
+## tick (boss/boss_attacks.gd attack dictionary: signature, candidates, shots, impact_mask, ...).
+signal boss_attack_planned(attack: Dictionary)
+## Contract 2.4 §11.4: a flaky telegraph stopped alternating and settled on `lane_mask`; `seconds`
+## is what is left before it fires.
+signal boss_attack_committed(lane_mask: int, kind: StringName, seconds: float)
 signal boss_defeated(kind: StringName, bonus: int)
 signal boss_retreated(kind: StringName, bonus: int)
 signal tool_collected(kind: StringName, damage: int)
