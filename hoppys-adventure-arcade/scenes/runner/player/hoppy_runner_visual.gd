@@ -7,6 +7,13 @@ const Surface = preload("res://scenes/runner/player/hifi/hoppy_surface.gdshader"
 const Hologram = preload("res://scenes/runner/player/hifi/energy.gdshader")
 const LaneLook = preload("res://scenes/runner/player/hifi/lane_look.gd")
 const STATES: Array[StringName] = [&"idle", &"run", &"jump", &"fall", &"roll", &"hurt", &"dead"]
+## Grounded, envelope-filling roll re-baked from the Blender clip by dev/bake_hoppy_roll.gd.
+const BAKED_ROLL := "res://scenes/runner/player/hifi/hoppy_roll.tres"
+## Blend into and out of the roll so Hoppy visibly curls down instead of popping to ball size.
+const ROLL_BLEND_IN := 0.07
+const ROLL_BLEND_OUT := 0.1
+## The bake tool reads the imported clip, so it switches the baked one off.
+var use_baked_roll := true
 var animation_player: AnimationPlayer
 var skeleton: Skeleton3D
 var anim_state: StringName = &"idle"
@@ -44,6 +51,8 @@ func _ready() -> void:
 	var library := AnimationLibrary.new()
 	for state in STATES:
 		var clip := animation_player.get_animation(state).duplicate(true) as Animation
+		if state == &"roll" and use_baked_roll and ResourceLoader.exists(BAKED_ROLL):
+			clip = (load(BAKED_ROLL) as Animation).duplicate(true)
 		clip.loop_mode = Animation.LOOP_LINEAR if state in [&"idle", &"run", &"fall"] else Animation.LOOP_NONE
 		if state == &"hurt":
 			var track := clip.add_track(Animation.TYPE_METHOD)
@@ -175,7 +184,12 @@ func set_anim_state(state: StringName) -> void:
 	var leaving_roll := anim_state == &"roll"
 	anim_state = state
 	if animation_player != null:
-		animation_player.play(state, 0.0 if state == &"roll" or leaving_roll else 0.08)
+		var blend := 0.08
+		if state == &"roll":
+			blend = ROLL_BLEND_IN
+		elif leaving_roll:
+			blend = ROLL_BLEND_OUT
+		animation_player.play(state, blend)
 		set_run_speed(_speed)
 		animation_player.advance(0.0)
 		_process(0.0)

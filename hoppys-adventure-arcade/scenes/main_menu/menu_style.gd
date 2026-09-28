@@ -1,7 +1,13 @@
 extends RefCounted
 const CREAM := Color("fff0d3")
 const MINT := Color("79e0c4")
+## One shared theme (and SystemFont): glyphs rasterized in one scene stay cached for the next.
+static var _theme: Theme
 static func theme() -> Theme:
+	if _theme == null:
+		_theme = _build_theme()
+	return _theme
+static func _build_theme() -> Theme:
 	var result := Theme.new()
 	var font := SystemFont.new()
 	font.font_names = PackedStringArray(["Menlo", "Consolas", "DejaVu Sans Mono"])

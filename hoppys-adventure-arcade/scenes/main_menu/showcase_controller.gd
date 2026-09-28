@@ -1,7 +1,8 @@
 extends Node2D
 signal preview_changed(index: int)
 const Preview = preload("res://scenes/main_menu/preview.gd")
-const GROUPS = [[0, 1, 2], [3], [4, 5, 6]]
+const GROUPS = [[0, 1, 2], [3, 4, 5, 6], [7, 8, 9]]
+const COUNT := 10
 var idle_index := 0
 var idle_remaining := 9.0
 var focus_group := -1
@@ -17,6 +18,7 @@ var pending := -1
 var pending_duration := 0.6
 
 func _ready() -> void:
+	Preview.warm()
 	transition_to(0, 0.0)
 
 func select_group(group: int) -> void:
@@ -29,18 +31,16 @@ func select_group(group: int) -> void:
 	resume_remaining = 0.0
 	focus_cursor = 0
 	focus_remaining = 3.0
-	transition_to(GROUPS[group][0], 0.8 if group == 1 else 0.6)
+	transition_to(GROUPS[group][0], 0.6)
 
 func _process(delta: float) -> void:
 	if suspended:
 		return
 	if focus_group >= 0:
-		if focus_group == 1:
-			return
 		focus_remaining -= delta
 		if focus_remaining <= 0:
 			focus_remaining += 3.0
-			focus_cursor = (focus_cursor + 1) % 3
+			focus_cursor = (focus_cursor + 1) % GROUPS[focus_group].size()
 			transition_to(GROUPS[focus_group][focus_cursor], 0.6)
 	elif resume_remaining > 0:
 		resume_remaining -= delta
@@ -50,7 +50,7 @@ func _process(delta: float) -> void:
 		idle_remaining -= delta
 		if idle_remaining <= 0:
 			idle_remaining += 9.0
-			idle_index = (idle_index + 1) % 7
+			idle_index = (idle_index + 1) % COUNT
 			transition_to(idle_index, 1.2)
 
 func transition_to(index: int, duration: float) -> void:
