@@ -44,7 +44,7 @@ const GLITCH_STEP := 1.0 / 11.0
 ## Floor-projection height: above the telegraph inset (0.025) is not needed, these move with the
 ## shot, and stay under the hazard markers' 0.02 / 0.03 planes only in the shot's own footprint.
 const GROUND_Y := 0.022
-## Art review r1: every projectile is DANGER (art bible). Bodies use the danger_* metals and the
+## Every projectile reads as DANGER (hazards are red; mint and orange mean pickups). Bodies use the danger_* metals and the
 ## DANGER glows; MATRIX / LILAC / ORANGE survive only as glyphs and thin accents (<= 25 % of the lit
 ## area, a5_check "C4 projectile palette").
 const MATERIAL_KEYS := ["danger_body", "danger_dark", "danger_stone", "dark", "screen_tile", "screen_merge",
