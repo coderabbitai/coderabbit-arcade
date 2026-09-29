@@ -1,0 +1,22 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/runner/audio/runner_audio.gd" id="1"]
+[sub_resource type="AudioStreamPolyphonic" id="Polyphonic"]
+polyphony = 7
+
+[node name="RunnerAudio" type="Node"]
+process_mode = 3
+script = ExtResource("1")
+
+[node name="OneShots" type="AudioStreamPlayer" parent="."]
+stream = SubResource("Polyphonic")
+bus = &"SFX"
+
+[node name="Footsteps" type="AudioStreamPlayer" parent="."]
+bus = &"SFX"
+
+[node name="Drone" type="AudioStreamPlayer" parent="."]
+bus = &"SFX"
+
+[node name="Heartbeat" type="AudioStreamPlayer" parent="."]
+bus = &"SFX"

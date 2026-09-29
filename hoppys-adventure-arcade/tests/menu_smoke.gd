@@ -20,12 +20,13 @@ func run() -> void:
 	showcase.select_group(1)
 	await wait(0.9)
 	check(showcase.active_index == 3, "Runner selects corridor")
-	showcase._process(15)
-	check(showcase.active_index == 3, "Runner holds preview")
+	showcase._process(3.1)
+	await wait(0.7)
+	check(showcase.active_index == 4, "Runner cycles its gameplay previews")
 	check(showcase.idle_remaining == 4.0, "Focus preserves idle dwell")
 	showcase.select_group(-1)
 	showcase._process(1.0)
-	check(showcase.active_index == 3, "Resume waits two seconds")
+	check(showcase.active_index == 4, "Resume waits two seconds")
 	showcase._process(1.1)
 	await wait(1.3)
 	check(showcase.active_index == 0, "Resume restores idle index")
@@ -37,16 +38,16 @@ func run() -> void:
 	await wait(0.7)
 	showcase._process(3.1)
 	await wait(0.7)
-	check(showcase.active_index == 5, "Brawler cycles")
+	check(showcase.active_index == 8, "Brawler cycles")
 	for i in 30:
 		showcase.select_group(i % 3)
 		check(showcase.get_child_count() <= 2, "Preview count bounded during rapid input")
 	showcase.select_group(1)
 	await wait(1.8)
 	check(showcase.active_index == 3 and showcase.get_child_count() == 1, "Latest focus wins and settles")
-	for i in 7:
+	for i in showcase.COUNT:
 		showcase.transition_to(i, 0)
-		check(showcase.active_index == i, "All seven previews instantiate")
+		check(showcase.active_index == i, "All ten previews instantiate")
 	menu._open_settings(menu.buttons[3])
 	check(menu.modal != null and showcase.suspended, "Settings pauses showcase")
 	check(menu.modal.is_ancestor_of(root.gui_get_focus_owner()), "Settings captures focus")
@@ -61,12 +62,17 @@ func run() -> void:
 		router.go(route)
 		router.go("runner")
 		await wait(0.65)
-		check(current_scene.name == "ModePortal", "Mode route loads")
+		check(current_scene.scene_file_path == router.ROUTES[route], "Mode route loads: " + route)
 		check(not router.busy, "Navigation unlocks")
 		router.go("hub")
 		await wait(0.65)
 		check(current_scene.name == "MainMenu", "Mode route returns")
-	check(root.get_node("AudioService").get_child_count() == 2, "Music and SFX players do not accumulate")
+	# Nullable, like runner_smoke.gd: a missing autoload is a failed check with a clear message, not
+	# a crash. Still exactly one check, so the documented 4.7.0 baseline count is unchanged.
+	var audio := root.get_node_or_null("AudioService")
+	check(audio != null and audio.get_child_count() == 2,
+		"AudioService has %d children, expected Music and SFX only (-1 = autoload missing)"
+			% (audio.get_child_count() if audio != null else -1))
 	# Exercise actual Godot input dispatch, not just controller methods.
 	var down := InputEventKey.new()
 	down.keycode = KEY_DOWN
@@ -116,6 +122,10 @@ func run() -> void:
 		root.get_texture().get_image().save_png("/tmp/hoppy-main-menu-tall.png")
 	await process_frame
 	print("MENU SMOKE: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
-	root.get_node("AudioService").shutdown()
+	# The verdict is already printed; a missing or renamed autoload must not stop quit(failures)
+	# from running, or the process hangs instead of reporting.
+	var shutdown_audio := root.get_node_or_null("AudioService")
+	if shutdown_audio != null and shutdown_audio.has_method("shutdown"):
+		shutdown_audio.shutdown()
 	await wait(0.3)
 	quit(failures)

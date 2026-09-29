@@ -1,0 +1,288 @@
+{
+  "recipe_revision": 7,
+  "hoodie_linear": [
+    0.93,
+    0.25,
+    0.067
+  ],
+  "stance_revision": 17,
+  "effect_triangles": 1394,
+  "joint_revision": 15,
+  "contact_revision": 17,
+  "sole_sweeps": {
+    "idle": {
+      "hz": 120,
+      "samples": 193,
+      "min_y": -1.0238727554678917e-07,
+      "max_y": 7.191556505858898e-08
+    },
+    "run": {
+      "hz": 120,
+      "samples": 73,
+      "min_y": -4.5925844460725784e-08,
+      "max_y": 5.061156116425991e-08
+    },
+    "lane_dash_left": {
+      "hz": 120,
+      "samples": 33,
+      "min_y": -4.9985828809440136e-08,
+      "max_y": 3.272725734859705e-08
+    },
+    "lane_dash_right": {
+      "hz": 120,
+      "samples": 33,
+      "min_y": -4.992762114852667e-08,
+      "max_y": 3.278546500951052e-08
+    },
+    "land": {
+      "hz": 120,
+      "samples": 25,
+      "min_y": -3.91155481338501e-08,
+      "max_y": 4.842877388000488e-08
+    },
+    "shield_brace": {
+      "hz": 120,
+      "samples": 49,
+      "min_y": -4.470348358154297e-08,
+      "max_y": 5.21540641784668e-08
+    },
+    "powerup_react": {
+      "hz": 120,
+      "samples": 61,
+      "min_y": -4.5925844460725784e-08,
+      "max_y": 5.061156116425991e-08
+    },
+    "victory": {
+      "hz": 120,
+      "samples": 145,
+      "min_y": -4.5925844460725784e-08,
+      "max_y": 5.061156116425991e-08
+    }
+  },
+  "animation_sample_rate": 120,
+  "joint_bend_signs": {
+    "forearm": 1,
+    "shin": -1
+  },
+  "brace_profile": [
+    [
+      0.02,
+      0.934
+    ],
+    [
+      0.043,
+      0.922
+    ],
+    [
+      0.044,
+      0.89
+    ],
+    [
+      0.061,
+      0.876
+    ],
+    [
+      0.044,
+      0.862
+    ],
+    [
+      0.043,
+      0.832
+    ],
+    [
+      0.02,
+      0.821
+    ]
+  ],
+  "sole_radii": [
+    0.108,
+    0.162
+  ],
+  "back_mark_z": 0.268,
+  "script_sha256": "b9d155911d74c409c6a83abbfddc26d61e39be5a6fac8bc5db969703c1296c69",
+  "atlas_helper_sha256": "6e9467f0befabed73b075a4184ab7cc5aa864649d008b7be24d313726920e35a",
+  "blender": "5.2.2 LTS",
+  "seed": 41027,
+  "triangles": 45040,
+  "image_report": [
+    {
+      "index": 0,
+      "name": "accessory_emissive",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 156380,
+      "sha256": "2aaeec496b58281eaa8ce923ef220342109abf5cfd67a45dcb6ec60371cfcfd2"
+    },
+    {
+      "index": 1,
+      "name": "accessory_normal",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 720215,
+      "sha256": "3d15e33a2ce503261de49b3fa4a59be0c067869c1dc815b66133449e5a33098d"
+    },
+    {
+      "index": 2,
+      "name": "accessory_albedo",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 863157,
+      "sha256": "e2d0d7ed8cadf209078561b4a184bf972fd512f095e9e2ec354df43247eaf6bd"
+    },
+    {
+      "index": 3,
+      "name": "accessory_orm",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 389015,
+      "sha256": "71398f996da82b189a21084cb01beb4978fce02098f5eed875b63b668bfe2fe6"
+    },
+    {
+      "index": 4,
+      "name": "body_emissive",
+      "width": 2048,
+      "height": 2048,
+      "bytes": 55235,
+      "sha256": "5630edf42913f842e57308503a7e0977e721d09027a12c453b8878c22108cd37"
+    },
+    {
+      "index": 5,
+      "name": "body_normal",
+      "width": 2048,
+      "height": 2048,
+      "bytes": 2902721,
+      "sha256": "79d580b9d05bc0afc14d3090ab43636c48825314a520ff3bf095c9d89fc901e1"
+    },
+    {
+      "index": 6,
+      "name": "body_albedo",
+      "width": 2048,
+      "height": 2048,
+      "bytes": 2957041,
+      "sha256": "d5cb3d551b031211a7b86c8d3fa00cd905419c8fe8a77592e5d2d6fbf6bf85e8"
+    },
+    {
+      "index": 7,
+      "name": "body_orm",
+      "width": 2048,
+      "height": 2048,
+      "bytes": 393160,
+      "sha256": "4a0319627f91616e742f7668e9b9c77f86c2c0d5248c91a3f04d53239f23835b"
+    }
+  ],
+  "textures": [
+    "accessory_albedo.png",
+    "accessory_emissive.png",
+    "accessory_normal.png",
+    "accessory_orm.png",
+    "body_albedo.png",
+    "body_emissive.png",
+    "body_normal.png",
+    "body_orm.png"
+  ],
+  "exported_texture_count": 8,
+  "quick": false,
+  "animations": [
+    "idle",
+    "run",
+    "jump",
+    "fall",
+    "roll",
+    "hurt",
+    "dead",
+    "lane_dash_left",
+    "lane_dash_right",
+    "land",
+    "shield_brace",
+    "powerup_react",
+    "victory"
+  ],
+  "bones": [
+    "root",
+    "hips",
+    "spine",
+    "chest",
+    "neck",
+    "head",
+    "ear_L",
+    "ear_tip_L",
+    "eye_L",
+    "brow_L",
+    "mouth_L",
+    "ear_R",
+    "ear_tip_R",
+    "eye_R",
+    "brow_R",
+    "mouth_R",
+    "shoulder_L",
+    "arm_L",
+    "forearm_L",
+    "hand_L",
+    "shoulder_R",
+    "arm_R",
+    "forearm_R",
+    "hand_R",
+    "tail",
+    "leg_L",
+    "shin_L",
+    "foot_L",
+    "leg_R",
+    "shin_R",
+    "foot_R"
+  ],
+  "roll_bounds_y": [
+    0.08456936478614807,
+    0.8154305219650269
+  ],
+  "triangle_cap": 48000,
+  "led_segments": 4,
+  "led_primitives": 2,
+  "face_bones": [
+    "eye_L",
+    "eye_R",
+    "brow_L",
+    "brow_R",
+    "mouth_L",
+    "mouth_R"
+  ],
+  "grounded_clips": [
+    "idle",
+    "run",
+    "lane_dash_left",
+    "lane_dash_right",
+    "land",
+    "shield_brace",
+    "powerup_react",
+    "victory"
+  ],
+  "clip_frames": {
+    "idle": 48,
+    "run": 18,
+    "jump": 15,
+    "fall": 24,
+    "roll": 24,
+    "hurt": 18,
+    "dead": 36,
+    "lane_dash_left": 8,
+    "lane_dash_right": 8,
+    "land": 6,
+    "shield_brace": 12,
+    "powerup_react": 15,
+    "victory": 36
+  },
+  "run_exit": {
+    "lane_dash_left": 0.5,
+    "lane_dash_right": 0.0,
+    "land": 0.0,
+    "shield_brace": 0.0,
+    "powerup_react": 0.0,
+    "victory": 0.0
+  },
+  "height": 1.8,
+  "forward": [
+    0,
+    0,
+    -1
+  ],
+  "generator": "Khronos glTF Blender I/O v5.2.40"
+}

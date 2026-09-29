@@ -1,0 +1,498 @@
+{
+  "blender": "5.2.2 LTS",
+  "budget": {
+    "atlas_resolution": 1024,
+    "emission_share_max": 0.4,
+    "envelope": 1.1,
+    "hazard_draws": 14,
+    "hazard_prop_triangles": 5200,
+    "hazard_triangles": 6000,
+    "pickup_draws_plus_burst": 8,
+    "pickup_half_height": 0.46,
+    "pickup_prop_triangles": 2600,
+    "pickup_radius": 0.385,
+    "pickup_triangles": 3000
+  },
+  "generator": "tools/blender/props/build_props.py",
+  "hazards": {
+    "atlases": {
+      "albedo": {
+        "file": "hazard_props_albedo.png",
+        "sha256": "bac266e71c1f6c1e2bb2652739bd4fc6612e78985517d8d4e4982538aa319a6f"
+      },
+      "emission": {
+        "file": "hazard_props_emission.png",
+        "sha256": "1ca9c999498c54edbb0c8e54d3fe0ffe4ee9c2f6a6d37022e9b9a1edf7a75613"
+      },
+      "normal": {
+        "file": "hazard_props_normal.png",
+        "sha256": "73d64766751725ea2810400b7b0faa07546bc40f716d4c219f70f182d2d03587"
+      },
+      "orm": {
+        "file": "hazard_props_orm.png",
+        "sha256": "5e673d7cd2d10e4095d27d9df2d354c78f8a7eaf8f2246aed042c467ef4bceb4"
+      }
+    },
+    "census": {
+      "HZ_bug_swarm": {
+        "bounds": [
+          [
+            -0.8271302580833435,
+            -0.4193326234817505,
+            -0.44909194111824036
+          ],
+          [
+            0.8320745229721069,
+            0.34318631887435913,
+            0.59086674451828
+          ]
+        ],
+        "meshes": [
+          "bug_swarm__BugBody",
+          "bug_swarm__Wing"
+        ],
+        "triangles": 4158
+      },
+      "HZ_build_shockwave": {
+        "bounds": [
+          [
+            -3.019369125366211,
+            -0.26968759298324585,
+            -0.5557872653007507
+          ],
+          [
+            3.019369125366211,
+            0.1704699546098709,
+            0.517052173614502
+          ]
+        ],
+        "meshes": [
+          "build_shockwave__Pipe",
+          "build_shockwave__Shard"
+        ],
+        "triangles": 4732
+      },
+      "HZ_comment_flood": {
+        "bounds": [
+          [
+            -1.7599999904632568,
+            -2.0,
+            -0.26499998569488525
+          ],
+          [
+            1.7599999904632568,
+            1.9799998998641968,
+            0.26499998569488525
+          ]
+        ],
+        "meshes": [
+          "comment_flood__Card",
+          "comment_flood__Spine"
+        ],
+        "triangles": 4008
+      },
+      "HZ_deprecated_pit_full": {
+        "bounds": [
+          [
+            -2.9655001163482666,
+            -0.06727591902017593,
+            -1.6024999618530273
+          ],
+          [
+            2.9655001163482666,
+            0.01900000125169754,
+            1.6024999618530273
+          ]
+        ],
+        "meshes": [
+          "deprecated_pit__RimFull"
+        ],
+        "triangles": 4384
+      },
+      "HZ_deprecated_pit_two_lane": {
+        "bounds": [
+          [
+            -1.905500054359436,
+            -0.06730525940656662,
+            -1.6024999618530273
+          ],
+          [
+            1.905500054359436,
+            0.01900000125169754,
+            1.6024999618530273
+          ]
+        ],
+        "meshes": [
+          "deprecated_pit__RimTwoLane"
+        ],
+        "triangles": 3216
+      },
+      "HZ_laser_grid": {
+        "bounds": [
+          [
+            -2.815002679824829,
+            -0.20000000298023224,
+            -0.31200000643730164
+          ],
+          [
+            2.815002679824829,
+            0.20999999344348907,
+            0.31200000643730164
+          ]
+        ],
+        "meshes": [
+          "laser_grid__Emitter"
+        ],
+        "triangles": 1696
+      },
+      "HZ_merge_conflict": {
+        "bounds": [
+          [
+            -1.7881407737731934,
+            -0.5099999904632568,
+            -0.28881484270095825
+          ],
+          [
+            1.7881407737731934,
+            0.47849729657173157,
+            0.30052754282951355
+          ]
+        ],
+        "meshes": [
+          "merge_conflict__Ours",
+          "merge_conflict__Theirs"
+        ],
+        "triangles": 1928
+      },
+      "HZ_pr_backlog_high": {
+        "bounds": [
+          [
+            -2.9099998474121094,
+            -0.8899999856948853,
+            -0.49000000953674316
+          ],
+          [
+            2.9099998474121094,
+            0.8700000047683716,
+            0.5259999632835388
+          ]
+        ],
+        "meshes": [
+          "pr_backlog_high__Gantry",
+          "pr_backlog_high__ScanHead",
+          "pr_backlog_high__Ticket"
+        ],
+        "triangles": 5020
+      },
+      "HZ_pr_backlog_low": {
+        "bounds": [
+          [
+            -2.9799997806549072,
+            -0.5,
+            -0.5600000023841858
+          ],
+          [
+            2.9799997806549072,
+            0.5450000166893005,
+            0.574999988079071
+          ]
+        ],
+        "meshes": [
+          "pr_backlog_low__Conveyor",
+          "pr_backlog_low__Crate"
+        ],
+        "triangles": 5100
+      }
+    },
+    "emission_share": {
+      "HZ_bug_swarm": 0.14066632100758733,
+      "HZ_build_shockwave": 0.06632085804206593,
+      "HZ_comment_flood": 0.09002243226278504,
+      "HZ_deprecated_pit_full": 0.003987521840216708,
+      "HZ_deprecated_pit_two_lane": 0.0070674782513120765,
+      "HZ_laser_grid": 0.07406039253823815,
+      "HZ_merge_conflict": 0.10257517242160002,
+      "HZ_pr_backlog_high": 0.07717865241005377,
+      "HZ_pr_backlog_low": 0.054420308982012396
+    },
+    "glb": {
+      "bytes": 1190800,
+      "meshes": [
+        "bug_swarm__BugBody",
+        "bug_swarm__Wing",
+        "build_shockwave__Pipe",
+        "build_shockwave__Shard",
+        "comment_flood__Card",
+        "comment_flood__Spine",
+        "deprecated_pit__RimFull",
+        "deprecated_pit__RimTwoLane",
+        "laser_grid__Emitter",
+        "merge_conflict__Ours",
+        "merge_conflict__Theirs",
+        "pr_backlog_high__Gantry",
+        "pr_backlog_high__ScanHead",
+        "pr_backlog_high__Ticket",
+        "pr_backlog_low__Conveyor",
+        "pr_backlog_low__Crate"
+      ],
+      "nodes": 88,
+      "sha256": "b2ffc691fbf2dca0b4218eff982323d829c846125e68f0942bf65c09c219fc0c"
+    }
+  },
+  "kit_sha256": "30ec723c38e818b659075007c71300e994f5c41a36c6e343e17080c203ccc1ad",
+  "pickups": {
+    "atlases": {
+      "albedo": {
+        "file": "pickup_props_albedo.png",
+        "sha256": "c27acef370b4aac89a63c712a2bd9a4d107e9760e5d780452b02ceb9bc2088ab"
+      },
+      "emission": {
+        "file": "pickup_props_emission.png",
+        "sha256": "6c738c2d4889d13b184e00f601f31224d2e8f605e16f9222cc8c625e52b71439"
+      },
+      "normal": {
+        "file": "pickup_props_normal.png",
+        "sha256": "0d6bdd7b6bff94e2f13418e41932ff3da42ed4d4238efbc909c61e83aeeef53c"
+      },
+      "orm": {
+        "file": "pickup_props_orm.png",
+        "sha256": "1efae20a9761549ffd8932a116b276e02ea3c1a511c6b8f04785e7d245a8ab93"
+      }
+    },
+    "census": {
+      "PU_approve_shield": {
+        "bounds": [
+          [
+            -0.26955264806747437,
+            -0.32586437463760376,
+            -0.1850000023841858
+          ],
+          [
+            0.26955264806747437,
+            0.4212093949317932,
+            0.10750000178813934
+          ]
+        ],
+        "meshes": [
+          "approve_shield__InnerCore",
+          "approve_shield__Ring"
+        ],
+        "triangles": 840
+      },
+      "PU_auto_fix": {
+        "bounds": [
+          [
+            -0.2638605833053589,
+            -0.35500001907348633,
+            -0.1720000058412552
+          ],
+          [
+            0.24186930060386658,
+            0.40692806243896484,
+            0.1720000058412552
+          ]
+        ],
+        "meshes": [
+          "auto_fix__InnerCore",
+          "auto_fix__Ring"
+        ],
+        "triangles": 1460
+      },
+      "PU_auto_fix_patch": {
+        "bounds": [
+          [
+            -0.3375000059604645,
+            -0.29725000262260437,
+            -0.22500000894069672
+          ],
+          [
+            0.3375000059604645,
+            0.30740001797676086,
+            0.11749999970197678
+          ]
+        ],
+        "meshes": [
+          "auto_fix_patch__InnerCore",
+          "auto_fix_patch__Ring"
+        ],
+        "triangles": 604
+      },
+      "PU_code_review": {
+        "bounds": [
+          [
+            -0.29499998688697815,
+            -0.3297666013240814,
+            -0.17000001668930054
+          ],
+          [
+            0.35838761925697327,
+            0.32499998807907104,
+            0.08255951851606369
+          ]
+        ],
+        "meshes": [
+          "code_review__InnerCore",
+          "code_review__Ring"
+        ],
+        "triangles": 1502
+      },
+      "PU_lgtm": {
+        "bounds": [
+          [
+            -0.23799999058246613,
+            -0.12800000607967377,
+            -0.15799999237060547
+          ],
+          [
+            0.23799999058246613,
+            0.4100000262260437,
+            0.16500000655651093
+          ]
+        ],
+        "meshes": [
+          "lgtm__InnerCore",
+          "lgtm__Ring"
+        ],
+        "triangles": 1068
+      },
+      "PU_lint_rule": {
+        "bounds": [
+          [
+            -0.35999998450279236,
+            -0.4552000164985657,
+            -0.35999998450279236
+          ],
+          [
+            0.35999998450279236,
+            0.43823105096817017,
+            0.35999998450279236
+          ]
+        ],
+        "meshes": [
+          "lint_rule__InnerCore",
+          "lint_rule__Ring"
+        ],
+        "triangles": 1224
+      },
+      "PU_nitro": {
+        "bounds": [
+          [
+            -0.21848076581954956,
+            -0.42499998211860657,
+            -0.1550000011920929
+          ],
+          [
+            0.21848076581954956,
+            0.30000001192092896,
+            0.10000000149011612
+          ]
+        ],
+        "meshes": [
+          "nitro__InnerCore",
+          "nitro__Ring"
+        ],
+        "triangles": 1540
+      },
+      "PU_review_comment": {
+        "bounds": [
+          [
+            -0.35989999771118164,
+            -0.4287733733654022,
+            -0.2595999836921692
+          ],
+          [
+            0.35989999771118164,
+            0.45580002665519714,
+            0.047199998050928116
+          ]
+        ],
+        "meshes": [
+          "review_comment__InnerCore",
+          "review_comment__Ring"
+        ],
+        "triangles": 1163
+      },
+      "PU_super_jump": {
+        "bounds": [
+          [
+            -0.2370000034570694,
+            -0.3930000066757202,
+            -0.2199999988079071
+          ],
+          [
+            0.2370000034570694,
+            0.23000000417232513,
+            0.22324493527412415
+          ]
+        ],
+        "meshes": [
+          "super_jump__InnerCore",
+          "super_jump__Ring"
+        ],
+        "triangles": 2156
+      },
+      "PU_unit_test": {
+        "bounds": [
+          [
+            -0.328000009059906,
+            -0.42899999022483826,
+            -0.28405633568763733
+          ],
+          [
+            0.328000009059906,
+            0.42899999022483826,
+            0.30400002002716064
+          ]
+        ],
+        "meshes": [
+          "unit_test__InnerCore",
+          "unit_test__Ring"
+        ],
+        "triangles": 646
+      }
+    },
+    "emission_share": {
+      "PU_approve_shield": 0.09660554821464247,
+      "PU_auto_fix": 0.23398130303406123,
+      "PU_auto_fix_patch": 0.1194053436333385,
+      "PU_code_review": 0.05545276083889084,
+      "PU_lgtm": 0.2525671777680466,
+      "PU_lint_rule": 0.22327572273680146,
+      "PU_nitro": 0.07577252157204212,
+      "PU_review_comment": 0.11691189918889382,
+      "PU_super_jump": 0.16558734925559238,
+      "PU_unit_test": 0.06485531335644061
+    },
+    "glb": {
+      "bytes": 546628,
+      "meshes": [
+        "approve_shield__InnerCore",
+        "approve_shield__Ring",
+        "auto_fix__InnerCore",
+        "auto_fix__Ring",
+        "auto_fix_patch__InnerCore",
+        "auto_fix_patch__Ring",
+        "code_review__InnerCore",
+        "code_review__Ring",
+        "lgtm__InnerCore",
+        "lgtm__Ring",
+        "lint_rule__InnerCore",
+        "lint_rule__Ring",
+        "nitro__InnerCore",
+        "nitro__Ring",
+        "review_comment__InnerCore",
+        "review_comment__Ring",
+        "super_jump__InnerCore",
+        "super_jump__Ring",
+        "unit_test__InnerCore",
+        "unit_test__Ring"
+      ],
+      "nodes": 30,
+      "sha256": "0a4bf8d65584b97104de296314d4f9d392a21d870f18318f55ea74bd02f12e73"
+    }
+  },
+  "quick": false,
+  "revision": 2,
+  "script_sha256": "dbc650e570e9ed41b4366541ef1691be73d87420526b24a9044ca36e695d4a75",
+  "seed": 52019
+}

@@ -14,6 +14,7 @@ var hovered := -1
 var shade: TextureRect
 var title: VBoxContainer
 var elapsed := 0.0
+var save_warning: Label
 
 func _ready() -> void:
 	ui = Control.new()
@@ -92,12 +93,18 @@ func _ready() -> void:
 	ui.add_child(preview_note)
 	showcase.preview_changed.connect(_preview_changed)
 	_preview_changed(showcase.active_index)
+	get_viewport().size_changed.connect(_layout)
+	# Deferred: sizing full-rect-anchored controls inside _ready is overridden (and warned about).
+	_layout.call_deferred()
 	buttons[0].grab_focus()
 
 func _process(delta: float) -> void:
 	elapsed += delta
 	title.position.y = 96 + sin(elapsed * PI) * 3
-	# Keep composition centered as expand stretch exposes extra width or height.
+
+# Keep composition centered as expand stretch exposes extra width or height. Runs on resize only:
+# rewriting sizes every frame forces the button containers to re-sort (and reset their scale).
+func _layout() -> void:
 	var extra := (get_viewport_rect().size - Vector2(1280, 720)) * 0.5
 	ui.position = extra
 	ui.size = Vector2(1280, 720)
@@ -162,7 +169,8 @@ func _select(group: int) -> void:
 func _preview_changed(index: int) -> void:
 	caption.text = Preview.TITLES[index]
 	caption.add_theme_color_override("font_color", Preview.COLORS[index])
-	dots.text = " ".join(PackedStringArray(Array(range(7)).map(func(i): return "◆" if i == index else "·"))) + "    %02d / 07" % (index + 1)
+	var count: int = showcase.COUNT
+	dots.text = " ".join(PackedStringArray(Array(range(count)).map(func(i): return "◆" if i == index else "·"))) + "    %02d / %02d" % [index + 1, count]
 
 func _make_modal(invoker: Control, heading: String) -> VBoxContainer:
 	AudioService.play_ui(1)
@@ -190,6 +198,7 @@ func _make_modal(invoker: Control, heading: String) -> VBoxContainer:
 	box.content_margin_bottom = 28
 	panel.add_theme_stylebox_override("panel", box)
 	modal.add_child(panel)
+	_layout()
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 16)
 	panel.add_child(column)
@@ -248,9 +257,13 @@ func _open_quit(invoker: Control) -> void:
 func _close_modal() -> void:
 	if not modal or AppRouter.busy: return
 	if SaveService.persist() != OK:
-		var warning := Style.label("Settings could not be saved to disk.", 14, Color("ff7185"))
-		warning.position = Vector2(76, 636)
-		ui.add_child(warning)
+		if save_warning == null:
+			save_warning = Style.label("Settings could not be saved to disk.", 14, Color("ff7185"))
+			save_warning.position = Vector2(76, 636)
+			ui.add_child(save_warning)
+	elif save_warning:
+		save_warning.queue_free()
+		save_warning = null
 	modal.queue_free()
 	modal = null
 	for button in buttons:

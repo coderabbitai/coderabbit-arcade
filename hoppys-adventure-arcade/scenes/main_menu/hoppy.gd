@@ -2,6 +2,7 @@ extends Node2D
 ## Temporary code-drawn mascot. Replace this node with final AnimatedSprite2D art.
 var elapsed := 0.0
 var reaction := -1
+var COLORS := {"W": Color("fff1d5"), "P": Color("ecaca0"), "D": Color("202b40"), "O": Color("f78949"), "T": Color("ffe4a3")}
 const PIXELS = [
 "      WW      WW     ",
 "     WWWW    WWWW    ",
@@ -35,7 +36,7 @@ func _draw() -> void:
 	elif reaction == 1:
 		hop = sin(elapsed * 16) * 5
 	draw_ellipse_shadow()
-	var colors := {"W": Color("fff1d5"), "P": Color("ecaca0"), "D": Color("202b40"), "O": Color("f78949"), "T": Color("ffe4a3")}
+	var colors := COLORS
 	for y in PIXELS.size():
 		for x in PIXELS[y].length():
 			var key: String = PIXELS[y][x]

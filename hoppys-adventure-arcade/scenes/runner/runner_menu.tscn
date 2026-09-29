@@ -1,12 +1,24 @@
-[gd_scene load_steps=2 format=3]
-[ext_resource type="Script" path="res://scenes/main_menu/mode_portal.gd" id="1"]
-[node name="ModePortal" type="Control"]
-layout_mode = 3
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/runner/runner_menu.gd" id="1"]
+[ext_resource type="PackedScene" path="res://scenes/runner/environment/corridor.tscn" id="2"]
+[ext_resource type="PackedScene" path="res://scenes/runner/player/hoppy_runner_visual.tscn" id="3"]
+
+[node name="RunnerMenu" type="Node3D"]
 script = ExtResource("1")
-mode_title = "Endless Runner"
-description = "The Codebase Corridor"
+
+[node name="Backdrop" type="Node3D" parent="."]
+
+[node name="Corridor" parent="Backdrop" instance=ExtResource("2")]
+
+[node name="Hoppy" parent="Backdrop" instance=ExtResource("3")]
+position = Vector3(0.7, 0, -0.3)
+
+[node name="Camera" type="Camera3D" parent="Backdrop"]
+position = Vector3(2.6, 1.9, 3.4)
+current = true
+fov = 55.0
+near = 0.15
+far = 200.0
+
+[node name="Interface" type="CanvasLayer" parent="."]

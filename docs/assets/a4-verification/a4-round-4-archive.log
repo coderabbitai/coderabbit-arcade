@@ -1,0 +1,369 @@
+BLOCK 1
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/a4-import.log --editor --import --quit
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+[   0% ] first_scan_filesystem | Started Project initialization (5 steps)
+[   0% ] first_scan_filesystem | Scanning file structure...
+WARNING: Detected another project.godot at res://Assets/SynthCitiesGodot. The folder will be ignored.
+     at: _should_skip_directory (editor/file_system/editor_file_system.cpp:3485)
+[  16% ] first_scan_filesystem | Loading global class names...
+[  33% ] first_scan_filesystem | Verifying GDExtensions...
+[  50% ] first_scan_filesystem | Creating autoload scripts...
+[  66% ] first_scan_filesystem | Initializing plugins...
+[  83% ] first_scan_filesystem | Starting file scan...
+[ DONE ] first_scan_filesystem
+
+[   0% ] update_scripts_classes | Started Registering global classes... (4 steps)
+[   0% ] update_scripts_classes |
+[  20% ] update_scripts_classes |
+[  40% ] update_scripts_classes |
+[  60% ] update_scripts_classes |
+[ DONE ] update_scripts_classes
+
+[   0% ] loading_editor_layout | Started Loading editor (5 steps)
+[   0% ] loading_editor_layout | Loading editor layout...
+[  16% ] loading_editor_layout | Loading docks...
+[ DONE ] loading_editor_layout
+
+ERROR: Cannot save file '/Users/jp/Library/Application Support/Godot/editor_settings-4.7.tres'.
+   at: save (scene/resources/resource_format_text.cpp:1768)
+ERROR: Error saving editor settings to /Users/jp/Library/Application Support/Godot/editor_settings-4.7.tres
+   at: save (editor/settings/editor_settings.cpp:1525)
+EXIT: 0
+
+
+BLOCK 2
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/a4-parse-0.log --check-only --script res://scenes/runner/powerups/visuals/power_up_art.gd
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+EXIT: 0
+
+
+BLOCK 3
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/a4-parse-1.log --check-only --script res://scenes/runner/powerups/visuals/hifi/grab_affordance.gd
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+EXIT: 0
+
+
+BLOCK 4
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/a4-parse-2.log --check-only --script res://scenes/runner/powerups/visuals/hifi/pickup_materials.gd
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+EXIT: 0
+
+
+BLOCK 5
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/a4-parse-3.log --check-only --script res://scenes/runner/powerups/dev/capture_a4.gd
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+EXIT: 0
+
+
+BLOCK 6
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/a4-parse-4.log --check-only --script res://tests/assets/a4_check.gd
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+EXIT: 0
+
+
+BLOCK 7
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/a4-check.log --script res://tests/assets/a4_check.gd
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+A4 GLYPH approve_shield: 32.14 visible pixels at 60m
+A4 EMISSIVE approve_shield: 6.46 percent sculpture area
+A4 CENSUS approve_shield: 7 idle / 8 peak draws, 256 peak triangles
+A4 GLYPH auto_fix: 32.16 visible pixels at 60m
+A4 EMISSIVE auto_fix: 6.36 percent sculpture area
+A4 CENSUS auto_fix: 7 idle / 8 peak draws, 356 peak triangles
+A4 GLYPH lgtm: 32.15 visible pixels at 60m
+A4 EMISSIVE lgtm: 6.41 percent sculpture area
+A4 CENSUS lgtm: 7 idle / 8 peak draws, 320 peak triangles
+A4 GLYPH nitro: 32.13 visible pixels at 60m
+A4 EMISSIVE nitro: 4.88 percent sculpture area
+A4 CENSUS nitro: 7 idle / 8 peak draws, 340 peak triangles
+A4 GLYPH super_jump: 32.14 visible pixels at 60m
+A4 EMISSIVE super_jump: 10.14 percent sculpture area
+A4 CENSUS super_jump: 7 idle / 8 peak draws, 1824 peak triangles
+A4 GLYPH code_review: 32.14 visible pixels at 60m
+A4 EMISSIVE code_review: 20.37 percent sculpture area
+A4 CENSUS code_review: 7 idle / 8 peak draws, 2008 peak triangles
+A4 GLYPH review_comment: 32.14 visible pixels at 60m
+A4 EMISSIVE review_comment: 16.91 percent sculpture area
+A4 CENSUS review_comment: 7 idle / 8 peak draws, 272 peak triangles
+A4 GLYPH lint_rule: 32.14 visible pixels at 60m
+A4 EMISSIVE lint_rule: 22.93 percent sculpture area
+A4 CENSUS lint_rule: 7 idle / 8 peak draws, 296 peak triangles
+A4 GLYPH unit_test: 32.14 visible pixels at 60m
+A4 EMISSIVE unit_test: 23.73 percent sculpture area
+A4 CENSUS unit_test: 7 idle / 8 peak draws, 380 peak triangles
+A4 GLYPH auto_fix_patch: 32.15 visible pixels at 60m
+A4 EMISSIVE auto_fix_patch: 23.08 percent sculpture area
+A4 CENSUS auto_fix_patch: 7 idle / 8 peak draws, 336 peak triangles
+A4 SILHOUETTES: 10 unique; minimum pairwise difference 123 / 768 samples
+ASSET A4: PASS (4956 checks)
+EXIT: 0
+
+
+BLOCK 8
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/a4-prewarm.log --script res://tests/assets/prewarm_check.gd
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+PREWARM cold corridor ready(): 713.240 ms
+PREWARM cold warm(): 686.620 ms
+PREWARM sync environment: 1.837 ms
+PREWARM sync materials: 0.335 ms
+PREWARM sync hazards: 166.122 ms
+PREWARM sync hazard_meshes: 8.441 ms
+PREWARM sync pickups: 149.864 ms
+PREWARM sync pickup_templates: 0.730 ms
+PREWARM sync ui: 7.736 ms
+PREWARM sync audio: 288.870 ms
+PREWARM sync footsteps: 1.117 ms
+PREWARM sync whooshes: 52.144 ms
+PREWARM pending repeat warm(): 0.001 ms
+PREWARM GPU replacement: NOT VERIFIED (headless dummy retains initial pixel snapshot)
+PREWARM async boss/textures[]: image=126.550 ms finalize=0.006 ms
+PREWARM async player/maps["fur"]: image=277.812 ms finalize=0.020 ms
+PREWARM async player/maps["cloth"]: image=287.113 ms finalize=0.012 ms
+PREWARM async pursuer/maps[]: image=231.095 ms finalize=0.013 ms
+PREWARM async environment/floor_maps[]: image=560.019 ms finalize=0.016 ms
+PREWARM async environment/maps[]: image=1497.012 ms finalize=0.017 ms
+PREWARM deferred main audio: 525.973 ms
+PREWARM deferred main boss: 13.177 ms
+PREWARM deferred main boss_meshes: 39.589 ms
+PREWARM deferred main boss_fx: 0.433 ms
+PREWARM census player: 6 resources
+PREWARM census environment: 9 resources
+PREWARM census materials: 11 resources
+PREWARM census hazards: 4 resources
+PREWARM census hazard_meshes: 16 resources
+PREWARM census pickups: 4 resources
+PREWARM census pickup_templates: 3 resources
+PREWARM census boss: 4 resources
+PREWARM census boss_meshes: 42 resources
+PREWARM census boss_fx: 2 resources
+PREWARM census pursuer: 3 resources
+PREWARM census ui: 1 resources
+PREWARM census audio: 32 resources
+PREWARM census footsteps: 6 resources
+PREWARM census whooshes: 16 resources
+PREWARM repeat warm(): 0.001 ms
+PREWARM: PASS (326 checks)
+EXIT: 0
+
+
+BLOCK 9
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/a4-visual.log --script res://tests/runner_visual_smoke.gd
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+INTERPOLATION OPT-OUT: PASS (131 nodes)
+SPIKE: renderer=gl_compatibility scale=0.5 glow_threshold=0.75 fog=22..88 particles=320
+RUNNER DEV SCENES: PASS (12 scenes)
+TURN CAMERA ALIGNMENT: direction=-1 p=0.3 angle=10.620 degrees
+TURN CAMERA ALIGNMENT: direction=-1 p=0.5 angle=10.620 degrees
+TURN CAMERA ALIGNMENT: direction=-1 p=0.7 angle=10.620 degrees
+TURN CAMERA ALIGNMENT: direction=+1 p=0.3 angle=10.620 degrees
+TURN CAMERA ALIGNMENT: direction=+1 p=0.5 angle=10.620 degrees
+TURN CAMERA ALIGNMENT: direction=+1 p=0.7 angle=10.620 degrees
+CORRIDOR DRAW CENSUS: rest=11; mid-turn=14 (headless geometry census; host GPU measurement pending)
+TURN: PASS
+TURN WARNING: PASS
+BOSS INTRO: PASS
+STAGE SEAM: PASS
+BOSS DRAW CENSUS: flaky_test_swarm=11
+BOSS DRAW CENSUS: merge_conflict_hydra=18
+BOSS DRAW CENSUS: legacy_monolith=14
+BOSS VISUALS: PASS (3 checked; peak draw census=18)
+TOOLS AND PROJECTILES: PASS
+HAZARD DRAW CENSUS: pr_backlog_low/ peak=7
+HAZARD DRAW CENSUS: pr_backlog_high/ peak=7
+HAZARD DRAW CENSUS: bug_swarm/ peak=9
+HAZARD DRAW CENSUS: merge_conflict/ peak=11
+HAZARD DRAW CENSUS: deprecated_pit/full peak=10
+HAZARD DRAW CENSUS: deprecated_pit/two_lane peak=10
+HAZARD DRAW CENSUS: laser_grid/ground peak=11
+HAZARD DRAW CENSUS: laser_grid/mid peak=11
+HAZARD DRAW CENSUS: laser_grid/high peak=11
+HAZARD DRAW CENSUS: laser_grid/timed peak=11
+HAZARD DRAW CENSUS: comment_flood/ peak=5
+HAZARD DRAW CENSUS: build_shockwave/ peak=8
+HAZARD CASES CHECKED: 12; summed peak draw census=111
+POWER-UP VISUALS: 6 checked; reuse, collection and pause PASS
+PURSUER WALL THREAT 1 MERGED VISIBLE AABB: [P: (-2.778117, 0.058948, -0.300199), S: (5.556236, 1.948992, 1.832372)]
+PURSUER VISUAL: threat, catch, retreat, reuse and pause checked
+HUD LEGIBILITY: PASS (55 labels checked)
+PURSUIT ALERT: PASS
+RUNNER UI MOCK: HUD, pursuit, pause, results, focus and save PASS
+RUNNER UI REAL FACADE: autostart=false, start_run, autopilot 3s PASS
+RUNNER AUDIO: 32 recipes/triggers; demo heartbeat starts=1; peak voices=10; AudioService players=2
+WARNING: Runner leaderboard: this run was not written to user://test_runner_menu_leaderboard_15958.cfg (error 12); it keeps rank 0
+     at: push_warning (core/variant/variant_utility.cpp:1033)
+     GDScript backtrace (most recent call first):
+         [0] _finish_run (res://scenes/runner/runner_game.gd:680)
+         [1] _physics_process (res://scenes/runner/runner_game.gd:444)
+WARNING: Runner leaderboard: cannot rename this run in user://test_runner_menu_leaderboard_15958.cfg (error 33)
+     at: push_warning (core/variant/variant_utility.cpp:1033)
+     GDScript backtrace (most recent call first):
+         [0] submit_name (res://scenes/runner/runner_game.gd:323)
+         [1] check_runner_full_loop (res://tests/runner_visual_smoke.gd:1141)
+         [2] _wait_for (res://tests/runner_visual_smoke.gd:1077)
+VISUAL CHECK FAILED: Codex name persists
+VISUAL CHECK FAILED: temporary board contains saved run
+RUNNER FULL LOOP: FAIL (menu, play, hit, pursuit, 18.0s timer recovery, hit, hit, caught, finished, game over, Codex, retry, menu, hub, default music; isolated board removed)
+RUNNER VISUAL SMOKE: FAIL (2 failures)
+EXIT: 2
+
+
+BLOCK 10
+$ /Applications/Godot.app/Contents/MacOS/Godot --headless --path hoppys-adventure-arcade --log-file /tmp/a4-runner.log --script res://tests/runner_smoke.gd
+Godot Engine v4.7.stable.official.5b4e0cb0f - https://godotengine.org
+
+ERROR: Condition "ret != noErr" is true. Returning: ""
+   at: get_system_ca_certificates (platform/macos/os_macos.mm:1035)
+WARNING: Runner leaderboard: this run was not written to user://smoke_leaderboard_933660.cfg (error 12); it keeps rank 0
+     at: push_warning (core/variant/variant_utility.cpp:1033)
+     GDScript backtrace (most recent call first):
+         [0] _finish_run (res://scenes/runner/runner_game.gd:680)
+         [1] _physics_process (res://scenes/runner/runner_game.gd:444)
+ERROR: RUNNER SMOKE: the board write reported error 12
+   at: push_error (core/variant/variant_utility.cpp:1023)
+   GDScript backtrace (most recent call first):
+       [0] check (res://tests/runner_smoke.gd:66)
+       [1] _leaderboard_phase (res://tests/runner_smoke.gd:398)
+       [2] run (res://tests/runner_smoke.gd:109)
+       [3] _catch_phase (res://tests/runner_smoke.gd:385)
+       [4] _wait_run_seconds (res://tests/runner_smoke.gd:801)
+       [5] _wait_until (res://tests/runner_smoke.gd:820)
+RUNNER SMOKE: seed 12345, elapsed 75.1 s, distance 1691 m, speed 0.0, state finished, hp 0, score 1921
+  hit: t=54.15 v=25.1 deprecated_pit -> hp 1, lane 2/2 x=2.00 y=0.00 roll=false air=false reckless=0 [deprecated_pit z=-1.8 x=0.0 JUMP blocking=false]
+  hit: t=73.70 v=25.3 projectile -> hp 1, lane 0/0 x=-2.00 y=0.00 roll=false air=false reckless=0 [projectile z=-0.9 x=-1.0 LANE blocking=false]
+  hit: t=75.15 v=25.3 projectile -> hp 0, lane 0/0 x=-2.00 y=0.00 roll=false air=false reckless=0 [projectile z=-0.9 x=-2.0 JUMP_OR_LANE blocking=false] [projectile z=-0.9 x=2.0 JUMP_OR_LANE blocking=true]
+  chunk: 0.0s d=0.00 chunk_t1_first_wall gap=0.3
+  chunk: 0.0s d=0.00 chunk_t1_first_bar gap=0.0
+  chunk: 0.0s d=0.00 chunk_breather_a gap=0.0
+  chunk: 0.5s d=0.03 chunk_t1_first_bar gap=0.0
+  chunk: 2.5s d=0.12 chunk_t1_wall_then_bar gap=0.0
+  chunk: 5.6s d=0.28 chunk_t2_shockwave_rhythm gap=0.0
+  chunk: 8.4s d=0.42 chunk_t2_laser_low_high gap=1.0
+  chunk: 42.0s d=0.79 chunk_t4_gauntlet gap=12.9
+  chunk: 42.0s d=0.79 chunk_t4_laser_rhythm gap=4.5
+  chunk: 42.0s d=0.79 chunk_t3_pit_then_bar mirrored gap=5.4
+  chunk: 42.0s d=0.79 chunk_t3_merge_swarm mirrored gap=4.5
+  chunk: 42.0s d=0.79 chunk_t3_timed_laser_intro gap=0.0
+  chunk: 42.0s d=0.79 chunk_t4_gauntlet gap=0.0
+  chunk: 42.0s d=0.79 chunk_t4_pit_run gap=5.4
+  chunk: 42.0s d=0.79 chunk_t4_gauntlet mirrored gap=4.5
+  chunk: 42.0s d=0.79 chunk_t3_flood_laser mirrored gap=4.5
+  chunk: 42.0s d=0.79 chunk_t4_pit_run gap=14.8
+  chunk: 42.0s d=0.79 chunk_t3_flood_laser mirrored gap=5.5
+  chunk: 42.0s d=0.79 chunk_breather_a gap=0.0
+  chunk: 42.0s d=0.79 chunk_t4_gauntlet gap=0.0
+  chunk: 43.8s d=0.88 chunk_t4_laser_rhythm gap=5.5
+  chunk: 46.7s d=1.00 chunk_breather_a gap=0.0
+  chunk: 47.4s d=1.00 chunk_t4_laser_rhythm gap=0.0
+  chunk: 50.0s d=1.00 chunk_t4_pit_run gap=5.8
+  chunk: 52.2s d=1.00 chunk_breather_a gap=0.0
+  chunk: 52.9s d=1.00 chunk_t4_gauntlet gap=0.0
+  chunk: 55.5s d=1.00 chunk_t4_pit_run gap=9.8
+ERROR: RUNNER SMOKE: leaderboard_saved was never emitted
+   at: push_error (core/variant/variant_utility.cpp:1023)
+   GDScript backtrace (most recent call first):
+       [0] check (res://tests/runner_smoke.gd:66)
+       [1] _leaderboard_phase (res://tests/runner_smoke.gd:400)
+       [2] run (res://tests/runner_smoke.gd:109)
+       [3] _catch_phase (res://tests/runner_smoke.gd:385)
+       [4] _wait_run_seconds (res://tests/runner_smoke.gd:801)
+       [5] _wait_until (res://tests/runner_smoke.gd:820)
+RUNNER SMOKE: seed 12345, elapsed 75.1 s, distance 1691 m, speed 0.0, state finished, hp 0, score 1921
+  hit: t=54.15 v=25.1 deprecated_pit -> hp 1, lane 2/2 x=2.00 y=0.00 roll=false air=false reckless=0 [deprecated_pit z=-1.8 x=0.0 JUMP blocking=false]
+  hit: t=73.70 v=25.3 projectile -> hp 1, lane 0/0 x=-2.00 y=0.00 roll=false air=false reckless=0 [projectile z=-0.9 x=-1.0 LANE blocking=false]
+  hit: t=75.15 v=25.3 projectile -> hp 0, lane 0/0 x=-2.00 y=0.00 roll=false air=false reckless=0 [projectile z=-0.9 x=-2.0 JUMP_OR_LANE blocking=false] [projectile z=-0.9 x=2.0 JUMP_OR_LANE blocking=true]
+  chunk: 0.0s d=0.00 chunk_t1_first_wall gap=0.3
+  chunk: 0.0s d=0.00 chunk_t1_first_bar gap=0.0
+  chunk: 0.0s d=0.00 chunk_breather_a gap=0.0
+  chunk: 0.5s d=0.03 chunk_t1_first_bar gap=0.0
+  chunk: 2.5s d=0.12 chunk_t1_wall_then_bar gap=0.0
+  chunk: 5.6s d=0.28 chunk_t2_shockwave_rhythm gap=0.0
+  chunk: 8.4s d=0.42 chunk_t2_laser_low_high gap=1.0
+  chunk: 42.0s d=0.79 chunk_t4_gauntlet gap=12.9
+  chunk: 42.0s d=0.79 chunk_t4_laser_rhythm gap=4.5
+  chunk: 42.0s d=0.79 chunk_t3_pit_then_bar mirrored gap=5.4
+  chunk: 42.0s d=0.79 chunk_t3_merge_swarm mirrored gap=4.5
+  chunk: 42.0s d=0.79 chunk_t3_timed_laser_intro gap=0.0
+  chunk: 42.0s d=0.79 chunk_t4_gauntlet gap=0.0
+  chunk: 42.0s d=0.79 chunk_t4_pit_run gap=5.4
+  chunk: 42.0s d=0.79 chunk_t4_gauntlet mirrored gap=4.5
+  chunk: 42.0s d=0.79 chunk_t3_flood_laser mirrored gap=4.5
+  chunk: 42.0s d=0.79 chunk_t4_pit_run gap=14.8
+  chunk: 42.0s d=0.79 chunk_t3_flood_laser mirrored gap=5.5
+  chunk: 42.0s d=0.79 chunk_breather_a gap=0.0
+  chunk: 42.0s d=0.79 chunk_t4_gauntlet gap=0.0
+  chunk: 43.8s d=0.88 chunk_t4_laser_rhythm gap=5.5
+  chunk: 46.7s d=1.00 chunk_breather_a gap=0.0
+  chunk: 47.4s d=1.00 chunk_t4_laser_rhythm gap=0.0
+  chunk: 50.0s d=1.00 chunk_t4_pit_run gap=5.8
+  chunk: 52.2s d=1.00 chunk_breather_a gap=0.0
+  chunk: 52.9s d=1.00 chunk_t4_gauntlet gap=0.0
+  chunk: 55.5s d=1.00 chunk_t4_pit_run gap=9.8
+ERROR: RUNNER SMOKE: this run is not on the leaderboard
+   at: push_error (core/variant/variant_utility.cpp:1023)
+   GDScript backtrace (most recent call first):
+       [0] check (res://tests/runner_smoke.gd:66)
+       [1] _leaderboard_phase (res://tests/runner_smoke.gd:403)
+       [2] run (res://tests/runner_smoke.gd:109)
+       [3] _catch_phase (res://tests/runner_smoke.gd:385)
+       [4] _wait_run_seconds (res://tests/runner_smoke.gd:801)
+       [5] _wait_until (res://tests/runner_smoke.gd:820)
+RUNNER SMOKE: seed 12345, elapsed 75.1 s, distance 1691 m, speed 0.0, state finished, hp 0, score 1921
+  hit: t=54.15 v=25.1 deprecated_pit -> hp 1, lane 2/2 x=2.00 y=0.00 roll=false air=false reckless=0 [deprecated_pit z=-1.8 x=0.0 JUMP blocking=false]
+  hit: t=73.70 v=25.3 projectile -> hp 1, lane 0/0 x=-2.00 y=0.00 roll=false air=false reckless=0 [projectile z=-0.9 x=-1.0 LANE blocking=false]
+  hit: t=75.15 v=25.3 projectile -> hp 0, lane 0/0 x=-2.00 y=0.00 roll=false air=false reckless=0 [projectile z=-0.9 x=-2.0 JUMP_OR_LANE blocking=false] [projectile z=-0.9 x=2.0 JUMP_OR_LANE blocking=true]
+  chunk: 0.0s d=0.00 chunk_t1_first_wall gap=0.3
+  chunk: 0.0s d=0.00 chunk_t1_first_bar gap=0.0
+  chunk: 0.0s d=0.00 chunk_breather_a gap=0.0
+  chunk: 0.5s d=0.03 chunk_t1_first_bar gap=0.0
+  chunk: 2.5s d=0.12 chunk_t1_wall_then_bar gap=0.0
+  chunk: 5.6s d=0.28 chunk_t2_shockwave_rhythm gap=0.0
+  chunk: 8.4s d=0.42 chunk_t2_laser_low_high gap=1.0
+  chunk: 42.0s d=0.79 chunk_t4_gauntlet gap=12.9
+  chunk: 42.0s d=0.79 chunk_t4_laser_rhythm gap=4.5
+  chunk: 42.0s d=0.79 chunk_t3_pit_then_bar mirrored gap=5.4
+  chunk: 42.0s d=0.79 chunk_t3_merge_swarm mirrored gap=4.5
+  chunk: 42.0s d=0.79 chunk_t3_timed_laser_intro gap=0.0
+  chunk: 42.0s d=0.79 chunk_t4_gauntlet gap=0.0
+  chunk: 42.0s d=0.79 chunk_t4_pit_run gap=5.4
+  chunk: 42.0s d=0.79 chunk_t4_gauntlet mirrored gap=4.5
+  chunk: 42.0s d=0.79 chunk_t3_flood_laser mirrored gap=4.5
+  chunk: 42.0s d=0.79 chunk_t4_pit_run gap=14.8
+  chunk: 42.0s d=0.79 chunk_t3_flood_laser mirrored gap=5.5
+  chunk: 42.0s d=0.79 chunk_breather_a gap=0.0
+  chunk: 42.0s d=0.79 chunk_t4_gauntlet gap=0.0
+  chunk: 43.8s d=0.88 chunk_t4_laser_rhythm gap=5.5
+  chunk: 46.7s d=1.00 chunk_breather_a gap=0.0
+  chunk: 47.4s d=1.00 chunk_t4_laser_rhythm gap=0.0
+  chunk: 50.0s d=1.00 chunk_t4_pit_run gap=5.8
+  chunk: 52.2s d=1.00 chunk_breather_a gap=0.0
+  chunk: 52.9s d=1.00 chunk_t4_gauntlet gap=0.0
+  chunk: 55.5s d=1.00 chunk_t4_pit_run gap=9.8
+WARNING: Runner leaderboard: this run was not written to user://smoke_leaderboard_933660.cfg (error 12); it keeps rank 0
+     at: push_warning (core/variant/variant_utility.cpp:1033)
+     GDScript backtrace (most recent call first):
+         [0] _finish_run (res://scenes/runner/runner_game.gd:680)
+         [1] _physics_process (res://scenes/runner/runner_game.gd:444)
+RUNNER SMOKE: FAIL (3 failures / 127 checks)
+EXIT: 3
+
+
+BLOCK 11
+$ git diff --check
+EXIT: 0
