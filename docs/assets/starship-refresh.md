@@ -26,11 +26,11 @@ The existing menu starts the existing game. For the environment-only preview, us
 
 Captured and visually inspected on Godot `4.7.stable.official.5b4e0cb0f`, OpenGL 4.1 Metal, Compatibility renderer, Apple M5 Max, at 1440x900. The repository pins 4.7.1, which is not installed here. These are actual engine renders, not concept images.
 
-- [Real gameplay with HUD and hazards](../previews/starship/starship-gameplay.png)
-- [Running view](../previews/starship/starship-run.png)
-- [Architecture and Hoppy](../previews/starship/starship-architecture.png)
-- [Existing Hydra with reactor dock](../previews/starship/starship-boss.png)
-- [Turn geometry](../previews/starship/starship-turn.png)
+- Real gameplay with HUD and hazards
+- Running view
+- Architecture and Hoppy
+- Existing Hydra with reactor dock
+- Turn geometry
 
 The real gameplay fixture uses seed 12345 and the existing autopilot without changing gameplay configuration. It captures at 14 seconds, while state is `running`, stage 1. The other fixture stages asset views and the existing Hydra for visual review; it is not evidence of a manually played boss fight. The turn fixture hides Hoppy to expose the architecture.
 

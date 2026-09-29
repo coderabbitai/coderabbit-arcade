@@ -2,7 +2,7 @@
 
 The spaceship environment is preserved. This follow-up improves the existing collision objects, pickups and Hoppy without changing collision definitions, controls, damage, movement, progression or boss behavior. Work is uncommitted on `codex/starship-assets`, based on the verified completed runner at `d64d84d`.
 
-[Open the before/after viewer](../previews/readability/index.html). It contains 28 paired engine renders covering all 16 hazard/projectile variants, all ten pickup/tool types, a three-distance bug comparison and Hoppy's close-up. The viewer also links six actual gameplay captures.
+Open the before/after viewer. It contains 28 paired engine renders covering all 16 hazard/projectile variants, all ten pickup/tool types, a three-distance bug comparison and Hoppy's close-up. The viewer also links six actual gameplay captures.
 
 ## Visible changes
 
@@ -17,13 +17,13 @@ The spaceship environment is preserved. This follow-up improves the existing col
 
 ## Representative PNGs
 
-- [Gameplay with visible bugs, barriers and pickup](../previews/readability/gameplay-22.png)
-- [24 m/s gameplay stress view](../previews/readability/speed24-14.png)
-- [Bugs before](../previews/readability/before/bugs-range.png) / [bugs after](../previews/readability/after/bugs-range.png)
-- [Low barrier before](../previews/readability/before/hazard-pr_backlog_low.png) / [low barrier after](../previews/readability/after/hazard-pr_backlog_low.png)
-- [Pickup before](../previews/readability/before/pickup-approve_shield.png) / [pickup after](../previews/readability/after/pickup-approve_shield.png)
-- [Hoppy before](../previews/readability/before/hoppy-detail.png) / [Hoppy after](../previews/readability/after/hoppy-detail.png)
-- [Cropped hazard overview](../previews/readability/hazard-overview.png) / [cropped pickup overview](../previews/readability/pickup-overview.png)
+- Gameplay with visible bugs, barriers and pickup
+- 24 m/s gameplay stress view
+- Bugs before / bugs after
+- Low barrier before / low barrier after
+- Pickup before / pickup after
+- Hoppy before / Hoppy after
+- Cropped hazard overview / cropped pickup overview
 
 Paired views use the same 1440x900 viewport, camera, spaceship phase and object placement. Individual hazards are 12 metres ahead of the player. Bug and pickup range views use 8, 16 and 28 metres. These are staged shipping assets, not screenshots of procedural gameplay. The separate `gameplay-08/14/22/32.png` files use the actual game with seed 12345 and its existing autopilot. The `speed24-08/14.png` files use an isolated configuration copy with initial speed set to the existing 24 m/s maximum. No shipping configuration is changed.
 

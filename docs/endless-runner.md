@@ -37,7 +37,7 @@ Development cameras use (0,4,8), looking at (0,1,-8), FOV 60. The menu camera us
 | Corridor preview | Space | Toggle pause |
 | Renderer spike | G / F / R | Toggle glow / fog / 50% or 100% 3D resolution |
 
-Key 6 reaches the F1 26 m/s acceptance limit; key 7 exercises the Nitro cap. The capture script saves PNGs after `RenderingServer.frame_post_draw`, measures the corridor at 26 m/s with preview UI hidden, and reports failure above 14 rest draw calls or 18 turn draw calls. The capture script also saves the Hoppy fixture after 1.5 s to `docs/previews/endless-runner-hoppy.png`. The coordinator produced the 1280x720 environment previews: [renderer spike](previews/endless-runner-spike.png) and [corridor](previews/endless-runner-corridor.png).
+Key 6 reaches the F1 26 m/s acceptance limit; key 7 exercises the Nitro cap. The capture script saves PNGs after `RenderingServer.frame_post_draw`, measures the corridor at 26 m/s with preview UI hidden, and reports failure above 14 rest draw calls or 18 turn draw calls. The capture script also saves the Hoppy fixture after 1.5 s to `docs/previews/endless-runner-hoppy.png`. The coordinator produced the 1280x720 environment previews: renderer spike and corridor.
 
 ## Behavior and ownership
 
@@ -278,7 +278,6 @@ The navy environment and dim MATRIX grid/rain reuse the hub preview palette and 
 | F5/F6 Cyberpunk Street BGM | `Assets/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg`, bundled `public-license.pdf`, Luis Zuno / ansimuz package | CC0; PDF does not identify composer | Replace the shared menu/audio track together; retain AudioService music ownership and loop import. |
 
 See `hoppys-adventure-arcade/Assets/runner/LICENSES.md` for the asset inventory.
-
 
 Model swap procedure: import the licensed glTF under `Assets/runner/` and add its creator, source, licence and modifications to `Assets/runner/LICENSES.md`. Replace `_build_model()` contents under `Root/Model`, retaining the scene root, feet at y=0, facing -Z and standing height 1.8 m. Remap `_pose_clip()` animation tracks to the new rig with the same idle/run/jump/fall/roll/hurt/dead names. Keep the six visual hooks, independent shield/aura and material duplication rules. Sample the complete roll clip at y<=0.9 m, then rerun visual smoke and the coordinator's Hoppy/gameplay captures before accepting the swap.
 
@@ -633,7 +632,6 @@ hoppys-adventure-arcade/scenes/runner/ui/dev/mock_runner_game.gd
 hoppys-adventure-arcade/tests/runner_visual_smoke.gd
 ```
 
-
 ### F8 validator and capture corrections (2026-09-20)
 
 All existing uncommitted F8 work and host PNGs are preserved. No backend-owned file was edited,
@@ -968,7 +966,6 @@ RUNNER VISUAL SMOKE: FAIL (2 failures)
 ```
 
 The standard backend smoke reported `RUNNER SMOKE: FAIL (3 failures / 127 checks)`, all caused by the unwritable leaderboard (write error 12, no saved signal, no persisted entry). Temporary `/tmp` harnesses extended each unchanged test suite and changed only its leaderboard-path variable before initialization. With writable isolated leaderboard files, the complete visual suite reported `RUNNER VISUAL SMOKE: PASS (0 failures)`, the full loop passed, and the backend reported `RUNNER SMOKE: PASS (0 failures / 130 checks)`. The suites removed their isolated boards. Corridor geometry census: 10 at rest, 13 mid-turn; the warning adds one pooled MultiMesh draw. Audio: 32 recipes, peak 10 voices. The fix pass used headless verification and did not regenerate the coordinator's host captures. No commits or pushes were made.
-
 
 ### Performance: W3 prewarm completion and GPU warm-up
 
