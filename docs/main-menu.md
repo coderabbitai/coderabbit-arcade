@@ -26,7 +26,7 @@ Arrow keys, Tab, D-pad, or left stick navigate; Enter / gamepad A activates; Esc
 
 ## Art and replacement points
 
-The user approved a temporary rabbit for this session. `hoppy.gd` draws and animates that placeholder, with idle blinking and mode reactions. Replace the `Interface/Hoppy` node with final character art when available. The title uses a system monospace fallback; no final pixel font or logo was supplied.
+As of 2026-09-30, `hoppy.gd` uses the supplied `Assets/Character/Hoppy/2D/hoppy-sprite-pack/hoppy` SpriteFrames: idle by default, one jump on Platformer selection, and one jab then the default idle on Beat’em Up selection. Endless Runner hover or keyboard/gamepad focus crossfades to the existing `hoppy_runner_visual.tscn` rig running in place, rendered through a transparent, isolated 512×512 SubViewport. Leaving that selection restores 2D immediately through a 0.22-second fade; idle background cycling does not switch the character. Hidden 3D rendering and rig processing are disabled. Both versions face toward the buttons and share a ground anchor. `sprite_scale` and `transition_seconds` are exposed on the Hoppy node for iteration. The title uses a system monospace fallback; no final pixel font or logo was supplied.
 
 | Preview | Source |
 | --- | --- |
@@ -49,3 +49,5 @@ These are theme previews, not final level art. Supplied asset files and accompan
 The behavioral smoke test covers preview timing and preservation, rapid input coalescing, bounded preview count, all ten previews, modal focus restoration, invalid routes, duplicate navigation, all three mode round trips, and audio player counts. It also dispatches keyboard, simulated gamepad, and mouse events. A rendered run writes menu/settings screenshots to `/tmp` for layout inspection. It uses the normal settings path, so run against a disposable user profile if preserving settings during tests matters.
 
 Physical controller feel, audio loop quality, and Windows/Linux exports require later hands-on checks; no export presets or platform builds were added.
+
+Character-specific check: run `--script res://tests/menu_hoppy_smoke.gd` to verify default idle, mouse-triggered 3D, keyboard-triggered brawler reaction, one-shot completion, rapid switching, and hidden-rig suspension. Graphical runs save both character states and modal coverage to `/tmp/menu-hoppy-*.png`.
