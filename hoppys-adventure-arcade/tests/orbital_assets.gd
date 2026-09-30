@@ -14,22 +14,36 @@ func run() -> void:
 	for key in manifest.atlases:
 		var spec: Dictionary = manifest.atlases[key]
 		var resource := load(BASE + "orbital_ops/" + spec.resource) as SpriteFrames
-		assert(resource != null, key)
-		assert(resource.get_animation_names().size() == spec.clips.size(), key)
+		check(resource != null, key)
+		if resource == null:
+			continue
+		check(resource.get_animation_names().size() == spec.clips.size(), key)
 		for clip in spec.clips:
-			assert(resource.has_animation(clip.name), clip.name)
-			assert(resource.get_frame_count(clip.name) == clip.frames.size(), clip.name)
-			assert(resource.get_animation_loop(clip.name) == clip.loop, clip.name)
+			check(resource.has_animation(clip.name), clip.name)
+			if not resource.has_animation(clip.name):
+				continue
+			check(resource.get_frame_count(clip.name) == clip.frames.size(), clip.name)
+			check(resource.get_animation_loop(clip.name) == clip.loop, clip.name)
 			for i in resource.get_frame_count(clip.name):
 				var texture := resource.get_frame_texture(clip.name, i) as AtlasTexture
-				assert(texture != null and texture.atlas != null, clip.name)
-				assert(Rect2(Vector2.ZERO, texture.atlas.get_size()).encloses(texture.region), clip.name)
-				assert(texture.get_image().get_used_rect().has_area(), clip.name)
+				check(texture != null and texture.atlas != null, clip.name)
+				if texture == null or texture.atlas == null:
+					continue
+				check(Rect2(Vector2.ZERO, texture.atlas.get_size()).encloses(texture.region), clip.name)
+				var image := texture.get_image()
+				check(image != null and image.get_used_rect().has_area(), clip.name)
 			clips += 1
 		frames += spec.frames.size()
 	for bg in manifest.backgrounds.values():
 		var texture := load(BASE + "orbital_ops/" + bg.file) as Texture2D
-		assert(texture.get_size() == Vector2(960, 540), bg.file)
+		check(texture != null, bg.file)
+		if texture == null:
+			continue
+		check(texture.get_size() == Vector2(960, 540), bg.file)
+	if failures > 0:
+		printerr(failures, " Orbital Ops asset checks failed")
+		await finish(1)
+		return
 	print("PASS: Orbital Ops — ", frames, " frames, ", clips, " named clips, 5 SpriteFrames resources, 2 background plates.")
 	if DisplayServer.get_name() == "headless":
 		await finish()
