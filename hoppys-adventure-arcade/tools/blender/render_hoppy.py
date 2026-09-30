@@ -27,6 +27,30 @@ bpy.context.scene.render.fps = 30
 bpy.ops.import_scene.gltf(filepath=str(args.glb.resolve()))
 scene = bpy.context.scene
 scene.render.fps = 30
+# COLOR_0 is the runtime LED mask (black off the LED strip), not albedo, but Blender's importer
+# multiplies base colour by it, which blackened the accessory atlas (eye whites) in turntables.
+# Godot reads it only as a mask, so bypass the multiply to preview what the game shows.
+for material in bpy.data.materials:
+    if not material.node_tree:
+        continue
+    links = material.node_tree.links
+    for node in list(material.node_tree.nodes):
+        if node.type != 'MIX' or not node.outputs['Result'].is_linked:
+            continue
+        sources = {link.to_socket.identifier: link.from_socket for link in links if link.to_node == node}
+        colour_inputs = [s for s in node.inputs if s.type == 'RGBA' and s.enabled]
+        masked = [s for s in colour_inputs if s.identifier in sources
+                  and sources[s.identifier].node.type == 'VERTEX_COLOR']
+        kept = [s for s in colour_inputs if s not in masked]
+        if len(masked) != 1 or len(kept) != 1:
+            continue
+        for out_link in [link for link in links if link.from_node == node]:
+            target = out_link.to_socket
+            links.remove(out_link)
+            if kept[0].identifier in sources:
+                links.new(sources[kept[0].identifier], target)
+            else:
+                target.default_value = kept[0].default_value
 # Imported actions can receive a rig suffix; the NLA track preserves glTF names.
 if args.action:
     matches = []
@@ -94,12 +118,17 @@ light('rim', (0, -3, 2.5), 350, (.5, .95, .8))
 cam = bpy.data.cameras.new('Hoppy camera'); cam.lens = 60
 co = bpy.data.objects.new('Hoppy camera', cam); scene.collection.objects.link(co); scene.camera = co
 # 'chase' sits on the gameplay chase-camera ray (Godot 0,4,8 over Hoppy), pulled in to 3.9 m.
-views = {'front': (0, 3.9, 1.3), 'threequarter': (2.6, 2.9, 1.5), 'rear': (0, -3.9, 1.3), 'chase': (0, -3.64, 2.32)}
+views = {'front': (0, 3.9, 1.3), 'threequarter': (2.6, 2.9, 1.5), 'rear': (0, -3.9, 1.3), 'side': (3.9, 0, 1.0), 'chase': (0, -3.64, 2.32)}
 target = Vector((0, 0, .45 if args.action == 'roll' else .92))
+# Standing poses add a head close-up (front three-quarter) to judge the face.
+aims = {}
+if args.action != 'roll':
+    views['face'] = (.55, 1.55, 1.4); aims['face'] = Vector((0, 0, 1.3))
+    views['profile'] = (1.65, .15, 1.4); aims['profile'] = Vector((0, -.02, 1.3))
 for name, loc in views.items():
     co = bpy.data.objects['Hoppy camera']
     co.location = loc
-    co.rotation_euler = (target - co.location).to_track_quat('-Z', 'Y').to_euler()
+    co.rotation_euler = (aims.get(name, target) - co.location).to_track_quat('-Z', 'Y').to_euler()
     scene.render.filepath = str(args.out.resolve() / ('hoppy_' + name + '.png'))
     bpy.ops.render.render(write_still=True)
     if not Path(scene.render.filepath).is_file():

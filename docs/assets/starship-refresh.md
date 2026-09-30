@@ -72,6 +72,23 @@ RUNNER VISUAL SMOKE: PASS (0 failures)
 
 The new regression check covers lane clearance, no added collision, bounded geometry, wrapping at maximum speed, bend propagation, boss-dock lifecycle, pause, shared immutable meshes, private materials and viewport restoration with overlapping instances. The existing visual smoke passes the full menu, play, pursuit recovery, defeat, retry and hub return loop. Those tests are headless; the PNGs provide separate graphical evidence. Import reports the existing nested `Assets/SynthCitiesGodot/project.godot` warning. Final capture and check logs contain no script or shader errors.
 
+## Solid corridor walls update
+
+A later pass replaces the space-vista observation windows with opaque hull plating, so the corridor no longer reads as see-through. Each module side now has continuous 12 m plating with 5 cm inset seams over a dark backing plate, and one small 1.6 x 1.1 m porthole recessed behind an alloy rim at module z 3. The window mullions are gone. The remaining gaps are closed:
+
+- The lower, upper, ceiling and backing panels now butt end to end across the module seam. The seam sits behind the next bulkhead.
+- A floor-edge skirting at |x| 4.95–5.45 closes the strip beside the service trench. A sub-deck filler under the trench covers the chord sag between the 12 m pieces and the finely bent deck during turns.
+- An opaque `FarBulkhead` (end wall with door and a sleeve behind the module walls, covering z −92 to −71.5) closes the far end at every scroll offset. It sits past the −90 m spawn horizon, and its `starship_surface` material rides the same turn bend.
+
+The plating uses flat 12-triangle slabs, so geometry drops even with the extra pieces. The new mesh adds one visible draw (a2 census rest 8, turn 8; capture fixture run 13, turn 8). All six batches are unchanged. A magenta-background, fog-off capture shows no background pixels in the run, architecture, wall, boss and turn views at scroll offsets 0, 2, 5, 7, 9.5 and 11, in both turn directions.
+
+```text
+STARSHIP TOTAL: 55074 triangles including deck, far bulkhead and reactor dock
+STARSHIP GEOMETRY: repeated modules=53600 triangles; 6 batches; 1 shared 256x256 texture
+STARSHIP CHECK: PASS (70 checks, 0 failures)
+ASSET A2 CENSUS: rest=8 turn=8 triangles=53858 textures=8 (7 maps + shared wall/particle atlas)
+```
+
 ## Exact changed-file manifest
 
 Paths below are relative to this worktree. `.uid` files accompany the new scripts and shader. Changes are uncommitted and have not been pushed.

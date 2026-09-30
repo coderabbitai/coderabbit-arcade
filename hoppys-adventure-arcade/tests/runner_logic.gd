@@ -30,6 +30,9 @@ const FAKE_GAME_SOURCE := "extends \"res://scenes/runner/runner_game.gd\"\nvar c
 ## The same hook, but running the real catch cinematic underneath it: section 22 needs the facade to
 ## move to `caught` and time itself out to _finish_run().
 const FAKE_CAUGHT_GAME_SOURCE := "extends \"res://scenes/runner/runner_game.gd\"\nvar caught_calls := 0\nfunc _on_caught() -> void:\n\tcaught_calls += 1\n\tsuper()\n"
+## The real catch cinematic plus a recorded router: section 24b drives retry() / retry_boss() and
+## must see the route they ask for without the harness actually changing scene.
+const FAKE_ROUTE_GAME_SOURCE := "extends \"res://scenes/runner/runner_game.gd\"\nvar caught_calls := 0\nvar routes: Array = []\nfunc _on_caught() -> void:\n\tcaught_calls += 1\n\tsuper()\nfunc _route(route: String) -> void:\n\troutes.append(route)\n"
 ## The hazard surface HitManager, the StageManager drain and Autopilot actually use (systems §5.3).
 const FAKE_HAZARD_SOURCE := "extends Node3D\nvar kind: StringName = &\"pr_backlog_low\"\nvar dodge_hint: StringName = &\"JUMP\"\nvar box := Vector3(5.6, 1.0, 1.2)\nvar center_y := 0.5\nvar blocking := true\nvar cleared := 0\nfunc is_blocking() -> bool:\n\treturn blocking\nfunc clear() -> void:\n\tcleared += 1\n\tblocking = false\n\tremove_from_group(&\"runner_hazards\")\nfunc occupies_lane(index: int) -> bool:\n\treturn absf((float(index) - 1.0) * 2.0 - global_position.x) < box.x * 0.5 + 0.39\nfunc get_world_aabb() -> AABB:\n\treturn AABB(global_position + Vector3(0.0, center_y, 0.0) - box * 0.5, box)\n"
 ## A boss shot: the same surface as the hazard stand-in plus the `closing_speed` that makes the bot
@@ -68,6 +71,9 @@ var player_script: GDScript
 var projectile_script: GDScript
 var rig_script: GDScript
 var caught_game_script: GDScript
+var route_game_script: GDScript
+## runner_game.gd itself, for its static pending_boss_checkpoint.
+var runner_game_script: GDScript
 var hit_manager_script: GDScript
 var score_manager_script: GDScript
 var effect_manager_script: GDScript
@@ -109,6 +115,8 @@ func run() -> void:
 	real_spawner_script = load("res://scenes/runner/systems/chunk_spawner.gd") as GDScript
 	game_script = _compile(FAKE_GAME_SOURCE)
 	caught_game_script = _compile(FAKE_CAUGHT_GAME_SOURCE)
+	route_game_script = _compile(FAKE_ROUTE_GAME_SOURCE)
+	runner_game_script = load("res://scenes/runner/runner_game.gd") as GDScript
 	hazard_script = _compile(FAKE_HAZARD_SOURCE)
 	spawner_script = _compile(FAKE_SPAWNER_SOURCE)
 	player_script = _compile(FAKE_PLAYER_SOURCE)
@@ -118,7 +126,7 @@ func run() -> void:
 			or player_script == null or real_hazard_script == null or real_player_script == null \
 			or rig_script == null or caught_game_script == null or stage_manager_script == null \
 			or camera_rig_script == null or pursuer_script == null or projectile_script == null \
-			or real_spawner_script == null:
+			or real_spawner_script == null or route_game_script == null or runner_game_script == null:
 		check(false, "the test harness scripts failed to compile")
 		_report()
 		return
@@ -147,6 +155,7 @@ func run() -> void:
 	_test_pursuit_alert()
 	_test_pursuer_distance()
 	_test_caught_mid_boss()
+	_test_boss_checkpoint()
 	_test_stage_speed_and_floor()
 	_test_leaderboard_migration()
 	_test_turn_camera_profile()
@@ -1922,6 +1931,265 @@ func _test_caught_mid_boss() -> void:
 	check(int(result.get("stages_cleared", -1)) == 0, "24: no stage was cleared before the catch")
 	_free_rig(rig)
 
+# --- 24b. Boss checkpoint retry (contract §11.13) ---
+
+## The checkpoint config: a short stage so every retry reaches its boss inside a few game seconds.
+func _checkpoint_overrides() -> Dictionary:
+	return {
+		"stage_base_distance": 12.0,
+		"stage_drain_distance": 6.0,
+		"stage_drain_timeout": 0.2,
+		"turn_seconds": 0.2,
+		"boss_intro_seconds": 0.0,
+		"boss_outro_seconds": 0.0,
+		"stage_clear_seconds": 0.5
+	}
+
+## A stage rig on the recording-router facade: the real catch, the real start_run(), and every
+## route retry() / retry_boss() asks for kept in `game.routes`.
+func _checkpoint_rig(with_arena: bool) -> Dictionary:
+	return _stage_rig(_checkpoint_overrides(), with_arena, true, route_game_script)
+
+func _pending_checkpoint() -> Dictionary:
+	var value: Variant = runner_game_script.get(&"pending_boss_checkpoint")
+	return value if value is Dictionary else {}
+
+## Tick the rig until `phase` or the guard runs out.
+func _drive_to_phase(rig: Dictionary, phase: StringName, seconds: float) -> bool:
+	var game: Node3D = rig["game"]
+	var stage: Node = rig["stage"]
+	var drivers: Array = [rig["speed"], rig["score"], stage]
+	var guard := 0
+	while stage.phase != phase and guard < _ticks(seconds):
+		_tick_stage(drivers, game, 1)
+		guard += 1
+	return stage.phase == phase
+
+## Two hits land the catch; then the caught sequence times out into run_finished.
+func _catch_and_finish(rig: Dictionary) -> Dictionary:
+	var game: Node3D = rig["game"]
+	var hits: Node = rig["hits"]
+	var seen := {"result": {}}
+	game.run_finished.connect(func(value: Dictionary) -> void: seen["result"] = value)
+	hits.report_hit(_hazard(&"bug_swarm"))
+	hits.iframe_remaining = 0.0
+	hits.report_hit(_hazard(&"comment_flood"))
+	_tick_stage([game], game, _ticks(float(game.config.caught_sequence_seconds) + 0.5))
+	return seen["result"]
+
+func _test_boss_checkpoint() -> void:
+	runner_game_script.set(&"pending_boss_checkpoint", {})
+	var seed := 4242
+	# --- a catch mid-boss leaves a checkpoint ---
+	var rig := _checkpoint_rig(true)
+	var game: Node3D = rig["game"]
+	var stage: Node = rig["stage"]
+	var arena: Node3D = rig["arena"]
+	game.start_run(seed)
+	check(game.seed == seed and not bool(game.checkpoint_retry), "24b: a plain run is not a checkpoint retry")
+	check(game.boss_checkpoint.is_empty(), "24b: no checkpoint before the boss")
+	check(_drive_to_phase(rig, &"run", 0.1) or stage.phase == &"run", "24b: the run opened on stage 1")
+	_tick_stage([rig["speed"], rig["score"], stage], game, _ticks(0.3))
+	check(game.boss_checkpoint.is_empty(), "24b: no checkpoint during the run phase")
+	# Game Over tallies the systems own, set by hand so the checkpoint has something to carry.
+	rig["effects"].power_ups_collected = 3
+	rig["hits"].blocked_hits = 2
+	rig["hits"].recoveries = 1
+	check(_drive_to_phase(rig, &"boss", 20.0), "24b: the run reached the boss, got %s" % stage.phase)
+	var checkpoint: Dictionary = game.boss_checkpoint.duplicate(true)
+	check(not checkpoint.is_empty(), "24b: boss entry took a checkpoint")
+	check(int(checkpoint.get("stage_index", 0)) == 1 and int(checkpoint.get("seed", 0)) == seed,
+		"24b: the checkpoint is stage 1 of seed %d, got %s" % [seed, checkpoint])
+	check(int(checkpoint.get("turns_taken", 0)) == 1, "24b: the checkpoint counts the bend just taken")
+	check(absf(float(checkpoint.get("run_clock", -1.0)) - float(game.run_clock)) < 0.0001,
+		"24b: the checkpoint holds the frozen run_clock")
+	check(float(checkpoint.get("score_exact", 0.0)) > 0.0, "24b: the checkpoint carries the score so far")
+	check(int(checkpoint.get("next_turn_direction", 0)) in [-1, 1],
+		"24b: the checkpoint remembers the bend's direction, got %s" % checkpoint.get("next_turn_direction"))
+	for key in ["score", "multiplier", "best_multiplier", "bonus_total", "elapsed", "distance",
+			"hazards_dodged", "hazards_blasted_total", "stages_cleared", "bosses_defeated",
+			"bosses_escaped", "tools_used", "boss_damage_dealt", "power_ups", "hits_taken", "recoveries",
+			"blocked_hits", "max_speed_reached", "chunks_spawned"]:
+		check(checkpoint.has(key), "24b: the checkpoint is missing %s" % key)
+	check(int(checkpoint["power_ups"]) == 3 and int(checkpoint["blocked_hits"]) == 2
+		and int(checkpoint["recoveries"]) == 1 and int(checkpoint["hits_taken"]) == 0,
+		"24b: the checkpoint carries the systems' tallies, got %s" % checkpoint)
+	check(float(checkpoint["max_speed_reached"]) >= float(game.config.base_speed),
+		"24b: the checkpoint carries the top speed so far, got %s" % checkpoint["max_speed_reached"])
+	check(not checkpoint.has("hp"), "24b: HP is not part of the checkpoint")
+	arena.apply_tool(&"review_comment")
+	var result := _catch_and_finish(rig)
+	check(game.state == &"finished", "24b: the mid-boss run finished, got %s" % game.state)
+	check(game.boss_checkpoint == checkpoint, "24b: the catch leaves the checkpoint in place")
+	check(result.has("checkpoint_retry") and not bool(result["checkpoint_retry"]),
+		"24b: a plain run reports checkpoint_retry false")
+	var first_run_id := String(result.get("run_id", ""))
+	_check_game_over_buttons(game, result, true, "24b mid-boss")
+	game.retry_boss()
+	check(game.routes == ["runner_game"], "24b: retry_boss routes to runner_game, got %s" % [game.routes])
+	check(_pending_checkpoint() == checkpoint, "24b: retry_boss carries the checkpoint across the reload")
+	# Game Over keeps focus through the route's fade: Esc (go_to_menu) or Retry right after Retry Boss
+	# must neither route again nor drop the checkpoint the first route is carrying.
+	game.go_to_menu()
+	game.retry()
+	check(game.routes == ["runner_game"], "24b: a second action mid-route does not route, got %s" % [game.routes])
+	check(_pending_checkpoint() == checkpoint, "24b: a second action mid-route keeps the pending checkpoint")
+	_free_rig(rig)
+
+	# --- retry_boss reloads into turn -> boss with the run intact and full HP, twice over ---
+	var previous_run_id := first_run_id
+	for attempt in [1, 2]:
+		var tag := "24b retry %d" % attempt
+		rig = _checkpoint_rig(true)
+		game = rig["game"]
+		stage = rig["stage"]
+		var hits: Node = rig["hits"]
+		var events: Dictionary = rig["events"]
+		game.start_run(0)
+		check(_pending_checkpoint().is_empty(), "%s: start_run consumed the pending checkpoint" % tag)
+		check(bool(game.checkpoint_retry), "%s: the run knows it is a checkpoint retry" % tag)
+		check(game.seed == seed, "%s: the retry keeps seed %d, got %d" % [tag, seed, game.seed])
+		check(stage.phase == &"turn", "%s: the retry opens on the turn lead-in, got %s" % [tag, stage.phase])
+		check(int(game.stage_index) == 1, "%s: the retry is on stage %d" % [tag, int(game.stage_index)])
+		check(int(game.score) == int(checkpoint["score"]) or int(game.score) == floori(float(checkpoint["score_exact"])),
+			"%s: the score is back at %d, got %d" % [tag, int(checkpoint["score"]), int(game.score)])
+		check(is_equal_approx(float(rig["score"].exact), float(checkpoint["score_exact"])),
+			"%s: the exact score is restored" % tag)
+		check(absf(float(game.run_clock) - float(checkpoint["run_clock"])) < 0.0001,
+			"%s: run_clock is back at %.3f, got %.3f" % [tag, float(checkpoint["run_clock"]), float(game.run_clock)])
+		check(is_equal_approx(float(game.elapsed), float(checkpoint["elapsed"]))
+			and is_equal_approx(float(game.distance), float(checkpoint["distance"])),
+			"%s: elapsed and distance are restored" % tag)
+		check(int(game.hp) == int(game.config.max_hp) and int(hits.hp) == int(game.config.max_hp),
+			"%s: the retry starts at full HP, got %d / %d" % [tag, int(game.hp), int(hits.hp)])
+		check(int(game.next_turn_direction) == int(checkpoint["next_turn_direction"]),
+			"%s: the lead-in takes the same bend" % tag)
+		check(int(rig["effects"].power_ups_collected) == int(checkpoint["power_ups"])
+			and int(hits.hits_taken) == int(checkpoint["hits_taken"])
+			and int(hits.recoveries) == int(checkpoint["recoveries"])
+			and int(hits.blocked_hits) == int(checkpoint["blocked_hits"]),
+			"%s: power-ups, hits, recoveries and blocks are restored" % tag)
+		check(float(rig["speed"].max_speed_reached) >= float(checkpoint["max_speed_reached"]) - 0.0001,
+			"%s: the top speed carries over, got %.3f" % [tag, float(rig["speed"].max_speed_reached)])
+		check(events["stage_started"].size() == 1 and events["turn_incoming"].size() == 1
+			and events["turn_started"].size() == 1, "%s: one stage_started, turn_incoming and turn_started" % tag)
+		check(game.boss_checkpoint.is_empty(), "%s: no checkpoint until the boss is entered again" % tag)
+		check(_drive_to_phase(rig, &"boss", 5.0), "%s: the lead-in reached the boss, got %s" % [tag, stage.phase])
+		check(events["boss_spawned"].size() == 1, "%s: the boss fight really started" % tag)
+		var again: Dictionary = game.boss_checkpoint
+		check(not again.is_empty(), "%s: boss entry took a fresh checkpoint" % tag)
+		check(int(again.get("stage_index", 0)) == 1 and int(again.get("turns_taken", 0)) == 1,
+			"%s: the fresh checkpoint is the same stage and bend count, got %s" % [tag, again])
+		check(absf(float(again.get("run_clock", -1.0)) - float(checkpoint["run_clock"])) < 0.0001,
+			"%s: run_clock stayed frozen through the lead-in" % tag)
+		check(float(again.get("score_exact", 0.0)) >= float(checkpoint["score_exact"]),
+			"%s: the score only grew over the lead-in" % tag)
+		result = _catch_and_finish(rig)
+		check(bool(result.get("checkpoint_retry", false)), "%s: the result is flagged checkpoint_retry" % tag)
+		check(String(result.get("run_id", "")) != previous_run_id and not String(result.get("run_id", "")).is_empty(),
+			"%s: the retry wrote under a fresh run_id" % tag)
+		check(int(result.get("stage_reached", 0)) == 1 and int(result.get("turns_taken", 0)) == 1,
+			"%s: the result tallies stage 1 and one turn" % tag)
+		check(int(result.get("score", 0)) >= int(checkpoint["score"]), "%s: the score continued" % tag)
+		check(int(result.get("power_ups", -1)) == int(checkpoint["power_ups"])
+			and int(result.get("hits_taken", -1)) == int(checkpoint["hits_taken"]) + 2
+			and int(result.get("blocked_hits", -1)) == int(checkpoint["blocked_hits"]),
+			"%s: Game Over stats are whole-run totals, got %s" % [tag, result])
+		previous_run_id = String(result.get("run_id", ""))
+		checkpoint = game.boss_checkpoint.duplicate(true)
+		check(not checkpoint.is_empty(), "%s: the retry's own catch mid-boss leaves a checkpoint" % tag)
+		game.retry_boss()
+		check(_pending_checkpoint() == checkpoint, "%s: the next retry_boss carries it on" % tag)
+		_free_rig(rig)
+	runner_game_script.set(&"pending_boss_checkpoint", {})
+
+	# --- plain Retry always restarts from zero ---
+	rig = _checkpoint_rig(true)
+	game = rig["game"]
+	game.start_run(seed)
+	check(_drive_to_phase(rig, &"boss", 20.0), "24b retry: the run reached the boss")
+	_catch_and_finish(rig)
+	check(not game.boss_checkpoint.is_empty(), "24b retry: a checkpoint is on offer")
+	game.retry()
+	check(game.routes == ["runner_game"] and _pending_checkpoint().is_empty(),
+		"24b retry: plain retry routes with no checkpoint")
+	_free_rig(rig)
+
+	# --- a stage clear drops the checkpoint, and a catch outside the boss leaves none ---
+	rig = _checkpoint_rig(false)
+	game = rig["game"]
+	stage = rig["stage"]
+	game.start_run(seed)
+	check(_drive_to_phase(rig, &"stage_clear", 20.0), "24b run: the placeholder boss cleared the stage")
+	check(game.boss_checkpoint.is_empty(), "24b run: the stage clear dropped the checkpoint")
+	check(_drive_to_phase(rig, &"run", 5.0) and int(game.stage_index) == 2, "24b run: stage 2 is running")
+	result = _catch_and_finish(rig)
+	check(game.state == &"finished", "24b run: the run-phase catch finished the run")
+	check(game.boss_checkpoint.is_empty(), "24b run: a catch in the run phase leaves no checkpoint")
+	_check_game_over_buttons(game, result, false, "24b run")
+	game.retry_boss()
+	check(game.routes == ["runner_game"] and _pending_checkpoint().is_empty(),
+		"24b run: retry_boss without a checkpoint is a plain retry")
+	_free_rig(rig)
+	runner_game_script.set(&"pending_boss_checkpoint", {})
+
+	# --- the first route wins: Esc then Retry Boss never leaks a checkpoint into the menu's Play ---
+	rig = _checkpoint_rig(false)
+	game = rig["game"]
+	game.boss_checkpoint = {"stage_index": 2, "seed": seed}
+	game.go_to_menu()
+	game.retry_boss()
+	check(game.routes == ["runner"], "24b route: only the menu route is taken, got %s" % [game.routes])
+	check(_pending_checkpoint().is_empty(), "24b route: Retry Boss after Esc leaves no pending checkpoint")
+	_free_rig(rig)
+
+	# --- nothing routes, or touches the pending checkpoint, while AppRouter is mid-fade ---
+	var router: Node = root.get_node_or_null(^"AppRouter")
+	check(router != null and &"busy" in router, "24b route: the AppRouter autoload is present")
+	if router != null and &"busy" in router:
+		rig = _checkpoint_rig(false)
+		game = rig["game"]
+		game.boss_checkpoint = {"stage_index": 3, "seed": seed}
+		var in_flight := {"stage_index": 1, "seed": seed}
+		runner_game_script.set(&"pending_boss_checkpoint", in_flight.duplicate(true))
+		var was_busy: bool = router.busy
+		router.busy = true
+		game.retry_boss()
+		game.retry()
+		game.go_to_menu()
+		router.busy = was_busy
+		check(game.routes.is_empty(), "24b route: no route is asked for while AppRouter is busy, got %s" % [game.routes])
+		check(_pending_checkpoint() == in_flight, "24b route: a busy AppRouter leaves the pending checkpoint alone")
+		_free_rig(rig)
+	runner_game_script.set(&"pending_boss_checkpoint", {})
+
+## The real game_over.tscn against this facade: Retry Boss is shown, and takes the default focus,
+## exactly when the run left a checkpoint; plain Retry is always there.
+func _check_game_over_buttons(game: Node3D, result: Dictionary, expect_boss: bool, tag: String) -> void:
+	var packed := load("res://scenes/runner/ui/game_over.tscn") as PackedScene
+	check(packed != null, "%s: game_over.tscn failed to load" % tag)
+	if packed == null:
+		return
+	var overlay := packed.instantiate()
+	root.add_child(overlay)
+	overlay.game = game
+	# Not a qualifying run, so no name entry takes the focus first.
+	var shown := result.duplicate(true)
+	shown["qualifies"] = false
+	overlay.show_result(shown, [])
+	var boss_button: Button = overlay.retry_boss_button
+	var retry_button: Button = overlay.retry_button
+	check(boss_button.visible == expect_boss, "%s: Retry Boss visible is %s, expected %s"
+		% [tag, boss_button.visible, expect_boss])
+	check(retry_button.visible, "%s: plain Retry is always offered" % tag)
+	var focused: Button = boss_button if expect_boss else retry_button
+	check(focused.has_focus(), "%s: %s has the default focus" % [tag, focused.text])
+	if expect_boss:
+		check(boss_button.focus_next == boss_button.get_path_to(retry_button),
+			"%s: Retry Boss leads the focus chain into Retry" % tag)
+	root.remove_child(overlay)
+	overlay.free()
+
 # --- 25. Speed with the stage bonus and the difficulty floor (systems spec §10.2) ---
 
 func _test_stage_speed_and_floor() -> void:
@@ -3064,11 +3332,13 @@ func _tree_game(script: GDScript = null) -> Node3D:
 ## A live StageManager with the collaborators it drives: the v1 systems, a spawner that records the
 ## drain gate, and TurnRig / CameraRig stand-ins that record every set_turn. `with_arena` mounts a
 ## real boss_arena.tscn where contract §11.3 puts it; `real_catch` swaps in the facade that runs the
-## catch cinematic instead of only counting it.
+## catch cinematic instead of only counting it, and `script` overrides the facade script outright.
 ## The StageManager sits in the tree (its drain scans runner_hazards through get_tree()) with its
 ## own physics processing off, so every tick below is the test's, never the engine's.
-func _stage_rig(overrides: Dictionary, with_arena := false, real_catch := false) -> Dictionary:
-	var game := _tree_game(caught_game_script if real_catch else null)
+func _stage_rig(overrides: Dictionary, with_arena := false, real_catch := false,
+		script: GDScript = null) -> Dictionary:
+	var facade_script := script if script != null else (caught_game_script if real_catch else null)
+	var game := _tree_game(facade_script)
 	for key in overrides:
 		game.config.set(key, overrides[key])
 	game.state = &"running"

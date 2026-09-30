@@ -1,13 +1,13 @@
 extends SceneTree
 ## Re-bakes Hoppy's roll from the imported Blender clip (headless is fine):
 ## Godot --headless --path hoppys-adventure-arcade --script res://scenes/runner/player/dev/bake_hoppy_roll.gd
-## The Blender roll shrinks the whole rig to 0.47 and tumbles it 0.1-0.3 m above the floor, which reads
-## as a tiny hopping Hoppy. This keeps the tuck and tumble but scales the rig up to fill the roll
-## envelope (skinned bounds inside [FLOOR_GAP, CEILING] m, under the 0.9 m roll hitbox) and re-grounds
-## every key, so the ball stays on the floor. Output: res://scenes/runner/player/hifi/hoppy_roll.tres.
+## Since recipe revision 8 the Blender roll is a full-scale baseball slide that the builder already seats
+## on the floor under 0.885 m, so the scale factor is 1 (no shrink). This step only re-grounds every key
+## against Godot's own skinning (skinned bounds inside [FLOOR_GAP, CEILING] m, under the 0.9 m roll
+## hitbox) and fails if the slide pokes above CEILING. Output: res://scenes/runner/player/hifi/hoppy_roll.tres.
 const OUTPUT := "res://scenes/runner/player/hifi/hoppy_roll.tres"
-const SOURCE_SCALE := 0.47
-const TARGET_SCALE := 0.58
+const SOURCE_SCALE := 1.0
+const TARGET_SCALE := 1.0
 const FLOOR_GAP := 0.012
 const CEILING := 0.885
 
@@ -58,7 +58,7 @@ func run() -> void:
 		high = maxf(high, bounds.end.y)
 	print("BAKE ROLL: scale %.2f -> %.2f, skinned y %.3f..%.3f over 61 samples" % [SOURCE_SCALE, TARGET_SCALE, low, high])
 	if low < 0.0 or high > CEILING:
-		push_error("BAKE ROLL: envelope %.3f..%.3f outside 0..%.3f; lower TARGET_SCALE" % [low, high, CEILING])
+		push_error("BAKE ROLL: envelope %.3f..%.3f outside 0..%.3f; lower the slide in build_hoppy.py" % [low, high, CEILING])
 		quit(1)
 		return
 	var error := ResourceSaver.save(clip, OUTPUT)

@@ -24,8 +24,11 @@ const PROJECTILE_SCENE := "res://scenes/runner/hazards/projectile.tscn"
 const TOOL_SCENE := "res://scenes/runner/powerups/tool_pickup.tscn"
 const VISUAL_DIR := "res://scenes/runner/boss/visuals/"
 
-## The fight RNG is the run seed with a fixed salt, so one seed replays the same lanes and tools.
+## The fight RNG is the run seed with a fixed salt, re-seeded per stage, so one seed replays the same
+## lanes and tools for each stage.
 const RNG_SALT := 0x2A5B1C3D
+## Spreads the per-stage fight seeds apart (the 32-bit golden-ratio constant).
+const RNG_STAGE_STEP := 0x9E3779B1
 ## Contract §11.5: the boss centre hovers at y 2.6, at config.boss_z.
 const BOSS_CENTER_Y := 2.6
 ## Graybox boss (systems spec §10.3): a DANGER box 4 x 2.4 x 1.5 with a Label3D name plate. It is
@@ -93,9 +96,6 @@ var _last_mask := 0
 var _last_tool_lane := -1
 var _graybox: Node3D
 var _scene_cache := {}
-## The run seed the RNG was last seeded from, so a fight never re-seeds mid-run.
-var _rng_source := 0
-var _rng_seeded := false
 
 # --- StageManager entry points ---
 
@@ -644,7 +644,6 @@ func _reset_run_stats() -> void:
 	bosses_escaped = 0
 	tools_used = 0
 	boss_damage_dealt = 0
-	_rng_seeded = false
 
 # --- the boss node ---
 
@@ -842,14 +841,12 @@ func _lane_x(lane: int) -> float:
 	return (float(lane) - 1.0) * 2.0
 
 
-## One seeding per run: the run seed with the fight salt, so the lane and tool streams replay.
+## One seeding per fight, from the run seed, the fight salt and the stage index alone: a stage's
+## lane and tool streams replay identically whether it is reached by a normal run or by a boss
+## checkpoint retry (contract §11.13), since no earlier fight's draws carry into it.
 func _seed_rng() -> void:
 	var source := int(game.seed) if game != null and is_instance_valid(game) else 0
-	if _rng_seeded and _rng_source == source:
-		return
-	_rng_source = source
-	_rng_seeded = true
-	fight_rng.seed = source ^ RNG_SALT
+	fight_rng.seed = (source ^ RNG_SALT) + maxi(stage_index, 1) * RNG_STAGE_STEP
 
 func _packed(path: String) -> PackedScene:
 	if _scene_cache.has(path):

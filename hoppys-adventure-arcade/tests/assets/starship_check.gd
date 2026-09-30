@@ -35,7 +35,7 @@ func run() -> void:
 		for vertex: Vector3 in mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]:
 			if absf(vertex.x) < 3.1 and vertex.y < 3.0: lane_clear = false
 		check(lane_clear, "architectural dressing stays outside playable lane clearance")
-	for node in [corridor.starship.get_node("ArmouredDeck")] + corridor.starship.reactor_dock.get_children():
+	for node in [corridor.starship.get_node("ArmouredDeck"),corridor.starship.get_node("FarBulkhead")] + corridor.starship.reactor_dock.get_children():
 		var arrays: Array = node.mesh.surface_get_arrays(0)
 		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
 		extra_triangles += (indices.size() if not indices.is_empty() else arrays[Mesh.ARRAY_VERTEX].size()) / 3
@@ -75,7 +75,7 @@ func run() -> void:
 	check(is_equal_approx(root.scaling_3d_scale,0.85), "newest viewport owner retains quality scale")
 	await Cleanup.release(self,[second])
 	check(is_equal_approx(root.scaling_3d_scale,original_scale), "viewport quality restores after exit")
-	print("STARSHIP TOTAL: %d triangles including deck and reactor dock" % (triangles + extra_triangles))
+	print("STARSHIP TOTAL: %d triangles including deck, far bulkhead and reactor dock" % (triangles + extra_triangles))
 	print("STARSHIP GEOMETRY: repeated modules=%d triangles; 6 batches; 1 shared 256x256 texture" % triangles)
 	print("STARSHIP CHECK: %s (%d checks, %d failures)" % ["PASS" if failures == 0 else "FAIL",checks,failures])
 	quit(0 if failures == 0 else 1)

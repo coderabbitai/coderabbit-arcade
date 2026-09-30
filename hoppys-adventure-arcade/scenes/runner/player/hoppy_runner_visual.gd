@@ -24,12 +24,14 @@ const GROUNDED_BASE: Array[StringName] = [&"idle", &"run"]
 const AIRBORNE: Array[StringName] = [&"jump", &"fall"]
 const ONE_SHOT_BLEND := 0.08
 const LAND_BLEND := 0.05
-## Face weights per state: x focused, y wide-eyed, z wince, w grin.
+## Face weights per state: x focused, y wide-eyed, z wince, w grin. Hoppy is a friendly mascot:
+## locomotion reads as focused-but-smiling, never a scowl (face_rig.gd also caps the brow drop).
+const RUN_FACE := Vector4(0.3, 0.1, 0, 0.35)
 const EXPRESSIONS := {
-	&"idle": Vector4(0, 0, 0, 0.15), &"run": Vector4(1, 0, 0, 0), &"jump": Vector4(0, 1, 0, 0),
-	&"fall": Vector4(0.2, 0.8, 0, 0), &"roll": Vector4(0.7, 0, 0.3, 0), &"hurt": Vector4(0, 0, 1, 0),
-	&"dead": Vector4(0, 0, 0.8, 0), &"lane_dash_left": Vector4(1, 0, 0, 0),
-	&"lane_dash_right": Vector4(1, 0, 0, 0), &"land": Vector4(0.6, 0, 0.4, 0),
+	&"idle": Vector4(0, 0, 0, 0.45), &"run": RUN_FACE, &"jump": Vector4(0, 1, 0, 0),
+	&"fall": Vector4(0.2, 0.8, 0, 0), &"roll": Vector4(0.3, 0.4, 0, 0.3), &"hurt": Vector4(0, 0, 1, 0),
+	&"dead": Vector4(0, 0, 0.8, 0), &"lane_dash_left": RUN_FACE,
+	&"lane_dash_right": RUN_FACE, &"land": Vector4(0.4, 0, 0.3, 0.1),
 	&"shield_brace": Vector4(0.4, 0, 0.7, 0), &"powerup_react": Vector4(0, 0.3, 0, 1),
 	&"victory": Vector4(0, 0.2, 0, 1)}
 const FACE_RATE := 14.0
@@ -44,12 +46,18 @@ const BLINK_PERIOD := 3.4
 const LED_KINDS: Array[StringName] = [&"nitro", &"lgtm", &"code_review", &"super_jump", &"auto_fix",
 	&"approve_shield"]
 const LED_FLASH_SECONDS := 0.5
-## Grounded, envelope-filling roll re-baked from the Blender clip by dev/bake_hoppy_roll.gd.
+## The full-size slide re-grounded against Godot skinning by dev/bake_hoppy_roll.gd (scale 1, no shrink).
 const BAKED_ROLL := "res://scenes/runner/player/hifi/hoppy_roll.tres"
 ## The roll starts on its first baked frame: any blend from the upright pose would poke above the 0.9 m
 ## roll envelope (the barrier clearance). Leaving the roll blends so Hoppy uncurls instead of popping.
 const ROLL_BLEND_IN := 0.0
 const ROLL_BLEND_OUT := 0.1
+## The roll is a full-size low slide (hips on the floor, lead leg reaching down the lane), so the
+## aura/shield shells flatten into a long, low ellipsoid that hugs it, still inside the 0.9 m
+## envelope (0.9 m aura radius * 0.49 about y = 0.455). The glyph orbit follows the same footprint.
+const SLIDE_SHELL_CENTER := Vector3(0, 0.455, 0)
+const SLIDE_SHELL_SCALE := Vector3(0.8, 0.49, 1.1)
+const SLIDE_ORBIT := Vector2(0.66, 0.9)
 ## The bake tool reads the imported clip, so it switches the baked one off.
 var use_baked_roll := true
 var animation_player: AnimationPlayer
@@ -399,10 +407,10 @@ func _process(delta: float) -> void:
 		_contact_shadow.material_override.set_shader_parameter("height",height)
 	_clock += delta
 	var rolling := anim_state == &"roll"
-	var center := Vector3(0, 0.45, 0) if rolling else _bone_point("chest", Vector3(0, 0.9, 0))
+	var center := SLIDE_SHELL_CENTER if rolling else _bone_point("chest", Vector3(0, 0.9, 0))
 	for shell in [_aura, _shield]:
 		shell.position = center
-		shell.scale = Vector3.ONE * (0.48 if rolling else 1.0)
+		shell.scale = SLIDE_SHELL_SCALE if rolling else Vector3.ONE
 		var material := shell.material_override as ShaderMaterial
 		material.set_shader_parameter("clock", _clock)
 		material.set_shader_parameter("hex_cell_size", 0.09 / shell.global_basis.x.length())
@@ -414,8 +422,8 @@ func _process(delta: float) -> void:
 	_trail.visible = _speed > 0.4 and anim_state == &"run"
 	for i in 12:
 		var a := _clock * 1.5 + i * TAU / 12.0
-		var r := 0.38 if rolling else 0.65
-		_instance(_glyphs, i, Transform3D(_billboard_basis(_glyphs), center + Vector3(cos(a) * r, sin(a * 2.0) * 0.08, sin(a) * r)))
+		var r := SLIDE_ORBIT if rolling else Vector2(0.65, 0.65)
+		_instance(_glyphs, i, Transform3D(_billboard_basis(_glyphs), center + Vector3(cos(a) * r.x, sin(a * 2.0) * 0.08, sin(a) * r.y)))
 	var emitter := _bone_point("chest", Vector3(0, 1.09, 0.26))
 	for i in 16:
 		var t := fmod(_clock * 0.8 + float(i) / 16.0, 1.0)

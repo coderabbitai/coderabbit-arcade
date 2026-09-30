@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from glb_atlas import consolidate_atlases, inspect_images
 
 SEED = 41027
-RECIPE_REVISION = 7
+RECIPE_REVISION = 8
 JOINT_REVISION = 15
 CONTACT_REVISION = 17
 BUDGET = json.loads(Path(__file__).with_name("hoppy_budget.json").read_text())
@@ -226,6 +226,10 @@ glass.surface_render_method = 'DITHERED'
 # Same palette as the mint accents; only their baked normal/occlusion detail differs.
 thread = material('Mint embroidery thread', (.22, .85, .61), 'thread', .15, .8)
 tread = material('Mint tread rubber', (.22, .85, .61), 'tread', .15, .8)
+# Round 8 (cuter face): warm fur-brown brows instead of graphite, and a soft cheek blush
+# mixed halfway from the inner-ear colour toward the cream fur (opaque, baked into the atlas).
+brow_fur = material('Warm brow fur', (.30, .135, .06), 'fur')
+blush = material('Cheek blush', (.92, .52, .36), 'fur')
 if not opts.quick:
     nodes, links = inner.node_tree.nodes, inner.node_tree.links
     separate = nodes.new('ShaderNodeSeparateXYZ')
@@ -259,10 +263,13 @@ def finish(obj, name, mat, bone, atlas):
     return obj.name
 
 
-def ellipsoid(name, at, size, mat, bone, atlas='body', segments=24, rings=16):
+def ellipsoid(name, at, size, mat, bone, atlas='body', segments=24, rings=16, yaw=0.0, pitch=0.0):
     bpy.ops.mesh.primitive_uv_sphere_add(segments=segments, ring_count=rings, location=xyz(at))
     obj = bpy.context.object
     obj.scale = (size[0], size[2], size[1])
+    # yaw: radians about the vertical axis, positive turns the front (-Z) face toward +x;
+    # pitch: radians about x, positive tips the top back (+Z).
+    obj.rotation_euler = (pitch, 0, -yaw)
     # Sculpted asymmetric face and tapered leaf-shaped ears, with quad latitude loops.
     if 'Skull' in name:
         for v in obj.data.vertices:
@@ -272,7 +279,8 @@ def ellipsoid(name, at, size, mat, bone, atlas='body', segments=24, rings=16):
             v.co *= 1 + .055 * math.sin(v.co.x * 11) * math.sin(v.co.z * 9)
     if 'Ear' in name:
         for v in obj.data.vertices:
-            v.co.x *= .78 + .22 * (1 - v.co.z * v.co.z)
+            # Round 8: a gentler leaf taper keeps the ear tips round rather than pointed.
+            v.co.x *= .9 + .1 * (1 - v.co.z * v.co.z)
             v.co.y -= .48 * max(0, v.co.z) ** 2
     return finish(obj, name, mat, bone, atlas)
 
@@ -427,8 +435,13 @@ def joint_core(side, name, at, radius, mat, upper, lower):
 
 
 stage('model geometry')
+GOGGLE_Y = 1.462  # Round 8: raised from 1.423 and tipped back to hug the forehead.
+GOGGLE_Z = -.16
+GOGGLE_TILT = .3
+STRAP_Y = GOGGLE_Y - .023
+STRAP_RADII = (.215, .172)  # Around z=-.01; hugs the larger skull instead of floating.
 # Main sculpt: broad face, haunches, tapered runner torso, glove-like paws.
-ellipsoid('Skull sculpt', (0, 1.255, -.025), (.257, .25, .223), cream, 'head', segments=32, rings=24)
+ellipsoid('Skull sculpt', (0, 1.258, -.025), (.272, .264, .229), cream, 'head', segments=32, rings=24)
 loft('Hoodie tailored torso', [(0,y,z,rx,rz) for y,z,rx,rz in [
     (.51,.015,.17,.125),(.53,.015,.21,.16),(.56,.015,.22,.172),(.60,.015,.222,.172),
     (.69,.01,.235,.18),(.80,0,.237,.183),(.92,0,.226,.171),
@@ -459,16 +472,20 @@ for i in range(6):
          (math.cos(a)*.09, .65+math.sin(a)*.095, .315), (math.cos(a)*.108, .65+math.sin(a)*.112, .305), .026, cream, 'tail')
 for side, sign in [('L', -1), ('R', 1)]:
     x = sign
-    ellipsoid('Cheek ' + side, (x*.107, 1.167, -.218), (.113, .082, .073), cream, 'head')
+    ellipsoid('Cheek ' + side, (x*.108, 1.165, -.221), (.122, .09, .077), cream, 'head')
     ellipsoid('Ear ' + side, (x*.12, 1.574, .005), (.069, .226, .051), cream, 'ear_'+side)
     ellipsoid('Inner Ear ' + side, (x*.12, 1.586, -.042), (.039, .171, .012), inner, 'ear_'+side)
     # Round 7: sclera and lid line ride the eye bone, whose vertical scale squints/widens the eye.
-    ellipsoid('Sclera '+side, (x*.105, 1.296, -.221), (.09, .101, .043), white, 'eye_'+side, 'accessory')
-    ellipsoid('Iris '+side, (x*.1, 1.291, -.256), (.049, .06, .017), mint, 'eye_'+side, 'accessory')
-    ellipsoid('Pupil '+side, (x*.1, 1.291, -.268), (.027, .039, .01), black, 'eye_'+side, 'accessory')
-    ellipsoid('Catchlight '+side, (x*.1-.012, 1.31, -.276), (.008, .011, .004), white, 'eye_'+side, 'accessory', 12, 8)
-    tube('Brow '+side, [(x*.044,1.402,-.206),(x*.10,1.419,-.22),(x*.166,1.397,-.199)], .014, slate, 'brow_'+side, detail=1)
-    tube('Upper eyelid '+side, [(x*.105-.085,1.304,-.23),(x*.105,1.388,-.239),(x*.105+.085,1.304,-.23)], .009, cream,'eye_'+side)
+    # Round 8: bigger, slightly lower and wider-set eyes; larger iris and pupil; two catchlights.
+    ellipsoid('Sclera '+side, (x*.109, 1.287, -.23), (.097, .108, .045), white, 'eye_'+side, 'accessory')
+    ellipsoid('Iris '+side, (x*.104, 1.281, -.265), (.062, .073, .018), mint, 'eye_'+side, 'accessory')
+    ellipsoid('Pupil '+side, (x*.104, 1.279, -.278), (.037, .048, .01), black, 'eye_'+side, 'accessory')
+    ellipsoid('Catchlight '+side, (x*.104-.019, 1.306, -.287), (.014, .018, .005), white, 'eye_'+side, 'accessory', 12, 8)
+    ellipsoid('Small catchlight '+side, (x*.104+.018, 1.259, -.286), (.007, .008, .004), white, 'eye_'+side, 'accessory', 12, 8)
+    # Thin, raised, gently arched warm-brown brows read as expression, not a scowl.
+    tube('Brow '+side, [(x*.06,1.421,-.224),(x*.11,1.442,-.228),(x*.16,1.425,-.211)], .008, brow_fur, 'brow_'+side, detail=1)
+    tube('Upper eyelid '+side, [(x*.109-.093,1.297,-.238),(x*.109,1.398,-.248),(x*.109+.093,1.297,-.238)], .006, cream,'eye_'+side)
+    ellipsoid('Cheek blush '+side, (x*.177, 1.17, -.281), (.034, .021, .008), blush, 'head', segments=12, rings=8, yaw=x*.42)
     # Cheek fluff and ear-rim tufts: short tapered wisps, fur-direction baked like the body.
     for j, (by, tx, ty, tz) in enumerate([(1.15,.262,1.105,-.19),(1.175,.268,1.15,-.175),(1.128,.24,1.078,-.214)]):
         tuft('Cheek tuft %s %d' % (side, j), (x*.19, by, -.2), (x*(tx-.03), (by+ty)/2-.005, (tz-.2)/2), (x*tx, ty, tz), .02, cream, 'head')
@@ -476,11 +493,13 @@ for side, sign in [('L', -1), ('R', 1)]:
         tuft('Ear rim tuft %s %d' % (side, j), (x*.176, by, bz), (x*.192, by+.014, bz+.01), (x*.204, by+.032, bz+.016), .017, cream, 'ear_'+side)
     tuft('Inner ear tuft '+side, (x*.12, 1.40, -.03), (x*.125, 1.425, -.055), (x*.13, 1.455, -.066), .018, cream, 'ear_'+side)
     # Forehead goggles connect through side hinges to the wraparound strap.
-    box('Goggle hinge '+side,(x*.23,1.415,-.123),(.041,.038,.042),slate,'head')
-    tube('Goggle temple '+side,[(x*.206,1.422,-.169),(x*.244,1.415,-.10),(x*.248,1.4,-.015)],.01,slate,'head')
-    points = [(x*.113+math.cos(a)*.094, 1.423+math.sin(a)*.064, -.169) for a in [i*math.tau/16 for i in range(17)]]
-    tube('Goggle frame '+side, points, .012, slate, 'head')
-    ellipsoid('Goggle lens '+side, (x*.113,1.423,-.171), (.081,.051,.009), glass, 'head', 'accessory')
+    # Round 8: goggles sit higher on the forehead, clear of the eyes and brows.
+    box('Goggle hinge '+side,(x*.214,GOGGLE_Y-.01,-.12),(.036,.036,.04),slate,'head')
+    tube('Goggle temple '+side,[(x*.206,GOGGLE_Y-.001,GOGGLE_Z),(x*.226,GOGGLE_Y-.012,-.094),(x*STRAP_RADII[0],STRAP_Y,-.01)],.01,slate,'head')
+    points = [(x*.113+math.cos(a)*.094, GOGGLE_Y+math.sin(a)*.064*math.cos(GOGGLE_TILT),
+               GOGGLE_Z+math.sin(a)*.064*math.sin(GOGGLE_TILT)) for a in [i*math.tau/16 for i in range(17)]]
+    tube('Goggle frame '+side, points, .011, slate, 'head')
+    ellipsoid('Goggle lens '+side, (x*.113,GOGGLE_Y,GOGGLE_Z-.002), (.081,.051,.009), glass, 'head', 'accessory', pitch=GOGGLE_TILT)
     sleeve = loft('Continuous sleeve '+side, [(x*cx,y,z,rx,rz) for cx,y,z,rx,rz in [
         (.244,1.032,.012,.067,.066),(.257,1.015,.012,.084,.085),(.276,.95,.01,.083,.082),
         (.292,.85,0,.078,.077),(.30,.795,-.008,.077,.077),
@@ -539,15 +558,16 @@ for side, sign in [('L', -1), ('R', 1)]:
     for j in range(10):
         tube('Hem stitch %s %d'%(side,j), [(x*(.025+j*.019),.555,-.141),(x*(.031+j*.019),.563,-.143)], .0018, cream, 'spine')
 ellipsoid('Nose', (0,1.185,-.29), (.038,.025,.021), inner, 'head', 'accessory')
-smile = tube('Muzzle smile', [(-.061,1.133,-.267),(0,1.122,-.281),(.061,1.133,-.267)], .003, slate, 'head')
-blend_across(smile, 'head', 'mouth_L', 'mouth_R', .061)
-tube('Goggle strap', [(math.sin(i*math.tau/24)*.253,1.4,math.cos(i*math.tau/24)*.179) for i in range(25)], .014, slate, 'head', detail=1)
-box('Goggle bridge',(0,1.423,-.17),(.042,.017,.025),slate,'head')
+# Round 8: a wider, upturned smile whose corners sit on the fuller cheeks.
+smile = tube('Muzzle smile', [(-.075,1.143,-.293),(-.037,1.121,-.283),(0,1.116,-.285),(.037,1.121,-.283),(.075,1.143,-.293)], .0035, slate, 'head')
+blend_across(smile, 'head', 'mouth_L', 'mouth_R', .075)
+tube('Goggle strap', [(math.sin(i*math.tau/24)*STRAP_RADII[0],STRAP_Y,-.01+math.cos(i*math.tau/24)*STRAP_RADII[1]) for i in range(25)], .014, slate, 'head', detail=1)
+box('Goggle bridge',(0,GOGGLE_Y,GOGGLE_Z-.001),(.042,.017,.025),slate,'head')
 # Strap buckle at the back of the head, plus two sliding keepers on the strap sides.
-box('Goggle strap buckle',(0,1.4,.19),(.056,.04,.014),slate,'head')
-box('Goggle buckle prong',(0,1.4,.198),(.036,.008,.005),mint,'head')
+box('Goggle strap buckle',(0,STRAP_Y,-.01+STRAP_RADII[1]+.007),(.056,.04,.014),slate,'head')
+box('Goggle buckle prong',(0,STRAP_Y,-.01+STRAP_RADII[1]+.015),(.036,.008,.005),mint,'head')
 for side, sign in [('L', -1), ('R', 1)]:
-    box('Goggle strap keeper '+side,(sign*.252,1.4,.035),(.012,.034,.042),mint,'head')
+    box('Goggle strap keeper '+side,(sign*(STRAP_RADII[0]-.007),STRAP_Y,.035),(.012,.034,.042),mint,'head')
 box('Slim battery pack',(0,.879,.209),(.249,.243,.093),slate,'chest')
 for led in range(4):
     led_mask(box('Matrix battery LED '+str(led),(-.054+led*.036,.898,.26),(.021,.069,.009),matrix,'chest'), led, 4)
@@ -781,6 +801,50 @@ GROUNDED=('idle','run')+tuple(RUN_GAIT)
 VICTORY_ARM_RAISE=2.9
 VICTORY_EAR_BACK=.3
 VICTORY_EAR_SPLAY=1.3
+# Roll = full-scale baseball slide. Radians; flexion is relative to the reclined torso
+# (+X hip = thigh toward the body front). The builder seats every frame on the floor and
+# requires the whole skinned pose to stay under SLIDE_CEILING (roll hurtbox is 0.9 m).
+SLIDE_LEAN=1.4
+SLIDE_BOB=.025
+SLIDE_LEAD='L'
+SLIDE_LEAD_HIP=.42
+SLIDE_LEAD_KNEE=.08
+SLIDE_TRAIL_HIP=.95
+SLIDE_TRAIL_KNEE=1.75
+SLIDE_TRAIL_SPLAY=.35
+SLIDE_ARM_START=0
+SLIDE_ARM_BACK=-.25
+SLIDE_ARM_SPLAY=2.0
+SLIDE_ELBOW=.8
+SLIDE_EAR_BACK=1.25
+SLIDE_EAR_TIP=.3
+SLIDE_SPINE=-.05
+SLIDE_CHEST=0
+SLIDE_NECK=-.1
+SLIDE_HEAD=-.25
+SLIDE_FLOOR=.004
+SLIDE_CEILING=.885
+
+
+def skin_extent():
+    """(min z, max z, min y, max y) of every evaluated skinned vertex, Blender metres."""
+    bpy.context.view_layer.update()
+    deps = bpy.context.evaluated_depsgraph_get()
+    lo = hi = back = front = None
+    for mesh_name in mesh_names:
+        evaluated = object_named(mesh_name, 'MESH').evaluated_get(deps)
+        mesh = evaluated.to_mesh()
+        try:
+            flat = [0.0] * (3 * len(mesh.vertices)); mesh.vertices.foreach_get('co', flat)
+            m = evaluated.matrix_world
+            points = [m @ Vector(flat[i:i+3]) for i in range(0, len(flat), 3)]
+        finally:
+            evaluated.to_mesh_clear()
+        del mesh, evaluated
+        zs = [p.z for p in points]; ys = [p.y for p in points]
+        lo = min(zs) if lo is None else min(lo, min(zs)); hi = max(zs) if hi is None else max(hi, max(zs))
+        back = min(ys) if back is None else min(back, min(ys)); front = max(ys) if front is None else max(front, max(ys))
+    return lo, hi, back, front
 
 
 def smooth(a, b, x):
@@ -844,6 +908,11 @@ for name,duration in lengths.items():
         if name=='victory':
             spine.rotation_euler.x=-.12+.14*e;head.rotation_euler.x=.22*e
             chest.scale=(1+.03*e,1+.02*e,1+.03*e)
+        if name=='roll':
+            # Curl the reclined torso forward so the face keeps looking down the lane.
+            spine.rotation_euler.x=SLIDE_SPINE;chest.rotation_euler.x=SLIDE_CHEST
+            rig.pose.bones['neck'].rotation_euler.x=SLIDE_NECK
+            head.rotation_euler.x=SLIDE_HEAD+.03*math.sin(phase*2+.8)
         for side,s in [('L',-1),('R',1)]:
             arm=rig.pose.bones['arm_'+side];leg=rig.pose.bones['leg_'+side]
             ear=rig.pose.bones['ear_'+side]
@@ -878,10 +947,20 @@ for name,duration in lengths.items():
                 ear.rotation_euler.x=.2+.48*math.sin(math.pi*t)
                 rig.pose.bones['ear_tip_'+side].rotation_euler.x=-.25*math.sin(math.pi*t)
             if name=='roll':
-                arm.rotation_euler.x=-1.0;leg.rotation_euler.x=1.25
-                elbow=1.7;knee=1.85
-                ear.rotation_euler.x=2.5;rig.pose.bones['ear_tip_'+side].rotation_euler.x=.45
-                rig.pose.bones['head'].rotation_euler.x=.4
+                # Baseball-style low slide (root pitched back by SLIDE_LEAN below): the lead
+                # leg (L) reaches straight down the lane with its heel skimming the floor, the
+                # trail leg folds under it, the arms sweep back for balance and the ears stream
+                # flat behind. Flexion is relative to the reclined torso.
+                lead=side==SLIDE_LEAD
+                settle=smooth(0,.4,t)
+                leg.rotation_euler.x=SLIDE_LEAD_HIP if lead else SLIDE_TRAIL_HIP
+                knee=SLIDE_LEAD_KNEE if lead else SLIDE_TRAIL_KNEE
+                if not lead:leg.rotation_euler.z=-s*SLIDE_TRAIL_SPLAY
+                arm.rotation_euler.x=lerp(SLIDE_ARM_START,SLIDE_ARM_BACK,settle)+.05*math.sin(phase+s)
+                elbow=SLIDE_ELBOW
+                ear.rotation_euler.x=SLIDE_EAR_BACK+.06*math.sin(phase*2+.5)
+                ear.rotation_euler.z=-s*.12
+                ear_tip.rotation_euler.x=SLIDE_EAR_TIP+.08*math.sin(phase*2+1.2)
             if name=='hurt':
                 elbow=1.1 if t <= 1/3 else .4+.7*(1-t)*1.5
                 knee=.45
@@ -915,6 +994,7 @@ for name,duration in lengths.items():
                 arm.rotation_euler.z+=(-s*.45 if s==dash else s*.12)*e
                 leg.rotation_euler.z=-s*(.08 if s==dash else .22)*e
                 ear.rotation_euler.z+=dash*.3*e
+            if name=='roll':arm.rotation_euler.z-=s*SLIDE_ARM_SPLAY
             if name=='shield_brace':arm.rotation_euler.z+=s*.28*e
             if name=='powerup_react' and side=='R':arm.rotation_euler.z-=(2.6+.15*pump)*e
             if name=='victory':arm.rotation_euler.z-=s*(VICTORY_ARM_RAISE+.1*pump)*e
@@ -923,12 +1003,20 @@ for name,duration in lengths.items():
             elif name=='jump':foot_pitch(side,-.65)
             elif name=='fall':foot_pitch(side,-.35)
         if name=='roll':
-            # Uniform scale and a centred spin keep the entire tuck inside 90 cm.
-            root.scale=(.47,.47,.47);root.rotation_euler.x=-phase
-            centre=Vector((0,0,.84));rot=root.rotation_euler.to_matrix()
-            root.location=Vector((0,0,.45))-rot@(centre*.47)
+            # Full-scale slide: no shrink, no spin. The whole body reclines about the feet and
+            # is then re-seated on the floor below; a gentle bob rides on the lean.
+            root.rotation_euler.x=SLIDE_LEAN+SLIDE_BOB*math.sin(phase*2)
         # Pose locations are bone-local; root's local Y points along world Z.
         root.location = rig.data.bones['root'].matrix_local.to_3x3().inverted() @ root.location
+        if name=='roll':
+            # Seat the evaluated skin on the floor (lowest vertex at SLIDE_FLOOR) and centre its
+            # lane-axis extent on the origin; rotation is fixed, so one rigid shift is exact.
+            lo,hi,back,front=skin_extent()
+            shift=Vector((0,-(back+front)/2,SLIDE_FLOOR-lo))
+            root.location += rig.data.bones['root'].matrix_local.to_3x3().inverted() @ shift
+            lo,hi,back,front=skin_extent()
+            require(abs(lo-SLIDE_FLOOR)<.0005 and hi<=SLIDE_CEILING,
+                    'Slide envelope frame %s: y %.4f..%.4f' % (f,lo,hi))
         if name in GROUNDED:
             # Lower/raise the body by the evaluated lowest sole, including squash.
             bpy.context.view_layer.update()
@@ -1036,7 +1124,7 @@ for f in range(lengths['roll']*ACTION_SAMPLE_RATE+1):
         finally:
             evaluated.to_mesh_clear()
         del mesh, evaluated
-require(lo>=-.001 and hi<=.901, 'Roll bounds outside 0..0.9 m: ' + str((lo,hi)))
+require(lo>=-.001 and hi<=SLIDE_CEILING, 'Slide bounds outside 0..%.3f m: %s' % (SLIDE_CEILING, (lo,hi)))
 stage('roll bounds y=' + str((lo,hi)))
 rig = object_named(rig_name, 'ARMATURE')
 rig.animation_data.action=None

@@ -87,6 +87,7 @@ func capture() -> void:
 		["brace", Vector3(1.6, 1.4, -2.6), Vector3(0, 0.9, 0), &"shield_brace", true, 0.18],
 		["react", Vector3(1.5, 1.4, -2.5), Vector3(0, 1.0, 0), &"powerup_react", false, 0.25],
 		["victory", Vector3(0.9, 1.3, -3.0), Vector3(0, 1.0, 0), &"victory", false, 0.6],
+		["face-idle", Vector3(0.35, 1.32, -1.05), Vector3(0, 1.27, 0), &"idle", false, 0.24],
 		["face-focused", Vector3(0.35, 1.32, -1.05), Vector3(0, 1.27, 0), &"run", false, 0.24],
 		["face-wide", Vector3(0.35, 1.32, -1.05), Vector3(0, 1.27, 0), &"jump", false, 0.24],
 		["face-wince", Vector3(0.35, 1.32, -1.05), Vector3(0, 1.27, 0), &"hurt", false, 0.3],

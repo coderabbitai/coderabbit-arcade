@@ -159,6 +159,16 @@ var boss_max_hp := 0
 ## 1-based; 0 outside a fight.
 var boss_phase := 0
 
+## Boss checkpoint (contract §11.13). The StageManager snapshots the run here on every boss entry
+## and empties it when the stage clears, so it is non-empty only while a fight is live, or after a
+## catch that landed during one. Game Over offers "Retry Boss" exactly when it is non-empty.
+var boss_checkpoint := {}
+## True when this run was started from a boss checkpoint rather than from zero.
+var checkpoint_retry := false
+## The checkpoint retry_boss() hands to the next runner_game instance. Static because the retry is
+## a fresh scene through AppRouter, like retry(); start_run() consumes it and empties it at once.
+static var pending_boss_checkpoint := {}
+
 @onready var systems: Node = $Systems
 @onready var speed_controller: Node = $Systems/SpeedController
 @onready var hit_manager: Node = $Systems/HitManager
@@ -196,6 +206,8 @@ var _caught_timer := 0.0
 var _dodged_ids := {}
 ## The mounted frontend corridor, if one exists.
 var _corridor: Node = null
+## Set by the first retry / retry_boss / go_to_menu; this instance is on its way out after that.
+var _routing := false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -221,8 +233,19 @@ func start_run(run_seed := 0) -> void:
 	# frozen: go through resume() so `paused`, `tree.paused` and paused_changed(false) all agree.
 	# It is a no-op when the run was not paused.
 	resume()
+	# Consumed before anything else, so a checkpoint can never leak into a later run.
+	var checkpoint: Dictionary = pending_boss_checkpoint
+	pending_boss_checkpoint = {}
+	checkpoint_retry = not checkpoint.is_empty()
+	boss_checkpoint = {}
+	if checkpoint_retry:
+		# The same seed keeps the spawner and fight RNG streams on the run the checkpoint came from.
+		run_seed = int(checkpoint.get("seed", run_seed))
 	seed = run_seed if run_seed != 0 else randi()
 	run_id = "%d-%d" % [Time.get_unix_time_from_system(), seed]
+	if checkpoint_retry:
+		# A fresh run_id (the death already wrote its own entry), unique even within one second.
+		run_id += "-boss%d-%d" % [int(checkpoint.get("stage_index", 0)), Time.get_ticks_msec()]
 	cosmetic_rng.seed = seed
 	_result = {}
 	_finished = false
@@ -254,15 +277,57 @@ func start_run(run_seed := 0) -> void:
 		stage_manager.reset(seed)
 	if player != null and player.has_method("set_controls_enabled"):
 		player.set_controls_enabled(true)
+	if checkpoint_retry:
+		_restore_checkpoint(checkpoint)
 	_set_state(&"running")
 	run_started.emit(seed)
 	health_changed.emit(hp, int(config.max_hp))
 	score_changed.emit(score, multiplier)
 	speed_changed.emit(speed, normalized_speed)
 	# Stage 1 opens only once every system is back at zero and the run is live, so the first
-	# stage_started lands after run_started and the spawner fills against a running phase.
-	if stage_manager != null and stage_manager.has_method("begin"):
+	# stage_started lands after run_started and the spawner fills against a running phase. A boss
+	# checkpoint opens on the turn into that stage's boss instead.
+	if checkpoint_retry and stage_manager != null and stage_manager.has_method("begin_at_boss"):
+		stage_manager.begin_at_boss(checkpoint)
+	elif stage_manager != null and stage_manager.has_method("begin"):
 		stage_manager.begin()
+
+## Put the facade, the ScoreManager and the systems' Game Over tallies back where the checkpoint
+## left them. HP, running power-up effects and the pursuit are not restored: a checkpoint retry
+## starts at full health with no effects running, so the live multiplier recomposes from those (1.0)
+## while best_multiplier keeps the run's best. The StageManager restores its own block (stage,
+## run_clock, tallies) in begin_at_boss().
+func _restore_checkpoint(checkpoint: Dictionary) -> void:
+	elapsed = float(checkpoint.get("elapsed", 0.0))
+	distance = float(checkpoint.get("distance", 0.0))
+	hazards_dodged = int(checkpoint.get("hazards_dodged", 0))
+	hazards_blasted_total = int(checkpoint.get("hazards_blasted_total", 0))
+	run_clock = float(checkpoint.get("run_clock", 0.0))
+	var exact := maxf(float(checkpoint.get("score_exact", 0.0)), 0.0)
+	if score_manager != null and is_instance_valid(score_manager):
+		if &"exact" in score_manager:
+			score_manager.set(&"exact", exact)
+		if &"score" in score_manager:
+			score_manager.set(&"score", floori(exact))
+		if &"best_multiplier" in score_manager:
+			score_manager.set(&"best_multiplier", maxf(float(checkpoint.get("best_multiplier", 1.0)), 1.0))
+		if &"bonus_total" in score_manager:
+			score_manager.set(&"bonus_total", int(checkpoint.get("bonus_total", 0)))
+	score = _system_int(score_manager, &"score", floori(exact))
+	multiplier = _system_float(score_manager, &"multiplier", 1.0)
+	# The run's cumulative Game Over stats, so a retry never mixes whole-run and since-retry numbers.
+	_restore_stat(effect_manager, &"power_ups_collected", int(checkpoint.get("power_ups", 0)))
+	_restore_stat(hit_manager, &"hits_taken", int(checkpoint.get("hits_taken", 0)))
+	_restore_stat(hit_manager, &"recoveries", int(checkpoint.get("recoveries", 0)))
+	_restore_stat(hit_manager, &"blocked_hits", int(checkpoint.get("blocked_hits", 0)))
+	if checkpoint.has("max_speed_reached"):
+		_restore_stat(speed_controller, &"max_speed_reached", maxf(float(checkpoint["max_speed_reached"]),
+			_system_float(speed_controller, &"max_speed_reached", 0.0)))
+	_restore_stat(spawner, &"chunks_spawned", int(checkpoint.get("chunks_spawned", 0)))
+
+func _restore_stat(node: Node, property: StringName, value: Variant) -> void:
+	if node != null and is_instance_valid(node) and property in node:
+		node.set(property, value)
 
 # --- contract §4.3 ---
 
@@ -294,12 +359,48 @@ func toggle_pause() -> void:
 
 ## Fresh session on the same scene; change_scene_to_file yields a new instance.
 func retry() -> void:
+	if _route_in_flight():
+		return
 	resume()
-	AppRouter.go("runner_game")
+	# A full restart always starts from zero, even after a Retry Boss that never got to route.
+	pending_boss_checkpoint = {}
+	_take_route("runner_game")
+
+## Contract §11.13: a fresh session that opens on the turn into the boss the checkpoint was taken
+## at, with the score, clocks and tallies it held and full HP. Without a checkpoint this is retry().
+func retry_boss() -> void:
+	if _route_in_flight():
+		return
+	if boss_checkpoint.is_empty():
+		retry()
+		return
+	resume()
+	pending_boss_checkpoint = boss_checkpoint.duplicate(true)
+	_take_route("runner_game")
 
 func go_to_menu() -> void:
+	if _route_in_flight():
+		return
 	resume()
-	AppRouter.go("runner")
+	pending_boss_checkpoint = {}
+	_take_route("runner")
+
+## The first route asked for wins. AppRouter ignores a go() while its veil is fading, but Game Over
+## keeps focus through that fade, so a second press (Esc after Retry Boss, say) must not rewrite
+## pending_boss_checkpoint behind the route already taken.
+func _route_in_flight() -> bool:
+	if _routing:
+		return true
+	var router := get_node_or_null(^"/root/AppRouter")
+	return router != null and bool(router.get(&"busy"))
+
+func _take_route(route: String) -> void:
+	_routing = true
+	_route(route)
+
+## Every scene change goes through here, so a test can record the route instead of taking it.
+func _route(route: String) -> void:
+	AppRouter.go(route)
 
 ## Brief Engine.time_scale dip, capped by config.hit_stop_max.
 func hit_stop(seconds: float) -> void:
@@ -654,6 +755,8 @@ func _finish_run(outcome: StringName) -> void:
 		"tools_used": _system_int(stage_manager, &"tools_used", 0),
 		"boss_damage_dealt": _system_int(stage_manager, &"boss_damage_dealt", 0),
 		"turns_taken": _system_int(stage_manager, &"turns_taken", 0),
+		# Contract §11.13: true when this run was started from a boss checkpoint.
+		"checkpoint_retry": checkpoint_retry,
 		"score_rule_revision": int(config.score_rule_revision),
 		"submitted_at": now,
 		"rank": 0,
