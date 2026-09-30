@@ -121,6 +121,7 @@ func run() -> void:
 	await frames(5)
 	await capture("/tmp/hoppy-bay-boss.png")
 	check(not level.boss_down and not level.finished, "MERGE remains locked before boss defeat")
+	await frames(120)
 	for i in 8:
 		level.boss.hit_flash = 0
 		level.boss.take_hit()
