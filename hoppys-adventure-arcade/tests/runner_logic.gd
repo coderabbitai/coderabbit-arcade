@@ -156,6 +156,7 @@ func run() -> void:
 	_test_pursuer_distance()
 	_test_caught_mid_boss()
 	_test_boss_checkpoint()
+	_test_boss_stage_seed()
 	_test_stage_speed_and_floor()
 	_test_leaderboard_migration()
 	_test_turn_camera_profile()
@@ -2162,6 +2163,42 @@ func _test_boss_checkpoint() -> void:
 		check(_pending_checkpoint() == in_flight, "24b route: a busy AppRouter leaves the pending checkpoint alone")
 		_free_rig(rig)
 	runner_game_script.set(&"pending_boss_checkpoint", {})
+
+## The fight seed is a function of the run seed and the stage alone (contract §11.13): stage 2 reached
+## after a whole stage-1 fight draws the same lane and tool streams as a checkpoint retry into stage 2.
+func _test_boss_stage_seed() -> void:
+	var overrides := {"boss_intro_seconds": 0.0, "boss_outro_seconds": 0.0}
+	var seed := 4242
+	var played := _boss_rig(overrides)
+	var retried := _boss_rig(overrides)
+	var other := _boss_rig(overrides)
+	var a: Node3D = played["arena"]
+	var b: Node3D = retried["arena"]
+	var c: Node3D = other["arena"]
+	played["game"].seed = seed
+	retried["game"].seed = seed
+	other["game"].seed = seed + 1
+	a.start(1)
+	var stage1_state: int = a.fight_rng.state
+	for i in _ticks(2.0):
+		a.tick(TICK)
+	check(a.fight_rng.state != stage1_state, "24b seed: the stage-1 fight drew from fight_rng")
+	a.start(2)
+	b.start(2)
+	c.start(2)
+	check(a.fight_rng.state == b.fight_rng.state,
+		"24b seed: stage 2 after a stage-1 fight seeds like a retry into stage 2, got %d vs %d"
+			% [a.fight_rng.state, b.fight_rng.state])
+	var draws_a: Array[int] = []
+	var draws_b: Array[int] = []
+	for i in 4:
+		draws_a.append(a.fight_rng.randi())
+		draws_b.append(b.fight_rng.randi())
+	check(draws_a == draws_b, "24b seed: the stage-2 draws match, got %s vs %s" % [draws_a, draws_b])
+	check(c.fight_rng.state != b.fight_rng.state, "24b seed: a different run seed gives a different stage-2 stream")
+	_free_rig(played)
+	_free_rig(retried)
+	_free_rig(other)
 
 ## The real game_over.tscn against this facade: Retry Boss is shown, and takes the default focus,
 ## exactly when the run left a checkpoint; plain Retry is always there.
