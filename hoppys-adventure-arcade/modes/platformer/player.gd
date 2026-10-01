@@ -60,6 +60,8 @@ func _physics_process(dt: float) -> void:
 		var thrust := 0.0
 		if input_lock <= 0:
 			thrust = Input.get_action_strength("move_down") - maxf(Input.get_action_strength("jump"), Input.get_action_strength("move_up"))
+		# Normal-gravity jump impulses and fall speed do not carry into assisted zero-g motion.
+		velocity.y = clampf(velocity.y, -230.0, 230.0)
 		velocity.y = move_toward(velocity.y, thrust * 230, (700 if thrust != 0 else 260) * dt)
 	else:
 		velocity.y = minf(900, velocity.y + 1600 * dt)
