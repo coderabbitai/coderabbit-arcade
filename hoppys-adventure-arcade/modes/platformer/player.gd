@@ -18,6 +18,9 @@ var coyote := 0.0
 var buffer := 0.0
 var facing := 1.0
 var hit_targets: Array[Node] = []
+## Set by the owning level before the player's physics tick; defaults preserve Bay Area.
+var zero_gravity := false
+var environmental_acceleration := Vector2.ZERO
 var sprite: AnimatedSprite2D
 var swipe: Area2D
 func _ready() -> void:
@@ -51,9 +54,17 @@ func _physics_process(dt: float) -> void:
 		velocity.y = JUMP
 		buffer = 0
 		coyote = 0
-	if Input.is_action_just_released("jump") and velocity.y < -240:
+	if not zero_gravity and Input.is_action_just_released("jump") and velocity.y < -240:
 		velocity.y = -240
-	velocity.y = minf(900, velocity.y + 1600 * dt)
+	if zero_gravity:
+		var thrust := 0.0
+		if input_lock <= 0:
+			thrust = Input.get_action_strength("move_down") - maxf(Input.get_action_strength("jump"), Input.get_action_strength("move_up"))
+		# Normal-gravity jump impulses and fall speed do not carry into assisted zero-g motion.
+		velocity.y = clampf(velocity.y, -230.0, 230.0)
+		velocity.y = move_toward(velocity.y, thrust * 230, (700 if thrust != 0 else 260) * dt)
+	else:
+		velocity.y = minf(900, velocity.y + 1600 * dt)
 	if hurt_time <= 0:
 		var direction := Input.get_axis("move_left", "move_right")
 		velocity.x = move_toward(velocity.x, direction * SPEED * (1.35 if boost > 0 else 1.0), 2400 * dt)
@@ -64,6 +75,7 @@ func _physics_process(dt: float) -> void:
 			hit_targets.clear()
 			sprite.stop()
 			swiped.emit()
+	velocity += environmental_acceleration * dt
 	swipe.position = Vector2(facing * 54, -38)
 	if attack_time > 0.12 and attack_time < 0.30:
 		for area in swipe.get_overlapping_areas():

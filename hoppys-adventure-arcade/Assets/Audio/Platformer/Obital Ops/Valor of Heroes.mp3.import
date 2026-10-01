@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://ywygmuvpc83"
+path="res://.godot/imported/Valor of Heroes.mp3-ab14ed9b9ec1ca9422a6741bd21923ba.mp3str"
+
+[deps]
+
+source_file="res://Assets/Audio/Platformer/Obital Ops/Valor of Heroes.mp3"
+dest_files=["res://.godot/imported/Valor of Heroes.mp3-ab14ed9b9ec1ca9422a6741bd21923ba.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4
