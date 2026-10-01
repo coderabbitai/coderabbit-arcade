@@ -12,14 +12,14 @@
     "monolith_armor": "Use case: identity-preserve. Asset: supplementary Legacy Monolith armor-state sprite sheet for Godot. Reference image is the exact boss identity to preserve: stone face, turquoise eyes, mossy gray body, brass bindings, silhouette, left-facing view, pixel art. Create EXACT 4 columns x4 rows with clear transparent gutters, 16 isolated sprites all at same scale with feet on consistent baseline. True transparent background. First TWO ROWS show partly stripped/cracked armor: only one big shoulder shell remains, cracked chest plates exposing small cyan core. Last TWO ROWS show fully stripped bare stone body: no shoulder shells or brass bindings, slimmer silhouette, large bright cyan chest core. EACH armor stage's EIGHT poses in row-major order: neutral standing idle; both fists overhead slam warning; fists slammed on ground; arm drawn back sweep warning; low leftward fist sweep impact; foot raised stomp warning; foot striking ground; kneeling exposed-core recovery. Maintain identical body size/proportions, armor changes silhouette but not scale. Every pose complete within its cell, no text, no labels, no scene or ground backdrop. Preserve original crisp 16-bit pixel clusters and emerald/gray/cyan palette."
   },
   "sources": {
-    "legacy_monolith": "/Users/treymurphy/.codex/generated_images/01a0f927-23b0-7552-807e-affe40b1af53/exec-c0f3f29e-b996-41d4-bd7f-738a20b0e891.png",
-    "nitpick_gnome": "/Users/treymurphy/.codex/generated_images/01a0f927-23b0-7552-807e-affe40b1af53/exec-ff47cd91-670a-4ebc-bad6-49c950b8f254.png",
-    "bloat_troll": "/Users/treymurphy/.codex/generated_images/01a0f927-23b0-7552-807e-affe40b1af53/exec-cbda1e98-c5b6-41ef-9dd4-3c7aeeeb21cd.png",
-    "hazards": "/Users/treymurphy/.codex/generated_images/01a0f927-23b0-7552-807e-affe40b1af53/exec-f6aeaa2b-6948-4e07-abf7-c8382ebad7c5.png",
-    "forest_kit": "/Users/treymurphy/.codex/generated_images/01a0f927-23b0-7552-807e-affe40b1af53/exec-2917c895-f45a-499a-a5d8-50389ce73073.png",
-    "sky": "/Users/treymurphy/.codex/generated_images/01a0f927-23b0-7552-807e-affe40b1af53/exec-077bc4c5-1dd8-4129-9a10-94543142573e.png",
-    "treeline": "/Users/treymurphy/.codex/generated_images/01a0f927-23b0-7552-807e-affe40b1af53/exec-5f63c0cf-8e0e-4310-887c-d52df44501d5.png",
-    "monolith_armor": "/Users/treymurphy/.codex/generated_images/01a0f927-23b0-7552-807e-affe40b1af53/exec-ac1f781b-474c-4a95-b999-e93794312b98.png"
+    "legacy_monolith": "sources/legacy_monolith.png",
+    "nitpick_gnome": "sources/nitpick_gnome.png",
+    "bloat_troll": "sources/bloat_troll.png",
+    "hazards": "sources/hazards.png",
+    "forest_kit": "sources/forest_kit.png",
+    "sky": "sources/sky.png",
+    "treeline": "sources/treeline.png",
+    "monolith_armor": "sources/monolith_armor.png"
   },
   "corrections": {
     "legacy_monolith": "Use case: precise-object-edit. Fix sprite sheet packing ONLY. Preserve every one of these exact 24 Legacy Monolith poses, character identity, colors, armor details, effects, ordering and crisp pixel art. Keep EXACTLY 4 columns by 6 rows. Reduce each entire pose INCLUDING ALL debris and effects to fit inside central 72% of its own equally sized cell, leaving broad completely transparent gutters on all four sides of every sprite. No element may touch or overlap a cell boundary or adjacent sprite. Consistent character scale. Transparent alpha background, no backdrop. This must be sliceable with straight horizontal and vertical grid cuts. Preserve the animations and all 24 images.",
