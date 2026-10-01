@@ -33,7 +33,7 @@ func _main() -> void:
 	column.add_child(Style.label("HOPPY'S ADVENTURE ARCADE / 01", 16, Style.MINT))
 	column.add_child(Style.label("PLATFORMER", 52))
 	column.add_child(Style.label("Small rabbit. Big commits.", 22))
-	column.add_child(Style.label("Jump across the city, clear the blockers, and ship the build.", 17))
+	column.add_child(Style.label("Cross the city or take to orbit. Clear the blockers and ship the build.", 17))
 	var select := Style.button("Level Select  →")
 	column.add_child(select)
 	select.pressed.connect(_select)
@@ -59,22 +59,32 @@ func _select() -> void:
 		card.add_theme_constant_override("separation", 15)
 		row.add_child(card)
 		var preview := TextureRect.new()
-		preview.texture = load("res://Assets/bay-area-blitz-assets-only/bay-area-preview.png") if i == 0 else load("res://Assets/bay-area-blitz-assets-only/bay_area/backdrop.png")
+		preview.texture = load(["res://Assets/bay-area-blitz-assets-only/bay-area-preview.png", "res://Assets/orbital-ops-assets-only/orbital_ops/starfield.png", "res://Assets/bay-area-blitz-assets-only/bay_area/backdrop.png"][i])
 		preview.custom_minimum_size = Vector2(0, 210)
 		preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-		preview.modulate = Color.WHITE if i == 0 else Color(0.3, 0.4, 0.5, 0.25)
+		preview.modulate = Color.WHITE if i < 2 else Color(0.3, 0.4, 0.5, 0.25)
 		card.add_child(preview)
+		if i == 1:
+			var station := TextureRect.new()
+			station.texture = load("res://Assets/orbital-ops-assets-only/orbital_ops/station_hull.png")
+			station.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+			station.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			station.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+			station.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			preview.add_child(station)
 		card.add_child(Style.label(["BAY AREA BLITZ", "ORBITAL OPS", "ENCHANTED REPO"][i], 21))
-		card.add_child(Style.label(["Cable cars. Code critters. Chaos.", "Space station • Coming later", "Code-magic forest • Coming later"][i], 13))
+		card.add_child(Style.label(["Cable cars. Code critters. Chaos.", "Zero gravity. Broken legacy routines.", "Code-magic forest • Coming later"][i], 13))
 		var play := Button.new()
-		play.text = "PLAY BAY AREA BLITZ  →" if i == 0 else "COMING SOON"
+		play.text = ["PLAY BAY AREA BLITZ  →", "PLAY ORBITAL OPS  →", "COMING SOON"][i]
 		play.custom_minimum_size.y = 58
-		play.disabled = i != 0
+		play.disabled = i == 2
 		card.add_child(play)
 		if i == 0:
 			play.pressed.connect(func(): AppRouter.go("bay_area_blitz"))
 			play.grab_focus()
+		elif i == 1:
+			play.pressed.connect(func(): AppRouter.go("orbital_ops"))
 	var back := Style.button("← Back")
 	column.add_child(back)
 	back.pressed.connect(_main)

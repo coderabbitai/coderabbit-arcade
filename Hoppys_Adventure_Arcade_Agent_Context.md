@@ -54,3 +54,7 @@ For exact mechanics/content catalogs, open the relevant full-baseline section: �
 ## Repository implementation update — 2026-09-17
 
 The central main menu is now implemented in `hoppys-adventure-arcade/scenes/main_menu/`, with AppRouter, SaveService, and AudioService Autoloads. The three mode routes are explicitly labeled non-playable placeholders. The user approved a temporary rabbit; final Hoppy sprites and branding remain replaceable. See `docs/main-menu.md` for asset mapping, implementation choices, and validation scope. Gameplay systems described above remain proposals.
+
+## Platformer implementation update — 2026-10-01
+
+Bay Area Blitz and Orbital Ops are playable from Level Select; Enchanted Repo remains unavailable. The shared `modes/platformer/level.gd` owns pause/retry/HUD/music/encounter/MERGE lifecycle. Orbital adds timed lasers, vacuum vents, ranged bots, diving drones, a service shuttle, assisted zero-gravity controls, and the Deprecated API's cannon/slam/dash/recovery cycle. User-selected music is `tipa16.mp3` for traversal and `Valor of Heroes.mp3` for the boss, in the existing `Audio/Platformer/Obital Ops` folder. See `docs/orbital-ops.md` for tuning, boundaries and validation; new tuning is v1 implementation choice, not a final design commitment. This supersedes the earlier placeholder status for these two levels.

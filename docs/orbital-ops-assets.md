@@ -8,4 +8,4 @@ Delivered: 88 new frames, 56 named states in five SpriteFrames resources, two se
 
 All resources passed `tests/orbital_assets.gd` in Godot 4.7.1. Run with `--headless` for validation or without it to regenerate the staging render; use `--log-file /tmp/orbital-assets.log` in restricted environments. Mechanical pack rebuild uses `tools/build_orbital_asset_pack.py` with Pillow and NumPy.
 
-No existing gameplay/menu routes were changed. Orbital Ops remains unavailable to play until its level and gameplay are implemented. Shared Hoppy, pickups, HUD and MERGE exit remain in the Bay Area pack. This session did not change approved game mechanics or the baseline's open decisions.
+The asset-only session did not change gameplay/menu routes. Orbital Ops became playable on October 1; see [Orbital Ops v1](orbital-ops.md). Shared Hoppy, pickups, HUD and MERGE exit remain in the Bay Area pack.
