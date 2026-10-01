@@ -1,0 +1,103 @@
+[gd_resource type="SpriteFrames" load_steps=18 format=3]
+
+[ext_resource type="Texture2D" path="hazards.png" id="1"]
+
+[sub_resource type="AtlasTexture" id="F0"]
+atlas = ExtResource("1")
+region = Rect2(0, 0, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F1"]
+atlas = ExtResource("1")
+region = Rect2(128, 0, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F2"]
+atlas = ExtResource("1")
+region = Rect2(256, 0, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F3"]
+atlas = ExtResource("1")
+region = Rect2(384, 0, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F4"]
+atlas = ExtResource("1")
+region = Rect2(0, 128, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F5"]
+atlas = ExtResource("1")
+region = Rect2(128, 128, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F6"]
+atlas = ExtResource("1")
+region = Rect2(256, 128, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F7"]
+atlas = ExtResource("1")
+region = Rect2(384, 128, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F8"]
+atlas = ExtResource("1")
+region = Rect2(0, 256, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F9"]
+atlas = ExtResource("1")
+region = Rect2(128, 256, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F10"]
+atlas = ExtResource("1")
+region = Rect2(256, 256, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F11"]
+atlas = ExtResource("1")
+region = Rect2(384, 256, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F12"]
+atlas = ExtResource("1")
+region = Rect2(0, 384, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F13"]
+atlas = ExtResource("1")
+region = Rect2(128, 384, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F14"]
+atlas = ExtResource("1")
+region = Rect2(256, 384, 128, 128)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F15"]
+atlas = ExtResource("1")
+region = Rect2(384, 384, 128, 128)
+filter_clip = true
+
+[resource]
+animations = [
+{"frames": [{"duration": 1.0, "texture": SubResource("F0")}], "loop": true, "name": &"branch_intact", "speed": 5.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F1")}], "loop": false, "name": &"branch_warning", "speed": 5.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F2")}], "loop": false, "name": &"branch_break", "speed": 5.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F3")}], "loop": false, "name": &"branch_fall", "speed": 5.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F4")}], "loop": true, "name": &"comment_dormant", "speed": 5.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F5")}], "loop": false, "name": &"comment_warning", "speed": 5.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F6")}], "loop": false, "name": &"comment_burst", "speed": 5.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F7")}], "loop": false, "name": &"comment_spent", "speed": 5.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F8")}], "loop": true, "name": &"vine_idle", "speed": 5.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F9")}], "loop": false, "name": &"vine_warning", "speed": 5.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F10")}], "loop": false, "name": &"vine_whip", "speed": 5.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F11")}], "loop": false, "name": &"vine_cut", "speed": 5.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F12")}], "loop": false, "name": &"impact_warning", "speed": 5.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F13")}], "loop": false, "name": &"slam_burst", "speed": 5.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F14")}], "loop": false, "name": &"shockwave", "speed": 5.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F15")}], "loop": false, "name": &"armor_chunk", "speed": 5.0}
+]

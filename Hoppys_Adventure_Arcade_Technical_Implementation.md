@@ -169,6 +169,8 @@ Do not force similarly named pickups to share behavior across modes. Platformer 
 
 ## 8. Platformer
 
+Asset update, October 1, 2026: Enchanted Repo artwork is imported in `Assets/enchanted-repo-assets-only/`. See `docs/enchanted-repo-assets.md` for the 104-frame pack and its guide for proposed Monolith moves. This is an asset-only delivery; Enchanted Repo gameplay and route activation remain pending.
+
 Implementation update, October 1, 2026: Bay Area Blitz and Orbital Ops are playable. Shared lifecycle resides in `modes/platformer/level.gd`; each level owns its layout and actors. Orbital has bounded assisted zero-gravity controls, phased CI lasers/vacuum vents, ranged rogue AI, diving drones and a 10-HP Deprecated API. The user selected `tipa16.mp3` for traversal and `Valor of Heroes.mp3` for boss combat. See `docs/orbital-ops.md` for actual v1 timings and validation; the source design requirements and unaccepted proposals below retain their original status.
 
 **Design requirements:** 3 HP, one damage per player attack and ordinary enemy/hazard contact, common enemies defeated in 1–2 hits, post-hit invulnerability, coyote time, jump buffering, level score, heart HUD, MERGE-button exit, and death/retry UI. Boss HP is separately tuned.
