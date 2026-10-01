@@ -1,5 +1,5 @@
 {
-  "recipe_revision": 7,
+  "recipe_revision": 8,
   "hoodie_linear": [
     0.93,
     0.25,
@@ -99,43 +99,43 @@
     0.162
   ],
   "back_mark_z": 0.268,
-  "script_sha256": "b9d155911d74c409c6a83abbfddc26d61e39be5a6fac8bc5db969703c1296c69",
+  "script_sha256": "b464ab34d7e348db820fb51c7eeec72a93351781a82c20cd90c40f2725debde3",
   "atlas_helper_sha256": "6e9467f0befabed73b075a4184ab7cc5aa864649d008b7be24d313726920e35a",
   "blender": "5.2.2 LTS",
   "seed": 41027,
-  "triangles": 45040,
+  "triangles": 45776,
   "image_report": [
     {
       "index": 0,
       "name": "accessory_emissive",
       "width": 1024,
       "height": 1024,
-      "bytes": 156380,
-      "sha256": "2aaeec496b58281eaa8ce923ef220342109abf5cfd67a45dcb6ec60371cfcfd2"
+      "bytes": 158502,
+      "sha256": "75046142db7de3356c6ef7dd4b9dbaa864471b3feb2dd395aa6676d5025cbc6b"
     },
     {
       "index": 1,
       "name": "accessory_normal",
       "width": 1024,
       "height": 1024,
-      "bytes": 720215,
-      "sha256": "3d15e33a2ce503261de49b3fa4a59be0c067869c1dc815b66133449e5a33098d"
+      "bytes": 722747,
+      "sha256": "f3596a24ef5e1dd486540b5580ae1827b938068b0f906c24a470f7cc2eba88bf"
     },
     {
       "index": 2,
       "name": "accessory_albedo",
       "width": 1024,
       "height": 1024,
-      "bytes": 863157,
-      "sha256": "e2d0d7ed8cadf209078561b4a184bf972fd512f095e9e2ec354df43247eaf6bd"
+      "bytes": 868503,
+      "sha256": "1af425ecddda26bb39a5b72fdd7c8db372efb627b6300a5186e1ac4be3a11b1f"
     },
     {
       "index": 3,
       "name": "accessory_orm",
       "width": 1024,
       "height": 1024,
-      "bytes": 389015,
-      "sha256": "71398f996da82b189a21084cb01beb4978fce02098f5eed875b63b668bfe2fe6"
+      "bytes": 396201,
+      "sha256": "bfce7e692c3eb3b2f24924d74b65b519676b800fd080832e32db41a38febc473"
     },
     {
       "index": 4,
@@ -150,24 +150,24 @@
       "name": "body_normal",
       "width": 2048,
       "height": 2048,
-      "bytes": 2902721,
-      "sha256": "79d580b9d05bc0afc14d3090ab43636c48825314a520ff3bf095c9d89fc901e1"
+      "bytes": 2948758,
+      "sha256": "1f3a16bacacce39ec8bac4df25a0575539eb446b8aaa5d2131bb56cebe780873"
     },
     {
       "index": 6,
       "name": "body_albedo",
       "width": 2048,
       "height": 2048,
-      "bytes": 2957041,
-      "sha256": "d5cb3d551b031211a7b86c8d3fa00cd905419c8fe8a77592e5d2d6fbf6bf85e8"
+      "bytes": 2989134,
+      "sha256": "edc8e1b7ad168ce0328af71162f2155b51d11217519476f8812de789d55e0e86"
     },
     {
       "index": 7,
       "name": "body_orm",
       "width": 2048,
       "height": 2048,
-      "bytes": 393160,
-      "sha256": "4a0319627f91616e742f7668e9b9c77f86c2c0d5248c91a3f04d53239f23835b"
+      "bytes": 398996,
+      "sha256": "ded3ea664bca3bd6b5f8342098539aaa8b0ea37d427e78d2a48c31a1b0b5c6c2"
     }
   ],
   "textures": [
@@ -231,8 +231,8 @@
     "foot_R"
   ],
   "roll_bounds_y": [
-    0.08456936478614807,
-    0.8154305219650269
+    0.003999948501586914,
+    0.8593245148658752
   ],
   "triangle_cap": 48000,
   "led_segments": 4,

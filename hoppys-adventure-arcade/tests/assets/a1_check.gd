@@ -151,8 +151,12 @@ func check_joints(hoppy: Node3D) -> void:
 				check(span.y >= (1.2 if knee else 0.9), "jump tuck flexion " + name)
 			if state == &"fall":
 				check(span.x >= (0.4 if knee else 0.6) and span.y <= (0.7 if knee else 0.9), "fall relaxed extension " + name)
-			if state == &"roll":
-				check(span.x >= (1.8 if knee else 1.6), "full roll tuck " + name)
+			if state == &"roll" and knee:
+				# Baseball slide: the lead (left) leg reaches straight down the lane, the trail leg folds under.
+				if name == "shin_L":
+					check(span.y <= 0.3, "slide lead leg extended " + name)
+				else:
+					check(span.x >= 1.6, "slide trail leg tucked " + name)
 			if state == &"hurt" and not knee:
 				check(span.y >= 1.0, "hurt elbow flinch " + name)
 			if state == &"dead":
@@ -294,8 +298,10 @@ func run() -> void:
 	check(FileAccess.get_sha256("res://tools/blender/build_hoppy.py") == report.script_sha256, "build script hash matches asset")
 	check(report.get("contact_revision", 0) == 17, "120 Hz contact recipe (round 17: grounded one-shots) required")
 	check(report.get("joint_revision", 0) == 15, "round-15 rig required: articulated limbs plus face bones")
-	check(report.get("recipe_revision", 0) == 7, "round-7 bake required: palette, braces and detail pass")
-	if report.get("recipe_revision", 0) == 7:
+	check(report.get("recipe_revision", 0) == 8, "round-8 bake required: full-size slide and softened face")
+	var roll_bounds: Array = report.get("roll_bounds_y", [])
+	check(roll_bounds.size() == 2 and roll_bounds[0] >= -0.001 and roll_bounds[1] <= 0.885, "builder slide bounds under 0.885 m: %s" % [roll_bounds])
+	if report.get("recipe_revision", 0) == 8:
 		var rgb: Array = report.hoodie_linear
 		check(Vector3(rgb[0], rgb[1], rgb[2]).is_equal_approx(Vector3(0.930, 0.250, 0.067)), "baked recipe uses palette orange")
 		var profile: Array = report.brace_profile
@@ -520,7 +526,10 @@ func run() -> void:
 		var bounds := skin_bounds(hoppy)
 		low = minf(low, bounds.position.y)
 		high = maxf(high, bounds.end.y)
-		check(bounds.position.y >= -0.001 and bounds.end.y <= 0.901, "skinned roll frame %d: %s" % [frame, bounds])
+		check(bounds.position.y >= -0.001 and bounds.end.y <= 0.9, "skinned roll frame %d: %s" % [frame, bounds])
+		var root_scale: Vector3 = hoppy.skeleton.get_bone_pose_scale(hoppy.skeleton.find_bone("root"))
+		check(root_scale.is_equal_approx(Vector3.ONE), "full-size slide, no shrink, frame %d: %s" % [frame, root_scale])
+		check(bounds.size.z >= 1.2, "slide stretches along the lane frame %d: %.3f m" % [frame, bounds.size.z])
 		for shell: MeshInstance3D in [hoppy._aura, hoppy._shield]:
 			var shell_bounds := shell.global_transform * shell.get_aabb()
 			check(shell_bounds.position.y >= 0.0 and shell_bounds.end.y <= 0.9, "roll effect envelope")
@@ -660,10 +669,22 @@ func check_face(hoppy: Node3D) -> void:
 	var face: SkeletonModifier3D = hoppy._face
 	var sk: Skeleton3D = hoppy.skeleton
 	check(face != null and face.bound(), "face rig bound to the imported face bones")
-	for pair: Array in [[&"hurt", "wince"], [&"victory", "grin"], [&"jump", "wide"], [&"run", "focused"]]:
+	for pair: Array in [[&"hurt", "wince"], [&"victory", "grin"], [&"jump", "wide"]]:
 		hoppy.set_anim_state(pair[0])
 		hoppy._process(1.0)
 		check(float(face.get(pair[1])) > 0.9, "state %s drives the %s expression" % pair)
+	# Friendly locomotion: running is focused but smiling, idle smiles, and the brow never scowls.
+	for state: StringName in [&"run", &"lane_dash_left", &"idle"]:
+		hoppy.set_anim_state(state)
+		hoppy._process(1.0)
+		check(face.grin >= 0.3 and face.focused <= 0.4, "%s face smiles: focused %.2f grin %.2f" % [state, face.focused, face.grin])
+	face.focused = 1.0
+	face.wince = 1.0
+	face.wide = 0.0
+	face.grin = 0.0
+	face._process_modification()
+	var scowl := sk.get_bone_pose_rotation(sk.find_bone("brow_L")).angle_to(sk.get_bone_rest(sk.find_bone("brow_L")).basis.get_rotation_quaternion())
+	check(scowl <= face.MAX_BROW_DROP + 0.001, "brow drop capped at %.3f rad: %.3f" % [face.MAX_BROW_DROP, scowl])
 	var eye := sk.find_bone("eye_L")
 	var brow := sk.find_bone("brow_L")
 	var mouth := sk.find_bone("mouth_R")

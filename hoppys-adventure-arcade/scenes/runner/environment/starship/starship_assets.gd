@@ -32,6 +32,23 @@ static func material(kind: int) -> ShaderMaterial:
 static func box(st: SurfaceTool, p: Vector3, size: Vector3, shade: float = 1.0, bevel: float = 0.06) -> void:
 	Forge.box(st,p,size,bevel,Color(shade,shade,shade,1))
 
+## Flat six-quad slab (12 triangles): bevel-free hull plating that keeps the module budget.
+static func slab(st: SurfaceTool, p: Vector3, size: Vector3, shade: float = 1.0) -> void:
+	var h := size*0.5
+	var color := Color(shade,shade,shade,1)
+	for axis in 3:
+		var u := (axis+1)%3
+		var v := (axis+2)%3
+		for sign_ in [-1.0,1.0]:
+			var points: Array[Vector3] = []
+			for pair in [Vector2(-1,-1),Vector2(1,-1),Vector2(1,1),Vector2(-1,1)]:
+				var q := Vector3.ZERO
+				q[axis] = h[axis]*sign_
+				q[u] = h[u]*pair.x
+				q[v] = h[v]*pair.y
+				points.append(q)
+			Forge.polygon(st,points,p,color)
+
 static func wedge(st: SurfaceTool, angle: float, radius: float, y: float, z: float, thickness: float, depth: float, step: float) -> void:
 	var vertices: Array[Vector3] = []
 	for side in [-1.0,1.0]:
@@ -74,18 +91,28 @@ static func module_meshes() -> Array[ArrayMesh]:
 		beam(parts[CONDUIT],Vector3(x-side*0.13,4.45,0.44),Vector3(side*2.55,6.44,0.44),0.07,0.025)
 		for h in [0.8,3.9]:
 			box(parts[ALLOY],Vector3(x,h,0),Vector3(0.75,0.26,1.05),1.0,0.055)
-		# Window bays sit behind the service rails, with inset transparent-looking space vistas.
-		box(parts[DARK],Vector3(side*5.62,0.85,5.8),Vector3(0.45,1.7,11.7),0.8)
-		box(parts[DARK],Vector3(side*5.62,5.65,5.8),Vector3(0.45,1.55,11.7),0.8)
-		box(parts[WINDOW],Vector3(side*5.76,3.22,5.8),Vector3(0.09,2.9,10.8),1.0,0.02)
-		for z in [0.8,4.1,7.5,10.8]:
-			box(parts[ALLOY],Vector3(side*5.46,3.20,z),Vector3(0.25,3.3,0.14))
+		# Solid hull walls: continuous plating closes every 12 m module end to end (seams sit behind
+		# the next bulkhead), leaving one small inset porthole per side instead of a space vista.
+		box(parts[DARK],Vector3(side*5.62,0.85,6.0),Vector3(0.45,1.7,12.0),0.8)
+		box(parts[DARK],Vector3(side*5.62,5.65,6.0),Vector3(0.45,1.55,12.0),1.0)
+		slab(parts[DARK],Vector3(side*5.9,3.28,6.0),Vector3(0.1,3.4,12.0),0.45)
+		# Hull panels with 5 cm inset seams showing the dark backing plate.
+		for panel: Array in [[0.0,2.18,1.72,4.85,0.92],[2.2,3.8,1.72,2.63,0.86],[2.2,3.8,3.81,4.85,0.86],[3.82,6.9,1.72,4.85,0.98],[6.95,12.0,1.72,3.24,0.9],[6.95,12.0,3.29,4.85,0.94]]:
+			slab(parts[HULL],Vector3(side*5.66,(panel[2]+panel[3])*0.5,(panel[0]+panel[1])*0.5),Vector3(0.28,panel[3]-panel[2],panel[1]-panel[0]),panel[4])
+		# One small porthole (1.6 x 1.1 m) recessed behind the plating inside an alloy rim.
+		slab(parts[WINDOW],Vector3(side*5.79,3.22,3.0),Vector3(0.02,1.1,1.6))
+		for rim: Array in [[3.0,2.62,1.84,0.12],[3.0,3.82,1.84,0.12],[2.14,3.22,0.12,1.32],[3.86,3.22,0.12,1.32]]:
+			slab(parts[ALLOY],Vector3(side*5.49,rim[1],rim[0]),Vector3(0.1,rim[3],rim[2]),0.9)
 		for y in [1.66,4.78]:
 			box(parts[HULL],Vector3(side*5.44,y,5.8),Vector3(0.3,0.18,11.3))
 			box(parts[CONDUIT],Vector3(side*5.25,y,5.8),Vector3(0.025,0.035,10.4),0.55,0.005)
-		# Armoured equipment bay interrupts the windows with layered access panels.
-		box(parts[HULL],Vector3(side*5.33,3.23,9.05),Vector3(0.28,2.72,2.55),0.65,0.13)
-		box(parts[DARK],Vector3(side*5.14,3.23,9.05),Vector3(0.15,2.28,2.14),0.6,0.12)
+		# Floor-edge skirting, plus a sub-deck filler under the trench so the chord sag of 12 m pieces
+		# against the finely bent deck never opens a sliver during turns.
+		slab(parts[DARK],Vector3(side*5.2,0.22,6.0),Vector3(0.5,1.04,12.0),0.7)
+		slab(parts[DARK],Vector3(side*4.14,-0.175,6.0),Vector3(1.68,0.25,12.0),0.6)
+		# Armoured equipment bay breaks up the plating with layered access panels.
+		box(parts[HULL],Vector3(side*5.33,3.23,9.05),Vector3(0.28,2.72,2.55),0.8,0.13)
+		box(parts[DARK],Vector3(side*5.14,3.23,9.05),Vector3(0.15,2.28,2.14),0.95,0.12)
 		for panel in [-1.0,1.0]:
 			box(parts[ALLOY],Vector3(side*5.02,3.25,9.05+panel*0.65),Vector3(0.17,1.8,0.55),0.94,0.07)
 			for vent in 3:
@@ -109,11 +136,11 @@ static func module_meshes() -> Array[ArrayMesh]:
 				box(parts[DARK],Vector3(side*4.45,5.2,z-0.48+fin*0.24),Vector3(0.12,0.35,0.10),1.0,0.025)
 			box(parts[ENERGY],Vector3(side*4.45,5.51,z),Vector3(0.04,0.055,0.9),0.5,0.01)
 		# Ceiling conduits and ribbed angled hull plates.
-		beam(parts[DARK],Vector3(side*5.5,5.3,5.8),Vector3(side*2.9,7.15,5.8),0.28,11.8,0.7)
+		beam(parts[DARK],Vector3(side*5.5,5.3,6.0),Vector3(side*2.9,7.15,6.0),0.28,12.0,1.0)
 		box(parts[ALLOY],Vector3(side*2.8,6.85,5.8),Vector3(0.34,0.28,12),0.7)
 		box(parts[CONDUIT],Vector3(side*2.5,6.69,5.8),Vector3(0.12,0.04,10.2),0.8,0.01)
 	box(parts[HULL],Vector3(0,6.67,0),Vector3(5.7,0.55,0.9),0.88,0.10)
-	box(parts[DARK],Vector3(0,7.08,5.8),Vector3(5.6,0.22,11.8),0.6)
+	box(parts[DARK],Vector3(0,7.08,6.0),Vector3(5.6,0.22,12.0),0.6)
 	for z in [2.0,5.0,8.0,11.0]:
 		box(parts[ALLOY],Vector3(0,6.9,z),Vector3(5.1,0.15,0.14),0.85)
 		box(parts[HULL],Vector3(0,6.8,z),Vector3(1.8,0.10,1.35),0.8)

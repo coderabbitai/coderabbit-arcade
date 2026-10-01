@@ -10,6 +10,8 @@ var name_row: HBoxContainer
 var name_field: LineEdit
 var save_button: Button
 var retry_button: Button
+## Contract §11.13: shown only when the catch landed mid-fight and the run left a boss checkpoint.
+var retry_boss_button: Button
 var menu_button: Button
 var board: VBoxContainer
 var error_label: Label
@@ -82,11 +84,15 @@ func _ready() -> void:
 	var actions := HBoxContainer.new()
 	actions.alignment = BoxContainer.ALIGNMENT_CENTER
 	column.add_child(actions)
+	retry_boss_button = Style.button("Retry Boss")
+	retry_boss_button.name = "RetryBoss"
 	retry_button = Style.button("Retry")
 	menu_button = Style.button("Runner Menu")
-	for button in [retry_button, menu_button]:
+	for button in [retry_boss_button, retry_button, menu_button]:
 		button.custom_minimum_size.x = 280
 		actions.add_child(button)
+	retry_boss_button.hide()
+	retry_boss_button.pressed.connect(func() -> void: game.retry_boss())
 	retry_button.pressed.connect(func() -> void: game.retry())
 	menu_button.pressed.connect(func() -> void: game.go_to_menu())
 	hide()
@@ -121,6 +127,10 @@ func show_result(value: Dictionary, leaderboard: Array) -> void:
 		tally.delay = i * 0.045
 		stat.add_child(tally)
 	_render_board(leaderboard)
+	retry_boss_button.visible = _has_boss_checkpoint()
+	# Three buttons share the row the two used to, so the panel keeps its width.
+	for button in [retry_boss_button, retry_button, menu_button]:
+		button.custom_minimum_size.x = 230 if retry_boss_button.visible else 280
 	visible = true
 	dim.modulate.a = 0
 	create_tween().tween_property(dim, "modulate:a", 1.0, 0.2)
@@ -131,7 +141,7 @@ func show_result(value: Dictionary, leaderboard: Array) -> void:
 		name_field.grab_focus()
 		name_field.select_all()
 	else:
-		retry_button.grab_focus()
+		_default_action().grab_focus()
 
 func _time(seconds: float) -> String:
 	return "%02d:%04.1f" % [int(seconds) / 60, fmod(seconds, 60)]
@@ -149,10 +159,25 @@ func _render_board(entries: Array) -> void:
 	if entries.is_empty():
 		board.add_child(Style.label("No runs on the board yet.", 19))
 
+## Retry Boss when the run left a checkpoint, plain Retry otherwise.
+func _default_action() -> Button:
+	return retry_boss_button if retry_boss_button.visible else retry_button
+
+func _has_boss_checkpoint() -> bool:
+	if game == null or not is_instance_valid(game) or not game.has_method("retry_boss"):
+		return false
+	if not (&"boss_checkpoint" in game):
+		return false
+	var checkpoint: Variant = game.get(&"boss_checkpoint")
+	return checkpoint is Dictionary and not (checkpoint as Dictionary).is_empty()
+
 func _focus_chain() -> void:
 	var controls: Array[Control] = [retry_button, menu_button]
+	if retry_boss_button.visible:
+		controls.push_front(retry_boss_button)
 	if name_row.visible and not saved:
-		controls = [name_field, save_button, retry_button, menu_button]
+		controls.push_front(save_button)
+		controls.push_front(name_field)
 	for i in controls.size():
 		var previous := controls[i].get_path_to(controls[posmod(i - 1, controls.size())])
 		var next := controls[i].get_path_to(controls[(i + 1) % controls.size()])
@@ -181,7 +206,7 @@ func _save() -> void:
 	error_label.hide()
 	_render_board(game.get_leaderboard())
 	_focus_chain()
-	retry_button.grab_focus()
+	_default_action().grab_focus()
 
 func _name_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_down") and not saved:

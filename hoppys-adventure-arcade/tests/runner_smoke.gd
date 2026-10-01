@@ -670,6 +670,60 @@ func _boss_catch_phase() -> void:
 			% [result.get("bosses_defeated", "<missing>"), result.get("bosses_escaped", "<missing>")])
 	check(int(result.get("stages_cleared", -1)) == 0,
 		"boss catch: %s stages were cleared before the catch" % result.get("stages_cleared", "<missing>"))
+	# Contract §11.13: the catch mid-fight leaves a boss checkpoint, and the mounted Game Over offers it.
+	var checkpoint: Dictionary = probe.boss_checkpoint.duplicate(true)
+	check(not checkpoint.is_empty() and int(checkpoint.get("stage_index", 0)) == 1,
+		"boss catch: the catch left no stage-1 boss checkpoint (%s)" % [checkpoint])
+	var retry_boss_button: Button = null
+	for overlay in probe.get_node(^"Overlays").get_children():
+		if &"retry_boss_button" in overlay:
+			retry_boss_button = overlay.get(&"retry_boss_button") as Button
+	check(retry_boss_button != null and retry_boss_button.is_visible_in_tree(),
+		"boss catch: Game Over does not offer Retry Boss")
+	var runner_script: Script = probe.get_script()
+	probe.free()
+	await process_frame
+	if not checkpoint.is_empty():
+		await _boss_retry_phase(runner_script, checkpoint)
+
+## What retry_boss() hands the next session, minus the scene change: a fresh runner_game.tscn that
+## finds the static checkpoint must open on the turn into the same boss, at full HP, with the score
+## and run_clock the checkpoint carried, and reach the fight.
+func _boss_retry_phase(runner_script: Script, checkpoint: Dictionary) -> void:
+	var packed := load(GAME_PATH) as PackedScene
+	var probe := packed.instantiate() as Node3D
+	probe.autostart = false
+	var config := _smoke_config()
+	config.turn_seconds = 0.2
+	config.boss_intro_seconds = 0.2
+	probe.config = config
+	probe.leaderboard_path = leaderboard_path
+	root.add_child(probe)
+	await process_frame
+	var seen := {"spawned": 0}
+	probe.boss_spawned.connect(func(_kind: StringName, _hp: int) -> void: seen["spawned"] += 1)
+	runner_script.set(&"pending_boss_checkpoint", checkpoint.duplicate(true))
+	probe.start_run(0)
+	var pending: Variant = runner_script.get(&"pending_boss_checkpoint")
+	check(pending is Dictionary and (pending as Dictionary).is_empty(), "boss retry: the checkpoint was not consumed")
+	check(bool(probe.checkpoint_retry), "boss retry: the run is not flagged as a checkpoint retry")
+	check(probe.seed == int(checkpoint["seed"]), "boss retry: seed %d, expected %d" % [probe.seed, int(checkpoint["seed"])])
+	check(probe.phase == &"turn", "boss retry: the run opened in phase %s, not the turn" % probe.phase)
+	check(probe.stage_index == 1, "boss retry: the run opened on stage %d" % probe.stage_index)
+	check(probe.hp == int(config.max_hp), "boss retry: HP %d, expected full %d" % [probe.hp, int(config.max_hp)])
+	check(probe.score == floori(float(checkpoint["score_exact"])),
+		"boss retry: score %d, expected %d" % [probe.score, floori(float(checkpoint["score_exact"]))])
+	check(absf(probe.run_clock - float(checkpoint["run_clock"])) < 0.0001, "boss retry: run_clock was not restored")
+	var spawned := await _wait_until(func() -> bool: return int(seen["spawned"]) > 0, BOSS_WALL_TIMEOUT)
+	check(spawned, "boss retry: the lead-in never reached the fight (phase %s)" % probe.phase)
+	if spawned:
+		check(probe.phase == &"boss" and probe.stage_index == 1, "boss retry: in phase %s of stage %d"
+			% [probe.phase, probe.stage_index])
+		check(not probe.boss_checkpoint.is_empty(), "boss retry: the fight took no fresh checkpoint")
+		check(absf(probe.run_clock - float(checkpoint["run_clock"])) < 0.0001,
+			"boss retry: run_clock moved during the lead-in")
+		check(probe.score >= int(checkpoint["score"]), "boss retry: the score went backwards")
+	runner_script.set(&"pending_boss_checkpoint", {})
 	probe.free()
 	await process_frame
 

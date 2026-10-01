@@ -1,6 +1,6 @@
 # Endless Runner — Backend/Frontend Contract
 
-Version 2.4 · 2026-09-28 · GDScript · v2 (stages, turns, bosses) is specified in §11 and overrides §2–§8 where they conflict
+Version 2.5 · 2026-09-30 · GDScript · v2 (stages, turns, bosses) is specified in §11 and overrides §2–§8 where they conflict
 
 **Engine version policy.** The project pins **Godot 4.7.1** (GDD). The editor installed on the build
 machine during this cycle is **4.7.0 stable** (`4.7.stable.official.5b4e0cb0f`), so every verification
@@ -154,6 +154,7 @@ frontend may use it for deterministic cosmetics).
 |---|---|
 | `pause()` / `resume()` / `toggle_pause()` | Only while `running`. `resume()` re-syncs held input so nothing fires on unpause |
 | `retry()` | Unpauses and routes to `runner_game` (fresh session) |
+| `retry_boss()` | v2.5 (§11.13): unpauses and routes to `runner_game`, which opens on the turn into the boss the run died at. Falls back to `retry()` when `boss_checkpoint` is empty |
 | `go_to_menu()` | Unpauses and routes to `runner` |
 | `hit_stop(seconds: float)` | Brief `Engine.time_scale` dip owned by the backend (max 0.12 s) |
 | `submit_name(name: String) -> bool` | Sanitises (trim, strip control chars, ≤ 16, blank → `Hoppy`) and renames this run's leaderboard entry. Returns `true` if persisted. Never adds a second entry |
@@ -251,7 +252,7 @@ The physical floor is backend-owned and invisible once a corridor mounts. The co
 |---|---|---|
 | `ui/runner_hud.tscn` | CanvasLayer | — |
 | `ui/pause_menu.tscn` | CanvasLayer, `process_mode ALWAYS` | Shows on `paused_changed(true)`; buttons → `game.resume()`, `game.retry()`, `game.go_to_menu()` |
-| `ui/game_over.tscn` | CanvasLayer, `process_mode ALWAYS`, hidden | `show_result(result: Dictionary, leaderboard: Array)` is called by the frontend itself from `run_finished`; name entry → `game.submit_name()`; Retry / Menu as above |
+| `ui/game_over.tscn` | CanvasLayer, `process_mode ALWAYS`, hidden | `show_result(result: Dictionary, leaderboard: Array)` is called by the frontend itself from `run_finished`; name entry → `game.submit_name()`; Retry / Menu as above; v2.5: a **Retry Boss** button → `game.retry_boss()`, shown (and given the default focus) only while `game.boss_checkpoint` is non-empty (§11.13) |
 | `audio/runner_audio.tscn` | Node, `process_mode ALWAYS` | SFX on bus `SFX`; BGM via `AudioService.play_music` |
 | `runner_menu.tscn` | root named **`RunnerMenu`** | See §2. Exposes `buttons: Array[Button]` with the four §2 entries (`01 Play`, `02 Leaderboard`, `03 Return to Main Menu`, `04 Quit Game`); `tests/runner_scaffold_check.gd` asserts `buttons.size() == 4` |
 
@@ -334,6 +335,7 @@ mouse-hover failures on a clean `main`; the docs validated it on 4.7.1. New runn
 
 ## 10. Change log
 
+- 2.5 (2026-09-30): §11.13 — boss checkpoint retry. Every boss entry snapshots the run into `boss_checkpoint`; a catch mid-fight keeps it and Game Over offers **Retry Boss** (`retry_boss()`), which reloads `runner_game` on the same seed at the turn into that stage's boss with the score, clocks and tallies restored and full HP. New facade properties `boss_checkpoint`, `checkpoint_retry`, static `pending_boss_checkpoint`; StageManager `begin_at_boss(checkpoint)`; result field `checkpoint_retry`.
 - 2.4 (2026-09-28): §11.4/§11.5/§11.6/§11.10/§11.12 — boss signature attacks. Beats may carry a `signature` (boss_defs.gd): Flaky Test Swarm `flaky` (the telegraph alternates two candidate lanes for `boss_flaky_candidate_seconds`, then commits at least `boss_commit_min` before fire) and `scatter` (a half-speed orb down the middle that splits into the two outer lanes at track z −`boss_scatter_split_distance`); Merge Conflict Hydra `branching` (staggered heads, each telegraphed up front on its own lane), `sweep` (the low rebase sweep sliding outer lane → outer lane in flight) and `force_push` (phase 2's fourth head: a fast `wide`, telegraphed 1.6× longer); Legacy Monolith `legacy_wall` (a slow wall of slabs with one gap that shifts once to the next lane), `quake` (full-width ground shockwave, jump only) and `debris` (slabs falling onto floor shadows in 1–2 lanes). New facade signals `boss_attack_planned(attack)` and `boss_attack_committed(lane_mask, kind, seconds)`; `boss_attack_telegraph` now carries the candidate mask for a flaky beat; six new projectile variants (`scatter`, `sweep`, `force_push`, `slab`, `quake`, `debris`), each mapped to a base look for visuals that do not opt in; projectiles expose `boss_kind`, `signature`, `motion`, `age` and the motion API `lane_mask_at(t)` / `y_range_at(t)` / `impact_lane_mask()` (boss/boss_attacks.gd); the autopilot and `runner_boss_validator.gd` plan against that API, and the validator gains **B6**. Beats without a `signature` behave exactly as in 2.3. The Hydra taunt now matches its head count (3 heads, 4 from phase 2).
 - 2.3 (2026-09-22): §11.1/§11.8/§11.10 — the stage-entrance guarantee. The `STAGE n` banner covers the lanes, so for `stage_banner_clear_seconds` (3.5) after every `stage_started`, stage 1 included, no blocking hazard may reach the player, and when that window ends the nearest one is still `stage_banner_reaction_seconds` (1.0) × speed metres away. `chunk_spawner.gd` gains `begin_clear_road(seconds)`, which the StageManager calls immediately before switching placement back on: it clamps a frontier left stale by a drained corridor to at least 6 m ahead (so the first chunk of a stage is never parked at the player's feet), sweeps anything already inbound **silently** (no `hazard_cleared`, no `hazards_blasted`, no bonus, no score, no `hazards_dodged`), and restricts placement to hazard-free `breather` chunks until a hazard-bearing one would arrive late enough. `breather`-tagged chunks are now required to carry zero hazards. `ui/stage_banner.tscn` must be off screen within `stage_banner_clear_seconds − stage_banner_reaction_seconds`.
 - 2.2 (2026-09-21): §11.3/§11.8 — `ui/post_fx.tscn` sanctioned as an optional HUD mount (CanvasLayer 9, PAUSABLE, idempotent `has_signal`-guarded `bind(game)`): one full-screen post pass for grade, grain, vignette, aberration, letterbox, speed streaks and Nitro lift, with the HUD keeping the pursuit vignette and corner bars unless the frontend hands them over via `post_fx.set_settings()`.
@@ -449,7 +451,8 @@ window picks the seam's direction — so already set when `turn_incoming` fires 
 phase count, 3 today, and 0 in the empty block; each `pending_attacks` row is `{lane_mask, kind, remaining}` plus,
 v2.4, `{impact_mask, signature, committed, commit_remaining, attack}`, where `lane_mask` switches from the candidates
 to the committed lanes at the commit). `result` gains `stages_cleared`,
-`stage_reached`, `bosses_defeated`, `bosses_escaped`, `tools_used`, `boss_damage_dealt`, `turns_taken` (all int).
+`stage_reached`, `bosses_defeated`, `bosses_escaped`, `tools_used`, `boss_damage_dealt`, `turns_taken` (all int);
+v2.5 adds `checkpoint_retry: bool` (§11.13).
 Projectiles count in `hazards_dodged` (it is a stat, not a score input). `camera_rig.shake(0.35)` fires on every
 damaging tool hit (backend-owned, as in §4.2).
 
@@ -655,3 +658,45 @@ proves stage 1 → turn → boss 1 → stage clear → stage 2 with zero project
 catch mid-fight ending the run once. `runner_visual_smoke.gd` gains `HUD LEGIBILITY`, `PURSUIT ALERT`,
 `BOSS VISUALS`, `TOOLS AND PROJECTILES`, `TURN` sections and a 30-recipe audio census (voices ≤ 10); the full loop
 must cross a stage seam, a turn, a boss and a stage-clear card.
+
+### 11.13 Boss checkpoint retry (contract 2.5)
+
+A catch during the `boss` phase no longer has to throw the run away.
+
+- **Snapshot.** `StageManager._enter_boss()` writes `game.boss_checkpoint` just before `boss_encounter.start()`:
+  `stage_index, seed, score_exact, score, multiplier, best_multiplier, bonus_total, run_clock, elapsed, distance,
+  hazards_dodged, hazards_blasted_total, stages_cleared, turns_taken, bosses_defeated, bosses_escaped, tools_used,
+  boss_damage_dealt, next_turn_direction` (the direction of the bend just taken), plus the systems' Game Over
+  tallies `power_ups, hits_taken, recoveries, blocked_hits, max_speed_reached, chunks_spawned`. HP is never stored. The
+  checkpoint is emptied on `stage_clear` and by `start_run()`; a catch does **not** clear it. So it is non-empty
+  exactly while a fight is live, or after a catch that landed in one — never after a death in `run`, `turn` or
+  `stage_clear`.
+- **Game Over.** `ui/game_over.tscn` shows **Retry Boss** only while `boss_checkpoint` is non-empty, and it takes the
+  default focus in place of Retry (name entry still comes first on a qualifying run). **Retry** always restarts
+  from zero: `retry()` and `go_to_menu()` empty any pending checkpoint. The first of `retry()`, `retry_boss()` and
+  `go_to_menu()` wins: once one has routed, or while `AppRouter.busy`, the others return without touching
+  `pending_boss_checkpoint` (Game Over keeps focus through the route's fade).
+- **Reload.** `retry_boss()` copies the checkpoint into the static `RunnerGame.pending_boss_checkpoint` and routes
+  to `runner_game` through AppRouter, like `retry()` (no autoload). The next `start_run()` consumes it at once:
+  the run takes the checkpoint's `seed`, resets every system as usual (full HP, no power-ups, no pursuit), restores
+  the facade and ScoreManager block (`elapsed, distance, hazards_*, exact/score, best_multiplier, bonus_total`; the
+  live multiplier recomposes to 1.0) and the systems' tallies (EffectManager `power_ups_collected`, HitManager
+  `hits_taken / recoveries / blocked_hits`, SpeedController `max_speed_reached`, spawner `chunks_spawned`), so the
+  result reports whole-run totals, emits `run_started` / `health_changed` / `score_changed` with those values,
+  and calls `StageManager.begin_at_boss(checkpoint)` instead of `begin()`.
+- **Lead-in.** `begin_at_boss()` sets the stage, `run_clock` (so `speed_at()` returns the same speed) and the
+  tallies (`turns_taken` one lower, since the lead-in bend counts it again), applies that stage's speed bonus and
+  difficulty floor, re-seeds `stage_rng` to `seed ^ STAGE_SEED_MIX ^ stage_index` (this path only), keeps
+  spawning off and the seam hazard-free, emits `stage_started` and `turn_incoming(direction, 0.0)` once each, then
+  enters the `turn` on the checkpoint's direction. The turn ends in the normal `_enter_boss()`, which takes a fresh
+  checkpoint, so a boss can be retried any number of times. The encounter re-seeds `fight_rng` on every
+  `start(index)` from the run seed, its salt and the stage index alone
+  (`(seed ^ RNG_SALT) + index * RNG_STAGE_STEP`), so a stage-N fight draws the same sequence whether it is reached
+  by a normal run or by a retry.
+- **Leaderboard.** One write per run still holds: the death wrote its own entry, and the retry is a new run with a
+  fresh `run_id` (`<unix>-<seed>-boss<stage>-<msec>`) whose score continues from the checkpoint. Its result carries
+  `checkpoint_retry: true` (false on every other run).
+- **Verification.** `runner_logic.gd` section 24b (checkpoint on boss entry and kept by the catch, repeated
+  `retry_boss()` reloads into turn → boss with stage/score/`run_clock` intact and full HP, plain Retry from zero, no
+  checkpoint after a stage clear or a run-phase catch, Game Over button visibility and focus); `runner_smoke.gd`
+  boss-catch phase reloads a real `runner_game.tscn` from the checkpoint into the same fight.

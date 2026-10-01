@@ -70,6 +70,9 @@ var stage_rng := RandomNumberGenerator.new()
 var _phase_timer := 0.0
 ## -1 left, +1 right; 0 outside a turn.
 var _turn_direction := 0
+## The direction of the last bend taken, which outlives the turn so the boss checkpoint can replay
+## the same corner on its lead-in (contract §11.13).
+var _last_turn_direction := 0
 ## True between a successful boss_encounter.start() and the end of the fight.
 var _boss_active := false
 ## True once the spawner has been told to stop placing for this stage.
@@ -112,6 +115,7 @@ func reset(run_seed: int) -> void:
 	boss_damage_dealt = 0
 	_phase_timer = 0.0
 	_turn_direction = 0
+	_last_turn_direction = 0
 	_draining = false
 	_turn_announced = false
 	_abort_boss()
@@ -125,6 +129,90 @@ func reset(run_seed: int) -> void:
 func begin() -> void:
 	stage_index = 1
 	_enter_run()
+
+## Contract §11.13: open a run on the turn into the boss a checkpoint was taken at, instead of
+## stage 1. RunnerGame calls this in place of begin() once every system is reset and the facade has
+## restored its own half of the checkpoint. The bend is the readable lead-in; _enter_boss() then runs
+## as normal and takes a fresh checkpoint, so a boss can be retried any number of times.
+func begin_at_boss(checkpoint: Dictionary) -> void:
+	stage_index = maxi(int(checkpoint.get("stage_index", 1)), 1)
+	# Only this path re-seeds: the turn and lane rolls of a replayed stage depend on the stage and
+	# the run seed alone, never on how many draws the original run had made before it.
+	stage_rng.seed = int(checkpoint.get("seed", 0)) ^ STAGE_SEED_MIX ^ stage_index
+	stage_name = StageDefs.boss_name(stage_index)
+	stage_distance_target = StageDefs.distance_target(stage_index, config)
+	stage_distance = stage_distance_target
+	run_clock = maxf(float(checkpoint.get("run_clock", 0.0)), 0.0)
+	stages_cleared = int(checkpoint.get("stages_cleared", 0))
+	# The snapshot was taken after this stage's bend was counted, and the lead-in counts it again.
+	turns_taken = maxi(int(checkpoint.get("turns_taken", 0)) - 1, 0)
+	bosses_defeated = int(checkpoint.get("bosses_defeated", 0))
+	bosses_escaped = int(checkpoint.get("bosses_escaped", 0))
+	tools_used = int(checkpoint.get("tools_used", 0))
+	boss_damage_dealt = int(checkpoint.get("boss_damage_dealt", 0))
+	var controller := game.speed_controller
+	if controller != null and is_instance_valid(controller):
+		if controller.has_method("set_stage_bonus"):
+			controller.set_stage_bonus(StageDefs.speed_bonus(stage_index, config))
+		if controller.has_method("set_difficulty_floor"):
+			controller.set_difficulty_floor(StageDefs.difficulty_floor(stage_index, config))
+	# The seam is hazard-free, exactly as a drained stage leaves it.
+	_set_spawning(false)
+	_clear_blocking_hazards()
+	_draining = true
+	_turn_announced = true
+	next_turn_direction = signi(int(checkpoint.get("next_turn_direction", 0)))
+	if next_turn_direction == 0:
+		next_turn_direction = stage_rng.randi_range(0, 1) * 2 - 1
+	_publish()
+	# The HUDs key the stage label and the stage-clear card off stage_started, and the turn card off
+	# turn_incoming; both go out once so they read this stage before the bend. There is no drain to
+	# count down, so the turn is announced as already here.
+	game.stage_started.emit(stage_index, stage_name, _stage_base_speed())
+	game.turn_incoming.emit(next_turn_direction, 0.0)
+	_enter_turn()
+
+## The run as it stood on boss entry (contract §11.13): what begin_at_boss() and the facade's
+## _restore_checkpoint() need to put a retry back here. HP is deliberately not part of it.
+func _snapshot() -> Dictionary:
+	var score: Node = game.score_manager
+	var has_score := score != null and is_instance_valid(score)
+	return {
+		"stage_index": stage_index,
+		"seed": int(game.seed),
+		"score_exact": float(score.get(&"exact")) if has_score and &"exact" in score else float(game.score),
+		"score": int(game.score),
+		"multiplier": float(game.multiplier),
+		"best_multiplier": float(score.get(&"best_multiplier")) if has_score and &"best_multiplier" in score else float(game.multiplier),
+		"bonus_total": int(score.get(&"bonus_total")) if has_score and &"bonus_total" in score else 0,
+		"run_clock": run_clock,
+		"elapsed": float(game.elapsed),
+		"distance": float(game.distance),
+		"hazards_dodged": int(game.hazards_dodged),
+		"hazards_blasted_total": int(game.hazards_blasted_total),
+		"stages_cleared": stages_cleared,
+		"turns_taken": turns_taken,
+		"bosses_defeated": bosses_defeated,
+		"bosses_escaped": bosses_escaped,
+		"tools_used": tools_used,
+		"boss_damage_dealt": boss_damage_dealt,
+		"next_turn_direction": _last_turn_direction,
+		# The Game Over stats the systems own, so a retry reports the whole run, not just its tail.
+		"power_ups": int(_system_stat(game.get(&"effect_manager"), &"power_ups_collected", 0)),
+		"hits_taken": int(_system_stat(game.get(&"hit_manager"), &"hits_taken", 0)),
+		"recoveries": int(_system_stat(game.get(&"hit_manager"), &"recoveries", 0)),
+		"blocked_hits": int(_system_stat(game.get(&"hit_manager"), &"blocked_hits", 0)),
+		"max_speed_reached": float(_system_stat(game.get(&"speed_controller"), &"max_speed_reached", float(game.speed))),
+		"chunks_spawned": int(_system_stat(game.get(&"spawner"), &"chunks_spawned", 0))
+	}
+
+## A numeric property off one of the facade's systems, or `fallback` when the system (or the
+## property) is not there.
+func _system_stat(node: Variant, property: StringName, fallback: Variant) -> Variant:
+	if not (node is Node) or not is_instance_valid(node) or not (property in node):
+		return fallback
+	var value: Variant = node.get(property)
+	return value if value is int or value is float else fallback
 
 ## Contract §11.4: index, name, phase, distance, target, speed_bonus, difficulty_floor.
 func get_stage_info() -> Dictionary:
@@ -253,6 +341,7 @@ func _enter_turn() -> void:
 	if next_turn_direction == 0:
 		next_turn_direction = stage_rng.randi_range(0, 1) * 2 - 1
 	_turn_direction = next_turn_direction
+	_last_turn_direction = _turn_direction
 	_publish()
 	_set_phase(PHASE_TURN)
 	_apply_turn(0.0)
@@ -266,6 +355,9 @@ func _enter_boss() -> void:
 	_publish()
 	_set_phase(PHASE_BOSS)
 	_set_boss_arena(true)
+	# Snapshot before the fight starts (contract §11.13); a catch leaves it in place for Game Over.
+	if game != null and &"boss_checkpoint" in game:
+		game.boss_checkpoint = _snapshot()
 	var arena := _boss_encounter()
 	if arena != null and arena.has_method("start"):
 		arena.start(stage_index)
@@ -277,6 +369,9 @@ func _enter_stage_clear() -> void:
 	_phase_timer = 0.0
 	_boss_active = false
 	_set_boss_arena(false)
+	# The fight is over, so there is nothing left to retry (contract §11.13).
+	if game != null and &"boss_checkpoint" in game:
+		game.boss_checkpoint = {}
 	_publish()
 	_set_phase(PHASE_STAGE_CLEAR)
 	stages_cleared += 1
@@ -287,6 +382,7 @@ func _enter_stage_clear() -> void:
 	game.stage_cleared.emit(stage_index, bonus)
 
 ## A catch aborts any phase back to idle: the fight is dropped without bonuses and the rig unbends.
+## The boss checkpoint is deliberately left alone, so a catch mid-fight can offer Retry Boss.
 func _on_caught() -> void:
 	if phase == PHASE_IDLE:
 		return

@@ -31,6 +31,7 @@ func _ready() -> void:
 	floor_mat.set_shader_parameter("floor_mode",true)
 	floor_mat.set_shader_parameter("tint",Color("435365"))
 	_plane("ArmouredDeck",Vector2(8,108),Vector3(0,-0.018,-40),floor_mat)
+	_end_cap()
 	# The docking reactor remains behind the existing boss and its telegraphs.
 	reactor_dock = Node3D.new()
 	reactor_dock.name = "BossReactorDock"
@@ -69,6 +70,31 @@ func _ready() -> void:
 	# Built after the corridor configured its cosmetics: freeze every part with the pause menu.
 	for child in find_children("*", "Node", true, false):
 		child.process_mode = Node.PROCESS_MODE_PAUSABLE
+
+## Opaque far bulkhead past the last recycled module (modules start between z -84 and -72) and
+## beyond the -90 m spawn horizon. A sleeve behind the module walls covers z -92..-71.5, so the
+## far end is closed at every scroll offset; the surface material rides the same turn bend.
+func _end_cap() -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	Assets.slab(st,Vector3(0,3.6,-92.0),Vector3(12.6,8.4,0.3),0.55)
+	Assets.slab(st,Vector3(0,2.8,-91.8),Vector3(4.4,5.2,0.12),0.85)
+	Assets.slab(st,Vector3(0,2.8,-91.72),Vector3(0.08,5.2,0.05),0.3)
+	Assets.slab(st,Vector3(0,7.45,-81.75),Vector3(12.8,0.3,20.5),0.45)
+	for side in [-1.0,1.0]:
+		Assets.slab(st,Vector3(side*6.1,3.6,-81.75),Vector3(0.3,8.4,20.5),0.5)
+		Assets.slab(st,Vector3(side*5.0,-0.2,-81.75),Vector3(2.2,0.3,20.5),0.45)
+	st.generate_tangents()
+	var cap := MeshInstance3D.new()
+	cap.name = "FarBulkhead"
+	cap.mesh = st.commit()
+	var material := Assets.material(Assets.HULL)
+	materials.append(material)
+	cap.material_override = material
+	cap.extra_cull_margin = 90.0
+	cap.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	cap.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	add_child(cap)
 
 func _plane(title: String, size: Vector2, location: Vector3, material: ShaderMaterial) -> void:
 	var mesh := PlaneMesh.new()
