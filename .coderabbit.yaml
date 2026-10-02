@@ -104,7 +104,7 @@ reviews:
         main scene, keyboard/controller input mappings, shared-action conflicts, collision
         layer names, physics/interpolation settings, viewport/stretch and rendering changes.
         The current renderer is GL Compatibility; assess dependent shader/material changes
-        together. Do not confuse the nested SynthCities asset demo with the main project.
+        together.
 
     - path: "**/*.gdshader"
       instructions: |
