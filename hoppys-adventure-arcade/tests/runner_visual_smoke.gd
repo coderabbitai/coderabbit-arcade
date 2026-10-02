@@ -1262,9 +1262,10 @@ func check_runner_menu_reset() -> void:
 	menu.reset_btn.pressed.emit()
 	await frames()
 	check(menu.reset_confirm != null, "reset test: confirmation modal opens")
-	var keep_btn := menu.reset_confirm.find_child("KeepScoresButton", true, false) as Button
+	var keep_btn := menu.reset_confirm.find_child("KeepScoresButton", true, false) as Button if menu.reset_confirm != null else null
 	check(keep_btn != null and root.gui_get_focus_owner() == keep_btn, "reset test: safe action focused on confirm open")
-	keep_btn.pressed.emit()
+	if keep_btn != null:
+		keep_btn.pressed.emit()
 	await frames()
 	check(menu.reset_confirm == null, "reset test: button cancel closes confirmation")
 	check(FileAccess.get_file_as_bytes(reset_board_path) == bytes_before, "reset test: cancel leaves board bytes unchanged")
@@ -1287,9 +1288,10 @@ func check_runner_menu_reset() -> void:
 	# Confirm reset: placeholder rows, zero entries, companions purged, Reset disabled, Close focused.
 	menu.reset_btn.pressed.emit()
 	await frames()
-	var confirm_btn := menu.reset_confirm.find_child("ResetConfirmButton", true, false) as Button
+	var confirm_btn := menu.reset_confirm.find_child("ResetConfirmButton", true, false) as Button if menu.reset_confirm != null else null
 	check(confirm_btn != null, "reset test: ResetConfirmButton found")
-	confirm_btn.pressed.emit()
+	if confirm_btn != null:
+		confirm_btn.pressed.emit()
 	await frames()
 	check(menu.reset_confirm == null, "reset test: confirm closes modal")
 	var reloaded: Array = RunnerLeaderboard.load_entries(reset_board_path)
