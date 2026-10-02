@@ -1,13 +1,52 @@
 # Hoppy’s Adventure Arcade
 
-A Godot 4.7.1 arcade collection with a reactive main menu, playable Platformer levels **Bay Area Blitz**, **Orbital Ops**, and **The Enchanted Repo**, plus the **Endless Runner** (The Codebase Corridor). Beat’em Up remains a labeled placeholder.
+[![CI](https://github.com/coderabbitai/coderabbit-arcade/actions/workflows/ci.yml/badge.svg)](https://github.com/coderabbitai/coderabbit-arcade/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE)
+[![Godot 4.7.1](https://img.shields.io/badge/Godot-4.7.1-478cbf?logo=godotengine&logoColor=white)](https://godotengine.org/)
 
-Open `hoppys-adventure-arcade/project.godot` and press **F5**. Choose **Platformer Game → Level Select**, then choose any of the three levels.
+A Godot 4 arcade collection starring Hoppy, the CodeRabbit mascot. It has a reactive main menu, three Platformer levels (**Bay Area Blitz**, **Orbital Ops** and **The Enchanted Repo**) and the **Endless Runner** (The Codebase Corridor). The Beat’em Up mode is still a labeled placeholder; its [Code City Brawl asset pack](docs/code-city-brawl-assets.md) has landed ahead of gameplay.
 
-Move with A/D or arrows, jump with Space, swipe with J/X, and pause with Escape. Controller movement, A/Cross jump, X/Square attack, and Start pause are also mapped.
+![Main menu](docs/previews/main-menu.png)
 
-See [Bay Area Blitz notes](docs/bay-area-blitz.md), [Orbital Ops notes](docs/orbital-ops.md), and [Enchanted Repo notes](docs/enchanted-repo.md) for gameplay, tuning, implementation limits, and tests; see [main menu notes](docs/main-menu.md) for the arcade hub. In Orbital's zero-gravity bay, hold Jump/Up to rise, Down to descend, and release to brake.
+## Play
 
-Endless Runner frontend: F0-F10, high-fidelity A1–A9 asset pass with Blender-authored Hoppy, revised walls, pickup visibility, grab-vs-avoid legend/toasts, and contract 2.2 post-processing. [Run, asset budgets/checks, ownership, and verification caveats](docs/endless-runner.md). Godot 4.7.0 diagnostics; acceptance pinned to 4.7.1.
+1. Install [Godot **4.7.1**](https://godotengine.org/download/archive/) (standard build).
+2. Open `hoppys-adventure-arcade/project.godot` and press **F5**, or run:
+   ```sh
+   godot --path hoppys-adventure-arcade
+   ```
+3. Choose **Platformer Game → Level Select**, or **Endless Runner**.
 
-Beat'em Up Mode 1 now has a [Code City Brawl asset pack](docs/code-city-brawl-assets.md): three stage panoramas, nine enemies, the Grand Merge Conflict, hazards, breakables, weapons, pickups and allies. Gameplay assembly follows this assets-only pass.
+| Action | Keyboard | Controller |
+|---|---|---|
+| Move | A/D or arrow keys | Left stick / D-pad |
+| Jump | Space | A / Cross |
+| Attack | J / X | X / Square |
+| Pause | Escape | Start |
+
+In Orbital Ops' zero-gravity bay, hold Jump or Up to rise, hold Down to descend, and release to brake.
+
+## Docs
+
+- Platformer: [Bay Area Blitz](docs/bay-area-blitz.md), [Orbital Ops](docs/orbital-ops.md), [The Enchanted Repo](docs/enchanted-repo.md)
+- [Endless Runner](docs/endless-runner.md): how to run it, asset budgets, verification. See also its [contract](docs/endless-runner-contract.md) and [systems](docs/endless-runner-systems.md).
+- [Main menu / arcade hub](docs/main-menu.md)
+
+## Tests
+
+```sh
+godot --headless --path hoppys-adventure-arcade --import
+godot --headless --path hoppys-adventure-arcade --script res://tests/runner_logic.gd
+```
+
+Each file in `hoppys-adventure-arcade/tests/` is a standalone script that exits nonzero on failure. CI runs the headless suites on every PR. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
+
+## Contributing
+
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) and our [Code of Conduct](CODE_OF_CONDUCT.md). To report a security issue, see [SECURITY.md](SECURITY.md).
+
+## License
+
+- Code: [MIT](LICENSE)
+- Assets: individual licenses; see [ASSETS_LICENSES.md](ASSETS_LICENSES.md)
+- The CodeRabbit name and the Hoppy mascot are trademarks; see [TRADEMARKS.md](TRADEMARKS.md)

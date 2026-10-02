@@ -1,0 +1,11 @@
+# Default reviewers for everything. Swap for a dedicated team (e.g. @coderabbitai/arcade-maintainers) once one exists.
+*                                   @juanpflores @CR-Trey
+
+# Asset and license changes need an explicit maintainer check against ASSETS_LICENSES.md.
+/hoppys-adventure-arcade/Assets/    @juanpflores @CR-Trey
+/ASSETS_LICENSES.md                 @juanpflores @CR-Trey
+/LICENSE                            @juanpflores @CR-Trey
+
+# CI and repository automation.
+/.github/                           @juanpflores @CR-Trey
+/.coderabbit.yaml                   @juanpflores @CR-Trey
