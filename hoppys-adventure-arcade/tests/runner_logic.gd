@@ -139,6 +139,7 @@ func run() -> void:
 	_test_effects()
 	_test_leaderboard()
 	_test_finish_write_failure()
+	_test_clear()
 	_test_config_sanity()
 	_test_autopilot()
 	_test_autopilot_boss()
@@ -708,6 +709,78 @@ func _test_finish_write_failure() -> void:
 	check(int(lost["saved"]) == 0, "8b: a failed submit_name never emits leaderboard_saved")
 	# The blocker is a file; DirAccess.remove_absolute in _report() clears it either way.
 	check(not FileAccess.file_exists(blocked), "8b: the failed write left no board behind")
+
+# --- 8c. RunnerLeaderboard.clear() ---
+
+func _test_clear() -> void:
+	# Clear success: seeded entries gone, version 2, used_backup false, no companions.
+	var path := "user://test_leaderboard_clear_%d.cfg" % (randi() % 1000000)
+	temp_paths.append(path)
+	for i in 3:
+		check(int(RunnerLeaderboard.submit(_entry("run-%d" % i, 100 + i * 10), path)["error"]) == OK,
+			"8c: clear-success fixture submit %d" % i)
+	check(int(RunnerLeaderboard.clear(path)) == OK, "8c: clear() returns OK")
+	var board := RunnerLeaderboard.read_board(path)
+	check(int(board["error"]) == OK, "8c: cleared board reads OK")
+	check((board["entries"] as Array).is_empty(), "8c: cleared board has zero entries")
+	check(int(board["version"]) == RunnerLeaderboard.SCHEMA_VERSION, "8c: cleared board is schema version 2")
+	check(not bool(board["used_backup"]), "8c: cleared board did not use a backup")
+	check(not FileAccess.file_exists(path + ".bak"), "8c: clear removes the .bak companion")
+	check(not FileAccess.file_exists(path + ".tmp"), "8c: clear removes the .tmp companion")
+
+	# Backup-only clear: primary moved to .bak before clear.
+	var bak_path := "user://test_leaderboard_clear_bak_%d.cfg" % (randi() % 1000000)
+	temp_paths.append(bak_path)
+	check(int(RunnerLeaderboard.submit(_entry("run-bak", 500), bak_path)["error"]) == OK,
+		"8c: backup-only fixture submit")
+	check(DirAccess.rename_absolute(bak_path, bak_path + ".bak") == OK,
+		"8c: primary moved to .bak for backup-only fixture")
+	check(int(RunnerLeaderboard.clear(bak_path)) == OK, "8c: backup-only clear() returns OK")
+	check(not FileAccess.file_exists(bak_path + ".bak"), "8c: backup-only clear removes the .bak")
+	if FileAccess.file_exists(bak_path):
+		DirAccess.remove_absolute(bak_path)
+	check(RunnerLeaderboard.load_entries(bak_path).is_empty(),
+		"8c: no old entries survive after backup-only clear")
+
+	# Newer-schema guard: clear() refuses a v99 board and leaves bytes unchanged.
+	var future_path := "user://test_leaderboard_clear_v99_%d.cfg" % (randi() % 1000000)
+	temp_paths.append(future_path)
+	var future_text := "[meta]\nversion=99\n\n[leaderboard]\nentries=[]\n"
+	var future_file := FileAccess.open(future_path, FileAccess.WRITE)
+	check(future_file != null, "8c: future-schema fixture written")
+	if future_file != null:
+		future_file.store_string(future_text)
+		future_file.close()
+	var guard_result := RunnerLeaderboard.clear(future_path)
+	check(int(guard_result) != OK, "8c: clear() refuses a newer-schema board, got error %d" % int(guard_result))
+	check(FileAccess.get_file_as_string(future_path) == future_text,
+		"8c: newer-schema board is byte-identical after refused clear")
+
+	# Early write failure: blocker file stands where the board directory would be.
+	var blocker2 := "user://test_leaderboard_clear_blocker_%d" % (randi() % 1000000)
+	temp_paths.append(blocker2)
+	var blocker2_file := FileAccess.open(blocker2, FileAccess.WRITE)
+	check(blocker2_file != null, "8c: write-failure blocker written")
+	if blocker2_file != null:
+		blocker2_file.store_string("not a directory")
+		blocker2_file.close()
+	var blocked2 := blocker2 + "/leaderboard.cfg"
+	var fail_result := RunnerLeaderboard.clear(blocked2)
+	check(int(fail_result) != OK, "8c: clear() on unwritable path returns non-OK, got %d" % int(fail_result))
+	check(not FileAccess.file_exists(blocked2 + ".bak") and not FileAccess.file_exists(blocked2 + ".tmp"),
+		"8c: failed clear leaves no companion files")
+
+	# New submission after reset: rank 1, exactly one entry.
+	var after_path := "user://test_leaderboard_clear_after_%d.cfg" % (randi() % 1000000)
+	temp_paths.append(after_path)
+	for i in 5:
+		check(int(RunnerLeaderboard.submit(_entry("old-%d" % i, 200 + i), after_path)["error"]) == OK,
+			"8c: after-reset fixture submit %d" % i)
+	check(int(RunnerLeaderboard.clear(after_path)) == OK, "8c: after-reset clear() returns OK")
+	var new_result := RunnerLeaderboard.submit(_entry("new-run", 42), after_path)
+	check(int(new_result["error"]) == OK, "8c: submission after reset succeeds")
+	check(int(new_result["rank"]) == 1, "8c: first post-reset submission ranks 1")
+	check(RunnerLeaderboard.load_entries(after_path).size() == 1, "8c: exactly one entry after reset")
 
 # --- 9. RunConfig sanity ---
 
