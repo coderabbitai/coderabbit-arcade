@@ -1,0 +1,87 @@
+[gd_resource type="SpriteFrames" load_steps=18 format=3]
+
+[ext_resource type="Texture2D" path="combat_fx.png" id="1"]
+
+[sub_resource type="AtlasTexture" id="Frame_0"]
+atlas = ExtResource("1")
+region = Rect2(0, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_1"]
+atlas = ExtResource("1")
+region = Rect2(128, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_2"]
+atlas = ExtResource("1")
+region = Rect2(256, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_3"]
+atlas = ExtResource("1")
+region = Rect2(384, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_4"]
+atlas = ExtResource("1")
+region = Rect2(0, 128, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_5"]
+atlas = ExtResource("1")
+region = Rect2(128, 128, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_6"]
+atlas = ExtResource("1")
+region = Rect2(256, 128, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_7"]
+atlas = ExtResource("1")
+region = Rect2(384, 128, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_8"]
+atlas = ExtResource("1")
+region = Rect2(0, 256, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_9"]
+atlas = ExtResource("1")
+region = Rect2(128, 256, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_10"]
+atlas = ExtResource("1")
+region = Rect2(256, 256, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_11"]
+atlas = ExtResource("1")
+region = Rect2(384, 256, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_12"]
+atlas = ExtResource("1")
+region = Rect2(0, 384, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_13"]
+atlas = ExtResource("1")
+region = Rect2(128, 384, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_14"]
+atlas = ExtResource("1")
+region = Rect2(256, 384, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_15"]
+atlas = ExtResource("1")
+region = Rect2(384, 384, 128, 128)
+
+[resource]
+animations = [
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_0")}], "loop": false, "name": &"syntax_projectile", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_1")}], "loop": false, "name": &"injection_projectile", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_2")}], "loop": false, "name": &"duplicate_spawn", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_3")}], "loop": false, "name": &"resurrection", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_4")}], "loop": false, "name": &"slam_warning", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_5")}], "loop": false, "name": &"slam_impact", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_6")}], "loop": false, "name": &"left_shockwave", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_7")}], "loop": false, "name": &"right_shockwave", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_8")}], "loop": false, "name": &"split_seam", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_9")}], "loop": false, "name": &"cyan_projectile", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_10")}], "loop": false, "name": &"red_projectile", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_11")}], "loop": false, "name": &"clone_portal", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_12")}], "loop": false, "name": &"chaos_warning", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_13")}], "loop": false, "name": &"glitch_burst", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_14")}], "loop": false, "name": &"merge_radiance", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_15")}], "loop": false, "name": &"merge_press", "speed": 1.0}
+]

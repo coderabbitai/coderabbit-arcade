@@ -1,0 +1,89 @@
+[gd_resource type="SpriteFrames" load_steps=18 format=3]
+
+[ext_resource type="Texture2D" path="security_kit.png" id="1"]
+
+[sub_resource type="AtlasTexture" id="Frame_0"]
+atlas = ExtResource("1")
+region = Rect2(0, 0, 192, 192)
+
+[sub_resource type="AtlasTexture" id="Frame_1"]
+atlas = ExtResource("1")
+region = Rect2(192, 0, 192, 192)
+
+[sub_resource type="AtlasTexture" id="Frame_2"]
+atlas = ExtResource("1")
+region = Rect2(384, 0, 192, 192)
+
+[sub_resource type="AtlasTexture" id="Frame_3"]
+atlas = ExtResource("1")
+region = Rect2(576, 0, 192, 192)
+
+[sub_resource type="AtlasTexture" id="Frame_4"]
+atlas = ExtResource("1")
+region = Rect2(0, 192, 192, 192)
+
+[sub_resource type="AtlasTexture" id="Frame_5"]
+atlas = ExtResource("1")
+region = Rect2(192, 192, 192, 192)
+
+[sub_resource type="AtlasTexture" id="Frame_6"]
+atlas = ExtResource("1")
+region = Rect2(384, 192, 192, 192)
+
+[sub_resource type="AtlasTexture" id="Frame_7"]
+atlas = ExtResource("1")
+region = Rect2(576, 192, 192, 192)
+
+[sub_resource type="AtlasTexture" id="Frame_8"]
+atlas = ExtResource("1")
+region = Rect2(0, 384, 192, 192)
+
+[sub_resource type="AtlasTexture" id="Frame_9"]
+atlas = ExtResource("1")
+region = Rect2(192, 384, 192, 192)
+
+[sub_resource type="AtlasTexture" id="Frame_10"]
+atlas = ExtResource("1")
+region = Rect2(384, 384, 192, 192)
+
+[sub_resource type="AtlasTexture" id="Frame_11"]
+atlas = ExtResource("1")
+region = Rect2(576, 384, 192, 192)
+
+[sub_resource type="AtlasTexture" id="Frame_12"]
+atlas = ExtResource("1")
+region = Rect2(0, 576, 192, 192)
+
+[sub_resource type="AtlasTexture" id="Frame_13"]
+atlas = ExtResource("1")
+region = Rect2(192, 576, 192, 192)
+
+[sub_resource type="AtlasTexture" id="Frame_14"]
+atlas = ExtResource("1")
+region = Rect2(384, 576, 192, 192)
+
+[sub_resource type="AtlasTexture" id="Frame_15"]
+atlas = ExtResource("1")
+region = Rect2(576, 576, 192, 192)
+
+[resource]
+animations = [
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_0")}], "loop": false, "name": &"floor_slab", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_1")}], "loop": false, "name": &"corridor_arch", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_2")}], "loop": false, "name": &"alert_beacon", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_3")}], "loop": false, "name": &"barrier", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_4")}], "loop": true, "name": &"server_intact", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_5")}], "loop": false, "name": &"server_cracked", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_6")}], "loop": false, "name": &"server_break", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_7")}], "loop": false, "name": &"server_rubble", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_8")}], "loop": true, "name": &"crate_intact", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_9")}], "loop": false, "name": &"crate_cracked", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_10")}], "loop": false, "name": &"crate_break", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_11")}], "loop": false, "name": &"crate_rubble", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_12")}], "loop": false, "name": &"laser_dormant", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_13")}], "loop": false, "name": &"laser_warning", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_14")}], "loop": false, "name": &"laser_active", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_15")}], "loop": false, "name": &"breach_shockwave", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_5")}, {"duration": 1.0, "texture": SubResource("Frame_6")}, {"duration": 1.0, "texture": SubResource("Frame_7")}], "loop": false, "name": &"primary_break", "speed": 7.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_9")}, {"duration": 1.0, "texture": SubResource("Frame_10")}, {"duration": 1.0, "texture": SubResource("Frame_11")}], "loop": false, "name": &"secondary_break", "speed": 7.0}
+]

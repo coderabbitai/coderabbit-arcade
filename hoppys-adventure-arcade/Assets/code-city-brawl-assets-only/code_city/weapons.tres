@@ -1,0 +1,87 @@
+[gd_resource type="SpriteFrames" load_steps=18 format=3]
+
+[ext_resource type="Texture2D" path="weapons.png" id="1"]
+
+[sub_resource type="AtlasTexture" id="Frame_0"]
+atlas = ExtResource("1")
+region = Rect2(0, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_1"]
+atlas = ExtResource("1")
+region = Rect2(128, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_2"]
+atlas = ExtResource("1")
+region = Rect2(256, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_3"]
+atlas = ExtResource("1")
+region = Rect2(384, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_4"]
+atlas = ExtResource("1")
+region = Rect2(0, 128, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_5"]
+atlas = ExtResource("1")
+region = Rect2(128, 128, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_6"]
+atlas = ExtResource("1")
+region = Rect2(256, 128, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_7"]
+atlas = ExtResource("1")
+region = Rect2(384, 128, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_8"]
+atlas = ExtResource("1")
+region = Rect2(0, 256, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_9"]
+atlas = ExtResource("1")
+region = Rect2(128, 256, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_10"]
+atlas = ExtResource("1")
+region = Rect2(256, 256, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_11"]
+atlas = ExtResource("1")
+region = Rect2(384, 256, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_12"]
+atlas = ExtResource("1")
+region = Rect2(0, 384, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_13"]
+atlas = ExtResource("1")
+region = Rect2(128, 384, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_14"]
+atlas = ExtResource("1")
+region = Rect2(256, 384, 128, 128)
+
+[sub_resource type="AtlasTexture" id="Frame_15"]
+atlas = ExtResource("1")
+region = Rect2(384, 384, 128, 128)
+
+[resource]
+animations = [
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_0")}], "loop": false, "name": &"debug_stick", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_1")}], "loop": false, "name": &"debug_stick_broken", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_2")}], "loop": false, "name": &"linter_staff", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_3")}], "loop": false, "name": &"linter_staff_broken", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_4")}], "loop": false, "name": &"api_key_whip", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_5")}], "loop": false, "name": &"api_key_whip_extended", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_6")}], "loop": false, "name": &"api_key_whip_broken", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_7")}], "loop": false, "name": &"git_branch", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_8")}], "loop": false, "name": &"git_branch_broken", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_9")}], "loop": false, "name": &"firewall_shield", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_10")}], "loop": false, "name": &"firewall_shield_cracked", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_11")}], "loop": false, "name": &"firewall_shield_broken", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_12")}], "loop": false, "name": &"refactor_hammer", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_13")}], "loop": false, "name": &"refactor_hammer_broken", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_14")}], "loop": false, "name": &"melee_sweep", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_15")}], "loop": false, "name": &"hammer_impact", "speed": 1.0}
+]
