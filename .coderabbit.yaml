@@ -1,9 +1,11 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# Prepared for Hoppy's Adventure Arcade. Apply manually to this repository's settings.
+# Repository .coderabbit.yaml takes precedence over ordinary repository UI settings.
 
 language: "en-US"
 
 reviews:
-  profile: "chill"
+  profile: "assertive"
 
   auto_review:
     enabled: true
@@ -11,27 +13,141 @@ reviews:
 
   path_filters:
     - "!**/.godot/**"
-    - "!**/*.import"
+    - "!**/__pycache__/**"
+    - "!**/*.pyc"
+    # Keep .import, .uid, asset manifests and generated .tres files reviewable:
+    # import settings, resource identity and animation metadata affect runtime behavior.
 
   path_instructions:
     - path: "**/*.gd"
       instructions: |
-        Review this as Godot 4.7.1 GDScript. Prioritize correctness over style.
-        - Do not suggest Python-only syntax or APIs.
-        - Respect Godot virtual callback names and engine conventions.
-        - Check node lifecycle assumptions, signal connections, and freed-instance access.
-        - Check await/coroutine and state-transition behavior.
-        - Flag fragile NodePaths, scene-tree assumptions, and nullability risks.
-        - Look for unnecessary allocations or tree lookups in _process and _physics_process.
-        - Verify delta usage, physics/render-loop separation, and input handling.
-        - Prefer useful static typing, but do not demand redundant type annotations.
+        Review as Godot 4 GDScript; the project currently targets Godot 4.7.1.
+        Prioritize actionable correctness and regressions over formatting or broad refactors.
+        - Use Godot APIs and syntax, not Python-only constructs. Respect virtual callbacks.
+        - Trace changed callers, inherited behavior and scene wiring before alleging a bug.
+        - Check node lifetime, deferred operations, signal duplication, freed-instance access,
+          and await/tween callbacks that can outlive a scene or state transition.
+        - Check pause/process modes, timer and tween pause behavior, and input propagation.
+          Some UI, routing and death animations intentionally continue while gameplay pauses.
+        - Check delta usage, physics/render separation, collision layers and masks, and
+          safe timing of collision changes during physics callbacks.
+        - Flag repeated expensive allocations, resource loads or tree scans in hot paths
+          when there is a concrete impact; do not demand speculative micro-optimizations.
+        - Prefer useful static typing without redundant annotations. Programmatic scene,
+          UI and geometry construction is established here; do not require editor rewrites.
+        - Use relevant docs and existing tests as context, checking them against current code.
+          Do not treat historical limitations or intentionally unfinished modes as new bugs.
+
+    - path: "hoppys-adventure-arcade/{modes,scenes}/platformer/**"
+      instructions: |
+        Review shared platformer changes across Bay Area Blitz, Orbital Ops and Enchanted Repo.
+        - Check jump buffering/coyote time, moving and one-way platforms, zero-gravity
+          transitions, knockback, shields, invulnerability and per-attack hit deduplication
+          where affected by the diff. Preserve each level's intentional combat rules.
+        - Check boss warning/active/recovery phases, arena gates and camera restoration,
+          one-time score awards, projectile cleanup, and boss-gated MERGE activation.
+        - Death must stop gameplay damage and motion while allowing the knockout/results
+          presentation to run. A skip press must not also activate Retry or another button.
+        - Retry must create a fresh run. Return-to-menu must restore pause, input and audio
+          state. Check pending timers/tweens across death, completion, retry and scene exit.
+        - For shared base-class changes, look for subclass overrides that bypass the new
+          behavior; suggest focused existing smoke/boss/boundary coverage when warranted.
+
+    - path: "hoppys-adventure-arcade/scenes/runner/**"
+      instructions: |
+        Review gameplay and presentation together using current runner contracts and tests.
+        - Check lane/turn coordinate consistency, collision envelopes, chunk recycling,
+          spawn reachability, stage/boss transitions, scoring and power-up expiration.
+        - Check pooled hazards, pickups, projectiles and FX reset all relevant state when reused.
+        - Preserve gameplay-to-HUD/FX signal contracts, idempotent binding and fallback behavior.
+        - Review warmup/cache changes for first-use hitches and repeated work. Worker jobs must
+          respect Godot thread-safety rules; verify scene-tree and GPU resource finalization
+          stays on the appropriate thread and completion/scene-exit races are handled.
+        - Avoid unintended mutation of cached/shared materials, textures or other resources.
+        - Use documented asset/performance budgets where applicable. Headless node counts
+          and CPU timings do not establish GPU draw cost, rendered quality or frame rate.
+
+    - path: "hoppys-adventure-arcade/app/*.gd"
+      instructions: |
+        These autoloads serve every game mode. Check route validity, re-entry guards,
+        scene-change failure recovery, pause-safe transitions and input-blocking cleanup.
+        Check audio ownership and music restoration across scenes; avoid mutating shared
+        imported streams unintentionally. Persist settings under user://, validate loaded
+        types/ranges including non-finite numbers, and handle read/write failures.
+
+    - path: "hoppys-adventure-arcade/scenes/runner/systems/runner_leaderboard.gd"
+      instructions: |
+        Check backward-compatible reads, newer-schema protection, atomic/backup recovery,
+        validation of loaded values, name sanitization, stable tie-breaking and top-10 limits.
+        Failures must not silently destroy valid scores. Keep persistence tests isolated
+        from the player's real user://leaderboard.cfg and backup files.
+
+    - path: "hoppys-adventure-arcade/scenes/main_menu/**"
+      instructions: |
+        Check keyboard/gamepad focus, mouse handling, modal input capture and pause-safe
+        navigation. Review return-to-hub layout, resize/stretch behavior, minimum-window
+        legibility and settings/audio restoration. Preserve intentionally unavailable modes.
 
     - path: "**/*.{tscn,tres}"
       instructions: |
-        Check resource paths, NodePaths, signal connections, ownership, and renamed
-        or deleted scripts/nodes. Focus on changes likely to break at runtime.
+        Check resource paths and UIDs, external/subresource references, NodePaths, signal
+        targets, exported properties and renamed/deleted scripts or nodes together.
+        The main res:// root is hoppys-adventure-arcade/, not the repository root.
+        Check ownership when packing/saving scenes, collision configuration, animation
+        frame bounds/durations/loop flags and accidental shared-resource mutation.
+        Generated resources still require correctness review; prefer fixing their generator
+        as well when regeneration would otherwise reintroduce the defect.
 
-    - path: "project.godot"
+    - path: "hoppys-adventure-arcade/project.godot"
       instructions: |
-        Carefully review autoloads, input mappings, rendering settings, and changed
-        project-wide behavior.
+        This is the playable arcade project's configuration. Check autoload names/paths/order,
+        main scene, keyboard/controller input mappings, shared-action conflicts, collision
+        layer names, physics/interpolation settings, viewport/stretch and rendering changes.
+        The current renderer is GL Compatibility; assess dependent shader/material changes
+        together. Do not confuse the nested SynthCities asset demo with the main project.
+
+    - path: "**/*.gdshader"
+      instructions: |
+        Review as Godot 4 shader language against the renderer configured for the consuming
+        project, currently GL Compatibility for the arcade. Check supported built-ins/render
+        modes, uniforms set by scripts/materials, coordinate spaces, alpha/depth behavior,
+        numerical edge cases and costly per-fragment work. Headless success cannot prove
+        visual correctness; request a relevant rendered check for meaningful visual changes.
+
+    - path: "**/*.import"
+      instructions: |
+        Review meaningful importer changes: filtering, mipmaps, compression, alpha, texture
+        sizing, audio looping and source paths. Distinguish resource UIDs and generated cache
+        destinations from missing source assets; cache files are rebuilt by Godot import.
+
+    - path: "**/*.uid"
+      instructions: |
+        Check identity consistency for added, moved or deleted scripts/shaders and their
+        references. Do not suggest regenerating UIDs merely for formatting or consistency.
+
+    - path: "**/tools/**/*.py"
+      instructions: |
+        These are offline asset-pack and Blender build tools, not gameplay frame-loop code.
+        Check reproducible paths/output, preservation of source art, bounded deletion/copy
+        operations, image bounds/alpha/cropping, animation frame registration and generated
+        resource/manifest consistency. For Blender tools also check export transforms,
+        material assignments and documented geometry/texture budgets. Prefer targeted
+        validation with the existing asset checks over introducing a new test framework.
+
+    - path: "hoppys-adventure-arcade/Assets/**/*.json"
+      instructions: |
+        Check asset manifest/generation metadata against consumers, source files and generated
+        resources: case-sensitive paths, names, frame counts, dimensions and animation states.
+        Assets-only packs may intentionally precede gameplay integration; do not flag that
+        absence alone as a defect. Do not exclude an entire asset pack from review.
+
+    - path: "hoppys-adventure-arcade/tests/**/*.gd"
+      instructions: |
+        Preserve the existing standalone SceneTree/Godot --script test approach.
+        Check assertions test observable behavior and fail with a nonzero exit status.
+        Keep input, pause state, scenes and persistent files isolated/cleaned up; avoid
+        unbounded waits and timing assumptions that make failures hang or become flaky.
+        Distinguish headless logic/resource tests from rendered mouse, shader, audio,
+        appearance and GPU checks. State manipulation can isolate mechanics but does not
+        prove real traversal, controller feel, a full boss playthrough or export readiness.
+        Suggest focused regression coverage for changed behavior, not blanket coverage goals.
