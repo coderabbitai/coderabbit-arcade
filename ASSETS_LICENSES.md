@@ -4,7 +4,7 @@ The [MIT License](LICENSE) covers the source code. The tables below list the lic
 
 Paths are relative to `hoppys-adventure-arcade/Assets/`. Every new asset needs a row here; see [CONTRIBUTING.md](CONTRIBUTING.md#assets).
 
-Status key: ✅ verified · ⚠️ **must be verified before public release**
+Status key: ✅ verified · ⚠️ needs sign-off · ❌ **blocks public release**
 
 ## Third-party
 
@@ -15,12 +15,14 @@ Status key: ✅ verified · ⚠️ **must be verified before public release**
 | Parallax forest | `Backgrounds/parallax_forest_pack/` | Luis Zuno (@ansimuz) | CC0 (`license.txt`) | Main menu preview | ✅ |
 | Space background | `Backgrounds/space_background_pack/` | Luis Zuno (@ansimuz) | CC0 (`license.txt`) | Main menu preview | ✅ |
 | City skyline | `Backgrounds/background_city_skyline/` | Fábio | CC0 (`Read.txt`) | Not referenced | ✅ |
-| Cyberpunk Street (layers + BGM) | `Backgrounds/cyberpunk-street-files/` | Luis Zuno (@ansimuz) | CC0 (`public-license.pdf`). The PDF doesn't name the music's composer. | Main menu preview, runner BGM | ⚠️ confirm the music license on the source page |
-| City background layers | `Backgrounds/CityBackground/` | Unknown | Unknown (no license file) | Main menu preview | ⚠️ find the source, or replace it |
-| Main menu theme | `Audio/Main Menu/happy_adveture.mp3` | Unknown | Unknown | Main menu | ⚠️ |
-| Bay Area Blitz music | `Audio/Platformer/Bay Area Blitz/Summer Sunday.wav`, `c64_uptempo_chiptune.ogg` | Unknown | Unknown | Bay Area Blitz | ⚠️ |
-| Orbital Ops music | `Audio/Platformer/Obital Ops/Valor of Heroes.mp3`, `tipa16.mp3` | Unknown | Unknown | Orbital Ops | ⚠️ |
-| Enchanted Repo music | `Audio/Platformer/The Enchanted Repo/04 - Silent Forest.mp3`, `05 - Battle 1.mp3` | Unknown | Unknown | Enchanted Repo | ⚠️ |
+| Cyberpunk Street (layers + BGM) | `Backgrounds/cyberpunk-street-files/` | Luis Zuno ([ansimuz.com](https://ansimuz.itch.io/cyberpunk-street-environment)); music composer not credited | CC0 (bundled `public-license.pdf` covers the whole package, music included). An older OpenGameArt listing says CC BY 3.0, so we credit "ansimuz.com" anyway. | Main menu preview, runner BGM | ✅ |
+| Parallax City Night | `Backgrounds/CityBackground/` | FisherG (@TheFish523); "Ghost (Vibrant)" palette by PixelCod | CC0 ([OpenGameArt](https://opengameart.org/content/parallax-city-night-4-colors), byte-identical) | Main menu preview | ✅ |
+| Happy Adventure (Loop) | `Audio/Main Menu/happy_adveture.mp3` (tagged "The Fish is Blue") | TinyWorlds (Rick Hoppmann) | CC0 ([OpenGameArt](https://opengameart.org/content/happy-adventure-loop), byte-identical) | Main menu | ✅ |
+| Summer Sunday | `Audio/Platformer/Bay Area Blitz/Summer Sunday.wav` | celestialghost8 | CC0 ([OpenGameArt](https://opengameart.org/content/summer-sunday), byte-identical) | Bay Area Blitz | ✅ |
+| C64 up-tempo chiptune | `Audio/Platformer/Bay Area Blitz/c64_uptempo_chiptune.ogg` | Skrjablin | CC0 ([OpenGameArt](https://opengameart.org/content/6-genuinely-c64-soundtracks-released-as-public-domain-may-2017), byte-identical) | Bay Area Blitz | ✅ |
+| Valor of Heroes | `Audio/Platformer/Obital Ops/Valor of Heroes.mp3` | Trevor Lentz | **CC BY-SA 3.0** ([OpenGameArt](https://opengameart.org/content/valor-of-heroes), byte-identical). Attribution required: "Valor of Heroes" by Trevor Lentz. The file stays under CC BY-SA 3.0; that doesn't affect the code license. | Orbital Ops | ✅ |
+| tipa16 | `Audio/Platformer/Obital Ops/tipa16.mp3` | Unknown | Unknown: no tags, and no source found | Orbital Ops | ❌ **replace or remove before public release** |
+| Silent Forest, Battle 1 | `Audio/Platformer/The Enchanted Repo/` | xDeviruchi (Marllon Silva) | [Custom license](https://xdeviruchi.itch.io/16-bit-fantasy-adventure-music-pack): use in games is OK, but "No redistribution" | Enchanted Repo | ❌ **raw files can't ship in a public repo. Replace them, or get written permission.** |
 
 ## Project-original
 
