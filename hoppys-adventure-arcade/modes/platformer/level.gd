@@ -8,7 +8,8 @@ const Style = preload("res://scenes/main_menu/menu_style.gd")
 # so every jump reloaded the WAV).
 const SFX := {
 	"jump": preload("res://Assets/Backgrounds/Sunny-land-forest-files/demo/assets/sound/wavs/jump.wav"),
-	"hurt": preload("res://Assets/Backgrounds/Sunny-land-forest-files/demo/assets/sound/wavs/hurt.wav")
+	"hurt": preload("res://Assets/Backgrounds/Sunny-land-forest-files/demo/assets/sound/wavs/hurt.wav"),
+	"boss_down": preload("res://Assets/Audio/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Fanfares/sfx_sounds_fanfare3.wav")
 }
 const EXIT_TOP := 540.0
 const PAUSE_SHADE := Color(0.025, 0.06, 0.1, 0.96)
@@ -54,6 +55,8 @@ var intro_remaining := 0.0
 var arena_gates: Node2D
 var projectiles: Node2D
 var intro_banner: PanelContainer
+var banner_style: StyleBoxFlat
+var banner_title: Label
 var previous_feet := Vector2.ZERO
 var music_fade: Tween
 
@@ -169,7 +172,7 @@ func _hud() -> void:
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.add_child(overlay)
 	intro_banner = PanelContainer.new()
-	var banner_style := StyleBoxFlat.new()
+	banner_style = StyleBoxFlat.new()
 	banner_style.bg_color = Color(0.035, 0.08, 0.12, 0.97)
 	banner_style.border_color = Color("ffbd7c")
 	banner_style.set_border_width_all(2)
@@ -179,9 +182,9 @@ func _hud() -> void:
 	intro_banner.offset_right = 380
 	intro_banner.offset_top = -145
 	intro_banner.offset_bottom = -30
-	var title := Style.label(boss_title + "\n" + intro_caption, 25, Color("ffbd7c"))
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	intro_banner.add_child(title)
+	banner_title = Style.label(boss_title + "\n" + intro_caption, 25, Color("ffbd7c"))
+	banner_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	intro_banner.add_child(banner_title)
 	root.add_child(intro_banner)
 	root.move_child(intro_banner, overlay.get_index())
 	intro_banner.hide()
@@ -257,8 +260,9 @@ func _input(event: InputEvent) -> void:
 	# Once a route change has started, the level is leaving: never re-pause it under the veil.
 	if AppRouter.busy:
 		return
-	# Jump, swipe or confirm skips the wait; the press is consumed so it can't also hit Retry.
-	if finished and results_reveal and results_reveal.is_running() and (event.is_action_pressed("jump") or event.is_action_pressed("attack") or event.is_action_pressed("ui_accept")):
+	# Jump, swipe or confirm skips the fade-in, but only once the overlay is visible — this
+	# prevents a button mash at the moment of death from skipping the knockout animation.
+	if finished and overlay.visible and results_reveal and results_reveal.is_running() and (event.is_action_pressed("jump") or event.is_action_pressed("attack") or event.is_action_pressed("ui_accept")):
 		results_reveal.custom_step(10.0)
 		get_viewport().set_input_as_handled()
 		return
@@ -347,6 +351,63 @@ func _end_encounter() -> void:
 	camera.position = Vector2(0, -245)
 	camera.position_smoothing_enabled = true
 	_change_music(level_track)
+
+func _boss_defeated(points: int) -> void:
+	score += points
+	boss_down = true
+	_sound("boss_down")
+	# Stop Hoppy's physics so we can script the celebration jumps manually.
+	player.set_physics_process(false)
+	player.velocity = Vector2.ZERO
+	player.sprite.play("idle")
+	var floor_y := player.position.y
+
+	# Quick green flash across the whole HUD.
+	var hud_root := overlay.get_parent() as Control
+	var flash := ColorRect.new()
+	flash.color = Color(0.3, 1.0, 0.45, 0.0)
+	flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud_root.add_child(flash)
+	var flash_tween := create_tween()
+	flash_tween.tween_property(flash, "color:a", 0.5, 0.1)
+	flash_tween.tween_property(flash, "color:a", 0.0, 0.55)
+	flash_tween.tween_callback(flash.queue_free)
+
+	# Victory banner fades in.
+	banner_title.text = "BOSS DOWN!\nHead to the exit."
+	banner_style.bg_color = Color(0.04, 0.15, 0.06, 0.97)
+	banner_style.border_color = Color("7cffbd")
+	banner_style.set_border_width_all(3)
+	intro_banner.modulate = Color(1, 1, 1, 0.0)
+	intro_banner.show()
+	create_tween().tween_property(intro_banner, "modulate:a", 1.0, 0.3).set_trans(Tween.TRANS_SINE)
+
+	# Banner border pulses teal ↔ gold for the duration.
+	var pulse := create_tween().set_loops()
+	pulse.tween_method(func(v: float): banner_style.border_color = Color("7cffbd").lerp(Color("ffbd7c"), v), 0.0, 1.0, 0.8)
+	pulse.tween_method(func(v: float): banner_style.border_color = Color("ffbd7c").lerp(Color("7cffbd"), v), 0.0, 1.0, 0.8)
+
+	# Hoppy jumps twice — scripted position tweens, no physics needed.
+	for _i in 2:
+		await get_tree().create_timer(0.85).timeout
+		var jump := create_tween()
+		jump.tween_callback(func(): player.sprite.play("jump_rise"))
+		jump.tween_property(player, "position:y", floor_y - 95, 0.38).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		jump.tween_callback(func(): player.sprite.play("jump_fall"))
+		jump.tween_property(player, "position:y", floor_y, 0.32).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		jump.tween_callback(func(): player.sprite.play("idle"))
+
+	await get_tree().create_timer(2.5).timeout
+	pulse.kill()
+	banner_style.set_border_width_all(2)
+	banner_style.border_color = Color("ffbd7c")
+	intro_banner.modulate = Color.WHITE
+	_end_encounter()
+	exit_sprite.modulate = Color.WHITE
+	_update_hud()
+	player.set_physics_process(true)
+	player.input_lock = 0.15
 
 func _create_player() -> void:
 	player = Player.new()

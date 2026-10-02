@@ -63,12 +63,7 @@ func _ready() -> void:
 	boss.position=Vector2(4660,600)
 	boss.player=player
 	boss.shockwave.connect(_spawn_wave)
-	boss.defeated.connect(func(points: int):
-		score+=points
-		boss_down=true
-		_end_encounter()
-		exit_sprite.modulate=Color.WHITE
-		_update_hud())
+	boss.defeated.connect(_boss_defeated)
 	add_child(boss)
 	for x in [310,460,590,800,990,1310,1600,1800,2070,2280,2610,2780,3000,3230,3430,3740,3960,4130]:
 		_pickup("commit_token",Vector2(x,545))

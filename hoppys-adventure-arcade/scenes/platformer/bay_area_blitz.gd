@@ -147,13 +147,12 @@ func _enemy(x: float, kind: String) -> Node2D:
 	enemy.kind = kind
 	enemy.position = Vector2(x, 600)
 	enemy.player = player
-	enemy.defeated.connect(func(points: int):
-		score += points
-		if kind == "merge_monster":
-			boss_down = true
-			_end_encounter()
-			exit_sprite.modulate = Color.WHITE
-		_update_hud())
+	if kind == "merge_monster":
+		enemy.defeated.connect(_boss_defeated)
+	else:
+		enemy.defeated.connect(func(points: int):
+			score += points
+			_update_hud())
 	add_child(enemy)
 	return enemy
 func _hazard(kind: String, pos: Vector2) -> void:
