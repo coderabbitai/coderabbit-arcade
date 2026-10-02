@@ -737,6 +737,11 @@ func _test_clear() -> void:
 		"8c: primary moved to .bak for backup-only fixture")
 	check(int(RunnerLeaderboard.clear(bak_path)) == OK, "8c: backup-only clear() returns OK")
 	check(not FileAccess.file_exists(bak_path + ".bak"), "8c: backup-only clear removes the .bak")
+	var bak_board := RunnerLeaderboard.read_board(bak_path)
+	check(FileAccess.file_exists(bak_path), "8c: backup-only clear writes the primary")
+	check(int(bak_board["error"]) == OK, "8c: backup-only primary reads OK")
+	check((bak_board["entries"] as Array).is_empty(), "8c: backup-only primary has no entries")
+	check(int(bak_board["version"]) == RunnerLeaderboard.SCHEMA_VERSION, "8c: backup-only primary is schema version 2")
 	if FileAccess.file_exists(bak_path):
 		DirAccess.remove_absolute(bak_path)
 	check(RunnerLeaderboard.load_entries(bak_path).is_empty(),

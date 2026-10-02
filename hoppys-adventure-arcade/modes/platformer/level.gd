@@ -356,6 +356,11 @@ func _boss_defeated(points: int) -> void:
 	score += points
 	boss_down = true
 	_sound("boss_down")
+	# Disarm the arena immediately: any projectile the boss fired last-frame
+	# and the gate collision are gone before Hoppy can be hit.
+	_clear_projectiles()
+	for gate in arena_gates.get_children():
+		gate.set_deferred("collision_layer", 0)
 	# Stop Hoppy's physics so we can script the celebration jumps manually.
 	player.set_physics_process(false)
 	player.velocity = Vector2.ZERO
@@ -369,7 +374,7 @@ func _boss_defeated(points: int) -> void:
 	flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud_root.add_child(flash)
-	var flash_tween := create_tween()
+	var flash_tween := create_tween().set_pause_mode(Tween.TWEEN_PAUSE_STOP)
 	flash_tween.tween_property(flash, "color:a", 0.5, 0.1)
 	flash_tween.tween_property(flash, "color:a", 0.0, 0.55)
 	flash_tween.tween_callback(flash.queue_free)
@@ -381,24 +386,32 @@ func _boss_defeated(points: int) -> void:
 	banner_style.set_border_width_all(3)
 	intro_banner.modulate = Color(1, 1, 1, 0.0)
 	intro_banner.show()
-	create_tween().tween_property(intro_banner, "modulate:a", 1.0, 0.3).set_trans(Tween.TRANS_SINE)
+	var fade := create_tween().set_pause_mode(Tween.TWEEN_PAUSE_STOP)
+	fade.tween_property(intro_banner, "modulate:a", 1.0, 0.3).set_trans(Tween.TRANS_SINE)
 
 	# Banner border pulses teal ↔ gold for the duration.
-	var pulse := create_tween().set_loops()
+	var pulse := create_tween().set_pause_mode(Tween.TWEEN_PAUSE_STOP).set_loops()
 	pulse.tween_method(func(v: float): banner_style.border_color = Color("7cffbd").lerp(Color("ffbd7c"), v), 0.0, 1.0, 0.8)
 	pulse.tween_method(func(v: float): banner_style.border_color = Color("ffbd7c").lerp(Color("7cffbd"), v), 0.0, 1.0, 0.8)
 
 	# Hoppy jumps twice — scripted position tweens, no physics needed.
+	# Timers use process_always=false so the celebration pauses with the game.
 	for _i in 2:
-		await get_tree().create_timer(0.85).timeout
-		var jump := create_tween()
+		await get_tree().create_timer(0.85, false).timeout
+		if finished or not is_inside_tree():
+			pulse.kill()
+			return
+		var jump := create_tween().set_pause_mode(Tween.TWEEN_PAUSE_STOP)
 		jump.tween_callback(func(): player.sprite.play("jump_rise"))
 		jump.tween_property(player, "position:y", floor_y - 95, 0.38).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 		jump.tween_callback(func(): player.sprite.play("jump_fall"))
 		jump.tween_property(player, "position:y", floor_y, 0.32).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		jump.tween_callback(func(): player.sprite.play("idle"))
 
-	await get_tree().create_timer(2.5).timeout
+	await get_tree().create_timer(2.5, false).timeout
+	if finished or not is_inside_tree():
+		pulse.kill()
+		return
 	pulse.kill()
 	banner_style.set_border_width_all(2)
 	banner_style.border_color = Color("ffbd7c")

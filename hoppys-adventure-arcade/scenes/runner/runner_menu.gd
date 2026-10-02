@@ -7,6 +7,7 @@ const GpuWarmup = preload("res://scenes/runner/warmup/gpu_warmup.gd")
 const Music = preload("res://Assets/Backgrounds/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg")
 
 var leaderboard_path := Leaderboard.DEFAULT_PATH
+var leaderboard_path_at_open := Leaderboard.DEFAULT_PATH
 var buttons: Array[Button] = []
 var ui: Control
 var shade: TextureRect
@@ -184,7 +185,8 @@ func _toggle_leaderboard() -> void:
 	board = VBoxContainer.new()
 	board.add_theme_constant_override("separation", 8)
 	column.add_child(board)
-	var entries := Leaderboard.load_entries(leaderboard_path)
+	leaderboard_path_at_open = leaderboard_path
+	var entries := Leaderboard.load_entries(leaderboard_path_at_open)
 	_build_board_rows(entries)
 	var button_row := HBoxContainer.new()
 	button_row.add_theme_constant_override("separation", 12)
@@ -275,15 +277,19 @@ func _open_reset_confirm() -> void:
 	confirm_status.name = "StatusLabel"
 	confirm_status.visible = false
 	column.add_child(confirm_status)
-	# Focus wraps between Keep and Reset.
+	# Focus wraps between Keep and Reset in all directions.
 	keep.focus_neighbor_bottom = keep.get_path_to(do_reset)
 	keep.focus_next = keep.get_path_to(do_reset)
 	keep.focus_neighbor_top = keep.get_path_to(do_reset)
 	keep.focus_previous = keep.get_path_to(do_reset)
+	keep.focus_neighbor_left = keep.get_path_to(do_reset)
+	keep.focus_neighbor_right = keep.get_path_to(do_reset)
 	do_reset.focus_neighbor_top = do_reset.get_path_to(keep)
 	do_reset.focus_previous = do_reset.get_path_to(keep)
 	do_reset.focus_neighbor_bottom = do_reset.get_path_to(keep)
 	do_reset.focus_next = do_reset.get_path_to(keep)
+	do_reset.focus_neighbor_left = do_reset.get_path_to(keep)
+	do_reset.focus_neighbor_right = do_reset.get_path_to(keep)
 	keep.grab_focus()
 	_process(0.0)
 
@@ -304,12 +310,12 @@ func _close_reset_confirm() -> void:
 func _confirm_reset() -> void:
 	if router.busy:
 		return
-	var error := Leaderboard.clear(leaderboard_path)
+	var error := Leaderboard.clear(leaderboard_path_at_open)
 	if error == OK:
 		reset_confirm.queue_free()
 		reset_confirm = null
 		confirm_status = null
-		var entries := Leaderboard.load_entries(leaderboard_path)
+		var entries := Leaderboard.load_entries(leaderboard_path_at_open)
 		_build_board_rows(entries)
 		if is_instance_valid(reset_btn):
 			reset_btn.disabled = true
@@ -318,6 +324,12 @@ func _confirm_reset() -> void:
 			close_btn.grab_focus()
 		audio_service.play_ui(1)
 	else:
+		# clear() may have written an empty primary before the .bak/.tmp removal
+		# failed — reload the rows so the displayed board matches actual disk state.
+		var entries_after := Leaderboard.load_entries(leaderboard_path_at_open)
+		_build_board_rows(entries_after)
+		if is_instance_valid(reset_btn):
+			reset_btn.disabled = entries_after.is_empty()
 		if confirm_status != null:
 			confirm_status.text = "Could not reset scores."
 			confirm_status.visible = true

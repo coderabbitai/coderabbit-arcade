@@ -1303,6 +1303,8 @@ func check_runner_menu_reset() -> void:
 	if menu.board != null:
 		for row in menu.board.get_children():
 			check(row.get_child_count() >= 2, "reset test: row has children")
+			var lbl := row.get_child(1) as Label if row.get_child_count() >= 2 else null
+			check(lbl != null and "---" in lbl.text, "reset test: row shows placeholder after reset")
 
 	# Close the leaderboard before the failure-path test.
 	menu.close_btn.pressed.emit()
