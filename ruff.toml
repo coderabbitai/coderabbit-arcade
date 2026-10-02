@@ -1,0 +1,3 @@
+# Baseline: pyflakes errors only (undefined names, unused imports). Tighten over time.
+[lint]
+select = ["F"]

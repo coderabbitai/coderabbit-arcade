@@ -9,7 +9,6 @@ binds the same four maps the runtime samples (albedo, normal, ORM, emission). Pi
 mask tinted MINT (power-ups) or ORANGE (tools), as the runtime shader does.
 """
 import argparse
-import math
 from pathlib import Path
 import sys
 

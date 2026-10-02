@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.7.1-stable
+  PROJECT: hoppys-adventure-arcade
+
+jobs:
+  godot-tests:
+    name: godot-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Cache Godot
+        id: cache-godot
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/godot
+          key: godot-${{ env.GODOT_VERSION }}-linux-x86_64
+
+      - name: Download Godot
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot
+          curl -fsSL -o /tmp/godot.zip \
+            "https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d ~/godot
+          mv ~/godot/Godot_v${GODOT_VERSION}_linux.x86_64 ~/godot/godot
+
+      - name: Import project
+        run: ~/godot/godot --headless --path "$PROJECT" --import
+
+      # Headless suites only. Not listed here:
+      # - capture_runner_menu_previews, perf_probe, runner_perf_probe, runner_pickup_hitch
+      #   need a real window/GPU and are run locally (see CONTRIBUTING.md).
+      # - menu_smoke and menu_hoppy_smoke rely on pointer hover, which doesn't happen headless
+      #   (2 failures each, also on main).
+      - name: Run headless suites
+        run: |
+          suites=(
+            code_city_assets
+            enchanted_assets
+            enchanted_boundaries
+            enchanted_repo_smoke
+            menu_return_layout
+            orbital_assets
+            orbital_ops_smoke
+            platformer_boss
+            platformer_smoke
+            platformer_traversal
+            runner_boss_validator
+            runner_chunk_validator
+            runner_logic
+            runner_scaffold_check
+            runner_smoke
+            runner_visual_smoke
+            runner_warmup_check
+          )
+          failed=()
+          for suite in "${suites[@]}"; do
+            echo "::group::$suite"
+            log="/tmp/$suite.log"
+            set +e
+            timeout 600 ~/godot/godot --headless --path "$PROJECT" \
+              --script "res://tests/$suite.gd" 2>&1 | tee "$log"
+            rc=${PIPESTATUS[0]}
+            set -e
+            echo "::endgroup::"
+            # A script that fails to parse can still exit 0, so treat SCRIPT ERROR as a failure too.
+            if [ "$rc" -ne 0 ] || grep -q "SCRIPT ERROR" "$log"; then
+              echo "::error title=$suite::failed (exit $rc)"
+              failed+=("$suite")
+            fi
+          done
+          if [ ${#failed[@]} -gt 0 ]; then
+            echo "Failed suites: ${failed[*]}"
+            exit 1
+          fi
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install ruff gdtoolkit==4.*
+      - name: Ruff (tools)
+        run: ruff check tools hoppys-adventure-arcade/tools
+      # Advisory until the existing code is formatted; make it blocking afterwards.
+      - name: gdlint (advisory)
+        continue-on-error: true
+        run: gdlint hoppys-adventure-arcade
+      - name: No local paths or internal links
+        run: |
+          if git grep -nE '/Users/(jp|treymurphy)|docs\.google\.com' -- . ':!.github/workflows/ci.yml'; then
+            echo "::error::Local machine paths or internal document links found"
+            exit 1
+          fi
+
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Scan for secrets
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /tmp gitleaks
+          /tmp/gitleaks git --redact --verbose .
