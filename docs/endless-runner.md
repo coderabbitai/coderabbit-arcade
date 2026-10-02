@@ -154,9 +154,9 @@ WARNING: Detected another project.godot at res://Assets/SynthCitiesGodot. The fo
 [  83% ] loading_editor_layout | Editor layout ready.
 [ DONE ] loading_editor_layout
 
-ERROR: Cannot save file '/Users/jp/Library/Application Support/Godot/editor_settings-4.7.tres'.
+ERROR: Cannot save file '~/Library/Application Support/Godot/editor_settings-4.7.tres'.
    at: save (scene/resources/resource_format_text.cpp:1768)
-ERROR: Error saving editor settings to /Users/jp/Library/Application Support/Godot/editor_settings-4.7.tres
+ERROR: Error saving editor settings to ~/Library/Application Support/Godot/editor_settings-4.7.tres
    at: save (editor/settings/editor_settings.cpp:1525)
 ```
 

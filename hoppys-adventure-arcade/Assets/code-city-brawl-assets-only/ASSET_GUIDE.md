@@ -2,7 +2,7 @@
 
 ## Source authority
 
-Read October 2, 2026: live [GDD](https://docs.google.com/document/d/1YCLWNykTNDglKGyuOWIMdTl9A8eEoEEgTR_INSOCdUo/edit), [Technical Implementation Baseline](https://docs.google.com/document/d/1MPW_KI8VanzO_67Qkf3v_cGAfflqRRv5uRF6QmwL_Rc/edit), and [Agent Context](https://docs.google.com/document/d/1VBa-KPhVCnddZsAiklrU5W_UqJtKsQU2WYJs-NeY3_8/edit), plus the repository's newer implementation notes. Source text was reviewed; embedded document illustrations were not visually audited.
+Read October 2, 2026: live GDD (internal), Technical Implementation Baseline (internal), and Agent Context (internal), plus the repository's newer implementation notes. Source text was reviewed; embedded document illustrations were not visually audited.
 
 The current GDD separates Code City Brawl (Mode 1) from Heroes vs. Villains (Mode 2). This pack is exclusively Mode 1. The three-stage sequence, enemy identities, weapons, effects, allies and boss phase thresholds below come from the GDD. Visual character designs, individual attack poses and suggested timings are creative proposals for review during gameplay implementation.
 

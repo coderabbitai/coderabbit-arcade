@@ -2,7 +2,7 @@
 
 ## Design grounding
 
-Reviewed October 1, 2026: the live [GDD](https://docs.google.com/document/d/1YCLWNykTNDglKGyuOWIMdTl9A8eEoEEgTR_INSOCdUo/edit), [Technical Implementation Baseline](https://docs.google.com/document/d/1MPW_KI8VanzO_67Qkf3v_cGAfflqRRv5uRF6QmwL_Rc/edit), and [Agent Context](https://docs.google.com/document/d/1VBa-KPhVCnddZsAiklrU5W_UqJtKsQU2WYJs-NeY3_8/edit), together with the repository's newer implementation notes and Orbital Ops pack. Source prose was read; embedded document artwork was not audited.
+Reviewed October 1, 2026: the live GDD (internal), Technical Implementation Baseline (internal), and Agent Context (internal), together with the repository's newer implementation notes and Orbital Ops pack. Source prose was read; embedded document artwork was not audited.
 
 The GDD specifies enchanted forest/castle code-magic, Nitpick Gnomes, Bloat Trolls, Spaghetti Code Vines, crumbling branch platforms, enchanted comment traps, and a slow stone Legacy Monolith whose technical-debt armor must be stripped away. The menu calls for rune trees, floating code-scroll banners, a distant spire, and sky/treeline/foreground flora layers. Exact attacks, armor counts, and timings below are creative proposals, not additional GDD requirements.
 

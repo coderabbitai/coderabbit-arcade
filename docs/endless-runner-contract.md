@@ -18,7 +18,7 @@ This document is the single source of truth shared by the two agents building th
 
 Neither side edits the other's files. Changes to this contract are made by the backend and announced
 in the PR description. Design authority: the GDD Endless Runner section and
-`Hoppys_Adventure_Arcade_Technical_Implementation.md` §9.
+the internal technical implementation baseline §9.
 
 ## 1. Ownership
 

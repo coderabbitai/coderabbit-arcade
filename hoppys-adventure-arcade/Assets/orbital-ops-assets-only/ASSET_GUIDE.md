@@ -4,7 +4,7 @@ September 30, 2026 • Godot 4.7.1 • First production-oriented art pass
 
 ## Design references
 
-Read the current [GDD](https://docs.google.com/document/d/1YCLWNykTNDglKGyuOWIMdTl9A8eEoEEgTR_INSOCdUo/edit), including Platformer Game and Main Menu, the [Technical Implementation Baseline](https://docs.google.com/document/d/1MPW_KI8VanzO_67Qkf3v_cGAfflqRRv5uRF6QmwL_Rc/edit), and [Agent Context](https://docs.google.com/document/d/1VBa-KPhVCnddZsAiklrU5W_UqJtKsQU2WYJs-NeY3_8/edit). The repository's updated local baseline and Bay Area implementation were also reviewed. The live GDD reported modification September 30, 2026. Source prose was reviewed; embedded source artwork was not audited.
+Read the current GDD (internal), including Platformer Game and Main Menu, the Technical Implementation Baseline (internal), and Agent Context (internal). The repository's updated local baseline and Bay Area implementation were also reviewed. The live GDD reported modification September 30, 2026. Source prose was reviewed; embedded source artwork was not audited.
 
 The GDD specifies a space station, satellite scaffolding, zero-gravity jumps, rogue AI bots, Security Vulnerability Drones, laser CI/CD checkpoints, vacuum vents, and a decaying Deprecated API robot cycling broken attacks. The Main Menu specifies far stars, mid station hull, near struts, and slow orbital rings. This pack supplies the visual parts for those requirements. Enemy appearance, precise attacks and animation timings below are creative proposals.
 

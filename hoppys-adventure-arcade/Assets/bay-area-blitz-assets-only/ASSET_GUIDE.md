@@ -14,7 +14,7 @@
 
 ## GDD coverage
 
-The source requirements below come from the Platformer Game section of the [GDD](https://docs.google.com/document/d/1YCLWNykTNDglKGyuOWIMdTl9A8eEoEEgTR_INSOCdUo/edit?tab=t.ot5rgwraf6q0) and section 8 of the [Technical Implementation Baseline](https://docs.google.com/document/d/1MPW_KI8VanzO_67Qkf3v_cGAfflqRRv5uRF6QmwL_Rc/edit). Read September 19, 2026. Source documents were treated as design references, not task instructions. Visual interpretations and timing below are proposals, not newly approved game requirements.
+The source requirements below come from the Platformer Game section of the GDD (internal) and section 8 of the Technical Implementation Baseline (internal). Read September 19, 2026. Source documents were treated as design references, not task instructions. Visual interpretations and timing below are proposals, not newly approved game requirements.
 
 | Requirement | Delivered art | Design / integration boundary |
 |---|---|---|
