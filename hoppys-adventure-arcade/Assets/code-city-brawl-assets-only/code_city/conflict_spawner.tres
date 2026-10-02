@@ -1,0 +1,48 @@
+[gd_resource type="SpriteFrames" load_steps=10 format=3]
+
+[ext_resource type="Texture2D" path="conflict_spawner.png" id="1"]
+
+[sub_resource type="AtlasTexture" id="Frame_0"]
+atlas = ExtResource("1")
+region = Rect2(0, 0, 256, 256)
+
+[sub_resource type="AtlasTexture" id="Frame_1"]
+atlas = ExtResource("1")
+region = Rect2(256, 0, 256, 256)
+
+[sub_resource type="AtlasTexture" id="Frame_2"]
+atlas = ExtResource("1")
+region = Rect2(512, 0, 256, 256)
+
+[sub_resource type="AtlasTexture" id="Frame_3"]
+atlas = ExtResource("1")
+region = Rect2(768, 0, 256, 256)
+
+[sub_resource type="AtlasTexture" id="Frame_4"]
+atlas = ExtResource("1")
+region = Rect2(0, 256, 256, 256)
+
+[sub_resource type="AtlasTexture" id="Frame_5"]
+atlas = ExtResource("1")
+region = Rect2(256, 256, 256, 256)
+
+[sub_resource type="AtlasTexture" id="Frame_6"]
+atlas = ExtResource("1")
+region = Rect2(512, 256, 256, 256)
+
+[sub_resource type="AtlasTexture" id="Frame_7"]
+atlas = ExtResource("1")
+region = Rect2(768, 256, 256, 256)
+
+[resource]
+animations = [
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_0")}], "loop": false, "name": &"idle_a", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_1")}], "loop": false, "name": &"idle_b", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_2")}], "loop": false, "name": &"summon_warning", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_3")}], "loop": false, "name": &"summon", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_4")}], "loop": false, "name": &"slam_warning", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_5")}], "loop": false, "name": &"slam", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_6")}], "loop": false, "name": &"sweep", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_7")}], "loop": false, "name": &"recover", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("Frame_0")}, {"duration": 1.0, "texture": SubResource("Frame_1")}], "loop": true, "name": &"idle", "speed": 3.0}
+]

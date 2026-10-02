@@ -238,6 +238,8 @@ Acceptance: first/second hit and clean recovery match the table; paused time gra
 
 ## 10. Beat’em up
 
+**Asset update, 2026-10-02:** The updated GDD names this three-stage experience **Mode 1: Code City Brawl**, alongside a separate Mode 2 outside this pass. `Assets/code-city-brawl-assets-only/` now contains 200 frames, 217 named states/cycles, 19 SpriteFrames resources and three panoramas. See `docs/code-city-brawl-assets.md` and its asset guide for coverage, coordinate conventions and proposed boss moves. These are visual resources; the gameplay systems below remain proposals, and no mode route was activated by the asset work.
+
 Use `CharacterBody2D` for 8-direction movement on the ground plane. **Proposed jump model:** store separate jump height/vertical velocity and offset the visual body above its ground position. Keep the ground shadow/sort position stable; determine airborne hit eligibility explicitly. Do not reuse platformer screen-Y gravity, because screen Y is also the brawler’s depth axis.
 
 Use foot-position sorting and a tunable depth tolerance for melee: characters far apart along the belt must not hit merely because their sprites overlap. Combat state owns attack windows; AnimationPlayer/AnimationTree presents those states. Combo sequence is jab → overhead swing → spinning kick/knockback. Inputs inside the chain window queue the next hit; expiry resets to hit 1. Hurt/death interrupts attacks. Exact window durations and aerial combos remain open.

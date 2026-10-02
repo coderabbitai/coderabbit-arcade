@@ -64,3 +64,7 @@ Enchanted Repo now has an assets-only pack at `Assets/enchanted-repo-assets-only
 ## Enchanted Repo v1 implementation update
 
 All three Platformer levels are now playable. Enchanted Repo extends the existing shared level lifecycle with crumbling branches, timed comment/vine hazards, Nitpick Gnomes, Bloat Trolls, and the Legacy Monolith. The boss has two three-hit armor layers plus six core hits, damageable during recovery; these are v1 tuning choices. Music is the user-selected `04 - Silent Forest.mp3` for traversal and `05 - Battle 1.mp3` for the boss in `Assets/Audio/Platformer/The Enchanted Repo/`. See `docs/enchanted-repo.md` for behavior, tests, and limits. This supersedes the earlier asset-only/unavailable status.
+
+## Code City Brawl assets — 2026-10-02
+
+The current GDD distinguishes Beat'em Up Mode 1: Code City Brawl from Mode 2: Heroes vs. Villains. Mode 1 now has an assets-only pack at `Assets/code-city-brawl-assets-only/`: 200 frames, 217 named states/cycles, 19 SpriteFrames resources and three panoramas. Covers nine enemies, three Grand Merge Conflict phases, stage props/hazards, six weapons, items/status icons, allies and merge FX. See `docs/code-city-brawl-assets.md` and the pack's `ASSET_GUIDE.md` for coverage, proposed moves and animation gaps. Brawler gameplay and menu routes remain placeholders; Hoppy's expanded brawler animation, audio, full animation polish and level assembly are not implemented by this asset pass.
