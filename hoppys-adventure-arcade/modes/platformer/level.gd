@@ -11,6 +11,10 @@ const SFX := {
 	"hurt": preload("res://Assets/Backgrounds/Sunny-land-forest-files/demo/assets/sound/wavs/hurt.wav")
 }
 const EXIT_TOP := 540.0
+const PAUSE_SHADE := Color(0.025, 0.06, 0.1, 0.96)
+# Lighter than the pause shade so the frozen final moment stays readable behind the results.
+const RESULTS_SHADE := Color(0.025, 0.06, 0.1, 0.84)
+const RESULTS_FADE := 0.65
 const HEART_FULL = preload("res://Assets/bay-area-blitz-assets-only/individual/hud/heart_full.png")
 const HEART_EMPTY = preload("res://Assets/bay-area-blitz-assets-only/individual/hud/heart_empty.png")
 var level_title := ""
@@ -40,6 +44,8 @@ var overlay: ColorRect
 var overlay_title: Label
 var overlay_detail: Label
 var resume_button: Button
+var overlay_card: Control
+var results_reveal: Tween
 var exit_sprite: AnimatedSprite2D
 var music: AudioStreamPlayer
 var sfx_players := {}
@@ -159,7 +165,7 @@ func _hud() -> void:
 	controls.position = Vector2(24, -32)
 	root.add_child(controls)
 	overlay = ColorRect.new()
-	overlay.color = Color(0.025, 0.06, 0.1, 0.96)
+	overlay.color = PAUSE_SHADE
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.add_child(overlay)
 	intro_banner = PanelContainer.new()
@@ -182,6 +188,7 @@ func _hud() -> void:
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.add_child(center)
+	overlay_card = center
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 18)
 	center.add_child(col)
@@ -212,6 +219,9 @@ func _pause() -> void:
 	overlay_title.text = "TAKE A BREATHER"
 	overlay_detail.text = "Your commits can wait."
 	resume_button.show()
+	overlay.color = PAUSE_SHADE
+	overlay.modulate.a = 1.0
+	overlay_card.position.y = 0
 	overlay.show()
 	resume_button.grab_focus()
 func _resume() -> void:
@@ -231,11 +241,26 @@ func _finish(won: bool) -> void:
 	overlay_title.text = "MERGE SUCCESSFUL!" if won else "BUILD FAILED"
 	overlay_detail.text = "%06d POINTS   /   %02d:%02d\n%s" % [score, int(elapsed) / 60, int(elapsed) % 60, level_title + " complete." if won else "Fresh branch. Another try."]
 	resume_button.hide()
-	overlay.show()
-	resume_button.get_parent().get_child(3).grab_focus()
+	_reveal_results(0.35 if won else maxf(0.0, player.death_time() - 0.35))
+## Holds on the frozen final moment (Hoppy's knockout keeps playing), then eases the results in.
+func _reveal_results(delay: float) -> void:
+	overlay.color = RESULTS_SHADE
+	overlay.modulate.a = 0.0
+	overlay_card.position.y = 40
+	results_reveal = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	results_reveal.tween_interval(delay)
+	results_reveal.tween_callback(overlay.show)
+	results_reveal.tween_property(overlay, "modulate:a", 1.0, RESULTS_FADE).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	results_reveal.parallel().tween_property(overlay_card, "position:y", 0.0, RESULTS_FADE).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	results_reveal.tween_callback(resume_button.get_parent().get_child(3).grab_focus)
 func _input(event: InputEvent) -> void:
 	# Once a route change has started, the level is leaving: never re-pause it under the veil.
 	if AppRouter.busy:
+		return
+	# Jump, swipe or confirm skips the wait; the press is consumed so it can't also hit Retry.
+	if finished and results_reveal and results_reveal.is_running() and (event.is_action_pressed("jump") or event.is_action_pressed("attack") or event.is_action_pressed("ui_accept")):
+		results_reveal.custom_step(10.0)
+		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("pause") and not finished:
 		if get_tree().paused: _resume()
