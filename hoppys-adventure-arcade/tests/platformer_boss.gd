@@ -98,6 +98,15 @@ func run() -> void:
 		if level.finished: break
 	Input.action_release("jump")
 	check(level.finished and paused, "Landing on unlocked MERGE completes level")
+	var skip := InputEventAction.new()
+	skip.action = "jump"
+	skip.pressed = true
+	Input.parse_input_event(skip)
+	await process_frame
+	await process_frame
+	check(level.overlay.visible and is_equal_approx(level.overlay.modulate.a, 1.0), "Jump skips the results fade")
+	check(level.resume_button.get_parent().get_child(3).has_focus() and not level.results_reveal.is_running(), "Skipped results still focus Retry")
+	check(current_scene == level, "Skip press does not also trigger Retry")
 	await capture("/tmp/hoppy-boss-merge-result.png")
 	paused = false
 	root.get_node("AppRouter").go("bay_area_blitz")

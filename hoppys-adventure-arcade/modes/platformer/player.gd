@@ -7,6 +7,9 @@ signal swiped
 const Art = preload("res://modes/platformer/art.gd")
 const SPEED := 310.0
 const JUMP := -740.0
+## Seconds the death sequence needs before the level should show its results.
+const DEATH_TIME := 1.7
+const FALL_DEATH_TIME := 0.6
 var input_lock := 0.0
 var hp := 3
 var shield := false
@@ -94,10 +97,7 @@ func _physics_process(dt: float) -> void:
 	elif absf(velocity.x) > 10: clip = "run"
 	sprite.play(clip)
 	if position.y > 850:
-		hp = 0
-		health_changed.emit()
-		sprite.play("death")
-		died.emit()
+		_die(true)
 func damage(source_x: float) -> bool:
 	if hp <= 0 or invulnerable > 0 or boost > 0:
 		return false
@@ -113,9 +113,31 @@ func damage(source_x: float) -> bool:
 	velocity = Vector2(340 * (-1 if source_x >= position.x else 1), -230)
 	health_changed.emit()
 	if hp == 0:
-		sprite.play("death")
-		died.emit()
+		_die(false)
 	return true
 func heal(amount: int) -> void:
 	hp = mini(3, hp + amount)
 	health_changed.emit()
+
+## Plays Hoppy's knockout while the level freezes the world around it. A pit fall happens
+## below the camera, so it skips the animation and only reports the shorter delay.
+func _die(fell: bool) -> void:
+	hp = 0
+	velocity = Vector2.ZERO
+	invulnerable = 0
+	health_changed.emit()
+	# The level pauses the tree on `died`; keep Hoppy (and only Hoppy) animating through it.
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	if not fell:
+		sprite.modulate = Color.WHITE
+		sprite.play("death")
+		var knockout := create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+		knockout.tween_property(sprite, "position:y", -46.0, 0.24).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		knockout.tween_property(sprite, "position:y", 0.0, 0.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		knockout.tween_property(sprite, "scale", Vector2(1.12, 0.88), 0.07)
+		knockout.tween_property(sprite, "scale", Vector2.ONE, 0.12)
+		knockout.tween_interval(0.45)
+		knockout.tween_property(sprite, "modulate:a", 0.0, 0.5)
+	died.emit()
+func death_time() -> float:
+	return FALL_DEATH_TIME if position.y > 850 else DEATH_TIME

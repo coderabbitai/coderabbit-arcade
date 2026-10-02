@@ -161,6 +161,18 @@ func run() -> void:
 	level.player.invulnerable = 0
 	level.player.damage(0)
 	check(level.finished and level.player.hp == 0, "Death ends run")
+	check(paused and level.player.sprite.animation == &"death", "Death freezes the world and plays the knockout")
+	check(not level.overlay.visible, "Results wait for the knockout")
+	await create_timer(0.6).timeout
+	check(level.player.sprite.position.y < -10 or level.player.sprite.frame > 0, "Knockout animates while the tree is paused")
+	await capture("/tmp/hoppy-death-knockout.png")
+	await create_timer(1.2).timeout
+	await capture("/tmp/hoppy-death-results-fading.png")
+	await create_timer(0.6).timeout
+	var retry: Button = level.resume_button.get_parent().get_child(3)
+	check(level.overlay.visible and is_equal_approx(level.overlay.modulate.a, 1.0), "Results menu fades fully in")
+	check(level.overlay_card.position.y == 0 and retry.has_focus(), "Results menu settles with Retry focused")
+	await capture("/tmp/hoppy-death-results.png")
 	paused = false
 	root.get_node("AppRouter").go("platformer")
 	await create_timer(0.7).timeout
