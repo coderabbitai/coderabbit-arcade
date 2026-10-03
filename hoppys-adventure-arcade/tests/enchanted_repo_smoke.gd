@@ -10,6 +10,11 @@ func frames(count: int) -> void:
 func check(ok: bool, message: String) -> void:
 	print("PASS: " if ok else "FAIL: ",message)
 	if not ok: failures+=1
+func wait_for(condition: Callable, timeout_seconds: float, message: String) -> void:
+	var deadline := Time.get_ticks_msec() + int(timeout_seconds * 1000)
+	while not condition.call() and Time.get_ticks_msec() < deadline:
+		await process_frame
+	check(condition.call(), message)
 func capture(path: String) -> void:
 	if DisplayServer.get_name()!="headless":
 		await RenderingServer.frame_post_draw
@@ -230,6 +235,8 @@ func run() -> void:
 	for i in 7:
 		level.boss.hit_flash=0
 		level.boss.take_hit()
+	# Victory celebrates before restoring traversal, gates and the follow camera.
+	await wait_for(func() -> bool: return level.encounter == "cleared", 8.0, "Victory celebration completes")
 	await frames(3)
 	check(level.boss_down and level.encounter=="cleared" and level.projectiles.get_child_count()==0,"Defeat clears waves and unlocks MERGE")
 	check(level.score==score_before+1000,"Boss score awards exactly once")
