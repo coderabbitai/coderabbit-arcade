@@ -48,12 +48,7 @@ func _ready() -> void:
 	boss.position = Vector2(4670,600)
 	boss.player = player
 	boss.fired.connect(_spawn_projectile)
-	boss.defeated.connect(func(points: int):
-		score += points
-		boss_down = true
-		_end_encounter()
-		exit_sprite.modulate = Color.WHITE
-		_update_hud())
+	boss.defeated.connect(_boss_defeated)
 	add_child(boss)
 	for x in [320,470,570,750,840,1020,1260,1470,1580,1710,1880,2120,2310,2470,2650,2820,2990,3160,3380,3500,3690,3880,4100]:
 		var y := 540.0
