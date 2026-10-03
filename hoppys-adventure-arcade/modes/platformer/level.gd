@@ -16,6 +16,8 @@ const PAUSE_SHADE := Color(0.025, 0.06, 0.1, 0.96)
 # Lighter than the pause shade so the frozen final moment stays readable behind the results.
 const RESULTS_SHADE := Color(0.025, 0.06, 0.1, 0.84)
 const RESULTS_FADE := 0.65
+## How long the "BOSS DOWN!" banner stays up after a boss falls.
+const BOSS_CELEBRATION := 4.2
 const HEART_FULL = preload("res://Assets/bay-area-blitz-assets-only/individual/hud/heart_full.png")
 const HEART_EMPTY = preload("res://Assets/bay-area-blitz-assets-only/individual/hud/heart_empty.png")
 var level_title := ""
@@ -32,6 +34,7 @@ var camera: Camera2D
 var score := 0
 var elapsed := 0.0
 var finished := false
+var won_run := false
 var boss_down := false
 var boss: Node2D
 var pickups: Array[Dictionary] = []
@@ -59,6 +62,7 @@ var banner_style: StyleBoxFlat
 var banner_title: Label
 var previous_feet := Vector2.ZERO
 var music_fade: Tween
+var celebration_hop: Tween
 
 func _pickup(kind: String, pos: Vector2) -> void:
 	var area := Area2D.new()
@@ -236,6 +240,11 @@ func _resume() -> void:
 func _finish(won: bool) -> void:
 	if finished: return
 	finished = true
+	won_run = won
+	# A boss-defeat hop may be mid-air; land the sprite so the frozen final frame isn't offset.
+	if celebration_hop and celebration_hop.is_valid():
+		celebration_hop.kill()
+	player.sprite.position.y = 0.0
 	_clear_projectiles()
 	intro_banner.hide()
 	player.set_physics_process(false)
@@ -260,9 +269,10 @@ func _input(event: InputEvent) -> void:
 	# Once a route change has started, the level is leaving: never re-pause it under the veil.
 	if AppRouter.busy:
 		return
-	# Jump, swipe or confirm skips the fade-in, but only once the overlay is visible — this
-	# prevents a button mash at the moment of death from skipping the knockout animation.
-	if finished and overlay.visible and results_reveal and results_reveal.is_running() and (event.is_action_pressed("jump") or event.is_action_pressed("attack") or event.is_action_pressed("ui_accept")):
+	# Jump, swipe or confirm skips the fade-in. After a death it only works once the overlay is
+	# visible, so a button mash at the moment of death can't skip the knockout animation.
+	# A win has no knockout to protect, so it can be skipped right away.
+	if finished and (won_run or overlay.visible) and results_reveal and results_reveal.is_running() and (event.is_action_pressed("jump") or event.is_action_pressed("attack") or event.is_action_pressed("ui_accept")):
 		results_reveal.custom_step(10.0)
 		get_viewport().set_input_as_handled()
 		return
@@ -356,17 +366,17 @@ func _boss_defeated(points: int) -> void:
 	score += points
 	boss_down = true
 	_sound("boss_down")
-	# Disarm the arena immediately: any projectile the boss fired last-frame
-	# and the gate collision are gone before Hoppy can be hit.
-	_clear_projectiles()
-	for gate in arena_gates.get_children():
-		gate.set_deferred("collision_layer", 0)
-	# Stop Hoppy's physics so we can script the celebration jumps manually.
-	player.set_physics_process(false)
-	player.velocity = Vector2.ZERO
-	player.sprite.play("idle")
-	var floor_y := player.position.y
+	# Clear the encounter right away: shots, gates, camera and music resolve exactly as before,
+	# and MERGE unlocks immediately. The celebration is purely cosmetic: it never moves or
+	# freezes Hoppy, so it can't fight player input or the level's completion checks.
+	_end_encounter()
+	exit_sprite.modulate = Color.WHITE
+	_update_hud()
+	_celebrate_boss_down()
 
+## Victory flash, pulsing "BOSS DOWN!" banner and two sprite-only hops. Every tween is bound
+## to the level and pauses with it, so freeing or pausing the level stops the celebration too.
+func _celebrate_boss_down() -> void:
 	# Quick green flash across the whole HUD.
 	var hud_root := overlay.get_parent() as Control
 	var flash := ColorRect.new()
@@ -379,7 +389,7 @@ func _boss_defeated(points: int) -> void:
 	flash_tween.tween_property(flash, "color:a", 0.0, 0.55)
 	flash_tween.tween_callback(flash.queue_free)
 
-	# Victory banner fades in.
+	# Victory banner fades in (_end_encounter hid the intro banner it reuses).
 	banner_title.text = "BOSS DOWN!\nHead to the exit."
 	banner_style.bg_color = Color(0.04, 0.15, 0.06, 0.97)
 	banner_style.border_color = Color("7cffbd")
@@ -389,38 +399,27 @@ func _boss_defeated(points: int) -> void:
 	var fade := create_tween().set_pause_mode(Tween.TWEEN_PAUSE_STOP)
 	fade.tween_property(intro_banner, "modulate:a", 1.0, 0.3).set_trans(Tween.TRANS_SINE)
 
-	# Banner border pulses teal ↔ gold for the duration.
+	# Banner border pulses teal <-> gold for the duration.
 	var pulse := create_tween().set_pause_mode(Tween.TWEEN_PAUSE_STOP).set_loops()
 	pulse.tween_method(func(v: float): banner_style.border_color = Color("7cffbd").lerp(Color("ffbd7c"), v), 0.0, 1.0, 0.8)
 	pulse.tween_method(func(v: float): banner_style.border_color = Color("ffbd7c").lerp(Color("7cffbd"), v), 0.0, 1.0, 0.8)
 
-	# Hoppy jumps twice — scripted position tweens, no physics needed.
-	# Timers use process_always=false so the celebration pauses with the game.
+	# Hoppy hops twice. Only the sprite moves; the body and its physics are untouched.
+	celebration_hop = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_STOP)
 	for _i in 2:
-		await get_tree().create_timer(0.85, false).timeout
-		if finished or not is_inside_tree():
-			pulse.kill()
-			return
-		var jump := create_tween().set_pause_mode(Tween.TWEEN_PAUSE_STOP)
-		jump.tween_callback(func(): player.sprite.play("jump_rise"))
-		jump.tween_property(player, "position:y", floor_y - 95, 0.38).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-		jump.tween_callback(func(): player.sprite.play("jump_fall"))
-		jump.tween_property(player, "position:y", floor_y, 0.32).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		jump.tween_callback(func(): player.sprite.play("idle"))
+		celebration_hop.tween_interval(0.85)
+		celebration_hop.tween_property(player.sprite, "position:y", -95.0, 0.38).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		celebration_hop.tween_property(player.sprite, "position:y", 0.0, 0.32).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
-	await get_tree().create_timer(2.5, false).timeout
-	if finished or not is_inside_tree():
+	var settle := create_tween().set_pause_mode(Tween.TWEEN_PAUSE_STOP)
+	settle.tween_interval(BOSS_CELEBRATION)
+	settle.tween_callback(func():
 		pulse.kill()
-		return
-	pulse.kill()
-	banner_style.set_border_width_all(2)
-	banner_style.border_color = Color("ffbd7c")
-	intro_banner.modulate = Color.WHITE
-	_end_encounter()
-	exit_sprite.modulate = Color.WHITE
-	_update_hud()
-	player.set_physics_process(true)
-	player.input_lock = 0.15
+		banner_style.set_border_width_all(2)
+		banner_style.bg_color = Color(0.035, 0.08, 0.12, 0.97)
+		banner_style.border_color = Color("ffbd7c")
+		intro_banner.hide()
+		intro_banner.modulate = Color.WHITE)
 
 func _create_player() -> void:
 	player = Player.new()
