@@ -45,7 +45,8 @@ Per-mode notes and test details live in [`docs/`](docs/).
 
 Every new asset must be redistributable in a public repository.
 
-- Accepted: your own original work (contributed under the project's asset terms), **CC0**, or **CC BY 4.0**.
+- Accepted: third-party assets under **CC0** or **CC BY 4.0**.
+- Original art, audio or models made for the project: please **open an issue first**. The license for project-original assets hasn't been finalized yet (see [`ASSETS_LICENSES.md`](ASSETS_LICENSES.md#project-original)), so we can't merge original-art contributions until it is. Procedural assets generated in GDScript count as code and fall under the MIT license.
 - Not accepted: "free for use but no redistribution" packs, which covers most free marketplace packs. Also not accepted: NC/ND licenses, and assets of unknown origin.
 - Add a row to [`ASSETS_LICENSES.md`](ASSETS_LICENSES.md) in the same PR, and include the upstream license file next to the asset.
 - AI-generated assets: record the tool and prompts, following the existing `PROMPTS.md` / `generation.json` convention. Don't record local machine paths.

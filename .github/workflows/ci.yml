@@ -24,6 +24,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Cache Godot
         id: cache-godot
@@ -97,6 +99,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
@@ -109,7 +113,10 @@ jobs:
         run: gdlint hoppys-adventure-arcade
       - name: No local paths or internal links
         run: |
-          if git grep -nE '/Users/(jp|treymurphy)|docs\.google\.com' -- . ':!.github/workflows/ci.yml'; then
+          # The vendored Sunny Land TexturePacker files keep their upstream author's path; they are third-party and untouched.
+          if git grep -nE '/Users/[A-Za-z0-9._-]+/|docs\.google\.com' -- . \
+            ':!.github/workflows/ci.yml' \
+            ':!hoppys-adventure-arcade/Assets/Backgrounds/Sunny-land-forest-files/demo/assets/atlas/*.tps'; then
             echo "::error::Local machine paths or internal document links found"
             exit 1
           fi
@@ -122,6 +129,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Scan for secrets
         env:
           GITLEAKS_VERSION: 8.30.1
