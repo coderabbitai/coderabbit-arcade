@@ -255,6 +255,7 @@ func run() -> void:
 	await check_runner_ui()
 	await check_runner_audio()
 	await check_runner_full_loop()
+	await check_runner_menu_reset()
 	root.get_node("AudioService").shutdown()
 	await create_timer(0.3).timeout
 	failures += _logger.errors()
@@ -1229,6 +1230,136 @@ func check_runner_full_loop() -> void:
 	print("RUNNER FULL LOOP: ", "PASS" if before == failures else "FAIL", " (menu, play, hit, pursuit, %ss timer recovery, hit, hit, caught, finished, game over, Codex, retry, menu, hub, default music; isolated board removed)" % recovery_seconds)
 	current_scene.free()
 	await frames()
+
+func check_runner_menu_reset() -> void:
+	var before := failures
+	var reset_board_path := "user://test_runner_menu_reset_%d.cfg" % OS.get_process_id()
+	var RunnerLeaderboard = load("res://scenes/runner/systems/runner_leaderboard.gd")
+
+	# Seed synthetic entries so the board is non-empty.
+	for i in 3:
+		RunnerLeaderboard.submit({
+			"run_id": "reset-seed-%d" % i, "name": "Tester", "score": 100 + i * 10,
+			"duration": 60.0, "seed": 1, "submitted_at": 1700000000
+		}, reset_board_path)
+
+	var router := root.get_node("AppRouter")
+	router.go("runner")
+	await _wait_for(func() -> bool: return not router.busy, 5, "reset test: runner route completes")
+	var menu := current_scene
+	check(menu != null and menu.name == &"RunnerMenu", "reset test: at RunnerMenu")
+	menu.leaderboard_path = reset_board_path
+
+	# Open leaderboard. Check initial state: Reset enabled, Close focused.
+	menu.buttons[1].pressed.emit()
+	await frames()
+	check(menu.modal != null and menu.board != null, "reset test: leaderboard panel open")
+	check(is_instance_valid(menu.reset_btn) and not menu.reset_btn.disabled, "reset test: Reset scores enabled for non-empty board")
+	check(is_instance_valid(menu.close_btn) and root.gui_get_focus_owner() == menu.close_btn, "reset test: Close has initial focus")
+
+	# Cancel via button: bytes unchanged, no routing, focus restored to Reset.
+	var bytes_before := FileAccess.get_file_as_bytes(reset_board_path)
+	menu.reset_btn.pressed.emit()
+	await frames()
+	check(menu.reset_confirm != null, "reset test: confirmation modal opens")
+	var keep_btn := menu.reset_confirm.find_child("KeepScoresButton", true, false) as Button if menu.reset_confirm != null else null
+	check(keep_btn != null and root.gui_get_focus_owner() == keep_btn, "reset test: safe action focused on confirm open")
+	if keep_btn != null:
+		keep_btn.pressed.emit()
+	await frames()
+	check(menu.reset_confirm == null, "reset test: button cancel closes confirmation")
+	check(FileAccess.get_file_as_bytes(reset_board_path) == bytes_before, "reset test: cancel leaves board bytes unchanged")
+	check(not router.busy, "reset test: cancel does not route")
+	check(is_instance_valid(menu.reset_btn) and root.gui_get_focus_owner() == menu.reset_btn, "reset test: cancel restores focus to Reset scores")
+
+	# Cancel via ui_cancel: same guarantees.
+	menu.reset_btn.pressed.emit()
+	await frames()
+	var cancel_event := InputEventAction.new()
+	cancel_event.action = &"ui_cancel"
+	cancel_event.pressed = true
+	menu._unhandled_input(cancel_event)
+	await frames()
+	check(menu.reset_confirm == null, "reset test: ui_cancel closes confirmation")
+	check(menu.modal != null, "reset test: ui_cancel does not close leaderboard")
+	check(FileAccess.get_file_as_bytes(reset_board_path) == bytes_before, "reset test: ui_cancel cancel leaves bytes unchanged")
+	check(is_instance_valid(menu.reset_btn) and root.gui_get_focus_owner() == menu.reset_btn, "reset test: ui_cancel restores focus to Reset scores")
+
+	# Confirm reset: placeholder rows, zero entries, companions purged, Reset disabled, Close focused.
+	menu.reset_btn.pressed.emit()
+	await frames()
+	var confirm_btn := menu.reset_confirm.find_child("ResetConfirmButton", true, false) as Button if menu.reset_confirm != null else null
+	check(confirm_btn != null, "reset test: ResetConfirmButton found")
+	if confirm_btn != null:
+		confirm_btn.pressed.emit()
+	await frames()
+	check(menu.reset_confirm == null, "reset test: confirm closes modal")
+	var reloaded: Array = RunnerLeaderboard.load_entries(reset_board_path)
+	check(reloaded.is_empty(), "reset test: board has zero entries after reset")
+	check(not FileAccess.file_exists(reset_board_path + ".bak"), "reset test: .bak removed after reset")
+	check(not FileAccess.file_exists(reset_board_path + ".tmp"), "reset test: .tmp absent after reset")
+	check(is_instance_valid(menu.reset_btn) and menu.reset_btn.disabled, "reset test: Reset scores disabled after successful reset")
+	check(is_instance_valid(menu.close_btn) and root.gui_get_focus_owner() == menu.close_btn, "reset test: Close focused after successful reset")
+	if menu.board != null:
+		for row in menu.board.get_children():
+			check(row.get_child_count() >= 2, "reset test: row has children")
+			var lbl := row.get_child(1) as Label if row.get_child_count() >= 2 else null
+			check(lbl != null and "---" in lbl.text, "reset test: row shows placeholder after reset")
+
+	# Close the leaderboard before the failure-path test.
+	menu.close_btn.pressed.emit()
+	await frames()
+	check(menu.modal == null, "reset test: leaderboard closed")
+
+	# Failure path: blocker file stands where the board directory would be.
+	var blocker := "user://test_runner_menu_reset_blocker_%d" % OS.get_process_id()
+	var blocker_file := FileAccess.open(blocker, FileAccess.WRITE)
+	if blocker_file != null:
+		blocker_file.store_string("not a directory")
+		blocker_file.close()
+	var blocked_path := blocker + "/leaderboard.cfg"
+	# Seed the blocked path is not possible (it can't be written), so just seed the scratch for display,
+	# then override leaderboard_path to the blocked path before opening.
+	RunnerLeaderboard.submit({
+		"run_id": "fail-seed", "name": "Fail", "score": 50,
+		"duration": 30.0, "seed": 1, "submitted_at": 1700000000
+	}, reset_board_path)
+	menu.leaderboard_path = reset_board_path
+	menu.buttons[1].pressed.emit()
+	await frames()
+	check(menu.modal != null, "reset test: failure-path leaderboard open")
+	# Switch to blocked path, then open confirm and attempt reset.
+	menu.leaderboard_path = blocked_path
+	menu.reset_btn.pressed.emit()
+	await frames()
+	var fail_confirm_btn := menu.reset_confirm.find_child("ResetConfirmButton", true, false) as Button if menu.reset_confirm != null else null
+	if fail_confirm_btn != null:
+		fail_confirm_btn.pressed.emit()
+		await frames()
+		check(menu.reset_confirm != null, "reset test: failure keeps confirmation open")
+		var status: Label = menu.confirm_status
+		check(status != null and status.visible, "reset test: error status visible on failure")
+		var safe_btn := menu.reset_confirm.find_child("KeepScoresButton", true, false) as Button
+		check(safe_btn != null and root.gui_get_focus_owner() == safe_btn, "reset test: safe action focused on failure")
+	else:
+		check(false, "reset test: failure-path ResetConfirmButton not found")
+
+	# Cleanup.
+	menu._close_leaderboard()
+	await frames()
+	var cancel_ev := InputEventAction.new()
+	cancel_ev.action = &"ui_cancel"
+	cancel_ev.pressed = true
+	menu._unhandled_input(cancel_ev)
+	await _wait_for(func() -> bool: return not router.busy, 5, "reset test: hub route completes")
+	if FileAccess.file_exists(blocker):
+		DirAccess.remove_absolute(blocker)
+	for suffix in ["", ".tmp", ".bak"]:
+		var p: String = reset_board_path + suffix
+		if FileAccess.file_exists(p):
+			check(DirAccess.remove_absolute(p) == OK, "reset test: scratch board cleanup %s" % suffix)
+	check(not FileAccess.file_exists(reset_board_path), "reset test: scratch board removed")
+	print("RUNNER MENU RESET: ", "PASS" if before == failures else "FAIL")
 
 func check_hud_legibility() -> void:
 	var before := failures

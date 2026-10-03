@@ -6,6 +6,8 @@ const Leaderboard = preload("res://scenes/runner/systems/runner_leaderboard.gd")
 const GpuWarmup = preload("res://scenes/runner/warmup/gpu_warmup.gd")
 const Music = preload("res://Assets/Backgrounds/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg")
 
+var leaderboard_path := Leaderboard.DEFAULT_PATH
+var leaderboard_path_at_open := Leaderboard.DEFAULT_PATH
 var buttons: Array[Button] = []
 var ui: Control
 var shade: TextureRect
@@ -13,6 +15,10 @@ var modal: Control
 var board: VBoxContainer
 var elapsed := 0.0
 var title_label: Label
+var reset_btn: Button
+var close_btn: Button
+var reset_confirm: Control
+var confirm_status: Label
 @onready var audio_service: Node = get_node("/root/AudioService")
 @onready var router: Node = get_node("/root/AppRouter")
 @onready var camera: Camera3D = $Backdrop/Camera
@@ -132,6 +138,20 @@ func _quit() -> void:
 	audio_service.play_ui(1)
 	router.quit_game()
 
+func _build_board_rows(entries: Array[Dictionary]) -> void:
+	for child in board.get_children():
+		child.queue_free()
+	for i in 10:
+		var text := "%02d    ---                  ---       ---" % (i + 1)
+		if i < entries.size():
+			var entry: Dictionary = entries[i]
+			var seconds := maxi(0, int(entry.duration))
+			text = "%02d    %-16s  %8d     %02d:%02d" % [i + 1, entry.name, entry.score, seconds / 60, seconds % 60]
+		var row := HBoxContainer.new()
+		row.add_child(rank_marker(i, i < entries.size()))
+		row.add_child(Style.label(text, 18))
+		board.add_child(row)
+
 func _toggle_leaderboard() -> void:
 	if router.busy:
 		return
@@ -165,25 +185,39 @@ func _toggle_leaderboard() -> void:
 	board = VBoxContainer.new()
 	board.add_theme_constant_override("separation", 8)
 	column.add_child(board)
-	var entries := Leaderboard.load_entries()
-	for i in 10:
-		var text := "%02d    ---                  ---       ---" % (i + 1)
-		if i < entries.size():
-			var entry: Dictionary = entries[i]
-			var seconds := maxi(0, int(entry.duration))
-			text = "%02d    %-16s  %8d     %02d:%02d" % [i + 1, entry.name, entry.score, seconds / 60, seconds % 60]
-		var row := HBoxContainer.new()
-		row.add_child(rank_marker(i, i < entries.size()))
-		row.add_child(Style.label(text, 18))
-		board.add_child(row)
-	var close := Style.button("Close", 46)
-	column.add_child(close)
-	close.pressed.connect(_close_leaderboard)
-	close.focus_entered.connect(_focus_sound)
-	close.mouse_entered.connect(_focus_sound)
-	for direction in ["focus_neighbor_top", "focus_neighbor_bottom", "focus_next", "focus_previous"]:
-		close.set(direction, close.get_path_to(close))
-	close.grab_focus()
+	leaderboard_path_at_open = leaderboard_path
+	var entries := Leaderboard.load_entries(leaderboard_path_at_open)
+	_build_board_rows(entries)
+	var button_row := HBoxContainer.new()
+	button_row.add_theme_constant_override("separation", 12)
+	column.add_child(button_row)
+	reset_btn = Style.button("Reset scores", 46)
+	reset_btn.name = "ResetScoresButton"
+	reset_btn.disabled = entries.is_empty()
+	reset_btn.focus_entered.connect(_focus_sound)
+	reset_btn.mouse_entered.connect(_focus_sound)
+	reset_btn.pressed.connect(_open_reset_confirm)
+	button_row.add_child(reset_btn)
+	close_btn = Style.button("Close", 46)
+	close_btn.name = "CloseButton"
+	close_btn.focus_entered.connect(_focus_sound)
+	close_btn.mouse_entered.connect(_focus_sound)
+	close_btn.pressed.connect(_close_leaderboard)
+	button_row.add_child(close_btn)
+	# Wrap focus between Reset and Close.
+	reset_btn.focus_neighbor_right = reset_btn.get_path_to(close_btn)
+	reset_btn.focus_next = reset_btn.get_path_to(close_btn)
+	reset_btn.focus_neighbor_left = reset_btn.get_path_to(close_btn)
+	reset_btn.focus_previous = reset_btn.get_path_to(close_btn)
+	reset_btn.focus_neighbor_top = reset_btn.get_path_to(close_btn)
+	reset_btn.focus_neighbor_bottom = reset_btn.get_path_to(close_btn)
+	close_btn.focus_neighbor_left = close_btn.get_path_to(reset_btn)
+	close_btn.focus_previous = close_btn.get_path_to(reset_btn)
+	close_btn.focus_neighbor_right = close_btn.get_path_to(reset_btn)
+	close_btn.focus_next = close_btn.get_path_to(reset_btn)
+	close_btn.focus_neighbor_top = close_btn.get_path_to(reset_btn)
+	close_btn.focus_neighbor_bottom = close_btn.get_path_to(reset_btn)
+	close_btn.grab_focus()
 	_process(0.0)
 
 func _close_leaderboard() -> void:
@@ -192,15 +226,122 @@ func _close_leaderboard() -> void:
 	modal.queue_free()
 	modal = null
 	board = null
+	reset_btn = null
+	close_btn = null
+	reset_confirm = null
+	confirm_status = null
 	for button in buttons:
 		button.disabled = false
 		button.focus_mode = Control.FOCUS_ALL
 	buttons[1].grab_focus()
 	audio_service.play_ui(1)
 
+func _open_reset_confirm() -> void:
+	if reset_confirm or router.busy:
+		return
+	audio_service.play_ui(1)
+	reset_btn.disabled = true
+	close_btn.disabled = true
+	reset_confirm = Control.new()
+	reset_confirm.name = "ResetConfirm"
+	reset_confirm.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	modal.add_child(reset_confirm)
+	var dim := ColorRect.new()
+	dim.color = Color(0.01, 0.02, 0.04, 0.9)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	reset_confirm.add_child(dim)
+	var panel := PanelContainer.new()
+	panel.position = Vector2(330, 170)
+	panel.custom_minimum_size = Vector2(620, 0)
+	panel.add_theme_stylebox_override("panel", _panel_style())
+	Style.polish(panel, true)
+	reset_confirm.add_child(panel)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 16)
+	panel.add_child(column)
+	column.add_child(Style.label("RESET ALL SCORES?", 28))
+	column.add_child(Style.label("This deletes the top ten and cannot be undone.", 18))
+	var keep := Style.button("Keep scores", 46)
+	keep.name = "KeepScoresButton"
+	keep.focus_entered.connect(_focus_sound)
+	keep.mouse_entered.connect(_focus_sound)
+	keep.pressed.connect(_close_reset_confirm)
+	column.add_child(keep)
+	var do_reset := Style.button("Reset", 46)
+	do_reset.name = "ResetConfirmButton"
+	do_reset.focus_entered.connect(_focus_sound)
+	do_reset.mouse_entered.connect(_focus_sound)
+	do_reset.pressed.connect(_confirm_reset)
+	column.add_child(do_reset)
+	confirm_status = Style.label("", 16, Color("ff7185"))
+	confirm_status.name = "StatusLabel"
+	confirm_status.visible = false
+	column.add_child(confirm_status)
+	# Focus wraps between Keep and Reset in all directions.
+	keep.focus_neighbor_bottom = keep.get_path_to(do_reset)
+	keep.focus_next = keep.get_path_to(do_reset)
+	keep.focus_neighbor_top = keep.get_path_to(do_reset)
+	keep.focus_previous = keep.get_path_to(do_reset)
+	keep.focus_neighbor_left = keep.get_path_to(do_reset)
+	keep.focus_neighbor_right = keep.get_path_to(do_reset)
+	do_reset.focus_neighbor_top = do_reset.get_path_to(keep)
+	do_reset.focus_previous = do_reset.get_path_to(keep)
+	do_reset.focus_neighbor_bottom = do_reset.get_path_to(keep)
+	do_reset.focus_next = do_reset.get_path_to(keep)
+	do_reset.focus_neighbor_left = do_reset.get_path_to(keep)
+	do_reset.focus_neighbor_right = do_reset.get_path_to(keep)
+	keep.grab_focus()
+	_process(0.0)
+
+func _close_reset_confirm() -> void:
+	if not reset_confirm:
+		return
+	reset_confirm.queue_free()
+	reset_confirm = null
+	confirm_status = null
+	if is_instance_valid(reset_btn):
+		reset_btn.disabled = false
+	if is_instance_valid(close_btn):
+		close_btn.disabled = false
+	if is_instance_valid(reset_btn):
+		reset_btn.grab_focus()
+	audio_service.play_ui(1)
+
+func _confirm_reset() -> void:
+	if router.busy:
+		return
+	var error := Leaderboard.clear(leaderboard_path_at_open)
+	if error == OK:
+		reset_confirm.queue_free()
+		reset_confirm = null
+		confirm_status = null
+		var entries := Leaderboard.load_entries(leaderboard_path_at_open)
+		_build_board_rows(entries)
+		if is_instance_valid(reset_btn):
+			reset_btn.disabled = true
+		if is_instance_valid(close_btn):
+			close_btn.disabled = false
+			close_btn.grab_focus()
+		audio_service.play_ui(1)
+	else:
+		# clear() may have written an empty primary before the .bak/.tmp removal
+		# failed — reload the rows so the displayed board matches actual disk state.
+		var entries_after := Leaderboard.load_entries(leaderboard_path_at_open)
+		_build_board_rows(entries_after)
+		if is_instance_valid(reset_btn):
+			reset_btn.disabled = entries_after.is_empty()
+		if confirm_status != null:
+			confirm_status.text = "Could not reset scores."
+			confirm_status.visible = true
+		var keep_btn := reset_confirm.find_child("KeepScoresButton", true, false) as Button
+		if keep_btn != null:
+			keep_btn.grab_focus()
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel") and not router.busy:
-		if modal:
+		if reset_confirm:
+			_close_reset_confirm()
+		elif modal:
 			_close_leaderboard()
 		else:
 			_route("hub")

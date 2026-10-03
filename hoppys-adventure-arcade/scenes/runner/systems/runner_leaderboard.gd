@@ -213,7 +213,25 @@ static func rename(run_id: String, name: String, path := DEFAULT_PATH) -> Error:
 	return save_entries(entries, path)
 
 static func clear(path := DEFAULT_PATH) -> Error:
-	return save_entries([], path)
+	var board := read_board(path)
+	if _is_newer_schema(board, path):
+		return ERR_FILE_UNRECOGNIZED
+	var error := save_entries([], path)
+	if error != OK:
+		return error
+	var bak := path + ".bak"
+	if FileAccess.file_exists(bak):
+		var bak_error := DirAccess.remove_absolute(bak)
+		if bak_error != OK:
+			push_warning("Runner leaderboard: clear() could not remove %s (error %d); retry clear() to complete the purge" % [bak, bak_error])
+			return bak_error
+	var tmp := path + ".tmp"
+	if FileAccess.file_exists(tmp):
+		var tmp_error := DirAccess.remove_absolute(tmp)
+		if tmp_error != OK:
+			push_warning("Runner leaderboard: clear() could not remove %s (error %d); retry clear() to complete the purge" % [tmp, tmp_error])
+			return tmp_error
+	return OK
 
 static func _validate(item: Variant) -> Dictionary:
 	if not (item is Dictionary):

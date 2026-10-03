@@ -382,6 +382,20 @@ replaced by a rename that succeeded:
 The `.bak` is therefore temporary and must not remain after a successful write — neither must the `.tmp`
 — and it is retained only when recovery is required. `load_entries` falls back to `.bak` when `path` is
 missing but `.bak` exists (crash between the two renames).
+**`clear(path)`** durably removes all persisted runner leaderboard entries including recoverable backups:
+1. Calls `_is_newer_schema(read_board(path), path)`. If true, returns `ERR_FILE_UNRECOGNIZED` without
+   writing. A newer board cannot be parsed, so clearing it would destroy data that this build cannot see.
+2. Calls `save_entries([], path)` to install an empty schema-2 primary file atomically. Returns any write
+   error; `save_entries`' existing backup restoration means the old scores stay readable on failure.
+3. After a successful write, removes `path + ".bak"` if it exists (including the backup-only crash state
+   where only `.bak` is present before the call). Checks the removal result; on failure logs a
+   `push_warning` and returns the error. A retry of `clear()` can then complete the purge.
+4. After a successful `.bak` removal, removes `path + ".tmp"` if it exists. Checks and returns any error
+   in the same way.
+A cleanup failure after the empty primary is installed is a **partial reset**: the old scores can no
+longer be read as the active board (the empty primary wins), but `.bak` still exists. `clear()` must
+not be called with a filesystem-failure injection seam; this partial-success scenario is a known
+untested limitation.
 
 ## 8. Tests (all `extends SceneTree`, run headless, `quit(failures)`, print `NAME: PASS/FAIL (n failures)`)
 
@@ -389,6 +403,9 @@ Every test that instantiates `RunnerGame` must override `leaderboard_path` to a 
 `user://` file **before** `add_child()` — `_ready()` honours `autostart`, so a later assignment races
 a live run — and must delete that file and its `.tmp`/`.bak` siblings on every exit path; otherwise a
 run that reaches `caught` writes the player's real `user://leaderboard.cfg`.
+`RunnerMenu.leaderboard_path` must be set **before** the leaderboard panel opens (before calling
+`_toggle_leaderboard()` or emitting `buttons[1].pressed`), because the panel reads the path at open
+time. Setting it after the panel is already open has no effect on the current open.
 
 **`tests/runner_logic.gd`** (systems instantiated as plain nodes under `root`, driven by direct
 `_physics_process(1.0/60)` calls, config `duplicate()`d):
