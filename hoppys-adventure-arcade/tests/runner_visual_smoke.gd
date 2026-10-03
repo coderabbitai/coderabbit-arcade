@@ -1318,8 +1318,8 @@ func check_runner_menu_reset() -> void:
 		blocker_file.store_string("not a directory")
 		blocker_file.close()
 	var blocked_path := blocker + "/leaderboard.cfg"
-	# Seed the blocked path is not possible (it can't be written), so just seed the scratch for display,
-	# then override leaderboard_path to the blocked path before opening.
+	# The blocked path can't be seeded (it can't be written), so open the seeded scratch board, then
+	# point the board the menu captured at open time at the blocked path before confirming.
 	RunnerLeaderboard.submit({
 		"run_id": "fail-seed", "name": "Fail", "score": 50,
 		"duration": 30.0, "seed": 1, "submitted_at": 1700000000
@@ -1328,8 +1328,9 @@ func check_runner_menu_reset() -> void:
 	menu.buttons[1].pressed.emit()
 	await frames()
 	check(menu.modal != null, "reset test: failure-path leaderboard open")
-	# Switch to blocked path, then open confirm and attempt reset.
-	menu.leaderboard_path = blocked_path
+	# _confirm_reset() clears leaderboard_path_at_open (snapshotted when the board opened), so
+	# changing leaderboard_path here would not reach it. Redirect the snapshot instead.
+	menu.leaderboard_path_at_open = blocked_path
 	menu.reset_btn.pressed.emit()
 	await frames()
 	var fail_confirm_btn := menu.reset_confirm.find_child("ResetConfirmButton", true, false) as Button if menu.reset_confirm != null else null

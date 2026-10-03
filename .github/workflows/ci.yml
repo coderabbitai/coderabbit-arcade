@@ -13,6 +13,7 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Runner image is pinned (ubuntu-latest moves to Ubuntu 26 on 2026-10-19); bump it deliberately.
 env:
   GODOT_VERSION: 4.7.1-stable
   PROJECT: hoppys-adventure-arcade
@@ -20,7 +21,7 @@ env:
 jobs:
   godot-tests:
     name: godot-tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -95,7 +96,7 @@ jobs:
 
   lint:
     name: lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -123,7 +124,7 @@ jobs:
 
   gitleaks:
     name: gitleaks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
