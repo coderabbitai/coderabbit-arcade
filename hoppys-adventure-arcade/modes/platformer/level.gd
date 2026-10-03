@@ -62,6 +62,7 @@ var banner_style: StyleBoxFlat
 var banner_title: Label
 var previous_feet := Vector2.ZERO
 var music_fade: Tween
+var celebration_hop: Tween
 
 func _pickup(kind: String, pos: Vector2) -> void:
 	var area := Area2D.new()
@@ -240,6 +241,10 @@ func _finish(won: bool) -> void:
 	if finished: return
 	finished = true
 	won_run = won
+	# A boss-defeat hop may be mid-air; land the sprite so the frozen final frame isn't offset.
+	if celebration_hop and celebration_hop.is_valid():
+		celebration_hop.kill()
+	player.sprite.position.y = 0.0
 	_clear_projectiles()
 	intro_banner.hide()
 	player.set_physics_process(false)
@@ -400,11 +405,11 @@ func _celebrate_boss_down() -> void:
 	pulse.tween_method(func(v: float): banner_style.border_color = Color("ffbd7c").lerp(Color("7cffbd"), v), 0.0, 1.0, 0.8)
 
 	# Hoppy hops twice. Only the sprite moves; the body and its physics are untouched.
-	var hop := create_tween().set_pause_mode(Tween.TWEEN_PAUSE_STOP)
+	celebration_hop = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_STOP)
 	for _i in 2:
-		hop.tween_interval(0.85)
-		hop.tween_property(player.sprite, "position:y", -95.0, 0.38).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-		hop.tween_property(player.sprite, "position:y", 0.0, 0.32).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		celebration_hop.tween_interval(0.85)
+		celebration_hop.tween_property(player.sprite, "position:y", -95.0, 0.38).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		celebration_hop.tween_property(player.sprite, "position:y", 0.0, 0.32).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 	var settle := create_tween().set_pause_mode(Tween.TWEEN_PAUSE_STOP)
 	settle.tween_interval(BOSS_CELEBRATION)
