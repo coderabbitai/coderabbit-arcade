@@ -118,7 +118,7 @@ Known verification caveats: installed Godot `4.7.stable.official.5b4e0cb0f` is 4
 
 ### Documentation-pass verification (2026-09-21)
 
-Historical import and visual-smoke outputs follow: import exited 0 and visual smoke exited 2 with only the two documented sandbox `user://` persistence failures. The superseding current host A9 result is labeled separately below. No graphical scenes were run in this documentation pass. Output is verbatim except ANSI color/style escapes removed from the import transcript.
+Historical import and visual-smoke outputs follow: import exited 0 and visual smoke exited 2 with only the two documented sandbox `user://` persistence failures. The superseding current host A9 result is labeled separately below. No graphical scenes were run in this documentation pass. Output is verbatim except for two edits: ANSI color/style escapes were removed from the import transcript, and the local home-directory path in the two editor-settings errors was replaced with `~`.
 
 <details>
 <summary>Commands and complete verification output</summary>
@@ -154,9 +154,9 @@ WARNING: Detected another project.godot at res://Assets/SynthCitiesGodot. The fo
 [  83% ] loading_editor_layout | Editor layout ready.
 [ DONE ] loading_editor_layout
 
-ERROR: Cannot save file '/Users/jp/Library/Application Support/Godot/editor_settings-4.7.tres'.
+ERROR: Cannot save file '~/Library/Application Support/Godot/editor_settings-4.7.tres'.
    at: save (scene/resources/resource_format_text.cpp:1768)
-ERROR: Error saving editor settings to /Users/jp/Library/Application Support/Godot/editor_settings-4.7.tres
+ERROR: Error saving editor settings to ~/Library/Application Support/Godot/editor_settings-4.7.tres
    at: save (editor/settings/editor_settings.cpp:1525)
 ```
 

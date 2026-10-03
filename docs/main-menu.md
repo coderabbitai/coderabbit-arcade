@@ -38,7 +38,7 @@ As of 2026-09-30, `hoppy.gd` uses the supplied `Assets/Character/Hoppy/2D/hoppy-
 | Security Sector | Code-drawn racks, scanner, and tunnel |
 | Git Repository HQ | Code-drawn branching nodes and hall |
 
-These are theme previews, not final level art. Supplied asset files and accompanying licenses remain in place. The nested `Assets/SynthCitiesGodot` project is ignored by Godot's importer; this menu does not depend on it. Optional CRT, shader dissolve, adaptive music, and final branding are deferred.
+These are theme previews, not final level art. Supplied asset files and accompanying licenses remain in place. Optional CRT, shader dissolve, adaptive music, and final branding are deferred.
 
 ## Verification
 

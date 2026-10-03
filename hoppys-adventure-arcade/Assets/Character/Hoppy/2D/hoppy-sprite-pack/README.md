@@ -50,6 +50,5 @@ Both atlases preserve alpha and contain 36 populated frames. Mechanical slicing 
 
 ## Source documents
 
-- GDD: https://docs.google.com/document/d/1YCLWNykTNDglKGyuOWIMdTl9A8eEoEEgTR_INSOCdUo/edit
-- Technical baseline: https://docs.google.com/document/d/1MPW_KI8VanzO_67Qkf3v_cGAfflqRRv5uRF6QmwL_Rc/edit
+- GDD and technical baseline (internal design documents)
 - User-supplied comic-p1.png through comic-p5.png; p1 and p3 used as generation inputs.

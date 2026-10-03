@@ -13,12 +13,12 @@
     "deprecated_api": "Clean this 4-column 6-row robot sprite atlas for production use. Preserve the same robot identity, all 24 poses, exact grid layout and 1024x1536 size. Remove stray speckles, residual background haze, ghost lines, detached marks in gutters. Transparent alpha must be fully zero outside robot silhouettes and deliberately compact effects. In row 4 column 3 shorten the purple dash afterimage to stay entirely inside its own cell with at least 24 transparent pixels before the next cell; remove any purple contamination from row4 column4. Every cell needs a completely transparent outer gutter. Crisp dark pixel-art outline, opaque armor; tiny compact sparks and smoke only. No gradients, no background, no checkerboard. This is cleanup, not redesign."
   },
   "sources": {
-    "deprecated_api": "/Users/treymurphy/.codex/generated_images/01a0f3c5-3614-7021-b444-15560bfe15ec/exec-c7830cdd-fb43-4512-bb25-a8d543fd8756.png",
-    "rogue_ai": "/Users/treymurphy/.codex/generated_images/01a0f3c5-3614-7021-b444-15560bfe15ec/exec-6a5fc251-77a8-4ded-b789-4d029d2c431f.png",
-    "security_drone": "/Users/treymurphy/.codex/generated_images/01a0f3c5-3614-7021-b444-15560bfe15ec/exec-d063c95f-527e-4a99-9f9b-9b12ef742fac.png",
-    "hazards": "/Users/treymurphy/.codex/generated_images/01a0f3c5-3614-7021-b444-15560bfe15ec/exec-87f4d39b-4c24-4f25-b74b-e4688d3bdc3e.png",
-    "station_kit": "/Users/treymurphy/.codex/generated_images/01a0f3c5-3614-7021-b444-15560bfe15ec/exec-2173aead-64a2-48a4-bd85-f6ba7d630109.png",
-    "starfield": "/Users/treymurphy/.codex/generated_images/01a0f3c5-3614-7021-b444-15560bfe15ec/exec-a17aa4ac-6a1a-4e15-b473-a5a018e39d3d.png",
-    "station_hull": "/Users/treymurphy/.codex/generated_images/01a0f3c5-3614-7021-b444-15560bfe15ec/exec-31bab6c6-4bde-4867-8076-27202b721e4e.png"
+    "deprecated_api": "sources/deprecated_api.png",
+    "rogue_ai": "sources/rogue_ai.png",
+    "security_drone": "sources/security_drone.png",
+    "hazards": "sources/hazards.png",
+    "station_kit": "sources/station_kit.png",
+    "starfield": "sources/starfield.png",
+    "station_hull": "sources/station_hull.png"
   }
 }

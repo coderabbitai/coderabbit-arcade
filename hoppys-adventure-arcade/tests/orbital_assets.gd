@@ -3,6 +3,12 @@ extends SceneTree
 const BASE = "res://Assets/orbital-ops-assets-only/"
 var manifest: Dictionary
 var stage: Node2D
+var failures := 0
+
+func check(condition: bool, context: String) -> void:
+	if not condition:
+		failures += 1
+		printerr("FAILED: ", context)
 
 func _initialize() -> void:
 	call_deferred("run")
@@ -91,10 +97,10 @@ func run() -> void:
 	print("Saved rendered Orbital Ops staging preview.")
 	await finish()
 
-func finish() -> void:
+func finish(code: int = 0) -> void:
 	root.get_node("AudioService").shutdown()
 	await create_timer(0.3).timeout
-	quit()
+	quit(code)
 
 func plate(key: String, pos: Vector2, size: Vector2, opacity: float = 1.0) -> void:
 	var sprite := Sprite2D.new()

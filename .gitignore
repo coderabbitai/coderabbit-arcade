@@ -19,3 +19,7 @@ mono_crash.*.json
 # Python bytecode from the Blender build tools
 __pycache__/
 *.pyc
+
+# Local editor settings
+.vscode/
+.DS_Store

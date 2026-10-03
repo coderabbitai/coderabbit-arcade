@@ -8,6 +8,11 @@ func frames(count: int) -> void:
 func check(ok: bool, message: String) -> void:
 	print("PASS: " if ok else "FAIL: ", message)
 	if not ok: failures += 1
+func wait_for(condition: Callable, timeout_seconds: float, message: String) -> void:
+	var deadline := Time.get_ticks_msec() + int(timeout_seconds * 1000)
+	while not condition.call() and Time.get_ticks_msec() < deadline:
+		await process_frame
+	check(condition.call(), message)
 func capture(path: String) -> void:
 	if DisplayServer.get_name() != "headless":
 		await RenderingServer.frame_post_draw
@@ -80,6 +85,8 @@ func run() -> void:
 	for i in 8:
 		level.boss.hit_flash = 0
 		level.boss.take_hit()
+	# Victory celebrates before restoring traversal, gates and the follow camera.
+	await wait_for(func() -> bool: return level.encounter == "cleared", 8.0, "Victory celebration completes")
 	await frames(3)
 	check(level.boss_down and level.encounter == "cleared", "Defeat clears encounter")
 	check(level.projectiles.get_child_count() == 0 and not level.arena_gates.visible, "Defeat clears bullets and gates")
@@ -98,6 +105,9 @@ func run() -> void:
 		if level.finished: break
 	Input.action_release("jump")
 	check(level.finished and paused, "Landing on unlocked MERGE completes level")
+	# Results input becomes available after the frozen victory moment.
+	await wait_for(func() -> bool: return level.overlay.visible, 2.0, "Results overlay appears before skip")
+	check(level.results_reveal.is_running(), "Results fade is active before skip")
 	var skip := InputEventAction.new()
 	skip.action = "jump"
 	skip.pressed = true

@@ -77,22 +77,22 @@
     }
   },
   "sources": {
-    "district_enemies": "/Users/treymurphy/.codex/generated_images/01a0fe30-368a-72e0-95d7-622106de0bff/exec-2cb8b56c-26c8-4ba3-90cc-d76d9237c5cd.png",
-    "security_enemies": "/Users/treymurphy/.codex/generated_images/01a0fe30-368a-72e0-95d7-622106de0bff/exec-0429f092-fb24-408d-a6e5-f8980d91df19.png",
-    "hq_enemies": "/Users/treymurphy/.codex/generated_images/01a0fe30-368a-72e0-95d7-622106de0bff/exec-ab20e897-6845-4b9a-9a73-0b45eeb69b99.png",
-    "district_kit": "/Users/treymurphy/.codex/generated_images/01a0fe30-368a-72e0-95d7-622106de0bff/exec-af68a988-9b06-4651-9a3d-5cc6169a2711.png",
-    "security_kit": "/Users/treymurphy/.codex/generated_images/01a0fe30-368a-72e0-95d7-622106de0bff/exec-c4770dd1-9a4d-4e6f-a4a2-3a6f04600060.png",
-    "hq_kit": "/Users/treymurphy/.codex/generated_images/01a0fe30-368a-72e0-95d7-622106de0bff/exec-0769f7e8-e685-484d-9bb3-9f092868b60f.png",
-    "weapons": "/Users/treymurphy/.codex/generated_images/01a0fe30-368a-72e0-95d7-622106de0bff/exec-6e196cd6-b143-49da-9d5c-0ce7b384e92b.png",
-    "items_allies": "/Users/treymurphy/.codex/generated_images/01a0fe30-368a-72e0-95d7-622106de0bff/exec-283bf2b9-0780-4516-a276-ebf40b1d08d2.png",
-    "district_background": "/Users/treymurphy/.codex/generated_images/01a0fe30-368a-72e0-95d7-622106de0bff/exec-3af1ca88-704a-4a35-af6a-78de6bc3d3bb.png",
-    "security_background": "/Users/treymurphy/.codex/generated_images/01a0fe30-368a-72e0-95d7-622106de0bff/exec-1c856093-f56f-4b7f-a326-c287dd59028d.png",
-    "hq_background": "/Users/treymurphy/.codex/generated_images/01a0fe30-368a-72e0-95d7-622106de0bff/exec-3a84a7df-c6b7-47ca-b0fd-c0f3806d864a.png",
-    "combat_fx": "/Users/treymurphy/.codex/generated_images/01a0fe30-368a-72e0-95d7-622106de0bff/exec-6126f804-64ce-4675-a33d-b9c79f785ae7.png",
-    "conflict_spawner": "/Users/treymurphy/.codex/generated_images/01a0fe30-368a-72e0-95d7-622106de0bff/exec-7d9703dd-b351-45c2-8d0e-574db01764ec.png",
-    "split_screen": "/Users/treymurphy/.codex/generated_images/01a0fe30-368a-72e0-95d7-622106de0bff/exec-61059483-a8e1-4c60-87ad-cfb97642930b.png",
-    "merge_chaos": "/Users/treymurphy/.codex/generated_images/01a0fe30-368a-72e0-95d7-622106de0bff/exec-b4a76667-3ab2-4bfd-a6e7-8dfb4d005d45.png",
-    "linter_bare": "/Users/treymurphy/.codex/generated_images/01a0fe30-368a-72e0-95d7-622106de0bff/exec-29636fd2-60e9-4eab-a237-c395db371705.png"
+    "district_enemies": "sources/district_enemies.png",
+    "security_enemies": "sources/security_enemies.png",
+    "hq_enemies": "sources/hq_enemies.png",
+    "district_kit": "sources/district_kit.png",
+    "security_kit": "sources/security_kit.png",
+    "hq_kit": "sources/hq_kit.png",
+    "weapons": "sources/weapons.png",
+    "items_allies": "sources/items_allies.png",
+    "district_background": "sources/district_background.png",
+    "security_background": "sources/security_background.png",
+    "hq_background": "sources/hq_background.png",
+    "combat_fx": "sources/combat_fx.png",
+    "conflict_spawner": "sources/conflict_spawner.png",
+    "split_screen": "sources/split_screen.png",
+    "merge_chaos": "sources/merge_chaos.png",
+    "linter_bare": "sources/linter_bare.png"
   },
   "corrections": {
     "grand_merge_conflict_spacing": "Use case: precise-object-edit. Edit target: this Grand Merge Conflict game sprite atlas. Preserve the exact boss design, all 24 poses and their row-major order, FOUR columns SIX rows, true transparent alpha background. Correct only spacing and clipping: redraw every complete silhouette so no crown, fist, projectile or summon is cut off; shrink sprites uniformly enough to have at least 24 pixels of EMPTY TRANSPARENT gutter on every side of each cell, including top outer border and outer sides. Every cell has equal size, every entire pose wholly within it. No silhouettes or effects touch another cell. In particular the first two crowns and the rightmost summoning effects need complete borders. Preserve consistent standing size across poses, crisp pixel art, no background no text."
