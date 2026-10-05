@@ -65,9 +65,12 @@ func run() -> void:
 		await capture("weapons_%02d" % int(phase*100))
 	p.invulnerable=0;p.swing_left=.2;p.take_hit(p.position-Vector2(30,0));p.tick(.01)
 	check(p.swing_left==0 and p.held.trail.points.is_empty(),"Damage cancels the swing trail and returns weapon to carry")
-	var shield=players[4]
-	shield.invulnerable=0;shield.swing_left=0;shield.take_hit(shield.position-Vector2(30,0));shield.tick(.1)
-	check(shield.hp==3 and shield.block_time>0 and shield.held.sprite.rotation<0,"Shield block recoils without damaging Hoppy")
+	var shield=players.filter(func(a): return a.weapon=="firewall_shield")[0]
+	shield.invulnerable=0;shield.swing_left=0;shield.tick(0)
+	var guard_rotation: float=shield.held.sprite.rotation
+	var guard_x: float=shield.held.sprite.position.x
+	shield.take_hit(shield.position-Vector2(30,0));shield.tick(.1)
+	check(shield.hp==3 and shield.block_time>0 and shield.held.sprite.rotation<guard_rotation-.1 and shield.held.sprite.position.x<guard_x-4,"Shield block recoils without damaging Hoppy")
 	for actor in players:
 		if actor!=p: actor.queue_free()
 	game.start_stage(2)
