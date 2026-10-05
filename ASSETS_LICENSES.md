@@ -24,6 +24,11 @@ Status key: ✅ verified · ⚠️ needs sign-off · ❌ **blocks public release
 | tipa16 | `Audio/Platformer/Obital Ops/tipa16.mp3` | Unknown | Unknown: no tags, and no source found | Orbital Ops | ❌ **replace or remove before public release** |
 | Silent Forest, Battle 1 | `Audio/Platformer/The Enchanted Repo/` | xDeviruchi (Marllon Silva) | [Custom license](https://xdeviruchi.itch.io/16-bit-fantasy-adventure-music-pack): use in games is OK, but "No redistribution" | Enchanted Repo | ❌ **raw files can't ship in a public repo. Replace them, or get written permission.** |
 
+| Future Travel | `Audio/Beat'em Up/Zodik - Future Travel.ogg` | Zodik (filename credit) | User-supplied; upstream license not yet verified | Code City Brawl: CLI/IDE | ❌ verify redistribution before public release |
+| helldrake (extended) | `Audio/Beat'em Up/helldrake(extended).ogg` | Unverified | User-supplied; upstream license not yet verified | Code City Brawl: Security | ❌ verify redistribution before public release |
+| Angel Eyes Vision II | `Audio/Beat'em Up/kim_lightyear_-_angel_eyes_vision_ii.mp3` | Kim Lightyear (filename credit) | User-supplied; upstream license not yet verified | Code City Brawl: Git HQ | ❌ verify redistribution before public release |
+| The Final | `Audio/Beat'em Up/Kim Lightyear - The Final.mp3` | Kim Lightyear (filename credit) | User-supplied; upstream license not yet verified | Code City Brawl: boss | ❌ verify redistribution before public release |
+
 ## Project-original
 
 These assets were made for this project, either by hand, by procedure, or with image generation (prompts are recorded in each pack's `PROMPTS.md` / `generation.json`). They are distributed under the [project asset terms — TODO: legal to choose, e.g. CC BY 4.0]. The Hoppy character remains a CodeRabbit trademark.
@@ -31,6 +36,7 @@ These assets were made for this project, either by hand, by procedure, or with i
 | Asset | Path | Notes | Status |
 |---|---|---|---|
 | Hoppy 2D sprite pack | `Character/Hoppy/2D/hoppy-sprite-pack/` | Generated from internal comic references | ⚠️ brand sign-off |
+| Hoppy brawler combat supplement | `code-city-brawl-player/` | Image generation; exact prompt in `PROMPT.md`, reproducible atlas packing in `tools/build_hoppy_brawler.py` | ⚠️ brand sign-off and project asset terms |
 | Hoppy 3D mascot | `runner/hoppy/` | Built by `tools/blender/build_hoppy.py` | ⚠️ brand sign-off |
 | Runner props, previews and procedural assets | `runner/` | See [`runner/LICENSES.md`](hoppys-adventure-arcade/Assets/runner/LICENSES.md) | ✅ |
 | Bay Area Blitz pack | `bay-area-blitz-assets-only/` | Image generation | ⚠️ confirm the generator's terms allow redistribution |

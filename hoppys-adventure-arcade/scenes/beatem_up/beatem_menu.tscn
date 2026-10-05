@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3]
-[ext_resource type="Script" path="res://scenes/main_menu/mode_portal.gd" id="1"]
-[node name="ModePortal" type="Control"]
+[ext_resource type="Script" path="res://scenes/beatem_up/beatem_menu.gd" id="1"]
+[node name="BeatemMenu" type="Control"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -8,5 +8,3 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1")
-mode_title = "Beat'em Up"
-description = "CLI / IDE District · Security Sector · Git Repository HQ"

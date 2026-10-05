@@ -1,5 +1,7 @@
 # Code City Brawl — assets-only pass
 
+**October 5 update:** [Playable v1](code-city-brawl.md) now uses this pack, adds Hoppy combat animations, and connects the mode menu, combat, progression and audio. The notes below describe the original October 2 asset delivery.
+
 October 2, 2026. Based on the updated GDD's Beat'em Up Mode 1 and Main Menu sections, the linked engineering references and current repository conventions.
 
 Pack: `hoppys-adventure-arcade/Assets/code-city-brawl-assets-only/`. Start with its `README.md`, `ASSET_GUIDE.md` and `preview.html`.

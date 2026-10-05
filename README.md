@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE)
 [![Godot 4.7.1](https://img.shields.io/badge/Godot-4.7.1-478cbf?logo=godotengine&logoColor=white)](https://godotengine.org/)
 
-A Godot 4 arcade collection starring Hoppy, the CodeRabbit mascot. It has a reactive main menu, three Platformer levels (**Bay Area Blitz**, **Orbital Ops** and **The Enchanted Repo**) and the **Endless Runner** (The Codebase Corridor). The Beat’em Up mode is still a labeled placeholder; its [Code City Brawl asset pack](docs/code-city-brawl-assets.md) has landed ahead of gameplay.
+A Godot 4 arcade collection starring Hoppy, the CodeRabbit mascot. It has a reactive main menu, three Platformer levels (**Bay Area Blitz**, **Orbital Ops** and **The Enchanted Repo**) and the **Endless Runner** (The Codebase Corridor). The Beat’em Up now includes a playable [Code City Brawl](docs/code-city-brawl.md) v1: three districts and The Grand Merge Conflict.
 
 ![Main menu](docs/previews/main-menu.png)
 
@@ -15,7 +15,7 @@ A Godot 4 arcade collection starring Hoppy, the CodeRabbit mascot. It has a reac
    ```sh
    godot --path hoppys-adventure-arcade
    ```
-3. Choose **Platformer Game → Level Select**, or **Endless Runner**.
+3. Choose **Platformer Game → Level Select**, **Endless Runner**, or **Beat’em Up → Play Code City Brawl**.
 
 | Action | Keyboard | Controller |
 |---|---|---|
@@ -30,6 +30,7 @@ In Orbital Ops' zero-gravity bay, hold Jump or Up to rise, hold Down to descend,
 
 - Platformer: [Bay Area Blitz](docs/bay-area-blitz.md), [Orbital Ops](docs/orbital-ops.md), [The Enchanted Repo](docs/enchanted-repo.md)
 - [Endless Runner](docs/endless-runner.md): how to run it, asset budgets, verification. See also its [contract](docs/endless-runner-contract.md) and [systems](docs/endless-runner-systems.md).
+- [Code City Brawl](docs/code-city-brawl.md): controls, combat, stages, audio and verification.
 - [Main menu / arcade hub](docs/main-menu.md)
 
 ## Tests

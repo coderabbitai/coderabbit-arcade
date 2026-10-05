@@ -1,5 +1,6 @@
 extends CanvasLayer
 const ROUTES := {
+	"code_city_brawl": "res://scenes/beatem_up/code_city_brawl.tscn",
 	"enchanted_repo": "res://scenes/platformer/enchanted_repo.tscn",
 	"orbital_ops": "res://scenes/platformer/orbital_ops.tscn",
 	"bay_area_blitz": "res://scenes/platformer/bay_area_blitz.tscn",
