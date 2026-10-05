@@ -89,7 +89,9 @@ func run() -> void:
 				if not is_instance_valid(e) or e.dead or e.state in ["fallen","rise"]: continue
 				var d: float=e.position.distance_to(p.position)
 				if d<best: target=e;best=d
-			if target==null and is_instance_valid(game.boss) and not game.boss.dead: target=game.boss
+			# Pursue the mobile boss through its setup, rather than spending every
+			# recovery window clearing its renewable reinforcements.
+			if is_instance_valid(game.boss) and not game.boss.dead: target=game.boss
 			if target!=null:
 				var goal: Vector2=target.position+Vector2(-67,0)
 				p.position=game.clamp_ground(p.position.move_toward(goal,250.0/60.0))

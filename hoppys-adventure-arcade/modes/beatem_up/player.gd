@@ -3,9 +3,12 @@ const Art = preload("res://modes/beatem_up/art.gd")
 const Catalog = preload("res://modes/beatem_up/catalog.gd")
 const BASE_FRAMES = preload("res://Assets/bay-area-blitz-assets-only/bay_area/hoppy/platformer.tres")
 const COMBAT_FRAMES = preload("res://Assets/code-city-brawl-player/combat.tres")
+const WeaponRig = preload("res://modes/beatem_up/weapon_rig.gd")
 var arena: Node2D
 var body: AnimatedSprite2D
-var held: AnimatedSprite2D
+var held: Node2D
+var visual_weapon := ""
+var block_time := 0.0
 var hp := 3
 var facing := 1.0
 var height := 0.0
@@ -39,7 +42,7 @@ func _ready() -> void:
 	body.scale = Vector2.ONE * 1.55
 	body.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	add_child(body)
-	held = Art.sprite("weapons","debug_stick",.62,false)
+	held = WeaponRig.new()
 	add_child(held)
 	held.hide()
 
@@ -48,6 +51,7 @@ func _physics_process(dt: float) -> void:
 	tick(dt)
 
 func tick(dt: float) -> void:
+	block_time = maxf(0,block_time-dt)
 	invulnerable = maxf(0,invulnerable-dt)
 	stagger = maxf(0,stagger-dt)
 	input_lock = maxf(0,input_lock-dt)
@@ -61,7 +65,7 @@ func tick(dt: float) -> void:
 	if controlled and input_lock <= 0 and stagger <= 0:
 		movement = Input.get_vector("move_left","move_right","move_up","move_down")
 		if effects.has("confused"): movement = -movement
-		if absf(movement.x) > .15: facing = signf(movement.x)
+		if absf(movement.x) > .15 and swing_left<=0: facing = signf(movement.x)
 		if Input.is_action_just_pressed("brawl_jump"): jump()
 		if Input.is_action_just_pressed("brawl_attack"): request_attack()
 		if Input.is_action_just_pressed("brawl_pickup") and swing_left <= 0 and height < 20:
@@ -94,7 +98,7 @@ func tick(dt: float) -> void:
 	var pose := "idle"
 	var base := false
 	if stagger > 0: pose = "hurt"
-	elif swing_left > 0: pose = ["jab","swing","kick"][combo-1]
+	elif swing_left > 0: pose = attack_pose()
 	elif pickup_time > 0: pose = "pickup"
 	elif height > 0: pose = "jump"
 	elif movement.length() > .1:
@@ -103,12 +107,17 @@ func tick(dt: float) -> void:
 			pose = "run"
 			base = true
 	show_pose(pose,base)
-	held.visible = weapon != ""
-	if held.visible:
-		held.play(weapon)
-		held.flip_h = facing < 0
-		held.position = Vector2(facing*34,-height-35)
-		held.rotation = facing * (-.6 if swing_left > swing_duration*.55 else .5) if swing_left > 0 else -.25*facing
+	var attacking := swing_left>0
+	var progress := clampf(1.0-swing_left/swing_duration,0,1)
+	if attacking and visual_weapon!="" and visual_weapon!="firewall_shield":
+		# Match Hoppy's hands to the weapon's windup/contact/recovery timeline.
+		body.pause()
+		body.frame=0 if progress<.3 or progress>.82 else 1
+		body.position.x=facing*sin(progress*PI)*5
+	else: body.position.x=0
+	held.position=Vector2(0,-height)
+	held.scale=Vector2(facing,1)
+	held.animate(visual_weapon if attacking else weapon,combo,progress,attacking,movement,dt,block_time)
 
 func show_pose(pose: String, base := false) -> void:
 	var frames: SpriteFrames = BASE_FRAMES if base else COMBAT_FRAMES
@@ -129,16 +138,21 @@ func request_attack() -> void:
 		return
 	start_attack()
 
+func attack_pose() -> String:
+	if visual_weapon!="" and visual_weapon!="firewall_shield":
+		return "swing" if visual_weapon in ["refactor_hammer","git_branch"] or combo!=1 else "jab"
+	return ["jab","swing","kick"][maxi(0,combo-1)]
+
 func start_attack() -> void:
 	combo = combo%3+1 if combo_window > 0 else 1
 	attack_weapon = weapon if weapon != "firewall_shield" else ""
-	if attack_weapon != "": combo = 3
+	visual_weapon = weapon
 	swing_duration = float(Catalog.WEAPONS[attack_weapon].time) if attack_weapon != "" else [.3,.38,.46][combo-1]
 	swing_left = swing_duration
 	combo_window = 0
 	swing_fired = false
 	swing_serial += 1
-	show_pose(["jab","swing","kick"][combo-1])
+	show_pose(attack_pose())
 	body.frame = 0
 	arena.sound(["jab","swing","kick"][combo-1],position)
 
@@ -174,6 +188,7 @@ func take_hit(source: Vector2, status := "", force := 180.0) -> bool:
 		arena.toast("APPROVAL SHIELD BLOCKED A HIT")
 		return false
 	if weapon == "firewall_shield":
+		block_time = .28
 		spend_weapon()
 		return false
 	hp -= 1
@@ -187,6 +202,8 @@ func take_hit(source: Vector2, status := "", force := 180.0) -> bool:
 	arena.sound("hurt",position)
 	arena.shake = 8
 	if hp <= 0:
+		held.hide()
+		body.position.x=0
 		show_pose("death",true)
 		arena.game_over()
 	return true

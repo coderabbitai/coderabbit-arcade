@@ -192,8 +192,10 @@ func resolve_swing(source: Node2D) -> void:
 	for enemy in targets:
 		if not is_instance_valid(enemy) or enemy.dead: continue
 		var offset: Vector2 = enemy.position-source.position
-		if melee_contains(offset,source.facing,def.reach,def.depth):
-			if enemy.take_hit(damage,def.knock,source.position,source.combo==3):
+		var in_reach := melee_contains(offset,source.facing,def.reach,def.depth)
+		if enemy==boss: in_reach=boss.melee_reaches(offset,source.facing,def.reach,def.depth)
+		if in_reach:
+			if enemy.take_hit(damage,def.knock,source.position,source.combo==3 or weapon!=""):
 				hit = true
 				fx("weapons","hammer_impact" if weapon=="refactor_hammer" else "melee_sweep",enemy.position-Vector2(0,55),.6,.16)
 				if weapon=="refactor_hammer": break

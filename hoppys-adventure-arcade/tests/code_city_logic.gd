@@ -156,6 +156,28 @@ func run() -> void:
 	boss.vulnerable=true
 	boss.take_hit(1,0,Vector2.ZERO,false)
 	check(boss.hp==24,"Boss opening requires a finisher")
+	# Exercise the actual swing path, not just the boss's direct damage method.
+	var nearby_enemy=enemy("syntax_error_sprite",boss.position)
+	p.combo=3;p.attack_weapon="";p.weapon=""
+	for facing in [1.0,-1.0]:
+		p.facing=facing
+		p.position=boss.position-Vector2(175*facing,85)
+		p.swing_serial+=1
+		var before_hp: float=boss.hp
+		game.resolve_swing(p);game.resolve_swing(p)
+		check(boss.hp==before_hp-2,"Exposed core accepts an off-center finisher once, facing %s" % facing)
+	check(nearby_enemy.hp==2,"Core forgiveness does not enlarge ordinary enemy hit areas")
+	check(boss.melee_reaches(Vector2(180,90),1,110,46),"Expanded core includes the intended reach/depth boundary")
+	check(not boss.melee_reaches(Vector2(181,0),1,110,46) and not boss.melee_reaches(Vector2(0,91),1,110,46),"Expanded core still rejects attacks outside its bounds")
+	check(not boss.melee_reaches(Vector2(-65,0),1,110,46),"Core forgiveness does not allow attacks facing away")
+	boss.vulnerable=false
+	check(not boss.melee_reaches(Vector2(175,85),1,110,46),"Extra reach/depth applies only while the core is exposed")
+	p.swing_serial+=1
+	var closed_hp: float=boss.hp
+	game.resolve_swing(p)
+	check(boss.hp==closed_hp,"Off-center attack cannot damage a closed core")
+	clear_enemies()
+	boss.hp=24;boss.vulnerable=true
 	boss.take_hit(12,0,Vector2.ZERO,true)
 	check(boss.phase==2 and boss.transition_count==1,"Boss switches to split phase at 50 percent")
 	boss.vulnerable=true;boss.take_hit(6,0,Vector2.ZERO,true)
