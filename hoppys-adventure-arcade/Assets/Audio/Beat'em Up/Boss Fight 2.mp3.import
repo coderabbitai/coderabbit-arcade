@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://u8a8qjii3db0"
+path="res://.godot/imported/Boss Fight 2.mp3-09af517a61a62f281d7fd8ff2fd9475e.mp3str"
+
+[deps]
+
+source_file="res://Assets/Audio/Beat'em Up/Boss Fight 2.mp3"
+dest_files=["res://.godot/imported/Boss Fight 2.mp3-09af517a61a62f281d7fd8ff2fd9475e.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://b58of38qajcft"
+path="res://.godot/imported/kim_lightyear_-_angel_eyes_vision_ii.mp3-3aad634d1a8db3ed8351bcca6902e45e.mp3str"
+
+[deps]
+
+source_file="res://Assets/Audio/Beat'em Up/kim_lightyear_-_angel_eyes_vision_ii.mp3"
+dest_files=["res://.godot/imported/kim_lightyear_-_angel_eyes_vision_ii.mp3-3aad634d1a8db3ed8351bcca6902e45e.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4
