@@ -1,0 +1,4 @@
+# False positive: the boss leap's `if leaping:` / `launch=position` GDScript
+# is matched as a generic API key. Both values describe movement, not credentials.
+# Pin the exception to this historical finding; keep all other scans enabled.
+acc71c0c4bbfcf28654dd339339974712bc0ba84:hoppys-adventure-arcade/modes/beatem_up/boss.gd:generic-api-key:149

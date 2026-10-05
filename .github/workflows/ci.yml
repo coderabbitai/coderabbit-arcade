@@ -57,6 +57,7 @@ jobs:
           suites=(
             code_city_assets
             code_city_logic
+            code_city_motion
             code_city_smoke
             enchanted_assets
             enchanted_boundaries
