@@ -1,0 +1,171 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="SpriteFrames" path="res://Assets/heroes-vs-villains-assets-only/heroes_villains/capabilities_fx.tres" id="1"]
+
+[ext_resource type="SpriteFrames" path="res://Assets/heroes-vs-villains-assets-only/heroes_villains/capabilities_fx.tres" id="2"]
+
+[ext_resource type="SpriteFrames" path="res://Assets/heroes-vs-villains-assets-only/heroes_villains/capabilities_fx.tres" id="3"]
+
+[ext_resource type="SpriteFrames" path="res://Assets/heroes-vs-villains-assets-only/heroes_villains/capabilities_fx.tres" id="4"]
+
+[ext_resource type="SpriteFrames" path="res://Assets/heroes-vs-villains-assets-only/heroes_villains/capabilities_fx.tres" id="5"]
+
+[node name="BlisterCard" type="Control"]
+texture_filter = 1
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+[node name="Backdrop" type="ColorRect" parent="."]
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 1280.0
+offset_bottom = 720.0
+color = Color(0.02, 0.02, 0.025, 1)
+mouse_filter = 2
+[node name="OrangeCard" type="ColorRect" parent="."]
+offset_left = 36.0
+offset_top = 22.0
+offset_right = 1244.0
+offset_bottom = 698.0
+color = Color(1, 0.25, 0.035, 1)
+mouse_filter = 2
+[node name="InkCard" type="ColorRect" parent="."]
+offset_left = 44.0
+offset_top = 30.0
+offset_right = 1236.0
+offset_bottom = 690.0
+color = Color(0.065, 0.06, 0.07, 1)
+mouse_filter = 2
+[node name="HangSlot" type="ColorRect" parent="."]
+offset_left = 567.0
+offset_top = 40.0
+offset_right = 713.0
+offset_bottom = 54.0
+color = Color(0.01, 0.01, 0.015, 1)
+mouse_filter = 2
+[node name="Brand" type="Label" parent="."]
+offset_left = 76.0
+offset_top = 66.0
+offset_right = 1186.0
+offset_bottom = 96.0
+theme_override_colors/font_color = Color(1, 0.47, 0.15, 1)
+theme_override_font_sizes/font_size = 18
+text = "HOPPY’S ADVENTURE ARCADE   /   VILLAIN COLLECTION"
+autowrap_mode = 2
+mouse_filter = 2
+[node name="Title" type="Label" parent="."]
+offset_left = 74.0
+offset_top = 100.0
+offset_right = 1194.0
+offset_bottom = 170.0
+theme_override_colors/font_color = Color(1, 0.94, 0.86, 1)
+theme_override_font_sizes/font_size = 42
+text = "REVIEW UNLOCKED"
+autowrap_mode = 2
+mouse_filter = 2
+[node name="BurstBand" type="ColorRect" parent="."]
+offset_left = 64.0
+offset_top = 178.0
+offset_right = 1216.0
+offset_bottom = 227.0
+color = Color(1, 0.25, 0.035, 1)
+mouse_filter = 2
+[node name="Tagline" type="Label" parent="."]
+offset_left = 82.0
+offset_top = 187.0
+offset_right = 1202.0
+offset_bottom = 225.0
+theme_override_colors/font_color = Color(0.04, 0.03, 0.03, 1)
+theme_override_font_sizes/font_size = 24
+text = "THE CODERABBIT / BUILT FOR THE AGENTIC ERA"
+autowrap_mode = 2
+mouse_filter = 2
+[node name="BlisterBorder" type="ColorRect" parent="."]
+offset_left = 78.0
+offset_top = 247.0
+offset_right = 638.0
+offset_bottom = 598.0
+color = Color(0.55, 0.62, 0.65, 0.8)
+mouse_filter = 2
+[node name="BlisterInterior" type="ColorRect" parent="."]
+offset_left = 82.0
+offset_top = 251.0
+offset_right = 634.0
+offset_bottom = 594.0
+color = Color(0.11, 0.12, 0.14, 1)
+mouse_filter = 2
+[node name="PlasticHighlight" type="ColorRect" parent="."]
+offset_left = 87.0
+offset_top = 257.0
+offset_right = 93.0
+offset_bottom = 576.0
+color = Color(0.9, 0.96, 1, 0.35)
+mouse_filter = 2
+[node name="PlasticTop" type="ColorRect" parent="."]
+offset_left = 93.0
+offset_top = 257.0
+offset_right = 622.0
+offset_bottom = 260.0
+color = Color(0.9, 0.96, 1, 0.22)
+mouse_filter = 2
+[node name="Capability" type="AnimatedSprite2D" parent="."]
+position = Vector2(350, 420)
+scale = Vector2(1.8, 1.8)
+sprite_frames = ExtResource("1")
+animation = &"review"
+centered = false
+offset = Vector2(-96, -96)
+[node name="Description" type="Label" parent="."]
+offset_left = 684.0
+offset_top = 284.0
+offset_right = 1177.0
+offset_bottom = 494.0
+theme_override_colors/font_color = Color(1, 0.94, 0.86, 1)
+theme_override_font_sizes/font_size = 27
+text = "Trust what ships.\nBlock a hit. Hold to activate a stun burst."
+autowrap_mode = 2
+mouse_filter = 2
+[node name="Light0" type="AnimatedSprite2D" parent="."]
+position = Vector2(725, 558)
+scale = Vector2(0.5, 0.5)
+sprite_frames = ExtResource("2")
+animation = &"review"
+centered = false
+offset = Vector2(-96, -96)
+[node name="Light1" type="AnimatedSprite2D" parent="."]
+position = Vector2(853, 558)
+scale = Vector2(0.5, 0.5)
+sprite_frames = ExtResource("3")
+animation = &"triage"
+centered = false
+offset = Vector2(-96, -96)
+modulate = Color(0.2, 0.2, 0.2, 1)
+[node name="Light2" type="AnimatedSprite2D" parent="."]
+position = Vector2(981, 558)
+scale = Vector2(0.5, 0.5)
+sprite_frames = ExtResource("4")
+animation = &"change_stack"
+centered = false
+offset = Vector2(-96, -96)
+modulate = Color(0.2, 0.2, 0.2, 1)
+[node name="Light3" type="AnimatedSprite2D" parent="."]
+position = Vector2(1109, 558)
+scale = Vector2(0.5, 0.5)
+sprite_frames = ExtResource("5")
+animation = &"security"
+centered = false
+offset = Vector2(-96, -96)
+modulate = Color(0.2, 0.2, 0.2, 1)
+[node name="Footer" type="Label" parent="."]
+offset_left = 80.0
+offset_top = 625.0
+offset_right = 1180.0
+offset_bottom = 670.0
+theme_override_colors/font_color = Color(1, 0.94, 0.86, 1)
+theme_override_font_sizes/font_size = 24
+text = "REVIEW. TRIAGE. UNDERSTAND. SECURE."
+autowrap_mode = 2
+mouse_filter = 2

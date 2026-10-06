@@ -1,0 +1,69 @@
+[gd_resource type="SpriteFrames" load_steps=18 format=3]
+[ext_resource type="Texture2D" path="capabilities_fx.png" id="1"]
+[sub_resource type="AtlasTexture" id="F0"]
+atlas = ExtResource("1")
+region = Rect2(0, 0, 192, 192)
+[sub_resource type="AtlasTexture" id="F1"]
+atlas = ExtResource("1")
+region = Rect2(192, 0, 192, 192)
+[sub_resource type="AtlasTexture" id="F2"]
+atlas = ExtResource("1")
+region = Rect2(384, 0, 192, 192)
+[sub_resource type="AtlasTexture" id="F3"]
+atlas = ExtResource("1")
+region = Rect2(576, 0, 192, 192)
+[sub_resource type="AtlasTexture" id="F4"]
+atlas = ExtResource("1")
+region = Rect2(0, 192, 192, 192)
+[sub_resource type="AtlasTexture" id="F5"]
+atlas = ExtResource("1")
+region = Rect2(192, 192, 192, 192)
+[sub_resource type="AtlasTexture" id="F6"]
+atlas = ExtResource("1")
+region = Rect2(384, 192, 192, 192)
+[sub_resource type="AtlasTexture" id="F7"]
+atlas = ExtResource("1")
+region = Rect2(576, 192, 192, 192)
+[sub_resource type="AtlasTexture" id="F8"]
+atlas = ExtResource("1")
+region = Rect2(0, 384, 192, 192)
+[sub_resource type="AtlasTexture" id="F9"]
+atlas = ExtResource("1")
+region = Rect2(192, 384, 192, 192)
+[sub_resource type="AtlasTexture" id="F10"]
+atlas = ExtResource("1")
+region = Rect2(384, 384, 192, 192)
+[sub_resource type="AtlasTexture" id="F11"]
+atlas = ExtResource("1")
+region = Rect2(576, 384, 192, 192)
+[sub_resource type="AtlasTexture" id="F12"]
+atlas = ExtResource("1")
+region = Rect2(0, 576, 192, 192)
+[sub_resource type="AtlasTexture" id="F13"]
+atlas = ExtResource("1")
+region = Rect2(192, 576, 192, 192)
+[sub_resource type="AtlasTexture" id="F14"]
+atlas = ExtResource("1")
+region = Rect2(384, 576, 192, 192)
+[sub_resource type="AtlasTexture" id="F15"]
+atlas = ExtResource("1")
+region = Rect2(576, 576, 192, 192)
+[resource]
+animations = [
+{"frames": [{"duration": 1.0, "texture": SubResource("F0")}], "loop": false, "name": &"review", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F1")}], "loop": false, "name": &"triage", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F2")}], "loop": false, "name": &"change_stack", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F3")}], "loop": false, "name": &"security", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F4")}], "loop": false, "name": &"speed_surge", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F5")}], "loop": false, "name": &"confused", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F6")}], "loop": false, "name": &"strength_down", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F7")}], "loop": false, "name": &"overwhelmed", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F8")}], "loop": false, "name": &"review_burst", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F9")}], "loop": false, "name": &"change_stack_zone", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F10")}], "loop": false, "name": &"triage_marker", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F11")}], "loop": false, "name": &"scanner_cone", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F12")}], "loop": false, "name": &"api_projectile", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F13")}], "loop": false, "name": &"tracking_projectile", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F14")}], "loop": false, "name": &"spawn_burst", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F15")}], "loop": false, "name": &"unlock_sparkle", "speed": 1.0}
+]

@@ -1,0 +1,142 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="SpriteFrames" path="res://Assets/heroes-vs-villains-assets-only/heroes_villains/ten_thousand_line_pr.tres" id="1"]
+
+[node name="BlisterCard" type="Control"]
+texture_filter = 1
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+[node name="Backdrop" type="ColorRect" parent="."]
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 1280.0
+offset_bottom = 720.0
+color = Color(0.02, 0.02, 0.025, 1)
+mouse_filter = 2
+[node name="OrangeCard" type="ColorRect" parent="."]
+offset_left = 36.0
+offset_top = 22.0
+offset_right = 1244.0
+offset_bottom = 698.0
+color = Color(1, 0.25, 0.035, 1)
+mouse_filter = 2
+[node name="InkCard" type="ColorRect" parent="."]
+offset_left = 44.0
+offset_top = 30.0
+offset_right = 1236.0
+offset_bottom = 690.0
+color = Color(0.065, 0.06, 0.07, 1)
+mouse_filter = 2
+[node name="HangSlot" type="ColorRect" parent="."]
+offset_left = 567.0
+offset_top = 40.0
+offset_right = 713.0
+offset_bottom = 54.0
+color = Color(0.01, 0.01, 0.015, 1)
+mouse_filter = 2
+[node name="Brand" type="Label" parent="."]
+offset_left = 76.0
+offset_top = 66.0
+offset_right = 1186.0
+offset_bottom = 96.0
+theme_override_colors/font_color = Color(1, 0.47, 0.15, 1)
+theme_override_font_sizes/font_size = 18
+text = "HOPPY’S ADVENTURE ARCADE   /   VILLAIN COLLECTION"
+autowrap_mode = 2
+mouse_filter = 2
+[node name="Title" type="Label" parent="."]
+offset_left = 74.0
+offset_top = 100.0
+offset_right = 1194.0
+offset_bottom = 170.0
+theme_override_colors/font_color = Color(1, 0.94, 0.86, 1)
+theme_override_font_sizes/font_size = 42
+text = "THE 10,000-LINE PR"
+autowrap_mode = 2
+mouse_filter = 2
+[node name="BurstBand" type="ColorRect" parent="."]
+offset_left = 64.0
+offset_top = 178.0
+offset_right = 1216.0
+offset_bottom = 227.0
+color = Color(1, 0.25, 0.035, 1)
+mouse_filter = 2
+[node name="Tagline" type="Label" parent="."]
+offset_left = 82.0
+offset_top = 187.0
+offset_right = 1202.0
+offset_bottom = 225.0
+theme_override_colors/font_color = Color(0.04, 0.03, 0.03, 1)
+theme_override_font_sizes/font_size = 24
+text = "147 FILES. ONE VERY BAD DAY."
+autowrap_mode = 2
+mouse_filter = 2
+[node name="BlisterBorder" type="ColorRect" parent="."]
+offset_left = 78.0
+offset_top = 247.0
+offset_right = 638.0
+offset_bottom = 598.0
+color = Color(0.55, 0.62, 0.65, 0.8)
+mouse_filter = 2
+[node name="BlisterInterior" type="ColorRect" parent="."]
+offset_left = 82.0
+offset_top = 251.0
+offset_right = 634.0
+offset_bottom = 594.0
+color = Color(0.11, 0.12, 0.14, 1)
+mouse_filter = 2
+[node name="PlasticHighlight" type="ColorRect" parent="."]
+offset_left = 87.0
+offset_top = 257.0
+offset_right = 93.0
+offset_bottom = 576.0
+color = Color(0.9, 0.96, 1, 0.35)
+mouse_filter = 2
+[node name="PlasticTop" type="ColorRect" parent="."]
+offset_left = 93.0
+offset_top = 257.0
+offset_right = 622.0
+offset_bottom = 260.0
+color = Color(0.9, 0.96, 1, 0.22)
+mouse_filter = 2
+[node name="Figure" type="AnimatedSprite2D" parent="."]
+position = Vector2(355, 577)
+scale = Vector2(1.45, 1.45)
+sprite_frames = ExtResource("1")
+animation = &"idle"
+centered = false
+offset = Vector2(-128, -230)
+[node name="Accessories" type="Label" parent="."]
+offset_left = 686.0
+offset_top = 273.0
+offset_right = 1180.0
+offset_bottom = 524.0
+theme_override_colors/font_color = Color(1, 0.94, 0.86, 1)
+theme_override_font_sizes/font_size = 27
+text = "INCLUDES\nFalling PR-stack slams\nReviewer Nightmare\nOne active merged commander"
+autowrap_mode = 2
+mouse_filter = 2
+[node name="ProductCopy" type="Label" parent="."]
+offset_left = 686.0
+offset_top = 521.0
+offset_right = 1180.0
+offset_bottom = 595.0
+theme_override_colors/font_color = Color(1, 0.48, 0.18, 1)
+theme_override_font_sizes/font_size = 22
+text = "COLLECT THE PROBLEM.\nDEPLOY THE SOLUTION."
+autowrap_mode = 2
+mouse_filter = 2
+[node name="Reward" type="Label" parent="."]
+offset_left = 80.0
+offset_top = 625.0
+offset_right = 1200.0
+offset_bottom = 667.0
+theme_override_colors/font_color = Color(1, 0.94, 0.86, 1)
+theme_override_font_sizes/font_size = 22
+text = "DEFEAT BOTH / TRIAGE + CHANGE STACK"
+autowrap_mode = 2
+mouse_filter = 2

@@ -1,0 +1,1300 @@
+{
+  "schema_version": 1,
+  "status": "Asset integration definitions, NOT implemented gameplay or final balance.",
+  "sources": {
+    "gdd": "https://docs.google.com/document/d/1YCLWNykTNDglKGyuOWIMdTl9A8eEoEEgTR_INSOCdUo/edit",
+    "read_date": "2026-10-06",
+    "baseline_version": "0.1; predates Mode 2"
+  },
+  "hoppy": {
+    "art": {
+      "resource": "hoppy",
+      "animation": "idle"
+    },
+    "style": "New armored 2D variant requested by user; separate from shared base.",
+    "combo": [
+      {
+        "resource": "hoppy",
+        "animation": "jab_action"
+      },
+      {
+        "resource": "hoppy",
+        "animation": "swing_action"
+      },
+      {
+        "resource": "hoppy",
+        "animation": "kick_action"
+      }
+    ],
+    "missing_polish": [
+      "Dedicated up/down walk poses",
+      "Full in-between animation",
+      "Individual weapon-held attack animations"
+    ]
+  },
+  "stages": {
+    "generation_floor": {
+      "title": "The Generation Floor",
+      "stage": 1,
+      "palette": "white/orange/blue",
+      "preview_scene": "presentation/generation_floor.tscn",
+      "background": "heroes_villains/generation_floor.png",
+      "enemies": [
+        "slop_sprite",
+        "hallucinated_api_gremlin",
+        "duplicate_logic_clone",
+        "broken_test_bot"
+      ],
+      "bosses": [
+        "ai_slop"
+      ],
+      "destructibles": [
+        {
+          "id": "terminal",
+          "intact": {
+            "resource": "generation_kit",
+            "animation": "terminal_intact"
+          },
+          "damaged": {
+            "resource": "generation_kit",
+            "animation": "terminal_cracked"
+          },
+          "destroyed": {
+            "resource": "generation_kit",
+            "animation": "terminal_destroyed"
+          },
+          "drops": "weapons or health"
+        },
+        {
+          "id": "kiosk",
+          "intact": {
+            "resource": "generation_kit",
+            "animation": "kiosk_intact"
+          },
+          "damaged": {
+            "resource": "generation_kit",
+            "animation": "kiosk_cracked"
+          },
+          "destroyed": {
+            "resource": "generation_kit",
+            "animation": "kiosk_destroyed"
+          },
+          "drops": "Review Stamp or random buff"
+        }
+      ],
+      "hazards": [
+        {
+          "id": "code_dump",
+          "warning": {
+            "resource": "generation_kit",
+            "animation": "dump_warning"
+          },
+          "active": {
+            "resource": "generation_kit",
+            "animation": "code_dump"
+          },
+          "effect": "Falling code area denial"
+        },
+        {
+          "id": "api_fog",
+          "warning": {
+            "resource": "generation_kit",
+            "animation": "api_fog"
+          },
+          "active": {
+            "resource": "generation_kit",
+            "animation": "api_fog"
+          },
+          "effect": "Briefly invert controls"
+        }
+      ]
+    },
+    "review_gauntlet": {
+      "title": "The Review Gauntlet",
+      "stage": 2,
+      "palette": "amber/dark orange",
+      "preview_scene": "presentation/review_gauntlet.tscn",
+      "background": "heroes_villains/review_gauntlet.png",
+      "enemies": [
+        "agent_spawner",
+        "change_stack_soldier",
+        "review_blocker",
+        "merge_request_mob"
+      ],
+      "bosses": [
+        "agent_army",
+        "ten_thousand_line_pr"
+      ],
+      "destructibles": [
+        {
+          "id": "monolith",
+          "intact": {
+            "resource": "review_kit",
+            "animation": "monolith_intact"
+          },
+          "damaged": {
+            "resource": "review_kit",
+            "animation": "monolith_cracked"
+          },
+          "destroyed": {
+            "resource": "review_kit",
+            "animation": "monolith_destroyed"
+          },
+          "drops": "score plus screen-clear shockwave"
+        },
+        {
+          "id": "assembly",
+          "intact": {
+            "resource": "review_kit",
+            "animation": "assembly_intact"
+          },
+          "damaged": {
+            "resource": "review_kit",
+            "animation": "assembly_cracked"
+          },
+          "destroyed": {
+            "resource": "review_kit",
+            "animation": "assembly_destroyed"
+          },
+          "drops": "stop lane spawns; Speed Surge"
+        }
+      ],
+      "hazards": [
+        {
+          "id": "falling_stack",
+          "warning": {
+            "resource": "review_kit",
+            "animation": "slam_warning"
+          },
+          "active": {
+            "resource": "review_kit",
+            "animation": "falling_stack"
+          },
+          "effect": "AoE impact"
+        },
+        {
+          "id": "overflow_portal",
+          "warning": {
+            "resource": "review_kit",
+            "animation": "overflow_beacon"
+          },
+          "active": {
+            "resource": "review_kit",
+            "animation": "overflow_portal"
+          },
+          "effect": "Periodic density spike; Overwhelmed"
+        }
+      ]
+    },
+    "agentic_core": {
+      "title": "The Agentic Core",
+      "stage": 3,
+      "palette": "black/red/neon green",
+      "preview_scene": "presentation/agentic_core.tscn",
+      "background": "heroes_villains/agentic_core.png",
+      "enemies": [
+        "ai_hacker_drone",
+        "security_gap_crawler",
+        "vulnerability_injector",
+        "zero_day_phantom"
+      ],
+      "bosses": [
+        "ai_augmented_hacker"
+      ],
+      "destructibles": [
+        {
+          "id": "rack",
+          "intact": {
+            "resource": "core_kit",
+            "animation": "rack_intact"
+          },
+          "damaged": {
+            "resource": "core_kit",
+            "animation": "rack_cracked"
+          },
+          "destroyed": {
+            "resource": "core_kit",
+            "animation": "rack_destroyed"
+          },
+          "drops": "high-tier weapon"
+        },
+        {
+          "id": "node",
+          "intact": {
+            "resource": "core_kit",
+            "animation": "node_intact"
+          },
+          "damaged": {
+            "resource": "core_kit",
+            "animation": "node_cracked"
+          },
+          "destroyed": {
+            "resource": "core_kit",
+            "animation": "node_destroyed"
+          },
+          "drops": "score; remove one active hazard"
+        }
+      ],
+      "hazards": [
+        {
+          "id": "scan_beam",
+          "warning": {
+            "resource": "core_kit",
+            "animation": "scan_warning"
+          },
+          "active": {
+            "resource": "core_kit",
+            "animation": "scan_beam"
+          },
+          "effect": "Periodic screen-wide scan sweep"
+        },
+        {
+          "id": "surface_portal",
+          "warning": {
+            "resource": "core_kit",
+            "animation": "scan_emitter"
+          },
+          "active": {
+            "resource": "core_kit",
+            "animation": "surface_portal"
+          },
+          "effect": "Player damage spawns additional Injector"
+        }
+      ]
+    }
+  },
+  "enemies": {
+    "slop_sprite": {
+      "hp": 1,
+      "stages": [
+        1,
+        2
+      ],
+      "behavior": "Swarm rush; despawn with owning spawner.",
+      "art": {
+        "resource": "slop_sprite",
+        "animation": "idle"
+      },
+      "moves": [
+        {
+          "id": "rush",
+          "warning": {
+            "resource": "slop_sprite",
+            "animation": "attack_warning"
+          },
+          "active": {
+            "resource": "slop_sprite",
+            "animation": "attack"
+          },
+          "recovery": {
+            "resource": "slop_sprite",
+            "animation": "idle"
+          },
+          "preview": {
+            "resource": "slop_sprite",
+            "animation": "attack_action"
+          },
+          "effect": null
+        }
+      ],
+      "defeat": {
+        "resource": "slop_sprite",
+        "animation": "defeat"
+      }
+    },
+    "hallucinated_api_gremlin": {
+      "hp": 2,
+      "stages": [
+        1
+      ],
+      "behavior": "Ranged projectile applies Confused for 3 seconds.",
+      "art": {
+        "resource": "hallucinated_api_gremlin",
+        "animation": "idle"
+      },
+      "moves": [
+        {
+          "id": "throw",
+          "warning": {
+            "resource": "hallucinated_api_gremlin",
+            "animation": "attack_warning"
+          },
+          "active": {
+            "resource": "hallucinated_api_gremlin",
+            "animation": "attack"
+          },
+          "recovery": {
+            "resource": "hallucinated_api_gremlin",
+            "animation": "idle"
+          },
+          "preview": {
+            "resource": "hallucinated_api_gremlin",
+            "animation": "attack_action"
+          },
+          "effect": {
+            "resource": "capabilities_fx",
+            "animation": "api_projectile"
+          }
+        }
+      ],
+      "defeat": {
+        "resource": "hallucinated_api_gremlin",
+        "animation": "defeat"
+      }
+    },
+    "duplicate_logic_clone": {
+      "hp": 2,
+      "stages": [
+        1
+      ],
+      "behavior": "First hit replaces original with two 1-HP copies; split pose is the attack key pose.",
+      "art": {
+        "resource": "duplicate_logic_clone",
+        "animation": "idle"
+      },
+      "moves": [
+        {
+          "id": "split",
+          "warning": {
+            "resource": "duplicate_logic_clone",
+            "animation": "attack_warning"
+          },
+          "active": {
+            "resource": "duplicate_logic_clone",
+            "animation": "attack"
+          },
+          "recovery": {
+            "resource": "duplicate_logic_clone",
+            "animation": "idle"
+          },
+          "preview": {
+            "resource": "duplicate_logic_clone",
+            "animation": "attack_action"
+          },
+          "effect": null
+        }
+      ],
+      "defeat": {
+        "resource": "duplicate_logic_clone",
+        "animation": "defeat"
+      }
+    },
+    "broken_test_bot": {
+      "hp": 3,
+      "stages": [
+        1
+      ],
+      "behavior": "First hit breaks armor; periodic self-damage; attack pose depicts armor failure.",
+      "art": {
+        "resource": "broken_test_bot",
+        "animation": "idle"
+      },
+      "moves": [
+        {
+          "id": "self_damage",
+          "warning": {
+            "resource": "broken_test_bot",
+            "animation": "attack_warning"
+          },
+          "active": {
+            "resource": "broken_test_bot",
+            "animation": "attack"
+          },
+          "recovery": {
+            "resource": "broken_test_bot",
+            "animation": "idle"
+          },
+          "preview": {
+            "resource": "broken_test_bot",
+            "animation": "attack_action"
+          },
+          "effect": null
+        }
+      ],
+      "defeat": {
+        "resource": "broken_test_bot",
+        "animation": "defeat"
+      }
+    },
+    "agent_spawner": {
+      "hp": 4,
+      "stages": [
+        2
+      ],
+      "behavior": "Stationary; spawn Slop Sprites until destroyed; high TRIAGE priority.",
+      "art": {
+        "resource": "agent_spawner",
+        "animation": "idle"
+      },
+      "moves": [
+        {
+          "id": "spawn",
+          "warning": {
+            "resource": "agent_spawner",
+            "animation": "attack_warning"
+          },
+          "active": {
+            "resource": "agent_spawner",
+            "animation": "attack"
+          },
+          "recovery": {
+            "resource": "agent_spawner",
+            "animation": "idle"
+          },
+          "preview": {
+            "resource": "agent_spawner",
+            "animation": "attack_action"
+          },
+          "effect": {
+            "resource": "capabilities_fx",
+            "animation": "spawn_burst"
+          }
+        }
+      ],
+      "defeat": {
+        "resource": "agent_spawner",
+        "animation": "defeat"
+      }
+    },
+    "change_stack_soldier": {
+      "hp": 3,
+      "stages": [
+        2
+      ],
+      "behavior": "PR shield blocks frontal hits; flank or combo finisher breaks it.",
+      "art": {
+        "resource": "change_stack_soldier",
+        "animation": "idle"
+      },
+      "moves": [
+        {
+          "id": "shield_bash",
+          "warning": {
+            "resource": "change_stack_soldier",
+            "animation": "attack_warning"
+          },
+          "active": {
+            "resource": "change_stack_soldier",
+            "animation": "attack"
+          },
+          "recovery": {
+            "resource": "change_stack_soldier",
+            "animation": "idle"
+          },
+          "preview": {
+            "resource": "change_stack_soldier",
+            "animation": "attack_action"
+          },
+          "effect": null
+        }
+      ],
+      "defeat": {
+        "resource": "change_stack_soldier",
+        "animation": "defeat"
+      }
+    },
+    "review_blocker": {
+      "hp": 2,
+      "stages": [
+        2
+      ],
+      "behavior": "Plants in lane; immune to knockback.",
+      "art": {
+        "resource": "review_blocker",
+        "animation": "idle"
+      },
+      "moves": [
+        {
+          "id": "block_lane",
+          "warning": {
+            "resource": "review_blocker",
+            "animation": "attack_warning"
+          },
+          "active": {
+            "resource": "review_blocker",
+            "animation": "attack"
+          },
+          "recovery": {
+            "resource": "review_blocker",
+            "animation": "idle"
+          },
+          "preview": {
+            "resource": "review_blocker",
+            "animation": "attack_action"
+          },
+          "effect": null
+        }
+      ],
+      "defeat": {
+        "resource": "review_blocker",
+        "animation": "defeat"
+      }
+    },
+    "merge_request_mob": {
+      "hp": 1,
+      "stages": [
+        2
+      ],
+      "behavior": "Fast swarm in groups of 3\u20135.",
+      "art": {
+        "resource": "merge_request_mob",
+        "animation": "idle"
+      },
+      "moves": [
+        {
+          "id": "rush",
+          "warning": {
+            "resource": "merge_request_mob",
+            "animation": "attack_warning"
+          },
+          "active": {
+            "resource": "merge_request_mob",
+            "animation": "attack"
+          },
+          "recovery": {
+            "resource": "merge_request_mob",
+            "animation": "idle"
+          },
+          "preview": {
+            "resource": "merge_request_mob",
+            "animation": "attack_action"
+          },
+          "effect": null
+        }
+      ],
+      "defeat": {
+        "resource": "merge_request_mob",
+        "animation": "defeat"
+      }
+    },
+    "ai_hacker_drone": {
+      "hp": 2,
+      "stages": [
+        3
+      ],
+      "behavior": "Very fast dash; minimal telegraph.",
+      "art": {
+        "resource": "ai_hacker_drone",
+        "animation": "idle"
+      },
+      "moves": [
+        {
+          "id": "dash",
+          "warning": {
+            "resource": "ai_hacker_drone",
+            "animation": "attack_warning"
+          },
+          "active": {
+            "resource": "ai_hacker_drone",
+            "animation": "attack"
+          },
+          "recovery": {
+            "resource": "ai_hacker_drone",
+            "animation": "idle"
+          },
+          "preview": {
+            "resource": "ai_hacker_drone",
+            "animation": "attack_action"
+          },
+          "effect": null
+        }
+      ],
+      "defeat": {
+        "resource": "ai_hacker_drone",
+        "animation": "defeat"
+      }
+    },
+    "security_gap_crawler": {
+      "hp": 2,
+      "stages": [
+        3
+      ],
+      "behavior": "Hidden flank ambusher; SECURITY or scanner reveals.",
+      "art": {
+        "resource": "security_gap_crawler",
+        "animation": "idle"
+      },
+      "moves": [
+        {
+          "id": "pounce",
+          "warning": {
+            "resource": "security_gap_crawler",
+            "animation": "attack_warning"
+          },
+          "active": {
+            "resource": "security_gap_crawler",
+            "animation": "attack"
+          },
+          "recovery": {
+            "resource": "security_gap_crawler",
+            "animation": "idle"
+          },
+          "preview": {
+            "resource": "security_gap_crawler",
+            "animation": "attack_action"
+          },
+          "effect": null
+        }
+      ],
+      "defeat": {
+        "resource": "security_gap_crawler",
+        "animation": "defeat"
+      }
+    },
+    "vulnerability_injector": {
+      "hp": 2,
+      "stages": [
+        3
+      ],
+      "behavior": "Ranged Strength Down for 5 seconds; additional spawns on player damage.",
+      "art": {
+        "resource": "vulnerability_injector",
+        "animation": "idle"
+      },
+      "moves": [
+        {
+          "id": "inject",
+          "warning": {
+            "resource": "vulnerability_injector",
+            "animation": "attack_warning"
+          },
+          "active": {
+            "resource": "vulnerability_injector",
+            "animation": "attack"
+          },
+          "recovery": {
+            "resource": "vulnerability_injector",
+            "animation": "idle"
+          },
+          "preview": {
+            "resource": "vulnerability_injector",
+            "animation": "attack_action"
+          },
+          "effect": {
+            "resource": "core_kit",
+            "animation": "injector_projectile"
+          }
+        }
+      ],
+      "defeat": {
+        "resource": "vulnerability_injector",
+        "animation": "defeat"
+      }
+    },
+    "zero_day_phantom": {
+      "hp": 4,
+      "stages": [
+        3
+      ],
+      "behavior": "Hidden; teleports to dodge below 50% HP.",
+      "art": {
+        "resource": "zero_day_phantom",
+        "animation": "idle"
+      },
+      "moves": [
+        {
+          "id": "teleport_slash",
+          "warning": {
+            "resource": "zero_day_phantom",
+            "animation": "attack_warning"
+          },
+          "active": {
+            "resource": "zero_day_phantom",
+            "animation": "attack"
+          },
+          "recovery": {
+            "resource": "zero_day_phantom",
+            "animation": "idle"
+          },
+          "preview": {
+            "resource": "zero_day_phantom",
+            "animation": "attack_action"
+          },
+          "effect": null
+        }
+      ],
+      "defeat": {
+        "resource": "zero_day_phantom",
+        "animation": "defeat"
+      }
+    }
+  },
+  "bosses": {
+    "ai_slop": {
+      "stage": 1,
+      "thresholds": [
+        0.6,
+        0.3
+      ],
+      "unlocks": [
+        "review"
+      ],
+      "phases": [
+        {
+          "hp_range": "100\u201360%",
+          "behavior": "Spawn Slop waves, melee, spread Hallucination Burst."
+        },
+        {
+          "hp_range": "60\u201330%",
+          "behavior": "Stop spawning; aggressive rush and tracking API barrage."
+        },
+        {
+          "hp_range": "30\u20130%",
+          "behavior": "LGTM force field; clear remaining Slop Sprites to break invulnerability."
+        }
+      ],
+      "moves": [
+        {
+          "id": "melee",
+          "warning": {
+            "resource": "ai_slop",
+            "animation": "melee_warning"
+          },
+          "active": {
+            "resource": "ai_slop",
+            "animation": "melee"
+          },
+          "recovery": {
+            "resource": "ai_slop",
+            "animation": "hurt"
+          },
+          "design": "Heavy melee.",
+          "effect": null
+        },
+        {
+          "id": "hallucination_burst",
+          "warning": {
+            "resource": "ai_slop",
+            "animation": "burst_warning"
+          },
+          "active": {
+            "resource": "ai_slop",
+            "animation": "burst"
+          },
+          "recovery": {
+            "resource": "ai_slop",
+            "animation": "idle"
+          },
+          "design": "Spread of Confused projectiles.",
+          "effect": {
+            "resource": "capabilities_fx",
+            "animation": "api_projectile"
+          }
+        },
+        {
+          "id": "rush",
+          "warning": {
+            "resource": "ai_slop",
+            "animation": "weakened"
+          },
+          "active": {
+            "resource": "ai_slop",
+            "animation": "rush"
+          },
+          "recovery": {
+            "resource": "ai_slop",
+            "animation": "hurt"
+          },
+          "design": "Aggressive direct rush; warning pose reused.",
+          "effect": null
+        },
+        {
+          "id": "tracking_barrage",
+          "warning": {
+            "resource": "ai_slop",
+            "animation": "burst_warning"
+          },
+          "active": {
+            "resource": "ai_slop",
+            "animation": "barrage"
+          },
+          "recovery": {
+            "resource": "ai_slop",
+            "animation": "idle"
+          },
+          "design": "Rapid tracking projectiles.",
+          "effect": {
+            "resource": "capabilities_fx",
+            "animation": "tracking_projectile"
+          }
+        },
+        {
+          "id": "force_field",
+          "warning": {
+            "resource": "ai_slop",
+            "animation": "shield_raise"
+          },
+          "active": {
+            "resource": "ai_slop",
+            "animation": "shield"
+          },
+          "recovery": {
+            "resource": "ai_slop",
+            "animation": "shield_break"
+          },
+          "design": "Clear minions; cracked and break key poses included.",
+          "effect": null
+        }
+      ],
+      "defeat": {
+        "resource": "ai_slop",
+        "animation": "defeat"
+      }
+    },
+    "army_and_pr": {
+      "stage": 2,
+      "thresholds": [
+        0.5
+      ],
+      "unlocks": [
+        "triage",
+        "change_stack"
+      ],
+      "actors": [
+        "agent_army",
+        "ten_thousand_line_pr"
+      ],
+      "phases": [
+        {
+          "hp_range": "100\u201350%",
+          "behavior": "Synchronized clone formation; each defeated clone reduces survivors attack speed."
+        },
+        {
+          "hp_range": "50% transition",
+          "behavior": "Clones merge; PR monolith drops in. Keep merged commander active."
+        },
+        {
+          "hp_range": "simultaneous",
+          "behavior": "Commander and PR remain separate active opponents. Both must die before reward."
+        }
+      ],
+      "moves": [
+        {
+          "id": "formation",
+          "warning": {
+            "resource": "agent_army",
+            "animation": "formation_warning"
+          },
+          "active": {
+            "resource": "agent_army",
+            "animation": "formation_attack"
+          },
+          "recovery": {
+            "resource": "agent_army",
+            "animation": "formation_weakened"
+          },
+          "design": "Synchronized squad strike.",
+          "effect": null
+        },
+        {
+          "id": "merge",
+          "warning": {
+            "resource": "agent_army",
+            "animation": "merge_warning"
+          },
+          "active": {
+            "resource": "agent_army",
+            "animation": "merge"
+          },
+          "recovery": {
+            "resource": "agent_army",
+            "animation": "fused_idle"
+          },
+          "design": "Transition at 50%; presentation must not remove surviving commander.",
+          "effect": null
+        },
+        {
+          "id": "fused_strike",
+          "warning": {
+            "resource": "agent_army",
+            "animation": "fused_idle"
+          },
+          "active": {
+            "resource": "agent_army",
+            "animation": "fused_attack"
+          },
+          "recovery": {
+            "resource": "agent_army",
+            "animation": "recover"
+          },
+          "design": "Merged commander keeps attacking during PR fight.",
+          "effect": null
+        },
+        {
+          "id": "stack_slam",
+          "warning": {
+            "resource": "ten_thousand_line_pr",
+            "animation": "slam_warning"
+          },
+          "active": {
+            "resource": "ten_thousand_line_pr",
+            "animation": "slam"
+          },
+          "recovery": {
+            "resource": "ten_thousand_line_pr",
+            "animation": "recover"
+          },
+          "design": "Falling stacks; AoE impact.",
+          "effect": {
+            "resource": "review_kit",
+            "animation": "falling_stack"
+          }
+        },
+        {
+          "id": "reviewer_nightmare",
+          "warning": {
+            "resource": "ten_thousand_line_pr",
+            "animation": "nightmare_warning"
+          },
+          "active": {
+            "resource": "ten_thousand_line_pr",
+            "animation": "nightmare"
+          },
+          "recovery": {
+            "resource": "ten_thousand_line_pr",
+            "animation": "open_guard"
+          },
+          "design": "Ground shockwave.",
+          "effect": {
+            "resource": "review_kit",
+            "animation": "nightmare_wave"
+          }
+        }
+      ],
+      "defeat": [
+        {
+          "resource": "agent_army",
+          "animation": "defeat_action"
+        },
+        {
+          "resource": "ten_thousand_line_pr",
+          "animation": "defeat_action"
+        }
+      ]
+    },
+    "ai_augmented_hacker": {
+      "stage": 3,
+      "thresholds": [
+        0.6,
+        0.3
+      ],
+      "unlocks": [
+        "security"
+      ],
+      "phases": [
+        {
+          "hp_range": "100\u201360%",
+          "behavior": "Machine-speed dash; Gap Crawlers flank."
+        },
+        {
+          "hp_range": "60\u201330%",
+          "behavior": "Injection Mode: hits on Hoppy spawn Injector; hidden Phantom appears."
+        },
+        {
+          "hp_range": "30\u20130%",
+          "behavior": "Machine Mode: two simultaneous attack vectors; second hidden until revealed."
+        }
+      ],
+      "moves": [
+        {
+          "id": "dash",
+          "warning": {
+            "resource": "ai_augmented_hacker",
+            "animation": "dash_warning"
+          },
+          "active": {
+            "resource": "ai_augmented_hacker",
+            "animation": "dash"
+          },
+          "recovery": {
+            "resource": "ai_augmented_hacker",
+            "animation": "recover"
+          },
+          "design": "Minimal warning window.",
+          "effect": null
+        },
+        {
+          "id": "injection",
+          "warning": {
+            "resource": "ai_augmented_hacker",
+            "animation": "injection_warning"
+          },
+          "active": {
+            "resource": "ai_augmented_hacker",
+            "animation": "injection"
+          },
+          "recovery": {
+            "resource": "ai_augmented_hacker",
+            "animation": "recover"
+          },
+          "design": "Spawn Injector on successful hit.",
+          "effect": {
+            "resource": "core_kit",
+            "animation": "injector_projectile"
+          }
+        },
+        {
+          "id": "summon",
+          "warning": {
+            "resource": "ai_augmented_hacker",
+            "animation": "injection_warning"
+          },
+          "active": {
+            "resource": "ai_augmented_hacker",
+            "animation": "summon"
+          },
+          "recovery": {
+            "resource": "ai_augmented_hacker",
+            "animation": "idle"
+          },
+          "design": "Phase support spawn.",
+          "effect": {
+            "resource": "core_kit",
+            "animation": "surface_portal"
+          }
+        },
+        {
+          "id": "dual_vector",
+          "warning": {
+            "resource": "ai_augmented_hacker",
+            "animation": "machine_mode"
+          },
+          "active": {
+            "resource": "ai_augmented_hacker",
+            "animation": "vector_attack"
+          },
+          "recovery": {
+            "resource": "ai_augmented_hacker",
+            "animation": "teleport_in"
+          },
+          "design": "Use separate actors/hitboxes; dual_vectors is presentation only. Second vector uses vector_revealed when visible.",
+          "effect": null
+        },
+        {
+          "id": "teleport",
+          "warning": {
+            "resource": "ai_augmented_hacker",
+            "animation": "teleport_out"
+          },
+          "active": {
+            "resource": "ai_augmented_hacker",
+            "animation": "teleport_in"
+          },
+          "recovery": {
+            "resource": "ai_augmented_hacker",
+            "animation": "idle"
+          },
+          "design": "Glitch transition presentation.",
+          "effect": null
+        }
+      ],
+      "defeat": {
+        "resource": "ai_augmented_hacker",
+        "animation": "defeat_action"
+      }
+    }
+  },
+  "weapons": {
+    "review_stamp": {
+      "durability": 6,
+      "effect": "Wide frontal AoE; brief stagger.",
+      "art": {
+        "resource": "items_allies",
+        "animation": "review_stamp"
+      }
+    },
+    "triage_hammer": {
+      "durability": 4,
+      "effect": "Massive single-target damage; mark target for combo AoE follow-ups.",
+      "art": {
+        "resource": "items_allies",
+        "animation": "triage_hammer"
+      }
+    },
+    "change_stack_baton": {
+      "durability": 5,
+      "effect": "Extended reach; instantly destroys Agent Spawner on hit.",
+      "art": {
+        "resource": "items_allies",
+        "animation": "change_stack_baton"
+      }
+    },
+    "security_scanner": {
+      "durability": 8,
+      "effect": "Reveal hidden enemies for 10 seconds; bonus damage vs. Hackers.",
+      "art": {
+        "resource": "items_allies",
+        "animation": "security_scanner"
+      }
+    },
+    "pr_merger": {
+      "durability": 1,
+      "effect": "Execute enemy below 25% HP; brief screen-wide stagger on bosses.",
+      "art": {
+        "resource": "items_allies",
+        "animation": "pr_merger"
+      }
+    }
+  },
+  "capabilities": {
+    "review": {
+      "art": {
+        "resource": "capabilities_fx",
+        "animation": "review"
+      },
+      "card": "presentation/unlock_review.tscn",
+      "effect": "Free-hit block plus held activation invincibility burst and nearby stun; recharge unresolved."
+    },
+    "triage": {
+      "art": {
+        "resource": "capabilities_fx",
+        "animation": "triage"
+      },
+      "card": "presentation/unlock_triage.tscn",
+      "effect": "Highest-threat marker; +1 damage per buff table."
+    },
+    "change_stack": {
+      "art": {
+        "resource": "capabilities_fx",
+        "animation": "change_stack"
+      },
+      "card": "presentation/unlock_change_stack.tscn",
+      "effect": "Combo finisher creates temporary ground AoE at knockback point; proposed 2 seconds."
+    },
+    "security": {
+      "art": {
+        "resource": "capabilities_fx",
+        "animation": "security"
+      },
+      "card": "presentation/unlock_security.tscn",
+      "effect": "Reveal hidden enemies; final victory unlock."
+    }
+  },
+  "statuses": {
+    "review_shield": {
+      "art": {
+        "resource": "capabilities_fx",
+        "animation": "review"
+      },
+      "duration_seconds": null,
+      "effect": "One blocked hit; recharge unresolved"
+    },
+    "triage_focus": {
+      "art": {
+        "resource": "capabilities_fx",
+        "animation": "triage"
+      },
+      "duration_seconds": null,
+      "effect": "Highest threat marked; +1 damage"
+    },
+    "speed_surge": {
+      "art": {
+        "resource": "capabilities_fx",
+        "animation": "speed_surge"
+      },
+      "duration_seconds": 8,
+      "effect": "Movement boost"
+    },
+    "confused": {
+      "art": {
+        "resource": "capabilities_fx",
+        "animation": "confused"
+      },
+      "duration_seconds": 3,
+      "effect": "Invert controls"
+    },
+    "strength_down": {
+      "art": {
+        "resource": "capabilities_fx",
+        "animation": "strength_down"
+      },
+      "duration_seconds": 5,
+      "effect": "Combo damage -1"
+    },
+    "overwhelmed": {
+      "art": {
+        "resource": "capabilities_fx",
+        "animation": "overwhelmed"
+      },
+      "duration_seconds": null,
+      "effect": "Slow until surge ends or spawner destroyed"
+    }
+  },
+  "allies": {
+    "lead_engineer": {
+      "art": {
+        "resource": "items_allies",
+        "animation": "lead_engineer"
+      },
+      "action": {
+        "resource": "items_allies",
+        "animation": "lead_engineer_gift"
+      },
+      "stages": [
+        1,
+        2,
+        3
+      ],
+      "effect": "Restore 1 HP; says ship it"
+    },
+    "security_analyst": {
+      "art": {
+        "resource": "items_allies",
+        "animation": "security_analyst"
+      },
+      "action": {
+        "resource": "items_allies",
+        "animation": "security_analyst_gift"
+      },
+      "stages": [
+        3
+      ],
+      "effect": "Reveal one hidden enemy; drop Security Scanner"
+    },
+    "devops_defender": {
+      "art": {
+        "resource": "items_allies",
+        "animation": "devops_defender"
+      },
+      "action": {
+        "resource": "items_allies",
+        "animation": "devops_defender_strike"
+      },
+      "stages": [
+        2
+      ],
+      "effect": "Destroy Agent Spawner; drop Speed Surge"
+    }
+  },
+  "pickups": {
+    "health_capsule": {
+      "resource": "items_allies",
+      "animation": "health_capsule"
+    },
+    "score_coin": {
+      "resource": "items_allies",
+      "animation": "score_coin"
+    },
+    "speed_surge": {
+      "resource": "items_allies",
+      "animation": "speed_surge"
+    },
+    "review_shield": {
+      "resource": "items_allies",
+      "animation": "review_shield"
+    },
+    "random_buff": {
+      "resource": "items_allies",
+      "animation": "random_buff"
+    }
+  },
+  "open_decisions": [
+    "REVIEW: per-life charge, once-per-stage refresh and timed recharge all appear in GDD. Do not silently pick one.",
+    "SECURITY unlock follows final boss; scanner/analyst can offer earlier reveal. Hidden damaging enemies need fair telegraphs.",
+    "AI SLOP shield must handle zero remaining minions without an invulnerability softlock.",
+    "Exact boss HP, attack timings, damage, hitboxes and phase-transition damage carryover are unspecified.",
+    "PR Merger execute versus boss exception and durability per AoE swing versus per target require tuning.",
+    "Main Menu still specifies seven Code City-inclusive backgrounds. New previews are supplied without changing hub routing.",
+    "GDD invisible-enemy collision-disable suggestion conflicts with damaging ambushes; separate visibility from authoritative hitboxes."
+  ]
+}

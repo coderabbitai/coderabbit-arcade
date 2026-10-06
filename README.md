@@ -31,6 +31,7 @@ In Orbital Ops' zero-gravity bay, hold Jump or Up to rise, hold Down to descend,
 - Platformer: [Bay Area Blitz](docs/bay-area-blitz.md), [Orbital Ops](docs/orbital-ops.md), [The Enchanted Repo](docs/enchanted-repo.md)
 - [Endless Runner](docs/endless-runner.md): how to run it, asset budgets, verification. See also its [contract](docs/endless-runner-contract.md) and [systems](docs/endless-runner-systems.md).
 - [Code City Brawl](docs/code-city-brawl.md): controls, combat, stages, audio and verification.
+- [Heroes vs. Villains asset pack](docs/heroes-vs-villains-assets.md): Mode 2 art, boss moveset catalog and Godot previews; assets only.
 - [Main menu / arcade hub](docs/main-menu.md)
 
 ## Tests
