@@ -1,0 +1,22 @@
+[gd_resource type="SpriteFrames" load_steps=6 format=3]
+[ext_resource type="Texture2D" path="broken_test_bot.png" id="1"]
+[sub_resource type="AtlasTexture" id="F0"]
+atlas = ExtResource("1")
+region = Rect2(0, 0, 128, 128)
+[sub_resource type="AtlasTexture" id="F1"]
+atlas = ExtResource("1")
+region = Rect2(128, 0, 128, 128)
+[sub_resource type="AtlasTexture" id="F2"]
+atlas = ExtResource("1")
+region = Rect2(256, 0, 128, 128)
+[sub_resource type="AtlasTexture" id="F3"]
+atlas = ExtResource("1")
+region = Rect2(384, 0, 128, 128)
+[resource]
+animations = [
+{"frames": [{"duration": 1.0, "texture": SubResource("F0")}], "loop": true, "name": &"idle", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F1")}], "loop": false, "name": &"attack_warning", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F2")}], "loop": false, "name": &"attack", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F3")}], "loop": false, "name": &"defeat", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F1")}, {"duration": 1.0, "texture": SubResource("F2")}, {"duration": 1.0, "texture": SubResource("F0")}], "loop": false, "name": &"attack_action", "speed": 6.0}
+]

@@ -1,0 +1,254 @@
+	Godot implementation (mode select): A new BeatEmUpModeSelect scene launches from the Beat'em Up Main Menu before loading Stage 1 of the chosen mode. The selected mode is stored in GameManager.beatem_mode (Autoload).
+Beat'em Up — Mode 2: Heroes vs. Villains (re:Invent Edition)
+Description
+Heroes vs. Villains is a 2D side-scrolling brawler set at a fictional version of AWS re:Invent where four absurd but painfully real agentic-era villains have taken over the conference floor. Hoppy — reframed here explicitly as The CodeRabbit — fights through three escalating stages to defeat each villain and restore the four pillars of agentic code governance: Review, Triage, Change Stack, and Security.
+The visual and narrative tone mirrors the booth concept: larger-than-life collectible action figure packaging aesthetics, absurdist corporate satire, and a Situation to Complication to Resolution story arc that developers immediately recognize as their own. Each boss defeated unlocks a CodeRabbit capability as a gameplay power-up.
+Story
+Antagonists: Four villains of the agentic era — AI SLOP, The 10,000-Line PR, The Coding Agent Army, and The AI-Augmented Hacker — physical manifestations of what happens when AI generates code faster than humans can trust it.
+Opening Cinematic: Panel 1 — SITUATION: The conference floor. AI agents are shipping code at machine speed. Someone holds up a tablet: 10,284 additions, 147 files. No one knows what any of it does. Panel 2 — COMPLICATION: The floor erupts. Slop code floods the corridors. An army of identical coding agents spins up. A hacker moves at machine speed through the growing attack surface. Panel 3 — RESOLUTION: A CR alert fires. Hoppy springs into action. Title card: NEW ERA. NEW VILLAINS. SEND IN THE RABBIT.
+   * Stage 1 (The Generation Floor): AI is writing faster than anyone can check. The floor is drowning in untrusted code.
+   * Stage 2 (The Review Gauntlet): 10,000-line PRs stack to the ceiling. An army of coding agents keeps generating more.
+   * Stage 3 (The Agentic Core): The same capabilities that built the agents now power the attacker. The surface is vast. Is it secure?
+Level Design — Three Stages
+Stage 1: The Generation Floor
+A chaotic AWS conference floor remixed as a live code generation factory — bright booths replaced by AI generation terminals, demo stations spewing slop code, hallucinated API banners. High-energy, almost comically busy.
+   * Enemies: Slop Sprites (swarming, low HP), Hallucinated API Gremlins (ranged, throw confuse projectiles), Duplicate Logic Clones (split into two on first hit), Broken Test Bots (armored, deal self-damage)
+   * Destructibles: AI Generation Terminals (drop weapons or health), Demo Station Kiosks (drop Review Stamp weapon or random buff)
+   * Hazards: Cascading code dumps falling from above (area denial), Hallucinated API fog patches (briefly confuse controls)
+   * Stage-end boss: AI SLOP — Boss defeat reward: Unlocks REVIEW power-up
+Stage 2: The Review Gauntlet
+A massive arena-style chamber where stacks of 10,000-line PRs tower to the ceiling like unstable monoliths. Agent clone assembly lines run along the back wall. Dark amber/orange lighting, the aesthetic of a system under strain.
+   * Enemies: Agent Spawners (stationary, generate Slop Sprites — priority targets), Change Stack Soldiers (carry a PR stack as a shield), Review Blockers (plant themselves in Hoppy's path, cannot be knocked back), Merge Request Mob (swarms of 3-5)
+   * Destructibles: PR Monolith Stacks (smash for score + screen-clear shockwave), Agent Assembly Stations (destroy to stop spawns in that lane)
+   * Hazards: Falling PR stacks (area-of-effect impact), Agent overflow surges (periodic enemy density spikes)
+   * Stage-end boss: The Coding Agent Army merges into The 10,000-Line PR at 50% HP (dual-phase boss) — Boss defeat reward: Unlocks TRIAGE + CHANGE STACK
+Stage 3: The Agentic Core
+Deep server-room infrastructure — dark, red/black/green aesthetic, exposed rack hardware. The AI-Augmented Hacker moves at machine speed.
+   * Enemies: AI Hacker Drones (very fast, machine-speed attacks), Security Gap Crawlers (hide in background, ambush from flanks), Vulnerability Injectors (ranged, apply debuffs on hit), Zero-Day Phantoms (high HP, teleport to dodge attacks)
+   * Destructibles: Server Racks (high-tier weapons), Exposed Vulnerability Nodes (score + removes one active hazard)
+   * Hazards: Security scan sweeps (periodic screen-wide laser lines), Attack-surface surges (spawns additional Injectors when Hoppy takes damage)
+   * Stage-end boss: The AI-Augmented Hacker (three phases) — Boss defeat reward: Unlocks SECURITY — Victory
+Art Direction
+   * Style: Same 2D side-scrolling brawler base as Code City Brawl, but with a blister-pack / action-figure aesthetic layer — the villains are oversized, cartoonish, and packaged like toys when first introduced.
+   * Hoppy: Shares the same sprite sheet as Code City Brawl with a CodeRabbit logo badge on idle/run frames to reinforce "The CodeRabbit" identity for this mode.
+   * Boss art direction: Each villain is introduced with a mock blister-pack splash card: bold typography, exaggerated figure design, satirical product copy. In-game they are large 2D sprite bosses.
+   * Stage palettes: Stage 1 — bright chaotic conference white/orange/blue; Stage 2 — amber/dark orange; Stage 3 — deep black/red/neon green server aesthetic.
+   * Shared with Code City Brawl: Hoppy base sprite, UI elements, common SFX. All new: boss sprites, villain enemy designs, stage backgrounds, blister-pack intro cards.
+Audio
+   * BGM: Three stage tracks + boss theme (shared across bosses) + opening cinematic fanfare + mode select sting.
+   * Shared SFX (reuse from Code City Brawl): Jump, hit, combo escalation, enemy death, power-up collect.
+   * New SFX needed: Villain blister-pack reveal sting (4 unique per villain), agent-spawn burst, PR stack collapse impact, machine-speed attack whoosh (Hacker phase 3), capability unlock chime (plays on each boss defeat).
+Gameplay Mechanics
+Heroes vs. Villains inherits all core Beat'em Up mechanics from Code City Brawl: 8-directional movement, 3-hit combo chain, 3 HP, weapon pickups with durability, buff/debuff system. The differences are in the Capability Unlock System, blister-pack boss intros, and the dual-phase Stage 2 boss.
+Capability Unlock System
+Each boss defeat triggers a Capability Unlock sequence — a blister-pack reveal card animation and a passive or active ability granted to Hoppy for the remainder of the run. Abilities persist across stages (saved in GameManager) and stack.
+Stage
+	Capability Unlocked
+	Gameplay Effect
+	Godot Implementation
+	1 — Defeat AI SLOP
+	REVIEW
+	Passive: Hoppy blocks one free hit per life (Approve Shield baseline). On activation (button hold): brief invincibility burst — nearby enemies briefly stunned.
+	Flag set in GameManager.review_unlocked = true; Timer tracks per-life block charge; stun applied via StatusEffect Resource
+	2 — Defeat Agent Army + 10K PR
+	TRIAGE + CHANGE STACK
+	Triage: A pulsing marker highlights the highest-threat enemy at all times. Change Stack: combo finisher leaves a brief AoE hazard zone at the knockback point.
+	EnemyManager Autoload evaluates threat score each frame, applies highlight_shader to top target. Hit-3 knockback signal spawns a HazardZone PackedScene with Timer auto-despawn
+	3 — Defeat AI-Augmented Hacker
+	SECURITY
+	Final unlock — reveals all hidden enemies (Zero-Day Phantoms, Gap Crawlers become visible). Victory state.
+	All hidden enemies is_hidden flag cleared on signal; AnimationPlayer plays reveal effect; triggers victory scene
+	Enemies
+Enemy
+	HP
+	Behavior
+	Stage
+	Villain Reference
+	Slop Sprite
+	1 hit
+	Swarms in groups; rushes Hoppy; despawns if its spawner is destroyed
+	1, 2
+	AI SLOP — hallucinated code given form, endlessly generated
+	Hallucinated API Gremlin
+	2 hits
+	Ranged: throws projectile that applies Confused debuff on hit (controls briefly inverted)
+	1
+	Hallucinated APIs — calls that look real but break everything
+	Duplicate Logic Clone
+	2 hits (splits into 2 copies)
+	On first hit, splits into two half-HP copies instead of dying
+	1
+	Duplicate logic — the same bad code, copied everywhere
+	Broken Test Bot
+	3 hits
+	Armored (first hit breaks armor); slow; periodically damages itself — can be baited into self-destructing
+	1
+	Broken tests — technically running, actively harmful
+	Agent Spawner
+	4 hits
+	Stationary; continuously spawns Slop Sprites until destroyed; priority target from TRIAGE
+	2
+	Coding Agent Army — the generation does not stop
+	Change Stack Soldier
+	3 hits
+	Carries a PR stack as a shield (blocks frontal attacks); must be flanked or combo-finished to break shield
+	2
+	10,000-Line PR — the changes themselves are the weapon
+	Review Blocker
+	2 hits
+	Plants itself in lane; immune to knockback; must be defeated in place
+	2
+	10,000-Line PR — blocking the pipeline entirely
+	Merge Request Mob
+	1 hit
+	Swarms in groups of 3-5; fast, low damage
+	2
+	Coding Agent Army — individual PRs from a multi-agent flood
+	AI Hacker Drone
+	2 hits
+	Very fast movement; machine-speed dash attacks with minimal telegraph
+	3
+	AI-Augmented Hacker — attacking at machine speed
+	Security Gap Crawler
+	2 hits
+	Hidden until SECURITY is unlocked; ambushes from flanks
+	3
+	AI-Augmented Hacker — exploiting the gaps in a large attack surface
+	Vulnerability Injector
+	2 hits
+	Ranged: applies Strength Down debuff; spawns additional if Hoppy takes damage
+	3
+	AI-Augmented Hacker — injecting risk into every change
+	Zero-Day Phantom
+	4 hits
+	Hidden by default (revealed by SECURITY); teleports when attacked below 50% HP
+	3
+	AI-Augmented Hacker — the unknown threat that is already inside
+	Weapons (New for this mode)
+Weapon
+	Durability
+	Effect
+	Villain/Hero Reference
+	Review Stamp
+	6 hits
+	Wide frontal AoE — stamps all enemies in a forward arc; brief stagger on hit
+	REVIEW — the approval stamp that validates (or refuses) what ships
+	Triage Hammer
+	4 hits
+	Massive single-target damage; instantly marks the struck target for all AoE follow-ups this combo
+	TRIAGE — putting force where it matters most
+	Change Stack Baton
+	5 hits
+	Extended reach; hitting an Agent Spawner with it instantly destroys it
+	CHANGE STACK — understanding what changed, and stopping it
+	Security Scanner
+	8 hits
+	Reveals all hidden enemies on stage for 10 seconds; bonus damage vs. Hackers
+	SECURITY — scanning the surface before the attacker does
+	PR Merger
+	1 hit
+	One-use finisher; executes any enemy below 25% HP instantly; brief screen-wide stagger on bosses
+	The merge — forceful, final, irreversible
+	Buffs and Debuffs
+Effect
+	Type
+	Source
+	Description
+	Review Shield
+	Buff
+	REVIEW capability unlock; Demo Station Kiosks
+	Blocks one incoming hit; refreshes once per stage after unlock
+	Triage Focus
+	Buff
+	TRIAGE capability unlock
+	Highest-threat enemy marked — attacks deal +1 damage
+	Speed Surge
+	Buff
+	Agent Assembly Station destruction, ally event
+	Movement speed boost for 8 seconds
+	Confused
+	Debuff
+	Hallucinated API Gremlin projectile
+	Controls briefly inverted (3 seconds)
+	Strength Down
+	Debuff
+	Vulnerability Injector hit
+	Combo deals -1 damage per hit for 5 seconds
+	Overwhelmed
+	Debuff
+	Agent overflow surge
+	Temporarily slows Hoppy; clears when surge timer expires or a Spawner is destroyed
+	Random Events / Allies: The Lead Engineer (restores 1 HP, says "ship it"), The Security Analyst (Stage 3 only — reveals one hidden enemy, drops Security Scanner), The DevOps Defender (Stage 2 — destroys one Agent Spawner, drops Speed Surge buff)
+Bosses
+Boss 1: AI SLOP — "Now with 300% More Code!"
+An absurdly oversized animated action figure of a pile of badly-formatted code. Three phases tied to HP thresholds.
+   * Phase 1 (100-60% HP): Continuously spawns Slop Sprites in waves. Standard melee attacks. Periodic Hallucination Burst — spread of Confused projectiles.
+   * Phase 2 (60-30% HP): Stops spawning; switches to aggressive direct attack. Launches rapid Hallucinated API barrages — tracking projectiles.
+   * Phase 3 (30-0%): Generates a LGTM Force Field (ShaderMaterial pulse) that briefly makes it invulnerable — Hoppy must defeat remaining Slop Sprites to break the field.
+   * Defeat: Blister-pack cracks. Capability unlock card: REVIEW unlocked
+Boss 2: The Coding Agent Army to The 10,000-Line PR (Dual Phase)
+   * Phase 1 — The Coding Agent Army (100-50% HP): A synchronized squad of identical agent clones. Destroying one clone weakens the others attack speed. At 50%, clones merge and the second boss drops onto the stage.
+   * Phase 2 — The 10,000-Line PR (simultaneous): A towering monolith of stacked code pages. Slow, heavy, devastating. Attacks with falling PR-stack slams (AoE) and a Reviewer Nightmare shockwave. The merged Agent clone remains active. Both must be defeated.
+   * Defeat: Capability unlock card: TRIAGE + CHANGE STACK unlocked
+Boss 3: The AI-Augmented Hacker — "Now Attacks at Machine Speed!"
+   * Phase 1 (100-60% HP): Machine-speed movement — very fast dashes, minimal telegraph windows. Security Gap Crawlers flank from the walls.
+   * Phase 2 (60-30% HP): Injection Mode — each hit on Hoppy spawns a Vulnerability Injector. Zero-Day Phantom appears (hidden unless SECURITY unlocked).
+   * Phase 3 (30-0% HP): Machine Mode — visual glitch effect. Hacker splits into two simultaneous attack vectors (two active hitboxes). Second hitbox invisible until SECURITY unlocked.
+   * Defeat: All four capability lights illuminate. Victory cinematic: The CodeRabbit is live. The codebase is trusted. Capability unlock card: SECURITY unlocked
+CodeRabbit Thematic Integration
+Game Element
+	CodeRabbit / re:Invent Concept
+	Hoppy as "The CodeRabbit"
+	Explicit reframing — this mode makes the brand identity mechanical, not decorative
+	Villain blister packs
+	Direct adaptation of the booth concept — the villains ARE the four agentic-era problems CodeRabbit solves
+	AI SLOP boss
+	AI-generated code quality: hallucinated APIs, duplicate logic, broken tests — CodeRabbit REVIEW
+	10,000-Line PR boss
+	Reviewer attention at scale: what deserves human eyes? — CodeRabbit TRIAGE
+	Coding Agent Army boss
+	Understanding what multiple agents changed and why — CodeRabbit CHANGE STACK
+	AI-Augmented Hacker boss
+	Machine-speed security threats on a large generated surface — CodeRabbit SECURITY
+	Capability unlock system
+	Each boss defeat = a CodeRabbit capability deployed; the product story is the progression mechanic
+	SECURITY unlock reveals hidden enemies
+	Security scanning reveals risk that was already there — you just could not see it yet
+	Victory: all four capabilities lit
+	"Review. Triage. Understand. Secure." — CodeRabbit full agentic governance layer, completed
+	Godot 4.7.1 Implementation Reference — Heroes vs. Villains
+System
+	Godot Implementation
+	Mode select screen
+	BeatEmUpModeSelect.tscn — Control root with VBoxContainer; GameManager.beatem_mode (Autoload String) set on press; background swaps via same hover-reactive logic as Main Menu
+	Capability unlock system
+	GameManager Autoload tracks review_unlocked, triage_unlocked, change_stack_unlocked, security_unlocked Booleans; each boss death emits a signal; capability reveal card played via AnimationPlayer on CanvasLayer overlay
+	REVIEW — block charge
+	Timer node on Hoppy (per-life); can_block bool; on damage absorb hit, play block animation, start recharge timer; TimerTimeout resets can_block
+	TRIAGE — threat marker
+	EnemyManager Autoload iterates active enemies each frame; threat score = HP + spawner bonus + proximity weight; top-score enemy gets highlight_shader via set_instance_shader_parameter()
+	CHANGE STACK — AoE hazard zone
+	Hit-3 signal in AnimationPlayer emits knockback_landed; handler instantiates HazardZone.tscn at knockback target position; Timer auto-calls queue_free() after 2 seconds
+	SECURITY — hidden enemy reveal
+	Hidden enemies have is_hidden = true; CollisionShape2D.disabled + modulate.a = 0 until revealed; SECURITY unlock emits global signal; Tween fades alpha 0 to 1 with shimmer shader
+	Duplicate Logic Clone split
+	On first hit: instantiate two DuplicateClone.tscn instances at offset positions; each has 1 HP; original queue_free() after instantiation
+	Agent Spawner priority target
+	Spawner sets threat_score = 99 in EnemyManager on spawn; Change Stack Baton hit checks enemy.is_spawner flag for instant-kill logic
+	Boss intro — blister pack card
+	CanvasLayer overlay; TextureRect with blister-pack art; AnimationPlayer sequence: slide in (0.3s), hold (1.5s), slide out (0.3s); then Boss.start() called
+	Boss 1 — LGTM force field
+	ShaderMaterial on ColorRect fullscreen; invincible flag on Boss; field breaks when all remaining Slop Sprites cleared via EnemyManager.enemy_count_changed signal
+	Boss 2 — dual phase
+	AgentArmyBoss.tscn: StateMachine (Formation to Merge to Simultaneous); at 50% HP: merge_clones() collapses squad, triggers PRMonolith.tscn drop; tracked by shared DualBossHPBar CanvasLayer UI
+	Boss 3 — machine-speed phase
+	Phase 1: move_speed *= 2.0, telegraph reduced; Phase 2: damage signal spawns Vulnerability Injector via EnemyManager.spawn_at(); Phase 3: two HitboxArea2D nodes active; second hitbox invisible until SECURITY unlocked
+	Capability unlock reveal card
+	AnimationPlayer: card slides up, capability icon pulses in, background dims, 2-second hold, fade out; subsequent cards show prior unlocks as already-lit icons
+	Victory cinematic
+	AnimationPlayer-driven: all four capability icons illuminate in sequence; final title card: THE CODERABBIT — BUILT FOR THE AGENTIC ERA; fade to Victory Score screen
+	Shared scene/asset folder
+	res://scenes/beatem_up/reinvent/ for mode-specific scenes; res://assets/beatem_up/reinvent/ for new assets; common assets at res://assets/beatem_up/shared/
+	
+
+

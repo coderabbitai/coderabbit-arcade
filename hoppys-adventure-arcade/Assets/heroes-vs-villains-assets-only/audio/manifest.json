@@ -1,0 +1,50 @@
+{
+  "reveal_ai_slop": {
+    "file": "reveal_ai_slop.wav",
+    "seconds": 0.78,
+    "peak": 0.49663525131951514,
+    "status": "Original synthesized v1 cue; mix/playtest with combat later."
+  },
+  "reveal_agent_army": {
+    "file": "reveal_agent_army.wav",
+    "seconds": 0.61,
+    "peak": 0.4565268986130208,
+    "status": "Original synthesized v1 cue; mix/playtest with combat later."
+  },
+  "reveal_ten_thousand_line_pr": {
+    "file": "reveal_ten_thousand_line_pr.wav",
+    "seconds": 0.98,
+    "peak": 0.4986533318219004,
+    "status": "Original synthesized v1 cue; mix/playtest with combat later."
+  },
+  "reveal_ai_augmented_hacker": {
+    "file": "reveal_ai_augmented_hacker.wav",
+    "seconds": 0.56,
+    "peak": 0.45615300208364895,
+    "status": "Original synthesized v1 cue; mix/playtest with combat later."
+  },
+  "agent_spawn": {
+    "file": "agent_spawn.wav",
+    "seconds": 0.27,
+    "peak": 0.4356827036069783,
+    "status": "Original synthesized v1 cue; mix/playtest with combat later."
+  },
+  "pr_stack_collapse": {
+    "file": "pr_stack_collapse.wav",
+    "seconds": 0.54,
+    "peak": 0.5080880996232652,
+    "status": "Original synthesized v1 cue; mix/playtest with combat later."
+  },
+  "machine_speed_whoosh": {
+    "file": "machine_speed_whoosh.wav",
+    "seconds": 0.2399546485260771,
+    "peak": 0.43141501804156623,
+    "status": "Original synthesized v1 cue; mix/playtest with combat later."
+  },
+  "capability_unlock": {
+    "file": "capability_unlock.wav",
+    "seconds": 0.76,
+    "peak": 0.47136616014129484,
+    "status": "Original synthesized v1 cue; mix/playtest with combat later."
+  }
+}

@@ -1,0 +1,71 @@
+[gd_resource type="SpriteFrames" load_steps=18 format=3]
+[ext_resource type="Texture2D" path="generation_kit.png" id="1"]
+[sub_resource type="AtlasTexture" id="F0"]
+atlas = ExtResource("1")
+region = Rect2(0, 0, 192, 192)
+[sub_resource type="AtlasTexture" id="F1"]
+atlas = ExtResource("1")
+region = Rect2(192, 0, 192, 192)
+[sub_resource type="AtlasTexture" id="F2"]
+atlas = ExtResource("1")
+region = Rect2(384, 0, 192, 192)
+[sub_resource type="AtlasTexture" id="F3"]
+atlas = ExtResource("1")
+region = Rect2(576, 0, 192, 192)
+[sub_resource type="AtlasTexture" id="F4"]
+atlas = ExtResource("1")
+region = Rect2(0, 192, 192, 192)
+[sub_resource type="AtlasTexture" id="F5"]
+atlas = ExtResource("1")
+region = Rect2(192, 192, 192, 192)
+[sub_resource type="AtlasTexture" id="F6"]
+atlas = ExtResource("1")
+region = Rect2(384, 192, 192, 192)
+[sub_resource type="AtlasTexture" id="F7"]
+atlas = ExtResource("1")
+region = Rect2(576, 192, 192, 192)
+[sub_resource type="AtlasTexture" id="F8"]
+atlas = ExtResource("1")
+region = Rect2(0, 384, 192, 192)
+[sub_resource type="AtlasTexture" id="F9"]
+atlas = ExtResource("1")
+region = Rect2(192, 384, 192, 192)
+[sub_resource type="AtlasTexture" id="F10"]
+atlas = ExtResource("1")
+region = Rect2(384, 384, 192, 192)
+[sub_resource type="AtlasTexture" id="F11"]
+atlas = ExtResource("1")
+region = Rect2(576, 384, 192, 192)
+[sub_resource type="AtlasTexture" id="F12"]
+atlas = ExtResource("1")
+region = Rect2(0, 576, 192, 192)
+[sub_resource type="AtlasTexture" id="F13"]
+atlas = ExtResource("1")
+region = Rect2(192, 576, 192, 192)
+[sub_resource type="AtlasTexture" id="F14"]
+atlas = ExtResource("1")
+region = Rect2(384, 576, 192, 192)
+[sub_resource type="AtlasTexture" id="F15"]
+atlas = ExtResource("1")
+region = Rect2(576, 576, 192, 192)
+[resource]
+animations = [
+{"frames": [{"duration": 1.0, "texture": SubResource("F0")}], "loop": true, "name": &"terminal_intact", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F1")}], "loop": false, "name": &"terminal_cracked", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F2")}], "loop": false, "name": &"terminal_destroyed", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F3")}], "loop": false, "name": &"loot_crate", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F4")}], "loop": true, "name": &"kiosk_intact", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F5")}], "loop": false, "name": &"kiosk_cracked", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F6")}], "loop": false, "name": &"kiosk_destroyed", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F7")}], "loop": false, "name": &"barrier", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F8")}], "loop": false, "name": &"api_banner", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F9")}], "loop": false, "name": &"expo_truss", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F10")}], "loop": false, "name": &"light_pillar", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F11")}], "loop": false, "name": &"display_cabinet", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F12")}], "loop": false, "name": &"code_dump", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F13")}], "loop": false, "name": &"api_fog", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F14")}], "loop": false, "name": &"dump_warning", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F15")}], "loop": false, "name": &"code_debris", "speed": 1.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F0")}, {"duration": 1.0, "texture": SubResource("F1")}, {"duration": 1.0, "texture": SubResource("F2")}], "loop": false, "name": &"primary_break", "speed": 6.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F4")}, {"duration": 1.0, "texture": SubResource("F5")}, {"duration": 1.0, "texture": SubResource("F6")}], "loop": false, "name": &"secondary_break", "speed": 6.0}
+]

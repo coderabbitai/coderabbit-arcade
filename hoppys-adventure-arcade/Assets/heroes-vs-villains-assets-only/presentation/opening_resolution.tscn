@@ -1,0 +1,69 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Texture2D" path="res://Assets/heroes-vs-villains-assets-only/heroes_villains/agentic_core.png" id="1"]
+
+[ext_resource type="SpriteFrames" path="res://Assets/heroes-vs-villains-assets-only/heroes_villains/hoppy.tres" id="2"]
+
+[node name="StoryPanel" type="Control"]
+texture_filter = 1
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+[node name="Background" type="TextureRect" parent="."]
+offset_right = 1280.0
+offset_bottom = 720.0
+texture = ExtResource("1")
+[node name="Dim" type="ColorRect" parent="."]
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 1280.0
+offset_bottom = 720.0
+color = Color(0.025, 0.025, 0.035, 0.86)
+mouse_filter = 2
+[node name="Accent" type="ColorRect" parent="."]
+offset_left = 65.0
+offset_top = 103.0
+offset_right = 73.0
+offset_bottom = 585.0
+color = Color(1, 0.25, 0.035, 1)
+mouse_filter = 2
+[node name="Mode" type="Label" parent="."]
+offset_left = 105.0
+offset_top = 110.0
+offset_right = 1145.0
+offset_bottom = 150.0
+theme_override_colors/font_color = Color(1, 0.45, 0.13, 1)
+theme_override_font_sizes/font_size = 22
+text = "HEROES vs. VILLAINS / re:Invent EDITION"
+autowrap_mode = 2
+mouse_filter = 2
+[node name="Title" type="Label" parent="."]
+offset_left = 103.0
+offset_top = 185.0
+offset_right = 1153.0
+offset_bottom = 270.0
+theme_override_colors/font_color = Color(1, 0.94, 0.86, 1)
+theme_override_font_sizes/font_size = 52
+text = "SEND IN THE RABBIT"
+autowrap_mode = 2
+mouse_filter = 2
+[node name="Copy" type="Label" parent="."]
+offset_left = 106.0
+offset_top = 306.0
+offset_right = 826.0
+offset_bottom = 540.0
+theme_override_colors/font_color = Color(1, 0.94, 0.86, 1)
+theme_override_font_sizes/font_size = 31
+text = "NEW ERA. NEW VILLAINS.\nThe CodeRabbit answers the alert."
+autowrap_mode = 2
+mouse_filter = 2
+[node name="Hoppy" type="AnimatedSprite2D" parent="."]
+position = Vector2(1060, 605)
+scale = Vector2(3, 3)
+sprite_frames = ExtResource("2")
+animation = &"idle"
+centered = false
+offset = Vector2(-64, -115)
