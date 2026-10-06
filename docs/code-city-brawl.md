@@ -18,7 +18,7 @@ W/Up changes the ground lane. Jump is a separate height above that lane. Attacks
 
 Hoppy has three HP. Coffee restores one HP. Each stage begins with fresh health and equipment. Defeat offers a retry from that stage's first encounter, restoring the score saved on entry. Pause freezes combat, effects and music; losing window focus also pauses. Return-to-menu is available from pause, intros and results.
 
-There are three gated encounters per district. Clear every living combatant, including split soldiers and reviving zombies, then walk right. The ninth encounter is the boss. A skippable three-panel introduction opens the run; stage transitions and the Force Merge ending complete it. Mode 2 remains unavailable.
+There are three gated encounters per district. Clear every living combatant, including split soldiers and reviving zombies, then walk right. The ninth encounter is the boss. A skippable three-panel introduction opens the run; stage transitions and the Force Merge ending complete it. [Mode 2: Heroes vs. Villains](heroes-vs-villains.md) is separately playable from the mode menu.
 
 ## Districts and combat
 

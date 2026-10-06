@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://cgpkkca81j76n"
+path="res://.godot/imported/frivolous_hero.ogg-4704e4b6a7a7796bd40dac4118b60f1f.oggvorbisstr"
+
+[deps]
+
+source_file="res://Assets/Audio/Beat'em Up/Hero vs Villian/frivolous_hero.ogg"
+dest_files=["res://.godot/imported/frivolous_hero.ogg-4704e4b6a7a7796bd40dac4118b60f1f.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4
