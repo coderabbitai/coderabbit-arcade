@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://5t420g1c82tk"
+path="res://.godot/imported/Hero Immortal.mp3-f7054f67a3cb426ce685a4cf8a110850.mp3str"
+
+[deps]
+
+source_file="res://Assets/Audio/Beat'em Up/Hero vs Villian/Hero Immortal.mp3"
+dest_files=["res://.godot/imported/Hero Immortal.mp3-f7054f67a3cb426ce685a4cf8a110850.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4
