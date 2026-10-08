@@ -39,6 +39,10 @@ func run() -> void:
 	showcase._process(3.1)
 	await wait(0.7)
 	check(showcase.active_index == 8, "Brawler cycles")
+	for expected in [9, 10, 11, 12, 7]:
+		showcase._process(3.0)
+		await wait(0.7)
+		check(showcase.active_index == expected, "Brawler includes both campaigns and wraps")
 	for i in 30:
 		showcase.select_group(i % 3)
 		check(showcase.get_child_count() <= 2, "Preview count bounded during rapid input")
@@ -47,7 +51,8 @@ func run() -> void:
 	check(showcase.active_index == 3 and showcase.get_child_count() == 1, "Latest focus wins and settles")
 	for i in showcase.COUNT:
 		showcase.transition_to(i, 0)
-		check(showcase.active_index == i, "All ten previews instantiate")
+		check(showcase.active_index == i, "All configured previews instantiate")
+		check(not showcase.active.plates.is_empty(), "Preview has stage artwork: %d" % i)
 	menu._open_settings(menu.buttons[3])
 	check(menu.modal != null and showcase.suspended, "Settings pauses showcase")
 	check(menu.modal.is_ancestor_of(root.gui_get_focus_owner()), "Settings captures focus")

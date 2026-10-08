@@ -14,12 +14,12 @@ Arrow keys, Tab, D-pad, or left stick navigate; Enter / gamepad A activates; Esc
 
 ## Behavior and ownership
 
-- Scene-local showcase: idle previews 0–9 every 9 seconds; 1.2-second fades. Focusing a mode cycles its previews every 3 seconds with 0.6-second fades: Platformer and brawler cycle three themes, and the Endless Runner cycles four in-game stills (corridor, power-ups, sharp turn, boss).
+- Scene-local showcase: idle previews 0–12 every 9 seconds; 1.2-second fades. Focusing a mode cycles its previews every 3 seconds with 0.6-second fades: Platformer cycles three themes; Beat’em Up cycles all three Code City Brawl stages followed by all three Heroes vs. Villains stages, and the Endless Runner cycles four in-game stills (corridor, power-ups, sharp turn, boss).
 - Focus exit waits 2 seconds, then restores the idle index and remaining dwell. Modals pause showcase timing. Parallax continues behind overlays.
 - At most two preview nodes exist. During a fade, requests coalesce to the latest selection; the outgoing node is freed before another fade begins. Each preview is a `CanvasGroup`, so a fade blends the flattened scene instead of letting its parallax layers show through each other. Preview textures are loaded once and kept, so transitions never read from disk.
 - Layout recenters on viewport resize (not every frame). Menu buttons grow 5% around their centre on hover/focus and keep that scale when their container re-sorts.
 - The UI uses a 1280×720 reference with expanding viewport coverage and centered composition. Backgrounds fill taller and wider windows. Pixel scenery uses nearest filtering.
-- AppRouter validates known routes and prevents duplicate transitions. Each mode currently opens an explicit “not playable yet” endpoint with a return button. No gameplay was added.
+- AppRouter validates known routes and prevents duplicate transitions. Mode buttons open their existing game menus. This graphics pass does not modify gameplay.
 - AudioService owns a single looping music player and one UI sound player. Music and SFX independently feed Master. Supplied `Assets/Audio/happy_adveture.mp3` is used unchanged; synthesized UI blips are generated in code. MP3 repeat is enabled; musical seamlessness at the track boundary still needs listening review.
 - SaveService stores validated volume and fullscreen values in `user://settings.cfg`. Sliders apply immediately; closing settings persists them. Save failures appear in the UI.
 - Quit asks for confirmation and fades to black for 1 second.
@@ -30,15 +30,16 @@ As of 2026-09-30, `hoppy.gd` uses the supplied `Assets/Character/Hoppy/2D/hoppy-
 
 | Preview | Source |
 | --- | --- |
-| Bay Area Blitz | `Assets/CityBackground` layered pixel skyline |
-| Orbital Ops | `Assets/space_background_pack/layers` |
-| Enchanted Repo | `Assets/parallax_forest_pack/layers` |
+| Bay Area Blitz | `Assets/bay-area-blitz-assets-only/bay_area/backdrop.png` |
+| Orbital Ops | `Assets/orbital-ops-assets-only/orbital_ops/` starfield and station hull |
+| Enchanted Repo | `Assets/enchanted-repo-assets-only/enchanted_repo/` sky and treeline |
 | Codebase Corridor, Power-ups, Sharp Turns, Boss Fights | `Assets/runner/menu_previews/runner_*.png`, captured from an autopilot run by `tests/capture_runner_menu_previews.gd` (graphical: `Godot --always-on-top --path hoppys-adventure-arcade --script res://tests/capture_runner_menu_previews.gd`) |
-| CLI / IDE District | `Assets/Backgrounds/cyberpunk-street-files/Assets/Version 2/Layers` |
-| Security Sector | Code-drawn racks, scanner, and tunnel |
-| Git Repository HQ | Code-drawn branching nodes and hall |
+| CLI / IDE District | `Assets/code-city-brawl-assets-only/code_city/district_background.png` |
+| Security Sector | `Assets/code-city-brawl-assets-only/code_city/security_background.png` |
+| Git Repository HQ | `Assets/code-city-brawl-assets-only/code_city/hq_background.png` |
+| Generation Floor, Review Gauntlet, Agentic Core | `Assets/heroes-vs-villains-assets-only/heroes_villains/` stage panoramas |
 
-These are theme previews, not final level art. Supplied asset files and accompanying licenses remain in place. Optional CRT, shader dissolve, adaptive music, and final branding are deferred.
+Updated 2026-10-08: all menu previews now use current stage artwork or captured runner gameplay. Finite panoramas use cover scaling, overscan, and bounded camera drift, with independent depth motion for layered platformer art; none are tiled across a seam. Stage captions identify the campaign, and a lower gradient preserves readability on bright floors. Existing crossfade durations, input behavior, and Hoppy reactions remain intact. Supplied asset files and accompanying licenses remain in place. Optional CRT, shader dissolve, adaptive music, and final branding are deferred.
 
 ## Verification
 
@@ -46,7 +47,7 @@ These are theme previews, not final level art. Supplied asset files and accompan
 /Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --script res://tests/menu_smoke.gd
 ```
 
-The behavioral smoke test covers preview timing and preservation, rapid input coalescing, bounded preview count, all ten previews, modal focus restoration, invalid routes, duplicate navigation, all three mode round trips, and audio player counts. It also dispatches keyboard, simulated gamepad, and mouse events. A rendered run writes menu/settings screenshots to `/tmp` for layout inspection. It uses the normal settings path, so run against a disposable user profile if preserving settings during tests matters.
+The behavioral smoke test covers preview timing and preservation, rapid input coalescing, bounded preview count, all thirteen previews, modal focus restoration, invalid routes, duplicate navigation, all three mode round trips, and audio player counts. It also dispatches keyboard, simulated gamepad, and mouse events. A rendered run writes menu/settings screenshots to `/tmp` for layout inspection. It uses the normal settings path, so run against a disposable user profile if preserving settings during tests matters.
 
 Physical controller feel, audio loop quality, and Windows/Linux exports require later hands-on checks; no export presets or platform builds were added.
 

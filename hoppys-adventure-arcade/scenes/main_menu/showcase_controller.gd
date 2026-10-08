@@ -1,8 +1,8 @@
 extends Node2D
 signal preview_changed(index: int)
 const Preview = preload("res://scenes/main_menu/preview.gd")
-const GROUPS = [[0, 1, 2], [3, 4, 5, 6], [7, 8, 9]]
-const COUNT := 10
+const GROUPS = [[0, 1, 2], [3, 4, 5, 6], [7, 8, 9, 10, 11, 12]]
+const COUNT := 13
 var idle_index := 0
 var idle_remaining := 9.0
 var focus_group := -1
