@@ -1,6 +1,7 @@
 extends SceneTree
 ## Booth mode: idle routes return to the hub, input keeps a game alive, the menu can't quit
-## the kiosk, and --route=<name> picks a launch route.
+## the kiosk, and --route=<name> picks a launch route. The startup flags are checked by launching
+## the game as a child process, so _ready()'s own argument handling is covered.
 ## Run headless with --script res://tests/booth_mode.gd.
 var failures := 0
 var router: Node
@@ -23,6 +24,15 @@ func settle_route() -> void:
 		await process_frame
 	await process_frame
 
+## Launch the game headless with user args and return its combined output.
+func launch(user_args: Array[String]) -> String:
+	var args: Array[String] = ["--headless", "--path", ProjectSettings.globalize_path("res://"),
+		"--quit-after", "30", "--"]
+	args.append_array(user_args)
+	var output: Array = []
+	OS.execute(OS.get_executable_path(), args, output, true)
+	return "\n".join(output)
+
 func on_hub() -> bool:
 	return current_scene != null and current_scene.scene_file_path == router.ROUTES["hub"]
 
@@ -35,6 +45,14 @@ func run() -> void:
 	check(launch == "heroes_vs_villains", "--route names a launch route")
 	launch = router.launch_route(PackedStringArray(["--booth"]))
 	check(launch == "", "No --route means the default scene")
+
+	var plain := launch([])
+	check(not plain.contains("booth mode on") and not plain.contains("launching route"),
+		"A plain launch starts without booth mode or a launch route")
+	var kiosk := launch(["--booth", "--route=heroes_vs_villains"])
+	check(kiosk.contains("AppRouter: booth mode on"), "Launching with --booth turns booth mode on")
+	check(kiosk.contains("AppRouter: launching route heroes_vs_villains"),
+		"Launching with --route opens that route")
 
 	router.go("platformer")
 	await settle_route()

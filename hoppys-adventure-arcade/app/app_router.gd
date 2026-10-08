@@ -46,6 +46,7 @@ func _ready() -> void:
 	set_booth(BOOTH_FLAG in args)
 	var start := launch_route(args)
 	if start != "":
+		print("AppRouter: launching route ", start)
 		go.call_deferred(start)
 func go(route: String) -> void:
 	if busy or not ROUTES.has(route) or not ResourceLoader.exists(ROUTES[route]):
@@ -102,6 +103,7 @@ func set_booth(enabled: bool) -> void:
 	set_process_input(enabled)
 	if enabled:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+		print("AppRouter: booth mode on (idle return after %d s)" % int(idle_limit))
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey or event is InputEventMouseButton or event is InputEventJoypadButton \
