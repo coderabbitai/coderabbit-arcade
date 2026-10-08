@@ -41,6 +41,19 @@ const WAVES := [
 	[["ai_hacker_drone","security_gap_crawler","vulnerability_injector"], ["zero_day_phantom","security_gap_crawler","vulnerability_injector","ai_hacker_drone"], []]]
 const PROPS := [["terminal","kiosk"],["monolith","assembly"],["rack","node"]]
 const BOSS_NAMES := {"ai_slop":"AI SLOP", "agent_army":"CODING AGENT ARMY", "ten_thousand_line_pr":"10,000-LINE PR", "ai_augmented_hacker":"AI-AUGMENTED HACKER"}
+## Hands-free stage flow and presentation-card timing. stage_flow.gd consumes its default
+## tuning keys; game.gd uses boss_dip, exit_banner, and the per-card holds below.
+const FLOW := {
+	"run_speed":300.0, "exit_min":.6, "exit_max":1.6, "exit_margin":60.0,
+	"fade_out":.35, "fade_in":.35, "music_floor_db":-40.0,
+	"enter_from_x":-60.0, "enter_to_x":180.0, "enter_max":1.6,
+	"stage_banner":2.8, "banner_slide":.3, "banner_fade":.6,
+	"exit_banner":2.0, "boss_dip":.6}
+const CARD_HOLD := {
+	"opening_situation":4.5, "opening_complication":4.5, "opening_resolution":4.5,
+	"boss_ai_slop":3.0, "boss_agent_army":3.0, "boss_ten_thousand_line_pr":3.0, "boss_ai_augmented_hacker":3.0,
+	"unlock_review":4.5, "unlock_triage":4.5, "unlock_change_stack":4.5, "unlock_security":4.5,
+	"victory":6.0}
 
 static func install_input() -> void:
 	Shared.install_input()

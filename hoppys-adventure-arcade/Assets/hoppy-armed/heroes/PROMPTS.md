@@ -8,6 +8,18 @@ Create a NEW 16-bit pixel-art brawler animation sheet of EXACTLY the armored ora
 
 ## Refinements
 
-Regenerations: 0. The first generated master was retained. After independent visual review, the deterministic packer was corrected to recover connected components across grid gutters, plant every frame's feet at its gameplay pivot, store per-frame hand and attack-tip anchors on solid painted pixels, and calibrate carry icons to the baked hold_idle weapon length. Ground-lined runtime clip strips were added for motion inspection. These were packing changes, not image regenerations.
+Regenerations: 1. Juan approved the pilot style and requested one targeted redo of the step 2 sweep frames. The generation-zero master is retained in `sources/review_stamp-generation0.png`. Only regenerated connected sprites 9, 10, and 11 were merged into the approved master; the other thirteen source sprites remain unchanged. The deterministic packer then recovered components across grid gutters, planted every frame's feet at its gameplay pivot, stored per-frame hand and attack-tip anchors on solid painted pixels, and calibrated carry icons to the baked hold_idle weapon length.
 
-Inspection note: In step 2 contact/follow, the review stamp's rectangular base can read like a boxing glove or plunger. It was retained for pilot approval rather than regenerated.
+### Regeneration 1 refinement prompt
+
+Use case: precise-object-edit
+Asset type: 4x4 transparent pixel-art brawler sprite-sheet source master
+Input image: the provided 4x4 armored orange rabbit sprite sheet is the edit target.
+Primary request: Change only row 3, columns 1 through 3, frames 9, 10, and 11, the three step-2 sweep poses. Preserve frames 1-8 and 12-16 exactly as provided: their pixels, pose, palette, transparent background, grid spacing, margins, and complete sprites.
+Subject: the exact same armored orange rabbit, cream muzzle, long orange ears, black and charcoal suit, orange chest crest, belt, dark cape, orange legs, facing right.
+Critical correction: In EACH of frames 9, 10, and 11, Hoppy holds a complete orange review-stamp with the rounded orange knob clearly enclosed by the near paw AND the full rectangular orange-and-black stamp base visibly attached below it. The rectangular base must be visible, chunky, opaque, and unmistakable, matching the base silhouette, orange, amber highlight, charcoal, white highlight, and steel-gray colours already visible in frames 6-8 and 12-14. It must not resemble a boxing glove, plunger, floating knob, club, or hammer.
+Pose detail: Frame 9 sweep windup has stamp raised/back with complete base; frame 10 sweep contact projects the stamp forward with its complete rectangular base visible; frame 11 sweep follow-through has the complete base visibly attached and readable. Keep the knob in a rabbit paw in all three.
+Style/medium: crisp 16-bit pixel art at the same chunky pixel density as every unchanged rabbit and stamp frame. Exact 4 columns x 4 rows, equal cell spacing, generous transparent gutters, no grid lines, no text, no shadows, no detached effects, no new characters, no backgrounds.
+Constraints: change only frames 9-11; retain transparent alpha; every frame remains a single complete connected sprite fully inside its own cell; preserve rabbit identity and feet baseline.
+
+Inspection result: Frames 9-11 now show the complete rectangular stamp base, with the rounded knob held in Hoppy's paw. This was a targeted art regeneration; registration, anchors, carries, previews, and clip strips were rebuilt afterward.

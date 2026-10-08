@@ -35,7 +35,13 @@ func run() -> void:
 	game.test_mode=true;freeze()
 	game._physics_process(.35)
 	await capture("opening")
-	while game.state=="cards": game.next_card()
+	var opening_steps := 0
+	while game.state in ["cards","stage_enter"] and opening_steps<2400:
+		game._physics_process(1.0/60.0);opening_steps+=1
+		if game.state=="cards" and game.card_clock>.35: await capture(game.card_queue[0])
+		if game.state=="stage_enter" and game.flow.phase=="enter_run" and game.flow.clock>.5: await capture("stage_enter_banner_0")
+		if opening_steps%15==0: await process_frame
+	check(game.state=="combat" and game.playing,"Opening cards and stage_enter complete hands-free")
 	# Live event mappings: movement, jump, combo, pickup and charged ability.
 	var key := InputEventKey.new();key.physical_keycode=KEY_W;key.pressed=true
 	Input.parse_input_event(key);await process_frame
@@ -75,16 +81,11 @@ func run() -> void:
 		p.invulnerable=999
 		rooms["%d_%d" % [game.stage_index,game.room]]=true
 		if game.state=="won": break
-		if game.state=="stage_clear":
-			await capture("capability_deployed_%d" % game.stage_index)
-			var confirm := InputEventAction.new()
-			confirm.action="heroes_popup_advance";confirm.pressed=true
-			game._input(confirm)
-			await process_frame;freeze()
-			var stage_confirm := InputEventAction.new()
-			stage_confirm.action="heroes_popup_advance";stage_confirm.pressed=true
-			game._input(stage_confirm)
-			await process_frame;freeze()
+		if game.state in ["stage_exit","stage_enter"]:
+			game._physics_process(1.0/60.0)
+			if game.state=="stage_exit" and game.flow.phase=="fade_out" and game.flow.veil.color.a>.4: await capture("stage_exit_fade_%d" % game.stage_index)
+			if game.state=="stage_enter" and game.flow.phase=="enter_run" and game.flow.clock>.5: await capture("stage_enter_banner_%d" % game.stage_index)
+			if step%15==0: await process_frame
 			continue
 		if game.state=="boss_victory":
 			game._physics_process(1.0/60.0)
@@ -95,9 +96,6 @@ func run() -> void:
 			game._physics_process(1.0/60.0)
 			if game.state=="cards" and game.card_clock>.35:
 				await capture(game.card_queue[0])
-				var advance := InputEventAction.new()
-				advance.action="heroes_popup_advance";advance.pressed=true
-				game._unhandled_input(advance)
 			if step%15==0: await process_frame
 			continue
 		if game.playing:
