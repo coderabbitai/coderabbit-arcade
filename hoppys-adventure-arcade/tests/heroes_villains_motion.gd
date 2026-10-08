@@ -108,43 +108,44 @@ func run() -> void:
 	root.push_input(confirm)
 	confirm.pressed=false;root.push_input(confirm)
 	check(game.playing,"Controller View confirms focused Continue button")
-	# Pointer input needs a real window to hover and click Controls, so it only runs graphically.
+	# Pointer input is dispatched straight into the viewport so it also runs headless.
 	for terminal in ["game_over","won"]:
-		if DisplayServer.get_name()=="headless": break
 		var hits := [0]
 		game.playing=false;game.state=terminal
 		game.show_overlay("Terminal","Ready","Activate",func(): hits[0]+=1)
 		await process_frame
+		check(game.terminal_overlay_clock<game.TERMINAL_OVERLAY_ARM,"The "+terminal+" overlay is still unarmed after its layout frame")
 		game._physics_process(1.0/60.0)
-		var at: Vector2=game.primary.get_global_rect().get_center()
+		var at: Vector2=game.primary.get_global_transform_with_canvas()*(game.primary.size*.5)
 		var hover := InputEventMouseMotion.new()
 		hover.position=at;hover.global_position=at
-		Input.parse_input_event(hover)
-		await process_frame
+		root.push_input(hover,true)
 		for pressed in [true,false]:
 			var touch := InputEventScreenTouch.new()
 			touch.index=0;touch.position=at;touch.pressed=pressed
-			root.push_input(touch)
+			root.push_input(touch,true)
 		for pressed in [true,false]:
 			var click := InputEventMouseButton.new()
 			click.button_index=MOUSE_BUTTON_LEFT;click.position=at;click.global_position=at;click.pressed=pressed
 			click.button_mask=MOUSE_BUTTON_MASK_LEFT if pressed else 0
-			root.push_input(click)
-		await process_frame
+			root.push_input(click,true)
 		check(hits[0]==0 and game.state==terminal,"Next-frame left click and touch cannot activate the focused primary of the unarmed "+terminal+" overlay")
 		game._physics_process(.6)
-		at=game.primary.get_global_rect().get_center()
+		at=game.primary.get_global_transform_with_canvas()*(game.primary.size*.5)
 		var rehover := InputEventMouseMotion.new()
 		rehover.position=at;rehover.global_position=at
-		Input.parse_input_event(rehover)
-		await process_frame
+		root.push_input(rehover,true)
 		for pressed in [true,false]:
 			var click := InputEventMouseButton.new()
 			click.button_index=MOUSE_BUTTON_LEFT;click.position=at;click.global_position=at;click.pressed=pressed
 			click.button_mask=MOUSE_BUTTON_MASK_LEFT if pressed else 0
-			root.push_input(click)
-		await process_frame
+			root.push_input(click,true)
 		check(hits[0]==1,"A left click activates the "+terminal+" overlay's primary once it is armed")
+		# Drain deferred input and free the throwaway overlay so nothing leaks at exit.
+		await process_frame
+		for child in game.panel.get_children():
+			game.panel.remove_child(child);child.queue_free()
+		await process_frame
 	game.overlay.hide();game.state="combat";game.playing=true
 	for e in game.enemies: e.set_physics_process(false)
 	p.input_lock=0;p.position=Vector2(500,550)
@@ -203,6 +204,8 @@ func run() -> void:
 		root.get_texture().get_image().save_png("res://../docs/previews/heroes-villains/movement_cycles.png")
 		layer.queue_free()
 	print("Heroes vs. Villains motion failures: ",failures)
+	for voice in game.sound_pool: voice.stop()
+	game.music.stop()
 	root.get_node("AudioService").shutdown()
 	game.queue_free()
 	await process_frame;await process_frame
