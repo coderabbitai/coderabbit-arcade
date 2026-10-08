@@ -11,6 +11,11 @@ runner_pickup_hitch = "Measures GPU hitches during pickups. Run it locally."
 menu_smoke = "Drives the menu with pointer hover, which a headless run never produces."
 menu_hoppy_smoke = "Drives the menu with pointer hover, which a headless run never produces."
 
+# Suites with wall-clock budgets run alone, after the parallel batch, so CPU contention
+# from other suites can't fail them.
+[serial]
+"assets/prewarm_check" = "Asserts the runner's synchronous cold warm finishes under 1000 ms."
+
 # Engine errors a suite triggers on purpose. Each pattern must match at least one line of
 # that suite's output, so the list can't outlive the behavior it describes.
 [expected_errors]

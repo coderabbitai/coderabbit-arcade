@@ -10,6 +10,7 @@ by default; new tests need no registration. tools/tests/suites.toml is the only 
 suite out, and each skip carries a reason. A suite fails if it exits nonzero, times out, or
 prints an engine/script error or an exit-time leak. Errors a suite provokes on purpose are
 allowed only through its expected_errors patterns, and every listed pattern must still match.
+Suites listed under [serial] (timing budgets) run one at a time after the parallel batch.
 
 Each suite gets its own HOME, so user:// writes (settings, leaderboards) never touch the
 developer's real files or another suite running in parallel. Standard library only.
@@ -65,23 +66,57 @@ def discover() -> list[str]:
     )
 
 
-def load_config(suites: list[str], text: str | None = None
-                ) -> tuple[dict[str, str], dict[str, list[re.Pattern[str]]], list[str]]:
-    config = tomllib.loads(CONFIG.read_text(encoding="utf-8") if text is None else text)
-    skips: dict[str, str] = config.get("skip", {})
-    expected = {name: [re.compile(p) for p in patterns] for name, patterns in config.get("expected_errors", {}).items()}
+@dataclass
+class Config:
+    skip: dict[str, str]
+    serial: dict[str, str]
+    expected: dict[str, list[re.Pattern[str]]]
+    errors: list[str]
+
+
+def load_config(suites: list[str], text: str | None = None) -> Config:
+    raw = tomllib.loads(CONFIG.read_text(encoding="utf-8") if text is None else text)
+    skip: dict[str, str] = raw.get("skip", {})
+    serial: dict[str, str] = raw.get("serial", {})
+    expected = {name: [re.compile(p) for p in patterns] for name, patterns in raw.get("expected_errors", {}).items()}
     errors = [f"{CONFIG.name}: [{section}] names {name!r}, which is not a suite"
-              for section, names in (("skip", skips), ("expected_errors", expected))
+              for section, names in (("skip", skip), ("serial", serial), ("expected_errors", expected))
               for name in names if name not in suites]
-    errors += [f"{CONFIG.name}: skip for {name!r} needs a reason"
-               for name, reason in skips.items() if not reason.strip()]
-    return skips, expected, errors
+    errors += [f"{CONFIG.name}: [{section}] entry {name!r} needs a reason"
+               for section, table in (("skip", skip), ("serial", serial))
+               for name, reason in table.items() if not reason.strip()]
+    return Config(skip, serial, expected, errors)
+
+
+def isolated_env(home: str) -> dict[str, str]:
+    """Point every platform's user-data root (user://) at a private directory."""
+    return {**os.environ, "HOME": home, "USERPROFILE": home,
+            "XDG_DATA_HOME": f"{home}/.local/share", "XDG_CONFIG_HOME": f"{home}/.config",
+            "XDG_CACHE_HOME": f"{home}/.cache",
+            "APPDATA": str(Path(home, "AppData", "Roaming")), "LOCALAPPDATA": str(Path(home, "AppData", "Local"))}
+
+
+def check_isolation(godot: str) -> str | None:
+    """Ask Godot where user:// resolves under the isolated environment; None when it is private."""
+    home = tempfile.mkdtemp(prefix="arcade-test-probe-")
+    try:
+        probe = Path(home, "probe.gd")
+        probe.write_text('extends SceneTree\nfunc _init() -> void:\n\tprint("USER_DIR=", OS.get_user_data_dir())\n'
+                         '\tquit()\n', encoding="utf-8")
+        output = subprocess.run([godot, "--headless", "--path", str(PROJECT), "--script", str(probe)],
+                                env=isolated_env(home), capture_output=True, text=True, timeout=120).stdout
+        match = re.search(r"^USER_DIR=(.+)$", ANSI.sub("", output), re.M)
+        user_dir = Path(match.group(1).strip()).resolve() if match else None
+        if user_dir is None or Path(home).resolve() not in user_dir.parents:
+            return f"user:// resolved to {user_dir or 'nothing'}, outside the isolated home {home}"
+        return None
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
 
 
 def run_suite(godot: str, name: str, expected: list[re.Pattern[str]]) -> Result:
     home = tempfile.mkdtemp(prefix="arcade-test-home-")
-    env = {**os.environ, "HOME": home, "XDG_DATA_HOME": f"{home}/.local/share",
-           "XDG_CONFIG_HOME": f"{home}/.config", "XDG_CACHE_HOME": f"{home}/.cache"}
+    env = isolated_env(home)
     command = [godot, "--headless", "--path", str(PROJECT), "--script", f"res://tests/{name}.gd"]
     started = time.monotonic()
     try:
@@ -126,15 +161,21 @@ def main() -> int:
     args = parser.parse_args()
 
     suites = discover()
-    skips, expected, config_errors = load_config(suites)
-    if config_errors:
-        print("\n".join(config_errors), file=sys.stderr)
+    config = load_config(suites)
+    if config.errors:
+        print("\n".join(config.errors), file=sys.stderr)
         return 2
+    skips, expected = config.skip, config.expected
     selected = [s for s in suites if not args.match or any(m in s for m in args.match)]
     planned = [s for s in selected if s not in skips]
     if args.list:
         for suite in selected:
-            print(f"skip  {suite}: {skips[suite]}" if suite in skips else f"run   {suite}")
+            if suite in skips:
+                print(f"skip    {suite}: {skips[suite]}")
+            elif suite in config.serial:
+                print(f"serial  {suite}: {config.serial[suite]}")
+            else:
+                print(f"run     {suite}")
         return 0
     if not planned:
         print("No suites selected.", file=sys.stderr)
@@ -148,15 +189,29 @@ def main() -> int:
             print("Resource import failed.", file=sys.stderr)
             return 1
 
-    print(f"Running {len(planned)} suites ({len(selected) - len(planned)} skipped), {args.jobs} at a time.")
+    leak = check_isolation(args.godot)
+    if leak:
+        print(f"Refusing to run: {leak}. Suites would touch real settings and leaderboards.", file=sys.stderr)
+        return 2
+
+    parallel = [s for s in planned if s not in config.serial]
+    serial = [s for s in planned if s in config.serial]
+    print(f"Running {len(planned)} suites ({len(selected) - len(planned)} skipped): "
+          f"{len(parallel)} at {args.jobs} a time, then {len(serial)} alone.")
     started = time.monotonic()
     results: list[Result] = []
+
+    def record(result: Result) -> None:
+        results.append(result)
+        print(f"{'PASS' if result.passed else 'FAIL'}  {result.name}  ({result.seconds:.0f}s)", flush=True)
+
     with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
-        futures = {pool.submit(run_suite, args.godot, s, expected.get(s, [])): s for s in planned}
+        futures = [pool.submit(run_suite, args.godot, s, expected.get(s, [])) for s in parallel]
         for future in as_completed(futures):
-            result = future.result()
-            results.append(result)
-            print(f"{'PASS' if result.passed else 'FAIL'}  {result.name}  ({result.seconds:.0f}s)", flush=True)
+            record(future.result())
+    # Suites with timing budgets run on an otherwise idle machine.
+    for suite in serial:
+        record(run_suite(args.godot, suite, expected.get(suite, [])))
 
     failed = sorted((r for r in results if not r.passed), key=lambda r: r.name)
     for result in failed:

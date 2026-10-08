@@ -35,13 +35,12 @@ class FindProblems(unittest.TestCase):
 
 class LoadConfig(unittest.TestCase):
     def test_unknown_suites_and_missing_reasons_are_errors(self):
-        text = '[skip]\nghost = "gone"\nreal = " "\n[expected_errors]\nphantom = ["x"]\n'
-        _, _, errors = run_tests.load_config(["real"], text)
-        self.assertEqual(len(errors), 3)
+        text = ('[skip]\nghost = "gone"\nreal = " "\n[serial]\nspecter = "timing"\nreal = ""\n'
+                '[expected_errors]\nphantom = ["x"]\n')
+        self.assertEqual(len(run_tests.load_config(["real"], text).errors), 5)
 
     def test_committed_config_matches_the_suites_on_disk(self):
-        _, _, errors = run_tests.load_config(run_tests.discover())
-        self.assertEqual(errors, [])
+        self.assertEqual(run_tests.load_config(run_tests.discover()).errors, [])
 
 
 class Discover(unittest.TestCase):
