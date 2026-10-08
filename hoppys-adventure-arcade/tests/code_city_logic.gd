@@ -193,6 +193,12 @@ func run() -> void:
 	check(game.bullets.is_empty() and game.warnings.is_empty() and game.player.effects.is_empty(),"Retry clears threats and temporary effects")
 	check(game.screen_fx.material.get_shader_parameter("phase")==0.0 and game.camera.offset==Vector2.ZERO,"Retry clears boss screen effects and camera shake")
 	check(Catalog.MUSIC[0].resource_path.ends_with("Zodik - Future Travel.ogg") and Catalog.MUSIC[1].resource_path.ends_with("helldrake(extended).ogg") and Catalog.MUSIC[2].resource_path.ends_with("kim_lightyear_-_angel_eyes_vision_ii.mp3") and Catalog.BOSS_MUSIC.resource_path.ends_with("Kim Lightyear - The Final.mp3"),"All four user music mappings match")
+	# Code-made bindings must answer every pad, not only device 0 (booths, reconnects).
+	for binding in [["brawl_jump",0],["brawl_attack",2],["brawl_pickup",3]]:
+		for device in [0,1,3]:
+			var pad := InputEventJoypadButton.new()
+			pad.device=device;pad.button_index=binding[1];pad.pressed=true
+			check(InputMap.event_is_action(pad,binding[0]),"%s answers pad %d" % [binding[0],device])
 	print("Code City logic failures: ",failures)
 	game.queue_free()
 	root.get_node("AudioService").shutdown()

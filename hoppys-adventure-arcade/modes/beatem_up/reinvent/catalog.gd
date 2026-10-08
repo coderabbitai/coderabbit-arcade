@@ -50,17 +50,13 @@ static func install_input() -> void:
 			var enter := InputEventKey.new()
 			enter.physical_keycode=code
 			InputMap.action_add_event("heroes_popup_advance",enter)
-		var select := InputEventJoypadButton.new()
-		select.button_index=JOY_BUTTON_BACK
-		InputMap.action_add_event("heroes_popup_advance",select)
+		InputMap.action_add_event("heroes_popup_advance",Shared.joy_button(JOY_BUTTON_BACK))
 	if InputMap.has_action("review_burst"): return
 	InputMap.add_action("review_burst")
 	var key := InputEventKey.new()
 	key.physical_keycode = KEY_Q
 	InputMap.action_add_event("review_burst",key)
-	var button := InputEventJoypadButton.new()
-	button.button_index = JOY_BUTTON_LEFT_SHOULDER
-	InputMap.action_add_event("review_burst",button)
+	InputMap.action_add_event("review_burst",Shared.joy_button(JOY_BUTTON_LEFT_SHOULDER))
 
 static func looped(track: AudioStream) -> AudioStream:
 	var result := track.duplicate() as AudioStream

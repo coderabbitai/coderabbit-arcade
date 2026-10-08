@@ -39,6 +39,16 @@ const WAVES := [
 	[["cli_gremlin","cli_gremlin","syntax_error_sprite"], ["cli_gremlin","linter_enforcer","syntax_error_sprite"], ["linter_enforcer","cli_gremlin","syntax_error_sprite","cli_gremlin"]],
 	[["cve_crawler","injection_attack_drone"], ["dependency_bot","dependency_bot","dependency_bot","injection_attack_drone"], ["cve_crawler","cve_crawler","injection_attack_drone","dependency_bot"]],
 	[["merge_conflict_soldier","force_push_bandit"], ["stale_branch_zombie","force_push_bandit","merge_conflict_soldier"], []]]
+## InputMap's "any device" id. A new InputEventJoypadButton defaults to device 0, so a code-made
+## binding would answer only the first pad; booths and reconnected controllers use other ids.
+const ANY_DEVICE := -1
+const PAD_BUTTONS := {
+	"brawl_jump":JOY_BUTTON_A,"brawl_pickup":JOY_BUTTON_Y,"brawl_attack":JOY_BUTTON_X}
+static func joy_button(button: JoyButton) -> InputEventJoypadButton:
+	var event := InputEventJoypadButton.new()
+	event.device = ANY_DEVICE
+	event.button_index = button
+	return event
 static func install_input() -> void:
 	for action in ["brawl_jump","brawl_pickup","brawl_attack"]:
 		if InputMap.has_action(action): continue
@@ -48,9 +58,7 @@ static func install_input() -> void:
 			var event := InputEventKey.new()
 			event.physical_keycode = key
 			InputMap.action_add_event(action,event)
-		var joy := InputEventJoypadButton.new()
-		joy.button_index = {"brawl_jump":JOY_BUTTON_A,"brawl_pickup":JOY_BUTTON_Y,"brawl_attack":JOY_BUTTON_X}[action]
-		InputMap.action_add_event(action,joy)
+		InputMap.action_add_event(action,joy_button(PAD_BUTTONS[action]))
 static func looped(track: AudioStream) -> AudioStream:
 	var result := track.duplicate() as AudioStream
 	if result is AudioStreamMP3 or result is AudioStreamOggVorbis: result.loop = true
