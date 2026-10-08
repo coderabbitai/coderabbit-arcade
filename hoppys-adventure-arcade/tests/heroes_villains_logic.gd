@@ -25,6 +25,7 @@ func finish_cards() -> void:
 	var guard := 0
 	while game.state=="cards" and guard<12:
 		game.next_card();guard+=1
+	if game.state=="stage_enter": game.begin_play()
 func stage(index: int) -> void:
 	game.start_stage(index)
 	await process_frame
@@ -193,9 +194,20 @@ func run() -> void:
 	check(game.victory_clock==celebration_time,"Pause freezes victory animation")
 	game.resume();check(game.state=="boss_victory" and not game.playing,"Resume continues victory without restarting combat")
 	finish_cards()
-	check(game.state=="stage_clear" and game.player.position==victory_position,"Claiming REVIEW opens Capability Deployed without walking")
+	check(game.state=="stage_exit" and game.flow.active() and game.player.position==victory_position,"Claiming REVIEW flows straight into stage_exit without walking yet")
 	check(game.capabilities.review and game.boss_rewarded,"SLOP grants REVIEW once")
-	game.boss_defeated();check(game.state=="stage_clear","Duplicate boss completion does not replay reward")
+	game.boss_defeated();check(game.state=="stage_exit","Duplicate boss completion does not replay reward")
+	var score_before: int=game.score
+	var caps_before: Dictionary=game.capabilities.duplicate()
+	var guard := 0
+	while game.stage_index==0 and guard<600:
+		game._physics_process(1.0/60.0);guard+=1
+	check(game.stage_index==1 and game.state=="stage_enter","Automatic stage change reaches stage_enter for stage 2")
+	check(game.checkpoint_score==score_before and game.checkpoint_capabilities==caps_before and game.checkpoint_capabilities.review,"Checkpoint snapshots score and capabilities across the automatic change")
+	guard=0
+	while game.state=="stage_enter" and guard<600:
+		game._physics_process(1.0/60.0);guard+=1
+	check(game.state=="combat" and game.playing and not game.flow.active(),"stage_enter completes into combat")
 	await stage(0);game.enter_room(2);finish_cards();freeze();clear_enemies()
 	slop=game.bosses[0];slop.take_hit(99,0,Vector2.ZERO);slop.tick(1);slop.tick(2);slop.take_hit(99,0,Vector2.ZERO)
 	check(not slop.shield_active,"Zero-minion phase three cannot softlock")
@@ -206,11 +218,12 @@ func run() -> void:
 	game.bosses[1].take_hit(4,0,Vector2.ZERO)
 	game.check_boss_state();finish_cards();freeze()
 	check(game.army_merged and game.bosses.size()==2,"50% total HP merges commander and introduces PR")
+	game.flow.tick(Catalog.FLOW.boss_dip,game.player)
 	check(game.music.stream is AudioStreamWAV and game.music.stream.loop_mode==AudioStreamWAV.LOOP_FORWARD,"Army WAV loops through the dual encounter")
 	game.bosses[0].take_hit(999,0,Vector2.ZERO);game.check_boss_state()
 	check(not game.boss_rewarded and game.alive_bosses()==1,"One dual boss death cannot unlock exit")
 	game.bosses[1].take_hit(999,0,Vector2.ZERO);game.check_boss_state();finish_cards()
-	check(game.capabilities.triage and game.capabilities.change_stack and game.state=="stage_clear","Both deaths grant rewards and open Capability Deployed")
+	check(game.capabilities.triage and game.capabilities.change_stack and game.state=="stage_exit","Both deaths grant rewards and flow into stage_exit")
 	# Hacker phases, two vectors, damage-triggered spawns and final victory.
 	await stage(2);game.enter_room(2);finish_cards();freeze();clear_enemies()
 	var hacker=game.bosses[0]

@@ -1,4 +1,5 @@
 extends SceneTree
+const Catalog = preload("res://modes/beatem_up/reinvent/catalog.gd")
 var game
 var failures := 0
 func _initialize() -> void: call_deferred("run")
@@ -15,12 +16,26 @@ func run() -> void:
 	game=current_scene;game.test_mode=true;paused=false;game.set_physics_process(false)
 	var p=game.player
 	p.set_physics_process(false)
-	# Every blocking card must wait indefinitely, then advance exactly once per press.
+	# Every card auto-advances after its hold; the dedicated press skips exactly one card.
 	var names := ["opening_situation","opening_complication","opening_resolution","boss_ai_slop","boss_agent_army","boss_ten_thousand_line_pr","boss_ai_augmented_hacker","unlock_review","unlock_triage","unlock_change_stack","unlock_security","victory"]
-	game.show_cards(names,game.begin_play)
+	var eps := .05
+	check(names.size()==12 and Catalog.CARD_HOLD.size()==12,"Catalog holds exist for all 12 cards")
+	# Pass 1: timer only, no input at all.
+	game.show_cards(names.duplicate(),game.begin_play)
 	for name in names:
-		game._physics_process(120)
-		check(game.state=="cards" and game.card_queue[0]==name and not game.playing and game.card.position.x==0,name+" waits for player input")
+		var hold: float=Catalog.CARD_HOLD[name]
+		check(game.state=="cards" and game.card_queue[0]==name and not game.playing,name+" is shown")
+		game._physics_process(hold-eps)
+		check(game.state=="cards" and game.card_queue[0]==name and game.card.position.x==0,name+" does not advance before hold-epsilon")
+		game._physics_process(eps*2)
+		check(game.card_queue.is_empty() or game.card_queue[0]!=name,name+" auto-advances by hold+epsilon")
+	check(game.playing and game.state=="combat" and not paused,"Final automatic advance resumes gameplay")
+	# Pass 2: input contract per card.
+	game.show_cards(names.duplicate(),game.begin_play)
+	for name in names:
+		var hold: float=Catalog.CARD_HOLD[name]
+		game._physics_process(hold*.5)
+		check(game.state=="cards" and game.card_queue[0]==name and game.card.position.x==0,name+" waits while its hold runs")
 		var before: int=game.card_queue.size()
 		for code in [KEY_J,KEY_X,KEY_SPACE]:
 			var combat := InputEventKey.new()
@@ -31,9 +46,13 @@ func run() -> void:
 			combat.button_index=button;combat.pressed=true
 			game._unhandled_input(combat)
 		check(game.card_queue.size()==before,"Combat/jump/pickup buttons cannot dismiss "+name)
+		var clock_before: float=game.card_clock
 		press("pause");game._physics_process(120)
-		check(paused and game.card_queue.size()==before,"Pause keeps "+name+" pending")
+		check(paused and game.state=="paused" and game.card_queue.size()==before and is_equal_approx(game.card_clock,clock_before),"Pause preserves "+name+" and its remaining timer")
 		press("pause")
+		check(not paused and game.state=="cards" and game.card_queue[0]==name and is_equal_approx(game.card_clock,clock_before),"Resume restores "+name+" with the same remaining time")
+		game._physics_process(hold*.25)
+		check(game.card_queue.size()==before and game.card_clock>clock_before,"Timer continues after resume for "+name)
 		var advance: InputEvent
 		if before%2==0:
 			var enter := InputEventKey.new()
@@ -45,16 +64,16 @@ func run() -> void:
 			advance=select
 		check(advance.is_action_pressed("heroes_popup_advance"),"Dedicated physical input is mapped")
 		game._unhandled_input(advance)
-		check(game.card_queue.size()==before-1,"One press advances "+name+" once")
-	check(game.playing and not paused,"Final manual advance resumes gameplay")
-	# Exercise GUI dispatch too: default ui_accept/A must not click Continue.
-	game.state="stage_intro";game.playing=false
-	game.show_overlay("Stage", "Ready", "Continue", game.begin_play)
+		check(game.card_queue.size()==before-1,"One press skips "+name+" exactly once")
+	check(game.playing and not paused,"Final manual skip resumes gameplay")
+	# Exercise GUI dispatch too: default ui_accept/A must not click Continue on the game-over overlay.
+	game.playing=false;game.state="game_over"
+	game.show_overlay("Game over", "Ready", "Continue", game.begin_play)
 	var accept := InputEventJoypadButton.new()
 	accept.button_index=JOY_BUTTON_A;accept.pressed=true
 	root.push_input(accept)
 	accept.pressed=false;root.push_input(accept)
-	check(not game.playing and game.state=="stage_intro","Controller jump cannot activate focused Continue button")
+	check(not game.playing and game.state=="game_over","Controller jump cannot activate focused Continue button")
 	var confirm := InputEventJoypadButton.new()
 	confirm.button_index=JOY_BUTTON_BACK;confirm.pressed=true
 	root.push_input(confirm)
