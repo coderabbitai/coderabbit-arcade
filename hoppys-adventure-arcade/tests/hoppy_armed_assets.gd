@@ -318,7 +318,16 @@ func validate_carry(folder: String, mode: String, expected: Dictionary, manifest
 				var source_visible_length := maxi(int(bounds[2]) - int(bounds[0]), int(bounds[3]) - int(bounds[1]))
 				check(source_length == source_visible_length, mode + "/carry/" + weapon + ": source_length does not match visible bounds")
 			check(source_length > 0, mode + "/carry/" + weapon + ": source_length must be positive")
-			if source_length > 0 and carry_scale > 0.0:
+			var rule_for_weapon := str(weapon_calibration.get("rule", "")).to_lower()
+			if rule_for_weapon.contains("baked"):
+				var baked_bounds: Variant = weapon_calibration.get("hold_idle_bounds", [])
+				var baked_length := int(weapon_calibration.get("baked_length", 0))
+				check(valid_bounds(baked_bounds), mode + "/carry/" + weapon + ": baked hold_idle_bounds invalid")
+				if valid_bounds(baked_bounds):
+					check(baked_length == maxi(int(baked_bounds[2]), int(baked_bounds[3])), mode + "/carry/" + weapon + ": baked_length does not match hold_idle_bounds")
+					validate_weapon_bounds(folder, mode, expected.cell, weapon, baked_bounds)
+				check(within_ten_percent(target_length, baked_length), mode + "/carry/" + weapon + ": calibration target differs from baked hold_idle by more than 10%")
+			elif source_length > 0 and carry_scale > 0.0:
 				check(absi(target_length - roundi(source_length * carry_scale)) <= 1, mode + "/carry/" + weapon + ": target_length does not follow documented carry_scale")
 		var path := carry_folder + weapon + ".png"
 		if not FileAccess.file_exists(path):
@@ -369,3 +378,17 @@ func validate_pilot_bounds(folder: String, mode: String, cell: Vector2i, pilot: 
 		return
 	var hold_idle := pilot_image.get_region(Rect2i(0, 0, cell.x, cell.y))
 	check(hold_idle.get_region(rect).get_used_rect().has_area(), mode + ": pilot hold_idle_bounds contain no opaque pixels")
+
+
+func validate_weapon_bounds(folder: String, mode: String, cell: Vector2i, weapon: String, bounds: Variant) -> void:
+	if not valid_bounds(bounds):
+		return
+	var rect := Rect2i(int(bounds[0]), int(bounds[1]), int(bounds[2]), int(bounds[3]))
+	check(Rect2i(Vector2i.ZERO, cell).encloses(rect), mode + "/carry/" + weapon + ": baked hold_idle_bounds outside cell")
+	var image := Image.new()
+	var path := folder + weapon + ".png"
+	if image.load(path) != OK or image.get_size() != cell * 4:
+		check(false, mode + "/carry/" + weapon + ": cannot inspect baked hold_idle bounds")
+		return
+	var hold_idle := image.get_region(Rect2i(0, 0, cell.x, cell.y))
+	check(hold_idle.get_region(rect).get_used_rect().has_area(), mode + "/carry/" + weapon + ": baked hold_idle_bounds contain no opaque pixels")
