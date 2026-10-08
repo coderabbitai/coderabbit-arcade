@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
@@ -25,6 +25,21 @@ ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "hoppys-adventure-arcade" / "Assets"
 SMALL_FRAGMENT_PIXELS = 200
 SMALL_FRAGMENT_MAX_DISTANCE = 10
+
+
+@dataclass(frozen=True)
+class Weapon:
+    """Art-directed pack inputs for one generated armed-Hoppy master."""
+
+    weapon: str
+    hand_targets: tuple[tuple[int, int], ...]
+    tip_targets: dict[int, tuple[int, int]]
+    foot_source_rows: tuple[int, ...]
+    hold_idle_weapon_bounds: tuple[int, int, int, int]
+    motion: str
+    per_frame_foot_pivot: bool = False
+    foot_plant_overrides: dict[int, str] = field(default_factory=dict)
+    foot_plant_note: str = ""
 
 
 @dataclass(frozen=True)
@@ -47,6 +62,7 @@ class Mode:
     reference_cell: int
     reference_idle: int
     reference_pivot: tuple[int, int]
+    extra_weapons: tuple[Weapon, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -65,11 +81,32 @@ class FramePlacement:
     image: Image.Image
     offset: tuple[int, int]
     foot: tuple[int, int]
+    selected_foot_before_registration: tuple[int, int]
+    lowest_sole_row: int
+    same_foot_x: int
+
+
+@dataclass(frozen=True)
+class PackedWeapon:
+    """The deterministic outputs kept in memory until the mode manifest is written."""
+
+    spec: Weapon
+    components: dict[int, SourceComponent]
+    frames: list[FramePlacement]
+    scale: float
+    hold_idle_bounds: tuple[int, int, int, int]
 
 
 CODE_CITY_PROMPT = """Create a NEW 16-bit pixel-art brawler animation sheet of EXACTLY the orange rabbit shown in the first reference: cream muzzle, long orange ears, black shirt, orange legs, small cream tail, friendly determined eyes. Have him visibly hold the blue cyan DEBUG STICK from the second reference image with BOTH paws wrapping its handle in every sprite. Preserve the debug stick's exact cyan-blue, dark navy, and gold colors and its baton shape. The weapon must be drawn at exactly the same chunky pixel density as the rabbit, not finer. Transparent alpha background. FOUR columns by FOUR rows, sixteen equally spaced complete sprites, large empty transparent gutters, 30px outer margin, no text, no borders, no ground, shadow, detached effects, duplicate character, or UI. Face RIGHT. Same character size, feet baseline, and weapon scale in every pose. Row-major: 1 ready idle at carry height below shoulder; 2 through 5 four-step sideways run cycle carrying stick; 6 through 8 thrust windup, thrust contact, thrust follow-through; 9 through 11 sweep windup, sweep contact, sweep follow-through; 12 through 14 sweep windup, sweep contact, sweep follow-through; 15 lifting stick after pickup; 16 stagger hurt while still holding stick. This is a clean in-game sprite sheet, not concept art."""
 
 HEROES_PROMPT = """Create a NEW 16-bit pixel-art brawler animation sheet of EXACTLY the armored orange rabbit shown in the first reference: cream muzzle, long orange ears, black and charcoal armored suit, orange chest crest, belt, dark cape, orange legs, friendly determined eyes. Have him visibly hold the orange REVIEW STAMP from the second reference image with both paws wrapping the stamp handle in every sprite. Preserve the stamp's exact orange, amber, white highlight, charcoal and steel-gray colors, rectangular stamping base, and rubber-stamp silhouette. The stamp must be drawn at exactly the same chunky pixel density as the rabbit, not finer. Transparent alpha background. FOUR columns by FOUR rows, sixteen equally spaced complete sprites, large empty transparent gutters, 30px outer margin, no text, no borders, no ground, shadow, detached effects, duplicate character, or UI. Face RIGHT. Same character size, feet baseline, and weapon scale in every pose. Row-major: 1 ready idle with stamp at carry height below shoulder; 2 through 5 four-step sideways run cycle carrying it; 6 through 8 stamp-down windup, contact, follow-through; 9 through 11 sweep windup, contact, follow-through; 12 through 14 slam windup, contact, follow-through; 15 lifting stamp after pickup; 16 stagger hurt while still holding stamp. This is a clean in-game sprite sheet, not concept art."""
+
+CODE_CITY_HAND_TARGETS = (
+    (94, 93), (97, 92), (96, 91), (98, 93),
+    (94, 95), (94, 91), (104, 91), (100, 93),
+    (82, 79), (100, 92), (105, 94), (94, 66),
+    (103, 94), (96, 93), (94, 88), (95, 83),
+)
 
 
 MODES = (
@@ -89,12 +126,7 @@ MODES = (
             "firewall_shield": 9,
             "refactor_hammer": 12,
         },
-        hand_targets=(
-            (94, 93), (97, 92), (96, 91), (98, 93),
-            (94, 95), (94, 91), (104, 91), (100, 93),
-            (82, 79), (100, 92), (105, 94), (94, 66),
-            (103, 94), (96, 93), (94, 88), (95, 83),
-        ),
+        hand_targets=CODE_CITY_HAND_TARGETS,
         tip_targets={6: (124, 88), 9: (126, 91), 12: (130, 101)},
         foot_source_rows=(284, 284, 284, 284, 280, 280, 280, 280, 277, 277, 277, 277, 266, 266, 266, 266),
         # Measured from the baked hold_idle cell, not from the unarmed source
@@ -108,6 +140,57 @@ MODES = (
         reference_cell=96,
         reference_idle=15,
         reference_pivot=(48, 86),
+        extra_weapons=(
+            Weapon(
+                weapon="linter_staff",
+                hand_targets=CODE_CITY_HAND_TARGETS,
+                tip_targets={6: (130, 84), 9: (132, 86), 12: (136, 71)},
+                foot_source_rows=(290, 288, 300, 290, 281, 280, 280, 280, 271, 269, 269, 272, 240, 226, 240, 240),
+                hold_idle_weapon_bounds=(89, 77, 35, 28),
+                motion="wide sweep / back sweep / spin",
+                per_frame_foot_pivot=True,
+            ),
+            Weapon(
+                weapon="api_key_whip",
+                hand_targets=CODE_CITY_HAND_TARGETS,
+                tip_targets={6: (149, 72), 9: (155, 84), 12: (177, 79)},
+                foot_source_rows=(279, 275, 281, 278, 272, 272, 273, 277, 276, 275, 275, 276, 238, 263, 263, 263),
+                hold_idle_weapon_bounds=(89, 74, 20, 28),
+                motion="crack / extended lash / recoil",
+                per_frame_foot_pivot=True,
+                foot_plant_overrides={12: "front", 13: "rear"},
+                foot_plant_note="Frame 13 uses the front planted foot for the extended lash; frame 14 uses the rear planted foot after follow-through.",
+            ),
+            Weapon(
+                weapon="git_branch",
+                hand_targets=CODE_CITY_HAND_TARGETS,
+                tip_targets={6: (126, 84), 9: (135, 93), 12: (132, 78)},
+                foot_source_rows=(290, 288, 289, 293, 282, 282, 280, 279, 270, 267, 268, 270, 259, 254, 259, 259),
+                hold_idle_weapon_bounds=(82, 76, 40, 30),
+                motion="thrust / sweep / heavy shove",
+                per_frame_foot_pivot=True,
+            ),
+            Weapon(
+                weapon="refactor_hammer",
+                hand_targets=CODE_CITY_HAND_TARGETS,
+                tip_targets={6: (121, 92), 9: (135, 82), 12: (111, 40)},
+                foot_source_rows=(282, 282, 283, 282, 296, 299, 286, 292, 275, 275, 274, 273, 263, 250, 251, 249),
+                hold_idle_weapon_bounds=(88, 66, 40, 35),
+                motion="overhead / side / overhead slam",
+                per_frame_foot_pivot=True,
+                foot_plant_overrides={6: "rear", 7: "rear", 13: "rear", 14: "rear"},
+                foot_plant_note="Frames 7, 8, 14, and 15 use the rear planted foot; their raw rows avoid the low hammer head.",
+            ),
+            Weapon(
+                weapon="firewall_shield",
+                hand_targets=CODE_CITY_HAND_TARGETS,
+                tip_targets={6: (134, 84), 9: (132, 83), 12: (118, 74)},
+                foot_source_rows=(291, 291, 291, 291, 277, 277, 277, 277, 258, 257, 258, 258, 237, 237, 237, 237),
+                hold_idle_weapon_bounds=(88, 66, 32, 38),
+                motion="shield-up jab / guarded swing / guarded kick; slot 16 block recoil",
+                per_frame_foot_pivot=True,
+            ),
+        ),
     ),
     Mode(
         directory="heroes",
@@ -154,6 +237,22 @@ CLIPS = {
     "equip": ([14], 1, False),
     "hurt": ([15], 1, False),
 }
+
+
+def pilot_weapon(mode: Mode) -> Weapon:
+    """Expose the historic one-pilot fields through the additive weapon model."""
+    return Weapon(
+        weapon=mode.pilot,
+        hand_targets=mode.hand_targets,
+        tip_targets=mode.tip_targets,
+        foot_source_rows=mode.foot_source_rows,
+        hold_idle_weapon_bounds=mode.pilot_weapon_bounds,
+        motion="pilot",
+    )
+
+
+def weapons_for_mode(mode: Mode) -> tuple[Weapon, ...]:
+    return (pilot_weapon(mode), *mode.extra_weapons)
 
 
 def rect_for_grid(index: int, image_size: tuple[int, int], columns: int = 4) -> tuple[int, int, int, int]:
@@ -350,6 +449,55 @@ def opaque_span(frame: Image.Image, y: int) -> tuple[int, int] | None:
     return min(xs), max(xs)
 
 
+def opaque_runs(frame: Image.Image, y: int) -> list[tuple[int, int]]:
+    """Return contiguous high-alpha runs for choosing a planted foot."""
+    pixels = frame.getchannel("A").load()
+    runs: list[tuple[int, int]] = []
+    start: int | None = None
+    for x in range(frame.width + 1):
+        opaque = x < frame.width and pixels[x, y] >= 128
+        if opaque and start is None:
+            start = x
+        elif not opaque and start is not None:
+            runs.append((start, x - 1))
+            start = None
+    return runs
+
+
+def planted_foot_x(frame: Image.Image, foot_y: int, span: tuple[int, int], policy: str) -> int:
+    """Choose an art-directed planted foot without centring a lunge on both feet."""
+    if policy == "center":
+        return round((span[0] + span[1]) / 2)
+    runs = opaque_runs(frame, foot_y)
+    if not runs:
+        raise ValueError(f"no painted foot runs at y={foot_y}")
+    run = runs[0] if policy == "rear" else runs[-1] if policy == "front" else None
+    if run is None:
+        raise ValueError(f"unknown foot planting policy: {policy}")
+    return round((run[0] + run[1]) / 2)
+
+
+def lowest_sole_row(frame: Image.Image, foot_x: int) -> int:
+    """Return the bottom painted sole near the selected weight-bearing foot."""
+    pixels = frame.getchannel("A").load()
+    left = max(0, foot_x - 14)
+    right = min(frame.width, foot_x + 15)
+    lower_body_top = round(frame.height * 0.55)
+    for y in range(frame.height - 1, lower_body_top - 1, -1):
+        if any(pixels[x, y] >= 128 for x in range(left, right)):
+            return y
+    raise ValueError(f"no painted sole near foot x={foot_x}")
+
+
+def rear_foot_x(frame: Image.Image, sole_y: int) -> int:
+    """Measure one consistent physical foot after per-frame registration."""
+    runs = opaque_runs(frame, sole_y)
+    if not runs:
+        raise ValueError(f"no painted foot run at sole row y={sole_y}")
+    left, right = runs[0]
+    return round((left + right) / 2)
+
+
 def planted_foot_row(frame: Image.Image, expected_y: int, mode: Mode) -> tuple[int, tuple[int, int]]:
     """Resolve a hand-inspected source foot row to painted packed pixels."""
     choices: list[tuple[int, int, tuple[int, int]]] = []
@@ -377,24 +525,61 @@ def translate_frame(frame: Image.Image, offset: tuple[int, int], mode: Mode, ind
 
 
 def register_frames(
-    master: Image.Image, components: dict[int, SourceComponent], mode: Mode, scale: float
+    master: Image.Image,
+    components: dict[int, SourceComponent],
+    mode: Mode,
+    scale: float,
+    foot_source_rows: tuple[int, ...] | None = None,
+    per_frame_foot_pivot: bool = False,
+    foot_plant_overrides: dict[int, str] | None = None,
 ) -> list[FramePlacement]:
     """Plant every pose at the gameplay pivot while preserving its art offsets."""
-    if len(mode.foot_source_rows) != 16:
+    rows = mode.foot_source_rows if foot_source_rows is None else foot_source_rows
+    if len(rows) != 16:
         raise ValueError(f"{mode.directory}: expected 16 planted-foot source rows")
     preliminary = [
-        unregistered_frame(master, components[index], mode, scale, mode.foot_source_rows[index])
+        unregistered_frame(master, components[index], mode, scale, rows[index])
         for index in range(16)
     ]
     measured_feet = [planted_foot_row(frame, expected_y, mode) for frame, expected_y in preliminary]
     idle_span = measured_feet[0][1]
     horizontal_offset = mode.pivot[0] - round((idle_span[0] + idle_span[1]) / 2)
+    overrides = {} if foot_plant_overrides is None else foot_plant_overrides
+    if any(index not in range(16) or policy not in {"center", "rear", "front"} for index, policy in overrides.items()):
+        raise ValueError(f"invalid foot planting overrides for {mode.directory}: {overrides}")
     placements: list[FramePlacement] = []
     for index, ((frame, _), (foot_y, span)) in enumerate(zip(preliminary, measured_feet)):
-        offset = (horizontal_offset, mode.pivot[1] - foot_y)
+        policy = overrides.get(index, "rear" if 5 <= index <= 13 else "center")
+        planted_x = planted_foot_x(frame, foot_y, span, policy) if per_frame_foot_pivot else round((span[0] + span[1]) / 2)
+        frame_offset_x = mode.pivot[0] - planted_x if per_frame_foot_pivot else horizontal_offset
+        offset = (frame_offset_x, mode.pivot[1] - foot_y)
         registered = translate_frame(frame, offset, mode, index)
-        foot_center = round((span[0] + span[1]) / 2) + horizontal_offset
-        placements.append(FramePlacement(registered, offset, (foot_center, mode.pivot[1])))
+        sole_y = lowest_sole_row(registered, planted_x + frame_offset_x)
+        same_x = rear_foot_x(registered, sole_y) if policy != "center" else planted_x + frame_offset_x
+        placements.append(
+            FramePlacement(
+                registered,
+                offset,
+                (planted_x + frame_offset_x, mode.pivot[1]),
+                (planted_x, foot_y),
+                sole_y,
+                same_x,
+            )
+        )
+    if per_frame_foot_pivot:
+        for name, (indices, _, _) in CLIPS.items():
+            planted = [placements[index].same_foot_x for index in indices]
+            if any(abs(right - left) > 3 for left, right in zip(planted, planted[1:])):
+                source = [placements[index].selected_foot_before_registration[0] for index in indices]
+                raise ValueError(
+                    f"{mode.directory}: same foot pops in {name}: packed={planted}, source={source}"
+                )
+            soles = [placements[index].lowest_sole_row for index in indices]
+            if any(abs(sole - mode.pivot[1]) > 1 for sole in soles):
+                source = [placements[index].selected_foot_before_registration[1] for index in indices]
+                raise ValueError(
+                    f"{mode.directory}: soles miss the pivot in {name}: packed={soles}, source={source}"
+                )
     return placements
 
 
@@ -440,13 +625,13 @@ def shifted_point(point: tuple[int, int], offset: tuple[int, int]) -> tuple[int,
     return point[0] + offset[0], point[1] + offset[1]
 
 
-def anchors(mode: Mode, placements: list[FramePlacement]) -> dict[str, dict[str, list[int]]]:
+def anchors(mode: Mode, weapon: Weapon, placements: list[FramePlacement]) -> dict[str, dict[str, list[int]]]:
     """Record checked, per-frame grip and contact-tip anchors."""
-    if len(mode.hand_targets) != 16:
-        raise ValueError(f"{mode.directory}: expected 16 hand targets")
+    if len(weapon.hand_targets) != 16:
+        raise ValueError(f"{mode.directory}/{weapon.weapon}: expected 16 hand targets")
     hand = {
         str(index): snap_to_opaque(
-            placement.image, shifted_point(mode.hand_targets[index], placement.offset), f"hand {index + 1}"
+            placement.image, shifted_point(weapon.hand_targets[index], placement.offset), f"hand {index + 1}"
         )
         for index, placement in enumerate(placements)
     }
@@ -454,10 +639,10 @@ def anchors(mode: Mode, placements: list[FramePlacement]) -> dict[str, dict[str,
         str(index): snap_to_opaque(
             placements[index].image, shifted_point(target, placements[index].offset), f"tip {index + 1}"
         )
-        for index, target in mode.tip_targets.items()
+        for index, target in weapon.tip_targets.items()
     }
-    if set(mode.tip_targets) != {6, 9, 12}:
-        raise ValueError(f"{mode.directory}: contact tips must be frames 7, 10, and 13")
+    if set(weapon.tip_targets) != {6, 9, 12}:
+        raise ValueError(f"{mode.directory}/{weapon.weapon}: contact tips must be frames 7, 10, and 13")
     foot = {str(index): list(placement.foot) for index, placement in enumerate(placements)}
     return {"hand": hand, "tip": tip, "foot": foot}
 
@@ -498,27 +683,21 @@ def visible_bounds(image: Image.Image) -> tuple[int, int, int, int]:
     return alpha_bbox(image)
 
 
-def write_carry_icons(
-    pack: Path, mode: Mode, hold_idle: Image.Image, pilot_weapon_bounds: tuple[int, int, int, int]
-) -> dict[str, object]:
-    """Build carries at the pilot's baked weapon-to-body calibration.
-
-    A fixed half-size reduction made the unarmed carry overlay noticeably
-    larger than the weapon held in an armed pose.  The pilot establishes the
-    character-relative size. Every other source cel in the same mode keeps its
-    own visible proportion but uses that same source-to-body conversion.
-    """
+def write_carry_icons(pack: Path, mode: Mode, packed: dict[str, PackedWeapon]) -> dict[str, object]:
+    """Build carries from each baked hold_idle sheet when one is available."""
     source = Image.open(mode.weapon_source).convert("RGBA")
     destination = pack / "carry"
     destination.mkdir(parents=True, exist_ok=True)
 
-    hold_left, hold_top, hold_width, hold_height = pilot_weapon_bounds
+    pilot = packed[mode.pilot]
+    hold_left, hold_top, hold_width, hold_height = pilot.hold_idle_bounds
     hold_bounds = (hold_left, hold_top, hold_left + hold_width, hold_top + hold_height)
+    hold_idle = pilot.frames[0].image
     if hold_bounds[2] > hold_idle.width or hold_bounds[3] > hold_idle.height:
         raise ValueError(f"pilot weapon bounds overflow {mode.directory} hold_idle")
     if hold_idle.crop(hold_bounds).getchannel("A").getbbox() is None:
         raise ValueError(f"pilot weapon bounds contain no painted pixels: {mode.directory}")
-    baked_length = max(hold_width, hold_height)
+    pilot_baked_length = max(hold_width, hold_height)
 
     pilot_source = source.crop(rect_for_grid(mode.carry_frames[mode.pilot], source.size))
     pilot_source_bounds = visible_bounds(pilot_source)
@@ -526,7 +705,7 @@ def write_carry_icons(
         pilot_source_bounds[2] - pilot_source_bounds[0],
         pilot_source_bounds[3] - pilot_source_bounds[1],
     )
-    carry_scale = baked_length / pilot_source_length
+    carry_scale = pilot_baked_length / pilot_source_length
     if not 0 < carry_scale <= 1:
         raise ValueError(f"invalid carry calibration for {mode.directory}: {carry_scale}")
 
@@ -535,22 +714,37 @@ def write_carry_icons(
         icon = source.crop(rect_for_grid(index, source.size))
         source_bounds = visible_bounds(icon)
         source_length = max(source_bounds[2] - source_bounds[0], source_bounds[3] - source_bounds[1])
-        target_length = max(1, round(source_length * carry_scale))
-        icon = icon.resize(nearest_size(icon.width, icon.height, carry_scale), Image.Resampling.NEAREST)
+        baked = packed.get(weapon)
+        weapon_scale = carry_scale
+        baked_bounds: tuple[int, int, int, int] | None = None
+        if baked is not None:
+            baked_bounds = baked.hold_idle_bounds
+            weapon_baked_length = max(baked_bounds[2], baked_bounds[3])
+            weapon_scale = weapon_baked_length / source_length
+        target_length = max(1, round(source_length * weapon_scale))
+        icon = icon.resize(nearest_size(icon.width, icon.height, weapon_scale), Image.Resampling.NEAREST)
         icon_bounds = visible_bounds(icon)
         actual_length = max(icon_bounds[2] - icon_bounds[0], icon_bounds[3] - icon_bounds[1])
         if abs(actual_length - target_length) > max(1, round(target_length * 0.1)):
             raise ValueError(f"carry icon scale drift: {mode.directory}/{weapon}")
-        if weapon == mode.pilot and abs(actual_length - baked_length) > max(1, round(baked_length * 0.1)):
+        if weapon == mode.pilot and abs(actual_length - pilot_baked_length) > max(1, round(pilot_baked_length * 0.1)):
             raise ValueError(f"pilot carry icon does not match baked weapon: {mode.directory}/{weapon}")
         if icon.getchannel("A").getbbox() is None:
             raise ValueError(f"empty carry icon: {mode.directory}/{weapon}")
         icon.save(destination / f"{weapon}.png")
-        weapons[weapon] = {
+        entry: dict[str, object] = {
             "source_visible_bounds": list(source_bounds),
             "source_length": source_length,
             "target_length": target_length,
         }
+        if baked is not None and weapon != mode.pilot:
+            entry.update({
+                "rule": "Baked hold_idle visible weapon bounds for this armed sheet.",
+                "carry_scale": weapon_scale,
+                "hold_idle_bounds": list(baked_bounds),
+                "baked_length": weapon_baked_length,
+            })
+        weapons[weapon] = entry
     return {
         "rule": (
             "Each target length preserves its source cel's visible proportion at the pilot's "
@@ -559,8 +753,8 @@ def write_carry_icons(
         ),
         "pilot": {
             "weapon": mode.pilot,
-            "hold_idle_bounds": list(pilot_weapon_bounds),
-            "baked_length": baked_length,
+            "hold_idle_bounds": list(pilot.hold_idle_bounds),
+            "baked_length": pilot_baked_length,
         },
         "carry_scale": carry_scale,
         "body_height": mode.idle_height,
@@ -579,7 +773,7 @@ def paste_with_checker(canvas: Image.Image, image: Image.Image, xy: tuple[int, i
     canvas.alpha_composite(image, xy)
 
 
-def make_preview(pack: Path, mode: Mode, sheet: Image.Image) -> None:
+def make_preview(pack: Path, mode: Mode, sheet: Image.Image, weapon: str | None = None, output: str = "preview.png") -> None:
     ref = Image.open(mode.reference).convert("RGBA")
     ref_rect = rect_for_grid(mode.reference_idle, ref.size)
     idle = ref.crop(ref_rect)
@@ -588,7 +782,8 @@ def make_preview(pack: Path, mode: Mode, sheet: Image.Image) -> None:
     card_height = mode.cell[1] * scale
     preview = Image.new("RGBA", (card_width * 4 + 28, card_height * 5 + 64), (12, 17, 28, 255))
     title = ImageDraw.Draw(preview)
-    title.text((14, 14), f"{mode.directory}: {mode.pilot} pilot | unarmed idle + 16 armed cells", fill=(231, 238, 249, 255))
+    weapon_name = mode.pilot if weapon is None else weapon
+    title.text((14, 14), f"{mode.directory}: {weapon_name} pilot | unarmed idle + 16 armed cells", fill=(231, 238, 249, 255))
     # Unarmed idle first, at the same origin contract as the armed grid.
     idle_frame = Image.new("RGBA", mode.cell)
     idle_scale = mode.idle_height / max(1, visible_height(idle))
@@ -606,10 +801,10 @@ def make_preview(pack: Path, mode: Mode, sheet: Image.Image) -> None:
         paste_with_checker(preview, enlarged, (x, y))
         label = "unarmed idle" if index == 0 else f"{index:02d}"
         title.text((x + 4, y + 4), label, fill=(255, 202, 99, 255))
-    preview.save(pack / "preview.png")
+    preview.save(pack / output)
 
 
-def make_clip_preview(pack: Path, mode: Mode, frames: list[Image.Image]) -> None:
+def make_clip_preview(pack: Path, mode: Mode, frames: list[Image.Image], output: str = "clips.png") -> None:
     """Write a ground-lined frame strip for every runtime clip."""
     scale = 2
     max_frames = max(len(indices) for indices, _, _ in CLIPS.values())
@@ -632,89 +827,129 @@ def make_clip_preview(pack: Path, mode: Mode, frames: list[Image.Image]) -> None
             x = gutter + column * mode.cell[0] * scale
             paste_with_checker(preview, enlarged, (x, top))
             draw.line((x, ground_y, x + mode.cell[0] * scale - 1, ground_y), fill=(93, 238, 176, 255), width=2)
-    preview.save(pack / "clips.png")
+    preview.save(pack / output)
 
 
 def write_prompts(pack: Path, mode: Mode) -> None:
-    mode_note = {
-        "code_city": (
-            "The Code City thrust windup remains visually close to the carry pose. "
-            "It was retained for pilot approval rather than regenerated."
-        ),
-        "heroes": (
-            "In step 2 contact/follow, the review stamp's rectangular base can read like a "
-            "boxing glove or plunger. It was retained for pilot approval rather than regenerated."
-        ),
-    }[mode.directory]
-    text = (
-        f"# {mode.directory} armed Hoppy pilot prompt\n\n"
-        "Built-in image generation, October 8, 2026. The source master preserves generated alpha unchanged. "
-        "`tools/build_hoppy_armed.py` only crops, nearest-neighbour scales, registers, and packs it.\n\n"
-        "## Exact generation prompt\n\n"
-        f"{mode.prompt}\n\n"
-        "## Refinements\n\n"
-        "Regenerations: 0. The first generated master was retained. After independent visual review, "
-        "the deterministic packer was corrected to recover connected components across grid gutters, "
-        "plant every frame's feet at its gameplay pivot, store per-frame hand and attack-tip anchors "
-        "on solid painted pixels, and calibrate carry icons to the baked hold_idle weapon length. "
-        "Ground-lined runtime clip strips were added for motion inspection. These were packing changes, "
-        "not image regenerations.\n\n"
-        f"Inspection note: {mode_note}\n"
-    )
-    (pack / "PROMPTS.md").write_text(text, encoding="utf-8")
+    """Render data-owned generation and refinement history without guessing it."""
+    source = pack / "refinements.json"
+    if not source.exists():
+        return
+    records = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(records, list):
+        raise ValueError(f"{source}: expected a list")
+    sections = [
+        f"# {mode.directory} armed Hoppy generation prompts\n\n",
+        "Built-in image generation, October 8, 2026. Source masters preserve generated alpha unchanged. "
+        "`tools/build_hoppy_armed.py` only crops, nearest-neighbour scales, registers, and packs artwork.\n",
+    ]
+    for record in records:
+        if not isinstance(record, dict):
+            raise ValueError(f"{source}: each refinement record must be an object")
+        weapon = record.get("weapon")
+        prompt = record.get("prompt")
+        change = record.get("change")
+        regenerations = record.get("regenerations")
+        if not isinstance(weapon, str) or not isinstance(prompt, str) or not isinstance(change, str) or not isinstance(regenerations, int):
+            raise ValueError(f"{source}: records require weapon, regenerations, change, and prompt")
+        sections.extend((
+            f"\n## {weapon}\n\n",
+            "### Exact generation prompt\n\n",
+            f"{prompt}\n\n",
+            "### Refinements\n\n",
+            f"Regenerations: {regenerations}. {change}\n",
+        ))
+    (pack / "PROMPTS.md").write_text("".join(sections), encoding="utf-8")
 
 
-def pack_pilot(mode: Mode) -> None:
+def pack_mode(mode: Mode) -> None:
     pack = ASSETS / "hoppy-armed" / mode.directory
-    source_path = pack / "sources" / f"{mode.pilot}.png"
-    if not source_path.exists():
-        raise FileNotFoundError(f"missing generated master: {source_path}")
-    master = Image.open(source_path).convert("RGBA")
-    if master.getchannel("A").getextrema()[0] != 0:
-        raise ValueError(f"{source_path}: generated source does not preserve transparency")
-    components, fragment_attachments = master_components(master)
-    scale = pilot_scale(master, components, mode)
-    placements = register_frames(master, components, mode, scale)
-    frames = [placement.image for placement in placements]
-    sheet = Image.new("RGBA", (mode.cell[0] * 4, mode.cell[1] * 4))
-    for index, frame in enumerate(frames):
-        sheet.alpha_composite(frame, (index % 4 * mode.cell[0], index // 4 * mode.cell[1]))
-    sheet.save(pack / f"{mode.pilot}.png")
-    write_tres(pack / f"{mode.pilot}.tres", mode.pilot, mode)
-    idle_dx, idle_dy = placements[0].offset
-    hold_left, hold_top, hold_width, hold_height = mode.pilot_weapon_bounds
-    registered_hold_bounds = (hold_left + idle_dx, hold_top + idle_dy, hold_width, hold_height)
-    carry_calibration = write_carry_icons(pack, mode, frames[0], registered_hold_bounds)
-    entry = {
-        "weapon": mode.pilot,
-        "file": f"{mode.pilot}.png",
-        "resource": f"{mode.pilot}.tres",
-        "cell": list(mode.cell),
-        "grid": [4, 4],
-        "pivot": list(mode.pivot),
-        "facing": "right",
-        "body_height": visible_height(frames[0]),
-        "unarmed_idle_height": mode.idle_height,
-        "source_scale": scale,
-        "source_component_bounds": [list(components[index].bbox) for index in range(16)],
-        "fragment_attachments": fragment_attachments,
-        "foot_anchor_semantics": "Ground midpoint for registration validation; it can lie between painted feet and is not an effect anchor.",
-        "clips": clip_metadata(mode),
-        "anchors": anchors(mode, placements),
-    }
+    packed: dict[str, PackedWeapon] = {}
+    sheets: dict[str, Image.Image] = {}
+    entries: dict[str, dict[str, object]] = {}
+    for weapon in weapons_for_mode(mode):
+        source_path = pack / "sources" / f"{weapon.weapon}.png"
+        if not source_path.exists():
+            raise FileNotFoundError(f"missing generated master: {source_path}")
+        master = Image.open(source_path).convert("RGBA")
+        if master.getchannel("A").getextrema()[0] != 0:
+            raise ValueError(f"{source_path}: generated source does not preserve transparency")
+        components, fragment_attachments = master_components(master)
+        scale = pilot_scale(master, components, mode)
+        placements = register_frames(
+            master,
+            components,
+            mode,
+            scale,
+            weapon.foot_source_rows,
+            weapon.per_frame_foot_pivot,
+            weapon.foot_plant_overrides,
+        )
+        frames = [placement.image for placement in placements]
+        sheet = Image.new("RGBA", (mode.cell[0] * 4, mode.cell[1] * 4))
+        for index, frame in enumerate(frames):
+            sheet.alpha_composite(frame, (index % 4 * mode.cell[0], index // 4 * mode.cell[1]))
+        sheet.save(pack / f"{weapon.weapon}.png")
+        write_tres(pack / f"{weapon.weapon}.tres", weapon.weapon, mode)
+        idle_dx, idle_dy = placements[0].offset
+        hold_left, hold_top, hold_width, hold_height = weapon.hold_idle_weapon_bounds
+        registered_hold_bounds = (hold_left + idle_dx, hold_top + idle_dy, hold_width, hold_height)
+        packed[weapon.weapon] = PackedWeapon(weapon, components, placements, scale, registered_hold_bounds)
+        sheets[weapon.weapon] = sheet
+        entries[weapon.weapon] = {
+            "weapon": weapon.weapon,
+            "file": f"{weapon.weapon}.png",
+            "resource": f"{weapon.weapon}.tres",
+            "cell": list(mode.cell),
+            "grid": [4, 4],
+            "pivot": list(mode.pivot),
+            "facing": "right",
+            "body_height": visible_height(frames[0]),
+            "unarmed_idle_height": mode.idle_height,
+            "source_scale": scale,
+            "source_component_bounds": [list(components[index].bbox) for index in range(16)],
+            "fragment_attachments": fragment_attachments,
+            "foot_anchor_semantics": (
+                "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden."
+                if weapon.per_frame_foot_pivot
+                else "Ground midpoint for registration validation; it can lie between painted feet and is not an effect anchor."
+            ),
+            "clips": clip_metadata(mode),
+            "anchors": anchors(mode, weapon, placements),
+        }
+        if weapon.per_frame_foot_pivot:
+            entries[weapon.weapon]["foot_planting"] = {
+                "default": "idle, run, equip, and hurt use the foot centre; attack frames use the rear foot.",
+                "overrides": {str(index): policy for index, policy in weapon.foot_plant_overrides.items()},
+                "note": weapon.foot_plant_note,
+            }
+    carry_calibration = write_carry_icons(pack, mode, packed)
     manifest = {
         "version": 1,
         "mode": mode.directory,
         "filter": "nearest",
         "generated_from": "built-in image generation; see PROMPTS.md",
         "carry_calibration": carry_calibration,
-        "weapons": {mode.pilot: entry},
+        "weapons": entries,
     }
     (pack / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     write_prompts(pack, mode)
-    make_preview(pack, mode, sheet)
-    make_clip_preview(pack, mode, frames)
-    print(f"packed {mode.directory}/{mode.pilot}: scale={scale:.6f}, body_height={entry['body_height']}")
+    pilot = packed[mode.pilot]
+    make_preview(pack, mode, sheets[mode.pilot])
+    make_clip_preview(pack, mode, [placement.image for placement in pilot.frames])
+    if mode.extra_weapons:
+        for weapon in weapons_for_mode(mode):
+            item = packed[weapon.weapon]
+            make_preview(pack, mode, sheets[weapon.weapon], weapon.weapon, f"{weapon.weapon}_preview.png")
+            make_clip_preview(pack, mode, [placement.image for placement in item.frames], f"{weapon.weapon}_clips.png")
+    for weapon in weapons_for_mode(mode):
+        entry = entries[weapon.weapon]
+        print(f"packed {mode.directory}/{weapon.weapon}: scale={entry['source_scale']:.6f}, body_height={entry['body_height']}")
+
+
+def pack_pilot(mode: Mode) -> None:
+    """Compatibility entry point for scripts that still call the pilot packer."""
+    pack_mode(mode)
 
 
 def iter_modes(names: Iterable[str]) -> Iterable[Mode]:
@@ -729,7 +964,7 @@ def main() -> None:
     parser.add_argument("--mode", choices=[mode.directory for mode in MODES], action="append", default=[])
     arguments = parser.parse_args()
     for mode in iter_modes(arguments.mode):
-        pack_pilot(mode)
+        pack_mode(mode)
 
 
 if __name__ == "__main__":
