@@ -1,0 +1,13 @@
+{
+  "review_stamp": {
+    "regeneration_count": 1,
+    "original_master": "sources/review_stamp-generation0.png",
+    "changed_cells": [
+      9,
+      10,
+      11
+    ],
+    "change": "Regenerated and merged only the step 2 sweep sprites so each pose shows a complete orange-and-black rectangular stamp base beneath a rounded knob held in Hoppy's paw. The other thirteen approved source sprites remain unchanged.",
+    "prompt": "Use case: precise-object-edit\nAsset type: 4x4 transparent pixel-art brawler sprite-sheet source master\nInput image: the provided 4x4 armored orange rabbit sprite sheet is the edit target.\nPrimary request: Change only row 3, columns 1 through 3, frames 9, 10, and 11, the three step-2 sweep poses. Preserve frames 1-8 and 12-16 exactly as provided: their pixels, pose, palette, transparent background, grid spacing, margins, and complete sprites.\nSubject: the exact same armored orange rabbit, cream muzzle, long orange ears, black and charcoal suit, orange chest crest, belt, dark cape, orange legs, facing right.\nCritical correction: In EACH of frames 9, 10, and 11, Hoppy holds a complete orange review-stamp with the rounded orange knob clearly enclosed by the near paw AND the full rectangular orange-and-black stamp base visibly attached below it. The rectangular base must be visible, chunky, opaque, and unmistakable, matching the base silhouette, orange, amber highlight, charcoal, white highlight, and steel-gray colours already visible in frames 6-8 and 12-14. It must not resemble a boxing glove, plunger, floating knob, club, or hammer.\nPose detail: Frame 9 sweep windup has stamp raised/back with complete base; frame 10 sweep contact projects the stamp forward with its complete rectangular base visible; frame 11 sweep follow-through has the complete base visibly attached and readable. Keep the knob in a rabbit paw in all three.\nStyle/medium: crisp 16-bit pixel art at the same chunky pixel density as every unchanged rabbit and stamp frame. Exact 4 columns x 4 rows, equal cell spacing, generous transparent gutters, no grid lines, no text, no shadows, no detached effects, no new characters, no backgrounds.\nConstraints: change only frames 9-11; retain transparent alpha; every frame remains a single complete connected sprite fully inside its own cell; preserve rabbit identity and feet baseline."
+  }
+}
