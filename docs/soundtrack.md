@@ -99,7 +99,7 @@ The anthem. It plays on the booth floor, in reels and in the Heroes vs. Villains
   ```
 
 - **Keep:** two or three takes. Pick by chorus hook, vocal and motif clarity. Then make a Style Persona from the winner, so later vocal cuts stay in the same voice.
-- **Cut-downs** from the chosen take, edited on bar lines: 0:30 and 0:15 for reels, plus an instrumental **booth loop** made by splitting out the vocal stem.
+- **Cut-downs** from the chosen take, edited on bar lines: 14 bars (about 0:29) and 7 bars (about 0:14.5), so they fit 30- and 15-second reel slots and end on a downbeat. Add an instrumental **booth loop** made by splitting out the vocal stem.
 
 ### B. 8-bit derivatives (instrumental, game-ready)
 
