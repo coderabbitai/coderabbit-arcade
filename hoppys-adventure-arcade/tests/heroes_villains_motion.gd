@@ -285,6 +285,21 @@ func run() -> void:
 			if spec[0]=="scan": check(fx_sprite.position.distance_to(p.position+Vector2(-100,-50))<=8 and fx_sprite.flip_h,"Scanner cone is mirrored with the hero")
 		if enemy!=null:
 			enemy.queue_free();game.enemies.clear()
+	# Break the stamp, then whiff unarmed. The sparkle must be the fist, not the old tip.
+	p.equip("review_stamp");p.pickup_time=0;p.facing=1
+	p.swing_left=0;p.combo=0;p.combo_window=0;p.start_attack()
+	p.swing_fired=true;p.swing_left=p.swing_duration*.5;p.tick(0)
+	p.weapon="";p.visual_weapon="";p.durability=0;p.swing_left=0
+	for side in [1,-1]:
+		p.facing=side;p.swing_left=0;p.combo=0;p.combo_window=0;p.start_attack()
+		p.swing_fired=true;p.swing_left=p.swing_duration*.56;p.tick(0)
+		p.swing_serial+=1
+		var whiff_before: int=game.actors.get_child_count()
+		game.resolve_swing(p)
+		var whiff=game.actors.get_child(game.actors.get_child_count()-1)
+		var expected: Vector2=p.position+Vector2(side*70,-50)
+		var whiff_ok: bool=game.actors.get_child_count()>whiff_before and whiff is AnimatedSprite2D and whiff.position.distance_to(expected)<=8
+		check(whiff_ok and whiff.flip_h==(side<0),"Unarmed whiff sparkle is ±70,-50 facing %d"%side)
 	p.swing_left=0;p.visual_weapon="";p.weapon="";p.tick(0)
 
 	if DisplayServer.get_name()!="headless":
@@ -316,6 +331,8 @@ func run() -> void:
 		layer.queue_free()
 	if DisplayServer.get_name()!="headless":
 		game.world.show()
+		for c in game.actors.get_children():
+			if c is AnimatedSprite2D: c.queue_free()
 		for e in game.enemies:
 			if is_instance_valid(e): e.queue_free()
 		game.enemies.clear()

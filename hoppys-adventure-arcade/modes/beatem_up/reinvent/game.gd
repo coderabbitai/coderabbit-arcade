@@ -268,7 +268,7 @@ func resolve_swing(source: Node2D) -> void:
 			for target in bosses:
 				if is_instance_valid(target) and not target.dead: target.stun(.8)
 		if weapon!="" and source.weapon==weapon: source.spend_weapon()
-	elif weapon!="security_scanner":
+	else:
 		fx("capabilities_fx","unlock_sparkle",tip,.5,.18,source.facing)
 
 static func melee_contains(offset: Vector2, facing: float, reach: float, depth: float) -> bool:

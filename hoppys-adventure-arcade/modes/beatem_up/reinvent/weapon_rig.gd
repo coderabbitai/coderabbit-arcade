@@ -31,7 +31,7 @@ const HANDS := {
 	"walk_down": Vector2(80, 84),
 	"jump": Vector2(86, 78),
 	"defeat": Vector2(90, 102),
-	"victory": Vector2(76, 72),
+	"victory": Vector2(90, 96),
 }
 const CARRY_POSES := ["walk_up", "walk_down", "jump", "defeat", "victory"]
 var sprite: AnimatedSprite2D
@@ -66,6 +66,8 @@ func animate(kind: String, step: int, progress: float, active: bool, movement: V
 	if not visible:
 		sprite.hide()
 		carry.hide()
+		# An unarmed whiff must not reuse the previous weapon's tip.
+		tip_local = Vector2(70, -50)
 		return
 	var armed: SpriteFrames = Art.armed_frames(kind)
 	if armed != null and pose not in CARRY_POSES:
