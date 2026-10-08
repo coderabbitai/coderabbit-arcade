@@ -80,7 +80,11 @@ func run() -> void:
 			var confirm := InputEventAction.new()
 			confirm.action="heroes_popup_advance";confirm.pressed=true
 			game._input(confirm)
-			await process_frame;freeze();game.begin_play()
+			await process_frame;freeze()
+			var stage_confirm := InputEventAction.new()
+			stage_confirm.action="heroes_popup_advance";stage_confirm.pressed=true
+			game._input(stage_confirm)
+			await process_frame;freeze()
 			continue
 		if game.state=="boss_victory":
 			game._physics_process(1.0/60.0)
