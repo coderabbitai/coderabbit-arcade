@@ -51,6 +51,8 @@ var checkpoint_capabilities: Dictionary = capabilities.duplicate()
 var bosses: Array = []
 var army_merged := false
 var boss_rewarded := false
+var victory_clock := 0.0
+const VICTORY_DURATION := 1.2
 var reveal_time := 0.0
 var surge_cooldown := 0.0
 var zones: Array[Dictionary] = []
@@ -108,7 +110,7 @@ func start_stage(index: int, cinematic := false) -> void:
 	enemies.clear();props.clear();pickups.clear();bullets.clear();warnings.clear();allies.clear();zones.clear();bosses.clear()
 	boss=null;triage_target=null;hammer_target=null
 	stage_index=index;room=0;gate_open=false
-	boss_rewarded=false;army_merged=false
+	boss_rewarded=false;army_merged=false;victory_clock=0
 	reveal_time=0;surge_cooldown=0;last_swing_processed=-1;shake=0
 	camera.offset=Vector2.ZERO
 	screen_fx.material.set_shader_parameter("phase",0.0)
@@ -340,6 +342,14 @@ func _physics_process(dt: float) -> void:
 	if not is_instance_valid(player): return
 	_layout_card()
 	if get_tree().paused: return
+	if state=="boss_victory":
+		victory_clock=minf(VICTORY_DURATION,victory_clock+dt)
+		# A short celebratory hop; the ground position and combat stay frozen.
+		player.body.position.y=-18.0*sin(PI*clampf(victory_clock/.7,0,1))
+		if victory_clock>=VICTORY_DURATION:
+			player.body.position.y=0
+			show_boss_reward()
+		return
 	if state=="cards":
 		card_clock+=dt
 		if is_instance_valid(card):
@@ -357,13 +367,10 @@ func _physics_process(dt: float) -> void:
 	if not playing: return
 	check_boss_state()
 	if not playing: return
-	if not gate_open and living_enemies()==0 and (room<2 or boss_rewarded):
+	if room<2 and not gate_open and living_enemies()==0:
 		gate_open=true;gate.hide();clear_threats();toast("BLOCKERS CLEARED — GO RIGHT  →",3)
 	if gate_open and player.position.x>room_start()+1205:
 		if room<2: enter_room(room+1)
-		elif stage_index<2:
-			playing=false;state="stage_clear"
-			show_overlay("CAPABILITY DEPLOYED", "Next: "+Catalog.TITLES[stage_index+1],"Continue →",advance_stage)
 	if not gate_open:
 		hazard_clock-=dt
 		if hazard_clock<=0: hazard_clock=5.5;stage_hazard()
@@ -489,21 +496,38 @@ func boss_defeated() -> void:
 	enemies.clear()
 	player.swing_left=0;player.queued=false;player.held.hide()
 	score+=500
+	state="boss_victory";victory_clock=0
+	player.height=0;player.rise=0;player.velocity=Vector2.ZERO;player.knock=Vector2.ZERO
+	player.body.position=Vector2.ZERO;player.body.modulate=Color.WHITE
+	player.show_pose("victory")
+	player.z_index=2 # Keep the celebration visible in front of defeated bosses.
+	shake=0;camera.offset=Vector2.ZERO
+	toast_label.hide();prompt.hide()
+	sound("win",player.position)
+	_update_hud()
+
+func show_boss_reward() -> void:
 	match stage_index:
 		0:
 			capabilities.review=true;player.shield=true
-			show_cards(["unlock_review"],begin_play)
+			show_cards(["unlock_review"],show_stage_clear)
 		1:
 			capabilities.triage=true;capabilities.change_stack=true
-			show_cards(["unlock_triage","unlock_change_stack"],begin_play)
+			show_cards(["unlock_triage","unlock_change_stack"],show_stage_clear)
 		2:
 			capabilities.security=true
 			reveal_time=999
 			show_cards(["unlock_security","victory"],win)
 
+func show_stage_clear() -> void:
+	playing=false;state="stage_clear"
+	_update_hud()
+	show_overlay("CAPABILITY DEPLOYED", "Next: "+Catalog.TITLES[stage_index+1],"Continue →",advance_stage)
+
 func win() -> void:
 	if state=="won": return
 	playing=false;state="won";completion_count+=1
+	_update_hud()
 	sound("win",player.position)
 	show_overlay("THE CODEBASE IS TRUSTED", "All four capabilities deployed.\nScore: %d   ·   Time: %d:%02d" % [score,int(elapsed)/60,int(elapsed)%60],"Return to Beat'em Up menu",leave)
 
@@ -651,6 +675,7 @@ func show_overlay(title: String, detail: String, action: String, callback: Calla
 	description.custom_minimum_size = Vector2(720,75)
 	description.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	panel.add_child(description)
+	if state != "paused": description.text += "\nEnter / View (Select) · Confirm"
 	primary = Style.button(action,58)
 	panel.add_child(primary)
 	primary.pressed.connect(callback)
@@ -667,21 +692,32 @@ func show_intro() -> void:
 func next_intro() -> void:
 	next_card()
 
+func _input(event: InputEvent) -> void:
+	# Filter before focused buttons receive ui_accept (which includes jump/A).
+	if state not in ["stage_intro","stage_clear","game_over","won"] or not overlay.visible: return
+	if event.is_action_pressed("heroes_popup_advance"):
+		get_viewport().set_input_as_handled()
+		if not event.is_echo():
+			var focused := get_viewport().gui_get_focus_owner()
+			if focused is Button and panel.is_ancestor_of(focused): focused.pressed.emit()
+	elif event.is_action("ui_accept"):
+		get_viewport().set_input_as_handled()
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause") and not event.is_echo():
 		if state=="paused": resume()
-		elif state in ["combat","cards"]:
+		elif state in ["combat","cards","boss_victory"]:
 			pause_return_state=state
 			playing=false;state="paused";get_tree().paused=true
 			show_overlay("REVIEW PAUSED","Chain attacks, sidestep warnings, and hold Q / LB to charge REVIEW.","Resume",resume)
 		get_viewport().set_input_as_handled()
-	elif state=="cards" and (event.is_action_pressed("ui_accept") or event.is_action_pressed("brawl_attack")) and not event.is_echo():
+	elif state=="cards" and event.is_action_pressed("heroes_popup_advance") and not event.is_echo():
 		if card_clock>.25: next_card()
 		get_viewport().set_input_as_handled()
 
 func resume() -> void:
 	get_tree().paused=false
-	if pause_return_state=="cards": state="cards";overlay.hide()
+	if pause_return_state in ["cards","boss_victory"]: state=pause_return_state;overlay.hide()
 	else: begin_play()
 
 func leave() -> void:
@@ -691,7 +727,7 @@ func leave() -> void:
 	AppRouter.go("beatem_up")
 
 func _notification(what: int) -> void:
-	if what==NOTIFICATION_APPLICATION_FOCUS_OUT and state in ["combat","cards"] and not test_mode:
+	if what==NOTIFICATION_APPLICATION_FOCUS_OUT and state in ["combat","cards","boss_victory"] and not test_mode:
 		pause_return_state=state
 		playing=false;state="paused";get_tree().paused=true
 		show_overlay("REVIEW PAUSED","The window lost focus.","Resume",resume)
@@ -809,8 +845,8 @@ func _load_card() -> void:
 	card.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	card_host.add_child(card)
 	card_clock=0;card.position.x=1280
-	var hint := Style.label("Enter / A / J · Next     Esc / Start · Pause",16)
-	hint.position=Vector2(380,696)
+	var hint := Style.label("Enter / View (Select) · Next     Esc / Start · Pause",16)
+	hint.position=Vector2(300,696)
 	card.add_child(hint)
 	var name := card_queue[0]
 	if name.begins_with("boss_"): sound("reveal_"+name.trim_prefix("boss_"),player.position)

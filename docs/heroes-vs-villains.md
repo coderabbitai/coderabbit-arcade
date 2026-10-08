@@ -16,13 +16,13 @@ This mode uses the armored Hoppy and the [Mode 2 asset pack](heroes-vs-villains-
 | Pick up weapon | E | Y |
 | Charge REVIEW after unlock | Hold Q | Hold LB |
 | Pause | Escape | Start |
-| Advance presentation card | Enter / J | A |
+| Advance presentation card | Enter / keypad Enter | View / Select |
 
 The armored Hoppy uses eight-frame side, away and toward-camera locomotion cycles at 14 fps, with cadence scaled to analog movement and speed effects. Base travel speed is 264 pixels/second (10% above Code City Brawl).
 
-Hoppy has three health points, jump avoidance, hit recovery and one shield on stage entry after REVIEW is unlocked. Attack presses can buffer the next combo strike. Clear the room, then walk through the right gate. Break props for supplies; consumables collect on contact, while weapons require pickup input. Defeat retries the current stage with its entry score and capabilities, fresh health and cleared temporary effects. Pause and focus loss stop the run; return-to-menu is available through pause and results.
+Hoppy has three health points, jump avoidance, hit recovery and one shield on stage entry after REVIEW is unlocked. Attack presses can buffer the next combo strike. Clear ordinary rooms, then walk through the right gate. Boss encounters end with a short Hoppy victory hop, followed by the reward cards. Claiming the last reward opens Capability Deployed immediately; no walk to the exit is required. The final boss instead leads to the final victory cards and results. Break props for supplies; consumables collect on contact, while weapons require pickup input. Defeat retries the current stage with its entry score and capabilities, fresh health and cleared temporary effects. Pause and focus loss stop the run; return-to-menu is available through pause and results.
 
-Capabilities persist within the run, not across application launches. REVIEW unlocks after AI SLOP; TRIAGE and CHANGE STACK unlock after defeating both the fused army commander and the PR; SECURITY completes the final victory. Cards slide in and remain until Enter / A / J is pressed. Opening, boss, unlock and victory cards never advance on a timer; pause preserves the pending card.
+Capabilities persist within the run, not across application launches. REVIEW unlocks after AI SLOP; TRIAGE and CHANGE STACK unlock after defeating both the fused army commander and the PR; SECURITY completes the final victory. Cards slide in and remain until Enter or controller View / Select is pressed. Opening, boss, unlock and victory cards never advance on a timer; pause preserves the pending card. Combat, pickup and jump inputs cannot dismiss cards. Stage and result confirmations also use the dedicated advance action.
 
 ## Stages and bosses
 
