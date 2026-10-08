@@ -66,8 +66,14 @@ func go(route: String) -> void:
 	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	busy = false
 ## Visitors can't quit a booth from the menu; staff close the window instead (force = true).
+## A forced quit wins even mid-transition: auto_accept_quit is off, so nothing else would close.
 func quit_game(force := false) -> void:
-	if busy or (booth and not force):
+	if booth and not force:
+		return
+	if busy:
+		if force:
+			AudioService.shutdown()
+			get_tree().quit()
 		return
 	busy = true
 	veil.mouse_filter = Control.MOUSE_FILTER_STOP
