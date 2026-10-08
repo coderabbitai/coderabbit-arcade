@@ -98,7 +98,7 @@ for i, (id, title, kit, villains, breakables, hazards) in enumerate(stage_specs)
         hazards=[dict(id=n, warning=art(kit,w), active=art(kit,n), effect=desc) for n,w,desc in hazards])
 
 catalog = dict(schema_version=1, status='Asset integration definitions, NOT implemented gameplay or final balance.',
-    sources=dict(gdd='https://docs.google.com/document/d/1YCLWNykTNDglKGyuOWIMdTl9A8eEoEEgTR_INSOCdUo/edit',
+    sources=dict(gdd='GDD (October 2, 2026 revision; internal reference)',
                  read_date='2026-10-06', baseline_version='0.1; predates Mode 2'),
     hoppy=dict(art=art('hoppy','idle'), style='New armored 2D variant requested by user; separate from shared base.',
                combo=[art('hoppy','jab_action'),art('hoppy','swing_action'),art('hoppy','kick_action')],
