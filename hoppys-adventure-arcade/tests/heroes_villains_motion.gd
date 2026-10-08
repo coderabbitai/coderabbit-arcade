@@ -10,6 +10,14 @@ func press(action: String) -> void:
 	var event := InputEventAction.new()
 	event.action=action;event.pressed=true
 	game._unhandled_input(event)
+func spec_hold(name: String) -> float:
+	if name.begins_with("boss_"): return 3.0
+	if name=="victory": return 6.0
+	return 4.5
+func advance_key(echo := false) -> InputEventKey:
+	var key := InputEventKey.new()
+	key.physical_keycode=KEY_ENTER;key.pressed=true;key.echo=echo
+	return key
 func run() -> void:
 	change_scene_to_file("res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn")
 	await process_frame;await process_frame
@@ -20,10 +28,11 @@ func run() -> void:
 	var names := ["opening_situation","opening_complication","opening_resolution","boss_ai_slop","boss_agent_army","boss_ten_thousand_line_pr","boss_ai_augmented_hacker","unlock_review","unlock_triage","unlock_change_stack","unlock_security","victory"]
 	var eps := .05
 	check(names.size()==12 and Catalog.CARD_HOLD.size()==12,"Catalog holds exist for all 12 cards")
+	for name in names: check(is_equal_approx(Catalog.CARD_HOLD[name],spec_hold(name)),name+" catalog hold matches the literal spec (opening 4.5, boss 3.0, unlock 4.5, victory 6.0)")
 	# Pass 1: timer only, no input at all.
 	game.show_cards(names.duplicate(),game.begin_play)
 	for name in names:
-		var hold: float=Catalog.CARD_HOLD[name]
+		var hold: float=spec_hold(name)
 		check(game.state=="cards" and game.card_queue[0]==name and not game.playing,name+" is shown")
 		game._physics_process(hold-eps)
 		check(game.state=="cards" and game.card_queue[0]==name and game.card.position.x==0,name+" does not advance before hold-epsilon")
@@ -33,7 +42,7 @@ func run() -> void:
 	# Pass 2: input contract per card.
 	game.show_cards(names.duplicate(),game.begin_play)
 	for name in names:
-		var hold: float=Catalog.CARD_HOLD[name]
+		var hold: float=spec_hold(name)
 		game._physics_process(hold*.5)
 		check(game.state=="cards" and game.card_queue[0]==name and game.card.position.x==0,name+" waits while its hold runs")
 		var before: int=game.card_queue.size()
@@ -66,6 +75,25 @@ func run() -> void:
 		game._unhandled_input(advance)
 		check(game.card_queue.size()==before-1,"One press skips "+name+" exactly once")
 	check(game.playing and not paused,"Final manual skip resumes gameplay")
+	# Input resilience: spam, echo and the guard after an automatic transition.
+	game.show_cards(["opening_situation","opening_complication","opening_resolution"],game.begin_play)
+	game._physics_process(1.0)
+	var queue_size: int=game.card_queue.size()
+	game._unhandled_input(advance_key());game._unhandled_input(advance_key())
+	check(game.card_queue.size()==queue_size-1,"Two advance presses in one frame skip one card only")
+	game._physics_process(1.0)
+	queue_size=game.card_queue.size()
+	game._unhandled_input(advance_key(true))
+	check(game.card_queue.size()==queue_size,"A held-key echo never advances a card")
+	game._physics_process(4.5-game.card_clock+.02)
+	check(game.card_queue.size()==queue_size-1 and game.card_clock<.25,"Automatic transition loaded the next card")
+	game._unhandled_input(advance_key())
+	check(game.card_queue.size()==queue_size-1,"An advance press inside the next card's 0.25 s guard does nothing")
+	game._physics_process(.3)
+	game._unhandled_input(advance_key())
+	check(game.card_queue.size()==queue_size-2,"The same press is accepted once the guard has passed")
+	game.next_card()
+	if game.state!="combat": game.begin_play()
 	# Exercise GUI dispatch too: default ui_accept/A must not click Continue on the game-over overlay.
 	game.playing=false;game.state="game_over"
 	game.show_overlay("Game over", "Ready", "Continue", game.begin_play)
@@ -74,6 +102,7 @@ func run() -> void:
 	root.push_input(accept)
 	accept.pressed=false;root.push_input(accept)
 	check(not game.playing and game.state=="game_over","Controller jump cannot activate focused Continue button")
+	game._physics_process(.6)
 	var confirm := InputEventJoypadButton.new()
 	confirm.button_index=JOY_BUTTON_BACK;confirm.pressed=true
 	root.push_input(confirm)

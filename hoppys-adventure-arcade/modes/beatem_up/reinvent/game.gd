@@ -7,6 +7,7 @@ const Boss = preload("res://modes/beatem_up/reinvent/boss.gd")
 const StageFlow = preload("res://modes/beatem_up/stage_flow.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
 const PAUSABLE := ["combat","cards","boss_victory","stage_enter","stage_exit"]
+const TERMINAL_OVERLAY_ARM := .5
 var rng := RandomNumberGenerator.new()
 var stage_index := 0
 var room := 0
@@ -47,6 +48,7 @@ var prompt: Label
 var overlay: ColorRect
 var panel: VBoxContainer
 var primary: Button
+var terminal_overlay_clock := TERMINAL_OVERLAY_ARM
 var screen_fx: ColorRect
 var completion_count := 0
 var test_mode := false
@@ -140,6 +142,8 @@ func start_stage(index: int, cinematic := false) -> void:
 	camera.reset_physics_interpolation()
 	flow.play_music(Catalog.looped(Catalog.MUSIC[index]),Catalog.MUSIC[index])
 	enter_room(0)
+	# enter_room clamps new arrivals to the room boundary. The director owns the actual entrance.
+	player.position.x=Catalog.FLOW.enter_from_x
 	if cinematic:
 		show_cards(["opening_situation","opening_complication","opening_resolution"],enter_stage)
 	else: enter_stage()
@@ -373,9 +377,11 @@ func _physics_process(dt: float) -> void:
 	# room-three pan must finish while the boss introduction remains on screen.
 	flow.tick(dt,player)
 	camera.position=camera.position.lerp(Vector2(room_start()+640,360),minf(1,dt*5))
+	shake=maxf(0,shake-dt*28)
 	camera.offset=Vector2(rng.randf_range(-shake,shake),rng.randf_range(-shake,shake))
 	var view := get_viewport_rect().size
 	camera.zoom=Vector2.ONE*minf(view.x/1280.0,view.y/720.0)
+	if state in ["game_over","won"]: terminal_overlay_clock=minf(TERMINAL_OVERLAY_ARM,terminal_overlay_clock+dt)
 	if state=="boss_victory":
 		victory_clock=minf(VICTORY_DURATION,victory_clock+dt)
 		# A short celebratory hop; the ground position and combat stay frozen.
@@ -394,7 +400,6 @@ func _physics_process(dt: float) -> void:
 	if not playing: return
 	elapsed+=dt;toast_left-=dt;reveal_time=maxf(0,reveal_time-dt);surge_cooldown=maxf(0,surge_cooldown-dt)
 	toast_label.visible=toast_left>0
-	shake=maxf(0,shake-dt*28)
 	_tick_items(dt);_tick_threats(dt);_tick_allies(dt);_tick_capabilities(dt)
 	if not playing: return
 	check_boss_state()
@@ -526,7 +531,7 @@ func game_over() -> void:
 
 func boss_defeated() -> void:
 	if boss_rewarded: return
-	flow.cancel()
+	if flow.active(): flow.cancel()
 	boss_rewarded=true
 	playing=false;clear_threats()
 	for enemy in enemies:
@@ -698,6 +703,7 @@ func _update_hud() -> void:
 		second_boss_text.text=Catalog.BOSS_NAMES[live[1].kind]
 
 func show_overlay(title: String, detail: String, action: String, callback: Callable) -> void:
+	terminal_overlay_clock=0.0 if state in ["game_over","won"] else TERMINAL_OVERLAY_ARM
 	for child in panel.get_children():
 		panel.remove_child(child)
 		child.queue_free()
@@ -723,6 +729,10 @@ func show_overlay(title: String, detail: String, action: String, callback: Calla
 func _input(event: InputEvent) -> void:
 	# Filter before focused buttons receive ui_accept (which includes jump/A).
 	if state not in ["game_over","won"] or not overlay.visible: return
+	if terminal_overlay_clock<TERMINAL_OVERLAY_ARM:
+		if event.is_action_pressed("heroes_popup_advance") or event.is_action("ui_accept"):
+			get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("heroes_popup_advance"):
 		get_viewport().set_input_as_handled()
 		if not event.is_echo():
@@ -744,6 +754,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func resume() -> void:
+	if state!="paused": return
 	get_tree().paused=false
 	if pause_return_state in ["cards","boss_victory","stage_enter","stage_exit"]: state=pause_return_state;overlay.hide()
 	else: begin_play()

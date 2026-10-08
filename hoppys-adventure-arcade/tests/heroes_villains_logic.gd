@@ -34,6 +34,39 @@ func swing(p, kind := "", step := 1) -> void:
 	p.attack_weapon=kind;p.combo=step;p.swing_serial+=1
 	game.resolve_swing(p)
 
+func advance_key() -> InputEventKey:
+	var key := InputEventKey.new()
+	key.physical_keycode=KEY_ENTER;key.pressed=true
+	return key
+func accept_event() -> InputEventAction:
+	var event := InputEventAction.new()
+	event.action="ui_accept";event.pressed=true
+	return event
+func press_pause() -> void:
+	var event := InputEventAction.new()
+	event.action="pause";event.pressed=true
+	game._unhandled_input(event)
+func snapshot() -> Array:
+	return [game.flow.phase,game.flow.clock,game.flow.veil.color.a,game.music.volume_db,game.player.position]
+func steps(limit: int, until: Callable) -> void:
+	var guard := 0
+	while not until.call() and guard<limit:
+		game._physics_process(1.0/60.0);guard+=1
+## Plays the victory card out so win() arrives by the automatic transition.
+func auto_win() -> void:
+	game.overlay.hide();game.state="combat";game.playing=false
+	game.show_cards(["victory"],game.win)
+	game._physics_process(5.95)
+	check(game.state=="cards","Victory card still holds at 5.95 s")
+	game._physics_process(.1)
+	check(game.state=="won","Victory card auto-advances into won by 6.0 s")
+func reload_game() -> void:
+	while root.get_node("AppRouter").busy: await process_frame
+	change_scene_to_file("res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn")
+	await process_frame;await process_frame
+	game=current_scene;game.test_mode=true
+	freeze()
+	steps(1200,func(): return game.state=="combat")
 func run() -> void:
 	change_scene_to_file("res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn")
 	await process_frame;await process_frame
@@ -245,12 +278,63 @@ func run() -> void:
 	hacker.take_hit(999,0,Vector2.ZERO);game.check_boss_state();finish_cards()
 	check(game.state=="won" and game.capabilities.security and game.completion_count==1,"Hacker defeat grants SECURITY and completes once")
 	game.boss_defeated();game.win();check(game.completion_count==1,"Victory callbacks are idempotent")
+	# M1: the results and game-over overlays ignore the press that lands right after an auto-advance.
+	auto_win()
+	game._physics_process(1.0/60.0)
+	game._input(advance_key());game._input(accept_event())
+	check(game.state=="won" and not game.leaving and game.overlay.visible,"Dedicated advance / ui_accept one frame after victory auto-advance cannot leave the results")
+	game.resume()
+	check(game.state=="won" and not game.playing and game.overlay.visible,"resume() outside paused cannot revive won")
+	game.state="combat";game.overlay.hide();game.playing=true
+	game.game_over()
+	game._physics_process(1.0/60.0)
+	game._input(advance_key());game._input(accept_event())
+	check(game.state=="game_over" and game.overlay.visible,"Advance / ui_accept right after game over cannot retry")
+	game.resume()
+	check(game.state=="game_over" and not game.playing and game.overlay.visible,"resume() outside paused cannot revive game_over")
+	game._physics_process(.6)
+	game._input(advance_key())
+	check(game.state=="stage_enter" and not game.overlay.visible,"Dedicated advance is accepted on game over after ~0.5 s and retry enters stage_enter")
+	steps(1200,func(): return game.state=="combat")
+	check(game.state=="combat" and game.playing and not game.flow.active() and not game.overlay.visible,"Retry's stage_enter completes into combat")
+	# m2: shake decays while not playing.
+	game.shake=8;game.playing=false;game.state="game_over"
+	game._physics_process(1.0)
+	check(game.shake==0,"Shake decays to zero outside combat")
+	game.state="combat";game.playing=true
+	# Pause / resume freezes stage_exit and stage_enter, then both complete normally.
+	await stage(0)
+	game.exit_stage()
+	steps(240,func(): return game.flow.phase=="fade_out" and game.flow.clock>.1)
+	check(game.state=="stage_exit" and game.flow.phase=="fade_out" and game.flow.veil.color.a>0,"Reached mid fade_out in stage_exit")
+	var frozen := snapshot()
+	press_pause()
+	check(paused and game.state=="paused","Pause opens during stage_exit")
+	for i in 120: game._physics_process(1.0/60.0)
+	check(snapshot()==frozen,"Pause freezes flow clock, veil, music volume and player during stage_exit")
+	press_pause()
+	check(not paused and game.state=="stage_exit" and not game.overlay.visible,"Resume returns to stage_exit")
+	steps(1200,func(): return game.state=="stage_enter")
+	check(game.stage_index==1 and game.state=="stage_enter","stage_exit completes into stage_enter after resume")
+	steps(20,func(): return false)
+	frozen=snapshot()
+	press_pause()
+	for i in 120: game._physics_process(1.0/60.0)
+	check(paused and snapshot()==frozen,"Pause freezes flow clock, veil, music volume and player during stage_enter")
+	press_pause()
+	check(game.state=="stage_enter" and not game.overlay.visible,"Resume returns to stage_enter")
+	steps(1200,func(): return game.state=="combat")
+	check(game.state=="combat" and game.playing and not game.flow.active(),"stage_enter completes into combat after resume")
+	await stage(2)
 	# Retry restores stage-entry score/capabilities and clears transient state.
 	game.checkpoint_score=123;game.checkpoint_capabilities={"review":true,"triage":true,"change_stack":true,"security":false}
 	game.retry_stage();await process_frame;freeze()
+	check(game.state=="stage_enter" and game.flow.active() and not game.overlay.visible,"Retry enters stage_enter with the overlay hidden")
 	check(game.stage_index==2 and game.room==0 and game.player.hp==3 and game.score==123,"Retry starts current stage with fresh HP and checkpoint score")
 	check(not game.capabilities.security and game.capabilities.review and game.player.shield,"Retry restores earned capabilities and one shield charge")
 	check(game.zones.is_empty() and game.bullets.is_empty() and game.bosses.is_empty() and game.reveal_time==0,"Retry clears prior encounter threats and reveals")
+	steps(1200,func(): return game.state=="combat")
+	check(game.state=="combat" and game.playing and not game.flow.active(),"Retry's stage_enter completes into combat")
 	# All six mapped tracks duplicate safely, including WAV loops.
 	for track in Catalog.MUSIC+Catalog.BOSS_MUSIC:
 		var looped := Catalog.looped(track)
@@ -262,6 +346,35 @@ func run() -> void:
 			var pad := InputEventJoypadButton.new()
 			pad.device=device;pad.button_index=binding[1];pad.pressed=true
 			check(InputMap.event_is_action(pad,binding[0]),"%s answers pad %d" % [binding[0],device])
+	# Terminal paths last: they route away from the mode.
+	await stage(0)
+	game.exit_stage()
+	steps(240,func(): return game.flow.phase=="fade_out" and game.flow.clock>.1)
+	press_pause()
+	var back: Button = null
+	for child in game.panel.get_children():
+		if child is Button and child.text=="Return to Beat'em Up menu": back=child
+	check(back!=null and paused and game.state=="paused","Pause overlay offers Return during stage_exit")
+	back.pressed.emit()
+	var stage_before: int=game.stage_index
+	var held := true
+	var frozen_pos: Vector2=game.player.position
+	for i in 180:
+		game._physics_process(1.0/60.0)
+		if game.stage_index!=stage_before or game.flow.active() or game.player.position!=frozen_pos or game.music.playing: held=false
+	check(not paused and game.leaving and game.state=="leaving" and held,"Leave through the pause overlay cancels the flow without a stage change and freezes the owner")
+	var disabled := true
+	for child in game.panel.get_children():
+		if child is BaseButton and not child.disabled: disabled=false
+	check(disabled and back.disabled,"Overlay buttons are disabled while leaving")
+	await reload_game()
+	auto_win()
+	game._physics_process(1.0/60.0)
+	game._input(advance_key())
+	check(game.state=="won" and not game.leaving,"Results survive a press on the next frame")
+	game._physics_process(.6)
+	game._input(advance_key())
+	check(game.leaving,"Dedicated advance is accepted on the results after ~0.5 s")
 	game.queue_free();await process_frame
 	root.get_node("AudioService").shutdown()
 	await create_timer(.3).timeout
