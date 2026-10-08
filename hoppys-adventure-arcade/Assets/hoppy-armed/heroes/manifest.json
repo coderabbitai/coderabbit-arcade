@@ -1,0 +1,404 @@
+{
+  "version": 1,
+  "mode": "heroes",
+  "filter": "nearest",
+  "generated_from": "built-in image generation; see PROMPTS.md",
+  "carry_calibration": {
+    "rule": "Each target length preserves its source cel's visible proportion at the pilot's baked weapon-to-unarmed-body ratio: carry_scale = (pilot baked_length / body_height) * body_height / pilot source_length.",
+    "pilot": {
+      "weapon": "review_stamp",
+      "hold_idle_bounds": [
+        103,
+        91,
+        30,
+        44
+      ],
+      "baked_length": 44
+    },
+    "carry_scale": 0.25,
+    "body_height": 86,
+    "weapons": {
+      "review_stamp": {
+        "source_visible_bounds": [
+          22,
+          8,
+          169,
+          184
+        ],
+        "source_length": 176,
+        "target_length": 44
+      },
+      "triage_hammer": {
+        "source_visible_bounds": [
+          8,
+          33,
+          184,
+          158
+        ],
+        "source_length": 176,
+        "target_length": 44
+      },
+      "change_stack_baton": {
+        "source_visible_bounds": [
+          8,
+          27,
+          184,
+          165
+        ],
+        "source_length": 176,
+        "target_length": 44
+      },
+      "security_scanner": {
+        "source_visible_bounds": [
+          31,
+          8,
+          160,
+          184
+        ],
+        "source_length": 176,
+        "target_length": 44
+      },
+      "pr_merger": {
+        "source_visible_bounds": [
+          8,
+          18,
+          184,
+          173
+        ],
+        "source_length": 176,
+        "target_length": 44
+      }
+    }
+  },
+  "weapons": {
+    "review_stamp": {
+      "weapon": "review_stamp",
+      "file": "review_stamp.png",
+      "resource": "review_stamp.tres",
+      "cell": [
+        256,
+        160
+      ],
+      "grid": [
+        4,
+        4
+      ],
+      "pivot": [
+        96,
+        147
+      ],
+      "facing": "right",
+      "body_height": 86,
+      "unarmed_idle_height": 86,
+      "source_scale": 0.4,
+      "source_component_bounds": [
+        [
+          60,
+          70,
+          253,
+          285
+        ],
+        [
+          374,
+          70,
+          580,
+          285
+        ],
+        [
+          686,
+          72,
+          903,
+          287
+        ],
+        [
+          1007,
+          81,
+          1232,
+          290
+        ],
+        [
+          58,
+          387,
+          274,
+          599
+        ],
+        [
+          348,
+          362,
+          567,
+          603
+        ],
+        [
+          661,
+          423,
+          886,
+          617
+        ],
+        [
+          970,
+          436,
+          1234,
+          605
+        ],
+        [
+          41,
+          693,
+          260,
+          891
+        ],
+        [
+          342,
+          702,
+          630,
+          891
+        ],
+        [
+          672,
+          705,
+          957,
+          891
+        ],
+        [
+          1000,
+          628,
+          1214,
+          891
+        ],
+        [
+          31,
+          1016,
+          270,
+          1213
+        ],
+        [
+          353,
+          1021,
+          638,
+          1214
+        ],
+        [
+          686,
+          993,
+          910,
+          1205
+        ],
+        [
+          1005,
+          979,
+          1217,
+          1205
+        ]
+      ],
+      "fragment_attachments": [],
+      "foot_anchor_semantics": "Ground midpoint for registration validation; it can lie between painted feet and is not an effect anchor.",
+      "clips": {
+        "hold_idle": {
+          "frames": [
+            0
+          ],
+          "fps": 1,
+          "loop": true
+        },
+        "run": {
+          "frames": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "fps": 7,
+          "loop": true
+        },
+        "step1": {
+          "frames": [
+            5,
+            6,
+            7
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "step2": {
+          "frames": [
+            8,
+            9,
+            10
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "step3": {
+          "frames": [
+            11,
+            12,
+            13
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "equip": {
+          "frames": [
+            14
+          ],
+          "fps": 1,
+          "loop": false
+        },
+        "hurt": {
+          "frames": [
+            15
+          ],
+          "fps": 1,
+          "loop": false
+        }
+      },
+      "anchors": {
+        "hand": {
+          "0": [
+            110,
+            119
+          ],
+          "1": [
+            115,
+            117
+          ],
+          "2": [
+            116,
+            117
+          ],
+          "3": [
+            119,
+            118
+          ],
+          "4": [
+            112,
+            120
+          ],
+          "5": [
+            116,
+            90
+          ],
+          "6": [
+            129,
+            121
+          ],
+          "7": [
+            127,
+            124
+          ],
+          "8": [
+            75,
+            102
+          ],
+          "9": [
+            125,
+            109
+          ],
+          "10": [
+            130,
+            110
+          ],
+          "11": [
+            122,
+            73
+          ],
+          "12": [
+            108,
+            132
+          ],
+          "13": [
+            119,
+            130
+          ],
+          "14": [
+            128,
+            109
+          ],
+          "15": [
+            115,
+            107
+          ]
+        },
+        "tip": {
+          "6": [
+            131,
+            139
+          ],
+          "9": [
+            147,
+            106
+          ],
+          "12": [
+            133,
+            138
+          ]
+        },
+        "foot": {
+          "0": [
+            96,
+            147
+          ],
+          "1": [
+            105,
+            147
+          ],
+          "2": [
+            89,
+            147
+          ],
+          "3": [
+            95,
+            147
+          ],
+          "4": [
+            93,
+            147
+          ],
+          "5": [
+            94,
+            147
+          ],
+          "6": [
+            96,
+            147
+          ],
+          "7": [
+            92,
+            147
+          ],
+          "8": [
+            102,
+            147
+          ],
+          "9": [
+            92,
+            147
+          ],
+          "10": [
+            91,
+            147
+          ],
+          "11": [
+            108,
+            147
+          ],
+          "12": [
+            97,
+            147
+          ],
+          "13": [
+            110,
+            147
+          ],
+          "14": [
+            82,
+            147
+          ],
+          "15": [
+            112,
+            147
+          ]
+        }
+      }
+    }
+  }
+}
