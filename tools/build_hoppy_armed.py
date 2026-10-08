@@ -40,6 +40,12 @@ class Weapon:
     per_frame_foot_pivot: bool = False
     foot_plant_overrides: dict[int, str] = field(default_factory=dict)
     foot_plant_note: str = ""
+    # Optional source-space spans for poses where a loose weapon otherwise
+    # occupies the row used to find the character's planted feet.
+    body_foot_targets: tuple[tuple[int, int] | None, ...] = ()
+    # Optional packed-frame -> generated-source-cell mapping. An empty tuple
+    # retains the source's row-major order exactly.
+    source_order: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -524,6 +530,15 @@ def translate_frame(frame: Image.Image, offset: tuple[int, int], mode: Mode, ind
     return output
 
 
+def resolved_source_order(source_order: tuple[int, ...], mode: Mode, weapon: str) -> tuple[int, ...]:
+    """Resolve an opt-in source-cell remap without changing the normal path."""
+    if not source_order:
+        return tuple(range(16))
+    if len(source_order) != 16 or any(cell not in range(16) for cell in source_order):
+        raise ValueError(f"{mode.directory}/{weapon}: source_order must contain 16 source cells in range 0..15")
+    return source_order
+
+
 def register_frames(
     master: Image.Image,
     components: dict[int, SourceComponent],
@@ -532,13 +547,16 @@ def register_frames(
     foot_source_rows: tuple[int, ...] | None = None,
     per_frame_foot_pivot: bool = False,
     foot_plant_overrides: dict[int, str] | None = None,
+    body_foot_targets: tuple[tuple[int, int] | None, ...] = (),
+    source_order: tuple[int, ...] = (),
 ) -> list[FramePlacement]:
     """Plant every pose at the gameplay pivot while preserving its art offsets."""
     rows = mode.foot_source_rows if foot_source_rows is None else foot_source_rows
     if len(rows) != 16:
         raise ValueError(f"{mode.directory}: expected 16 planted-foot source rows")
+    order = resolved_source_order(source_order, mode, "armed sheet")
     preliminary = [
-        unregistered_frame(master, components[index], mode, scale, rows[index])
+        unregistered_frame(master, components[order[index]], mode, scale, rows[index])
         for index in range(16)
     ]
     measured_feet = [planted_foot_row(frame, expected_y, mode) for frame, expected_y in preliminary]
@@ -547,14 +565,37 @@ def register_frames(
     overrides = {} if foot_plant_overrides is None else foot_plant_overrides
     if any(index not in range(16) or policy not in {"center", "rear", "front"} for index, policy in overrides.items()):
         raise ValueError(f"invalid foot planting overrides for {mode.directory}: {overrides}")
+    if body_foot_targets and len(body_foot_targets) != 16:
+        raise ValueError(f"{mode.directory}: expected 16 optional body-foot targets")
+    targets = body_foot_targets or (None,) * 16
+    for index, target in enumerate(targets):
+        if target is None:
+            continue
+        left, right = target
+        if left < 0 or right >= mode.cell[0] or left > right:
+            raise ValueError(f"{mode.directory}: invalid body-foot target at frame {index + 1}: {target}")
     placements: list[FramePlacement] = []
     for index, ((frame, _), (foot_y, span)) in enumerate(zip(preliminary, measured_feet)):
         policy = overrides.get(index, "rear" if 5 <= index <= 13 else "center")
-        planted_x = planted_foot_x(frame, foot_y, span, policy) if per_frame_foot_pivot else round((span[0] + span[1]) / 2)
+        target = targets[index]
+        if target is not None:
+            target_runs = opaque_runs(frame, foot_y)
+            left, right = target
+            if not any(run_left <= right and left <= run_right for run_left, run_right in target_runs):
+                raise ValueError(
+                    f"{mode.directory}: body-foot target misses painted feet at frame {index + 1}: {target}"
+                )
+            planted_x = round((left + right) / 2)
+        else:
+            planted_x = planted_foot_x(frame, foot_y, span, policy) if per_frame_foot_pivot else round((span[0] + span[1]) / 2)
         frame_offset_x = mode.pivot[0] - planted_x if per_frame_foot_pivot else horizontal_offset
         offset = (frame_offset_x, mode.pivot[1] - foot_y)
         registered = translate_frame(frame, offset, mode, index)
         sole_y = lowest_sole_row(registered, planted_x + frame_offset_x)
+        if target is not None and abs(sole_y - mode.pivot[1]) > 1:
+            raise ValueError(
+                f"{mode.directory}: body-foot sole misses the pivot at frame {index + 1}: {sole_y}"
+            )
         same_x = rear_foot_x(registered, sole_y) if policy != "center" else planted_x + frame_offset_x
         placements.append(
             FramePlacement(
@@ -876,6 +917,7 @@ def pack_mode(mode: Mode) -> None:
             raise ValueError(f"{source_path}: generated source does not preserve transparency")
         components, fragment_attachments = master_components(master)
         scale = pilot_scale(master, components, mode)
+        source_order = resolved_source_order(weapon.source_order, mode, weapon.weapon)
         placements = register_frames(
             master,
             components,
@@ -884,6 +926,8 @@ def pack_mode(mode: Mode) -> None:
             weapon.foot_source_rows,
             weapon.per_frame_foot_pivot,
             weapon.foot_plant_overrides,
+            weapon.body_foot_targets,
+            weapon.source_order,
         )
         frames = [placement.image for placement in placements]
         sheet = Image.new("RGBA", (mode.cell[0] * 4, mode.cell[1] * 4))
@@ -907,7 +951,7 @@ def pack_mode(mode: Mode) -> None:
             "body_height": visible_height(frames[0]),
             "unarmed_idle_height": mode.idle_height,
             "source_scale": scale,
-            "source_component_bounds": [list(components[index].bbox) for index in range(16)],
+            "source_component_bounds": [list(components[source_order[index]].bbox) for index in range(16)],
             "fragment_attachments": fragment_attachments,
             "foot_anchor_semantics": (
                 "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden."
@@ -917,12 +961,20 @@ def pack_mode(mode: Mode) -> None:
             "clips": clip_metadata(mode),
             "anchors": anchors(mode, weapon, placements),
         }
+        if weapon.source_order:
+            entries[weapon.weapon]["source_order"] = list(source_order)
         if weapon.per_frame_foot_pivot:
             entries[weapon.weapon]["foot_planting"] = {
                 "default": "idle, run, equip, and hurt use the foot centre; attack frames use the rear foot.",
                 "overrides": {str(index): policy for index, policy in weapon.foot_plant_overrides.items()},
                 "note": weapon.foot_plant_note,
             }
+            if weapon.body_foot_targets:
+                entries[weapon.weapon]["foot_planting"]["body_foot_targets"] = {
+                    str(index): list(target)
+                    for index, target in enumerate(weapon.body_foot_targets)
+                    if target is not None
+                }
     carry_calibration = write_carry_icons(pack, mode, packed)
     manifest = {
         "version": 1,
