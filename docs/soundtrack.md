@@ -162,4 +162,4 @@ These replace or upgrade tracks under `hoppys-adventure-arcade/Assets/Audio/`. E
   - Fill in `bpm`, `beat_count` and `bar_beats`, so `AudioStreamInteractive` can switch on the bar later.
 - **Boss swaps:** the platformer fades the level track down and the boss track in (`modes/platformer/level.gd`). Generating each boss track at its level track's key keeps that swap musical. For bar-synced intensity layers, use tempo-locked stems with `AudioStreamSynchronized`.
 - **Naming:** lowercase snake case by role, e.g. `enchanted_repo_level.ogg`, `heroes_villains_boss.ogg`, `stinger_merge_successful.ogg`.
-- **Licensing:** add an `ASSETS_LICENSES.md` row for each new file, citing its provenance record, and remove the replaced track's row in the same PR.
+- **Licensing:** in the PR that commits a replacement file and its provenance record, add its `ASSETS_LICENSES.md` row and remove the row of the track it replaces. Until a replacement ships, the current rows stay, because those files are still in the game.
