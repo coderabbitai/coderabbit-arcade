@@ -89,6 +89,42 @@ func run() -> void:
 	check(p.body.animation=="jump" and p.body.sprite_frames==p.COMBAT_FRAMES,"Jump retains armored air pose")
 	p.height=0;p.rise=0;p.start_attack();p.tick(.01)
 	check(p.body.sprite_frames==p.COMBAT_FRAMES,"Attack restores combat frames")
+	p.swing_left=0;p.combo=0;p.combo_window=0;p.facing=1
+	for side in [1,-1]:
+		p.facing=side;p.tick(0)
+		check(p.body.offset==Vector2(0,-51),"Unarmed offset stays (0,-51) facing %d"%side)
+	p.facing=1
+	p.equip("review_stamp");p.pickup_time=0;p.tick(0)
+	check(p.body.animation=="hold_idle" and p.body.sprite_frames!=p.COMBAT_FRAMES and p.body.sprite_frames.has_animation("hold_idle"),"Equipped stamp idles on baked hold_idle sheet")
+	check(not p.held.sprite.visible,"Baked stamp hides the legacy weapon sprite")
+	check(not p.body.flip_h and is_equal_approx(p.body.offset.x,32) and is_equal_approx(p.body.offset.y,-67),"Armed idle facing right uses baked offset (32,-67)")
+	p.facing=-1;p.tick(0)
+	check(p.body.flip_h and p.body.animation=="hold_idle","Armed idle mirrors when facing left")
+	check(is_equal_approx(p.body.offset.x,-32) and is_equal_approx(p.body.offset.y,-67),"Armed idle facing left negates offset.x only")
+	p.facing=1;p.tick(0)
+	check(not p.body.flip_h,"Armed idle facing right clears flip_h")
+	for spec in [[.15,0],[.5,1],[.85,2]]:
+		p.swing_left=0;p.combo=0;p.combo_window=0;p.start_attack()
+		p.swing_fired=true;p.swing_left=p.swing_duration*(1.0-spec[0]);p.tick(0)
+		check(p.body.animation=="step1" and p.body.frame==spec[1],"Armed attack progress %.2f shows step1 frame %d"%[spec[0],spec[1]])
+		check(p.body.animation!="idle","Armed attack progress %.2f never snaps to idle"%spec[0])
+	p.facing=-1;p.tick(0)
+	check(p.body.flip_h,"Armed attack mirrors when facing left")
+	p.swing_left=0;p.swing_fired=true;p.tick(0)
+	for clip in ["walk_up","walk_down"]:
+		p.facing=-1;p.pose_move=Vector2(0,-1 if clip=="walk_up" else 1);p.show_pose(clip)
+		check(p.body.animation==clip and p.body.sprite_frames==p.MOTION_FRAMES and not p.body.flip_h,"Armed "+clip+" uses unflipped directional frames")
+		if clip=="walk_up": check(p.held.carry.visible and p.held.z_index==-1,"Carried stamp sits behind the body on walk_up")
+	p.pose_move=Vector2.ZERO;p.facing=1
+	p.equip("triage_hammer");p.pickup_time=0;p.tick(0)
+	check(p.body.animation=="idle" and p.body.sprite_frames==p.COMBAT_FRAMES,"Sheetless hammer idles on combat frames")
+	check(p.held.sprite.visible and not p.held.carry.visible,"Sheetless hammer uses the legacy sprite")
+	check(p.held.sprite.offset.distance_to(Vector2(56,-32))<1.0,"Hammer is gripped by its handle")
+	p.swing_left=0;p.combo=0;p.combo_window=0;p.start_attack()
+	p.swing_fired=true;p.swing_left=p.swing_duration*.5;p.tick(0)
+	check(not p.body.animation.begins_with("step"),"Sheetless hammer never uses armed step clips")
+	p.swing_left=0;p.visual_weapon="";p.weapon="";p.tick(0)
+
 	if DisplayServer.get_name()!="headless":
 		game.world.hide()
 		var layer := CanvasLayer.new()
@@ -116,6 +152,32 @@ func run() -> void:
 		await RenderingServer.frame_post_draw
 		root.get_texture().get_image().save_png("res://../docs/previews/heroes-villains/movement_cycles.png")
 		layer.queue_free()
+	if DisplayServer.get_name()!="headless":
+		game.world.show()
+		for e in game.enemies:
+			if is_instance_valid(e): e.queue_free()
+		game.enemies.clear()
+		for prop in game.props: prop.node.queue_free()
+		game.props.clear()
+		for item in game.pickups: item.node.queue_free()
+		game.pickups.clear()
+		p.hide();game.camera.position=Vector2(640,360)
+		var actors: Array=[]
+		var specs := [["review_stamp",1],["triage_hammer",1],["change_stack_baton",1],["security_scanner",1],["pr_merger",1],["review_stamp",-1]]
+		for i in specs.size():
+			var q=game.Player.new();q.arena=game;q.set_physics_process(false)
+			game.actors.add_child(q);q.position=Vector2(190+i*180,560)
+			q.equip(specs[i][0]);q.pickup_time=0;q.facing=specs[i][1]
+			actors.append(q)
+		for shot in [[.25,"25"],[.44,"44"],[.85,"85"]]:
+			for q in actors:
+				q.swing_left=0;q.combo=0;q.combo_window=0;q.start_attack()
+				q.swing_fired=true;q.swing_left=q.swing_duration*(1.0-shot[0]);q.tick(0)
+			if shot[0]>.8: check(actors[0].body.animation=="step1","Baked stamp follow-through keeps the step pose in the capture")
+			await create_timer(.1).timeout
+			await RenderingServer.frame_post_draw
+			root.get_texture().get_image().save_png("res://../docs/previews/heroes-villains/weapons_%s.png"%shot[1])
+		for q in actors: q.queue_free()
 	print("Heroes vs. Villains motion failures: ",failures)
 	root.get_node("AudioService").shutdown()
 	game.queue_free()

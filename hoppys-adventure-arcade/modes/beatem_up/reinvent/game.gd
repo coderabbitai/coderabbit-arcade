@@ -197,10 +197,12 @@ func resolve_swing(source: Node2D) -> void:
 	var damage: float=def.damage
 	if source.effects.has("strength_down"): damage=maxf(.5,damage-1.0)
 	var hit := false
+	var tip := source.position+Vector2(source.facing*70,-50)
+	if source.has_method("swing_tip"): tip=source.swing_tip()
 	if weapon=="security_scanner":
 		reveal_time=10
 		hit=true # A scan consumes one charge even without a target in the cone.
-		fx("capabilities_fx","scanner_cone",source.position+Vector2(source.facing*100,-50),1.3,.4)
+		fx("capabilities_fx","scanner_cone",tip,1.3,.4,source.facing)
 	var targets: Array=enemies.duplicate()+bosses.duplicate()
 	var zone_points: Array[Vector2]=[]
 	for enemy in targets:
@@ -215,7 +217,7 @@ func resolve_swing(source: Node2D) -> void:
 		if weapon=="pr_merger" and not enemy.is_boss and enemy.hp<enemy.max_hp*.25: amount=999
 		if enemy.take_hit(amount,def.knock,source.position,source.combo==3):
 			hit=true
-			fx("capabilities_fx","unlock_sparkle",enemy.position-Vector2(0,55),.5,.18)
+			fx("capabilities_fx","unlock_sparkle",tip if weapon!="" else enemy.position-Vector2(0,55),.5,.18,source.facing)
 			if weapon=="review_stamp": enemy.stun(.5)
 			if weapon=="triage_hammer": hammer_target=enemy
 			if source.combo==3 and capabilities.change_stack: zone_points.append(clamp_ground(enemy.position+Vector2(source.facing*65,0)))
@@ -322,9 +324,10 @@ func clear_threats() -> void:
 	for zone in zones: zone.node.queue_free()
 	zones.clear()
 
-func fx(sheet: String, pose: String, pos: Vector2, magnify: float, lifetime: float) -> void:
+func fx(sheet: String, pose: String, pos: Vector2, magnify: float, lifetime: float, face := 0.0) -> void:
 	var sprite := Art.sprite(sheet,pose,magnify,false)
 	sprite.position = pos
+	sprite.flip_h = face<0.0
 	actors.add_child(sprite)
 	var tween := sprite.create_tween()
 	tween.tween_property(sprite,"modulate:a",0.0,lifetime)
