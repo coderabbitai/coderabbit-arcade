@@ -42,7 +42,8 @@ const WAVES := [
 ## InputMap's "any device" id. A new InputEventJoypadButton defaults to device 0, so a code-made
 ## binding would answer only the first pad; booths and reconnected controllers use other ids.
 const ANY_DEVICE := -1
-const PAD_BUTTONS := {"brawl_jump":JOY_BUTTON_A,"brawl_pickup":JOY_BUTTON_Y,"brawl_attack":JOY_BUTTON_X}
+const PAD_BUTTONS := {
+	"brawl_jump":JOY_BUTTON_A,"brawl_pickup":JOY_BUTTON_Y,"brawl_attack":JOY_BUTTON_X}
 static func joy_button(button: JoyButton) -> InputEventJoypadButton:
 	var event := InputEventJoypadButton.new()
 	event.device = ANY_DEVICE
