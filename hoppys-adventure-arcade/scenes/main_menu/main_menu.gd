@@ -5,6 +5,7 @@ const Preview = preload("res://scenes/main_menu/preview.gd")
 @onready var hoppy = $Interface/Hoppy
 var ui: Control
 var buttons: Array[Button] = []
+var preview_note: Label
 var caption: Label
 var dots: Label
 var modal: Control
@@ -12,6 +13,7 @@ var modal_return: Control
 var keyboard_input := false
 var hovered := -1
 var shade: TextureRect
+var footer_shade: TextureRect
 var title: VBoxContainer
 var elapsed := 0.0
 var save_warning: Label
@@ -35,6 +37,18 @@ func _ready() -> void:
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui.add_child(shade)
+	# Bright stage floors need a separate lower scrim for preview captions and controls.
+	footer_shade = TextureRect.new()
+	var footer_gradient := Gradient.new()
+	footer_gradient.set_color(0, Color(0.025, 0.045, 0.08, 0.0))
+	footer_gradient.set_color(1, Color(0.025, 0.045, 0.08, 0.9))
+	var footer_texture := GradientTexture2D.new()
+	footer_texture.gradient = footer_gradient
+	footer_texture.fill_from = Vector2(0, 0.65)
+	footer_texture.fill_to = Vector2(0, 0.92)
+	footer_shade.texture = footer_texture
+	footer_shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui.add_child(footer_shade)
 	hoppy.reparent(ui)
 	var eyebrow := Style.label("C O D E R A B B I T   /   A R C A D E", 14, Style.MINT)
 	eyebrow.position = Vector2(76, 39)
@@ -88,8 +102,10 @@ func _ready() -> void:
 	dots.position = Vector2(640, 628)
 	dots.size.x = 560
 	ui.add_child(dots)
-	var preview_note := Style.label("WORLD PREVIEW", 12, Color("afbdc9"))
-	preview_note.position = Vector2(1069, 566)
+	preview_note = Style.label("WORLD PREVIEW", 12, Color("afbdc9"))
+	preview_note.position = Vector2(640, 566)
+	preview_note.size.x = 560
+	preview_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	ui.add_child(preview_note)
 	showcase.preview_changed.connect(_preview_changed)
 	_preview_changed(showcase.active_index)
@@ -110,6 +126,8 @@ func _layout() -> void:
 	ui.size = Vector2(1280, 720)
 	shade.position = -extra
 	shade.size = get_viewport_rect().size
+	footer_shade.position = -extra
+	footer_shade.size = get_viewport_rect().size
 	if modal:
 		modal.get_child(0).position = -extra
 		modal.get_child(0).size = get_viewport_rect().size
@@ -168,6 +186,7 @@ func _select(group: int) -> void:
 
 func _preview_changed(index: int) -> void:
 	caption.text = Preview.TITLES[index]
+	preview_note.text = Preview.collection(index)
 	caption.add_theme_color_override("font_color", Preview.COLORS[index])
 	var count: int = showcase.COUNT
 	dots.text = " ".join(PackedStringArray(Array(range(count)).map(func(i): return "◆" if i == index else "·"))) + "    %02d / %02d" % [index + 1, count]
