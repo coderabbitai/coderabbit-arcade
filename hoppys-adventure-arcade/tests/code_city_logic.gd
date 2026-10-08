@@ -196,7 +196,8 @@ func run() -> void:
 	# Code-made bindings must answer every pad, not only device 0 (booths, reconnects).
 	for binding in [["brawl_jump",0],["brawl_attack",2],["brawl_pickup",3]]:
 		for device in [0,1,3]:
-			var pad := InputEventJoypadButton.new();pad.device=device;pad.button_index=binding[1];pad.pressed=true
+			var pad := InputEventJoypadButton.new()
+			pad.device=device;pad.button_index=binding[1];pad.pressed=true
 			check(InputMap.event_is_action(pad,binding[0]),"%s answers pad %d" % [binding[0],device])
 	print("Code City logic failures: ",failures)
 	game.queue_free()

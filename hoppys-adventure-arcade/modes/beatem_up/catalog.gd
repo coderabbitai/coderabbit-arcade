@@ -42,6 +42,7 @@ const WAVES := [
 ## InputMap's "any device" id. A new InputEventJoypadButton defaults to device 0, so a code-made
 ## binding would answer only the first pad; booths and reconnected controllers use other ids.
 const ANY_DEVICE := -1
+const PAD_BUTTONS := {"brawl_jump":JOY_BUTTON_A,"brawl_pickup":JOY_BUTTON_Y,"brawl_attack":JOY_BUTTON_X}
 static func joy_button(button: JoyButton) -> InputEventJoypadButton:
 	var event := InputEventJoypadButton.new()
 	event.device = ANY_DEVICE
@@ -56,7 +57,7 @@ static func install_input() -> void:
 			var event := InputEventKey.new()
 			event.physical_keycode = key
 			InputMap.action_add_event(action,event)
-		InputMap.action_add_event(action,joy_button({"brawl_jump":JOY_BUTTON_A,"brawl_pickup":JOY_BUTTON_Y,"brawl_attack":JOY_BUTTON_X}[action]))
+		InputMap.action_add_event(action,joy_button(PAD_BUTTONS[action]))
 static func looped(track: AudioStream) -> AudioStream:
 	var result := track.duplicate() as AudioStream
 	if result is AudioStreamMP3 or result is AudioStreamOggVorbis: result.loop = true
