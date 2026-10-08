@@ -711,10 +711,11 @@ func pause(detail: String) -> void:
 
 ## Jump's Space is also ui_accept, so a press carried over from the finisher or the fatal hit
 ## would fire the focused button before the player sees the screen. Swallow confirms (whatever
-## they are bound to) and clicks, before the GUI gets them, for the first OVERLAY_ARM seconds.
+## they are bound to), clicks and touches, before the GUI gets them, for the first OVERLAY_ARM
+## seconds. A native touch presses buttons too, not only its emulated click.
 func _input(event: InputEvent) -> void:
 	if state not in ARMED_OVERLAYS or not overlay.visible or overlay_clock >= OVERLAY_ARM: return
-	if event.is_action("ui_accept") or event is InputEventMouseButton:
+	if event.is_action("ui_accept") or event is InputEventMouseButton or event is InputEventScreenTouch or event is InputEventScreenDrag:
 		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:

@@ -384,34 +384,65 @@ func check_boss_terminal(phase: String) -> void:
 		game._physics_process(DT)
 		if game.flow.phase!="" or game.flow.veil.color.a>0.0 or game.state!="finisher" or game.stage_index!=2: held = false
 	check(held and blacks[0]==0 and game.flow.music_track==Catalog.BOSS_MUSIC and is_equal_approx(game.flow.music_db, 0.0), "Boss defeat during %s cancels the sequence and keeps the boss track" % phase)
-# --- Results and game-over menus arm after OVERLAY_ARM, so a carried-over jump can't skip them ---
-## Press and release through the viewport, as a player would: Space / pad A are jump and ui_accept.
-## Viewport coordinates: headless, the 64 px window is stretched, so window-space clicks miss.
-func confirm(kind: String) -> void:
-	var down: InputEvent
+# --- Results and game-over menus arm after OVERLAY_ARM, so a carried-over press can't skip them ---
+## Everything a player can press a focused overlay button with: Space (jump and ui_accept), pad A
+## (jump), a click, and a native touch, which presses buttons as well as its emulated click.
+const PRESSES := ["space", "pad", "click", "touch"]
+## One press or release through the viewport. Viewport coordinates: headless, the 64 px window
+## is stretched, so window-space pointers miss.
+func send(kind: String, pressed: bool) -> void:
+	var at: Vector2 = game.primary.get_global_rect().get_center()
+	var event: InputEvent
 	match kind:
 		"space":
 			var key := InputEventKey.new()
 			key.keycode = KEY_SPACE
 			key.physical_keycode = KEY_SPACE
-			down = key
+			event = key
 		"pad":
 			var pad := InputEventJoypadButton.new()
 			pad.button_index = JOY_BUTTON_A
-			down = pad
+			event = pad
 		"click":
 			var click := InputEventMouseButton.new()
 			click.button_index = MOUSE_BUTTON_LEFT
-			click.position = game.primary.get_global_rect().get_center()
-			click.global_position = click.position
-			down = click
-	down.pressed = true
-	root.push_input(down, true)
-	var up: InputEvent = down.duplicate()
-	up.pressed = false
-	root.push_input(up, true)
+			click.position = at
+			click.global_position = at
+			event = click
+		"touch":
+			var touch := InputEventScreenTouch.new()
+			touch.index = 0
+			touch.position = at
+			event = touch
+	event.pressed = pressed
+	root.push_input(event, true)
+func confirm(kind: String) -> void:
+	send(kind, true)
+	send(kind, false)
 func arm() -> void:
 	for i in ceili(game.OVERLAY_ARM/DT)+1: game._physics_process(DT)
+## On its first frame the overlay ignores every press, and a press held from then and released
+## after arming. Then a fresh `activate` press, once armed, is the one that counts. One process
+## frame first lets the new buttons lay out, so pointers land on them; game physics is frozen
+## here, so the arm clock is still 0.
+func guarded(label: String, activate: String) -> void:
+	await process_frame
+	check(game.overlay_clock==0.0 and game.primary.get_global_rect().size.x>game.primary.custom_minimum_size.x, "%s is laid out and still unarmed" % label)
+	var before: String = game.state
+	for kind in PRESSES: confirm(kind)
+	check(game.state==before and game.overlay.visible, "%s ignores Space, pad A, a click and a touch on its first frame" % label)
+	for kind in PRESSES: send(kind, true)
+	arm()
+	for kind in PRESSES: send(kind, false)
+	check(game.state==before and game.overlay.visible, "%s ignores a press held from its first frame and released after 0.5 s" % label)
+	confirm(activate)
+func to_combat(index: int) -> void:
+	game.start_stage(index)
+	freeze()
+	var guard := 0
+	while game.state!="combat" and guard<200:
+		game._physics_process(DT)
+		guard += 1
 func check_armed_overlays() -> void:
 	# Space is both jump and ui_accept: the carried-over press. (Pad A is jump only today; the
 	# guard swallows ui_accept itself, so it would cover A too if A were ever bound to it.)
@@ -420,46 +451,32 @@ func check_armed_overlays() -> void:
 	space.physical_keycode = KEY_SPACE
 	space.pressed = true
 	check(InputMap.event_is_action(space, "ui_accept") and InputMap.event_is_action(space, "brawl_jump"), "Space is both jump and ui_accept")
-	game.start_stage(0)
-	freeze()
-	var guard := 0
-	while game.state!="combat" and guard<200:
-		game._physics_process(DT)
-		guard += 1
-	var p = game.player
-	p.hp = 1
-	p.invulnerable = 0
-	p.shield = false
-	p.weapon = ""
-	p.take_hit(p.position+Vector2(-40, 0))
-	check(game.state=="game_over" and game.primary.has_focus(), "Game over focuses Retry")
-	for kind in ["space", "pad", "click"]: confirm(kind)
-	check(game.state=="game_over" and game.overlay.visible, "Jump or a click on the frame game over appears does not press Retry")
-	arm()
-	confirm("space")
-	check(game.state=="stage_enter", "A press after 0.5 s presses Retry")
-	game.start_stage(2)
-	freeze()
-	guard = 0
-	while game.state!="combat" and guard<200:
-		game._physics_process(DT)
-		guard += 1
-	clear_enemies()
-	game.enter_room(2)
-	freeze()
-	var boss = game.boss
-	for damage in [12, 6, 6]:
-		boss.vulnerable = true
-		boss.take_hit(damage, 0, Vector2.ZERO, true)
-	freeze()
-	guard = 0
-	while game.state=="finisher" and guard<400:
-		game._physics_process(DT)
-		guard += 1
-	check(game.state=="won" and game.primary.has_focus(), "The Force Merge hands off to results with Return focused")
-	for kind in ["space", "pad", "click"]: confirm(kind)
-	check(game.state=="won" and game.overlay.visible, "Jump or a click on the frame results appear leaves them up")
-	arm()
-	confirm("click")
-	check(game.state=="leaving", "A click after 0.5 s presses Return")
-	await reload()
+	for activate in ["space", "touch"]:
+		to_combat(0)
+		var p = game.player
+		p.hp = 1
+		p.invulnerable = 0
+		p.shield = false
+		p.weapon = ""
+		p.take_hit(p.position+Vector2(-40, 0))
+		check(game.state=="game_over" and game.primary.has_focus(), "Game over focuses Retry")
+		await guarded("Game over", activate)
+		check(game.state=="stage_enter", "A %s after 0.5 s presses Retry" % activate)
+	for activate in ["click", "touch"]:
+		to_combat(2)
+		clear_enemies()
+		game.enter_room(2)
+		freeze()
+		var boss = game.boss
+		for damage in [12, 6, 6]:
+			boss.vulnerable = true
+			boss.take_hit(damage, 0, Vector2.ZERO, true)
+		freeze()
+		var guard := 0
+		while game.state=="finisher" and guard<400:
+			game._physics_process(DT)
+			guard += 1
+		check(game.state=="won" and game.primary.has_focus(), "The Force Merge hands off to results with Return focused")
+		await guarded("Results", activate)
+		check(game.state=="leaving", "A %s after 0.5 s presses Return" % activate)
+		await reload()
