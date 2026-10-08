@@ -44,6 +44,15 @@ const BOSS_NAMES := {"ai_slop":"AI SLOP", "agent_army":"CODING AGENT ARMY", "ten
 
 static func install_input() -> void:
 	Shared.install_input()
+	if not InputMap.has_action("heroes_popup_advance"):
+		InputMap.add_action("heroes_popup_advance")
+		for code in [KEY_ENTER, KEY_KP_ENTER]:
+			var enter := InputEventKey.new()
+			enter.physical_keycode=code
+			InputMap.action_add_event("heroes_popup_advance",enter)
+		var select := InputEventJoypadButton.new()
+		select.button_index=JOY_BUTTON_BACK
+		InputMap.action_add_event("heroes_popup_advance",select)
 	if InputMap.has_action("review_burst"): return
 	InputMap.add_action("review_burst")
 	var key := InputEventKey.new()

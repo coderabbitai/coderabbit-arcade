@@ -22,11 +22,44 @@ func run() -> void:
 		game._physics_process(120)
 		check(game.state=="cards" and game.card_queue[0]==name and not game.playing and game.card.position.x==0,name+" waits for player input")
 		var before: int=game.card_queue.size()
+		for code in [KEY_J,KEY_X,KEY_SPACE]:
+			var combat := InputEventKey.new()
+			combat.physical_keycode=code;combat.pressed=true
+			game._unhandled_input(combat)
+		for button in [JOY_BUTTON_A,JOY_BUTTON_X,JOY_BUTTON_Y,JOY_BUTTON_LEFT_SHOULDER]:
+			var combat := InputEventJoypadButton.new()
+			combat.button_index=button;combat.pressed=true
+			game._unhandled_input(combat)
+		check(game.card_queue.size()==before,"Combat/jump/pickup buttons cannot dismiss "+name)
 		press("pause");game._physics_process(120)
 		check(paused and game.card_queue.size()==before,"Pause keeps "+name+" pending")
-		press("pause");press("ui_accept")
+		press("pause")
+		var advance: InputEvent
+		if before%2==0:
+			var enter := InputEventKey.new()
+			enter.physical_keycode=KEY_ENTER;enter.pressed=true
+			advance=enter
+		else:
+			var select := InputEventJoypadButton.new()
+			select.button_index=JOY_BUTTON_BACK;select.pressed=true
+			advance=select
+		check(advance.is_action_pressed("heroes_popup_advance"),"Dedicated physical input is mapped")
+		game._unhandled_input(advance)
 		check(game.card_queue.size()==before-1,"One press advances "+name+" once")
 	check(game.playing and not paused,"Final manual advance resumes gameplay")
+	# Exercise GUI dispatch too: default ui_accept/A must not click Continue.
+	game.state="stage_intro";game.playing=false
+	game.show_overlay("Stage", "Ready", "Continue", game.begin_play)
+	var accept := InputEventJoypadButton.new()
+	accept.button_index=JOY_BUTTON_A;accept.pressed=true
+	root.push_input(accept)
+	accept.pressed=false;root.push_input(accept)
+	check(not game.playing and game.state=="stage_intro","Controller jump cannot activate focused Continue button")
+	var confirm := InputEventJoypadButton.new()
+	confirm.button_index=JOY_BUTTON_BACK;confirm.pressed=true
+	root.push_input(confirm)
+	confirm.pressed=false;root.push_input(confirm)
+	check(game.playing,"Controller View confirms focused Continue button")
 	for e in game.enemies: e.set_physics_process(false)
 	p.input_lock=0;p.position=Vector2(500,550)
 	for spec in [["move_right","run"],["move_up","walk_up"],["move_down","walk_down"]]:

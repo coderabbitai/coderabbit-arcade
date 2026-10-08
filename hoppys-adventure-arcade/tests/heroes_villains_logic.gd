@@ -21,6 +21,7 @@ func enemy(kind: String, pos: Vector2, split := true):
 	if e!=null: e.set_physics_process(false)
 	return e
 func finish_cards() -> void:
+	if game.state=="boss_victory": game._physics_process(game.VICTORY_DURATION)
 	var guard := 0
 	while game.state=="cards" and guard<12:
 		game.next_card();guard+=1
@@ -182,9 +183,19 @@ func run() -> void:
 	check(not slop.take_hit(99,0,Vector2.ZERO),"LGTM field blocks damage")
 	minion.finish_death();slop.tick(.01)
 	check(not slop.shield_active,"Clearing last Slop breaks field")
-	slop.take_hit(99,0,Vector2.ZERO);game.check_boss_state();finish_cards()
+	slop.take_hit(99,0,Vector2.ZERO);game.check_boss_state()
+	var victory_position: Vector2=game.player.position
+	check(game.state=="boss_victory" and not game.playing and game.player.body.animation=="victory","Boss defeat freezes combat and starts Hoppy victory")
+	game._physics_process(.3)
+	check(game.player.body.position.y<0,"Victory animates a celebratory hop")
+	game._unhandled_input(pause);var celebration_time: float=game.victory_clock
+	game._physics_process(5)
+	check(game.victory_clock==celebration_time,"Pause freezes victory animation")
+	game.resume();check(game.state=="boss_victory" and not game.playing,"Resume continues victory without restarting combat")
+	finish_cards()
+	check(game.state=="stage_clear" and game.player.position==victory_position,"Claiming REVIEW opens Capability Deployed without walking")
 	check(game.capabilities.review and game.boss_rewarded,"SLOP grants REVIEW once")
-	game.boss_defeated();check(game.state=="combat","Duplicate boss completion does not replay reward")
+	game.boss_defeated();check(game.state=="stage_clear","Duplicate boss completion does not replay reward")
 	await stage(0);game.enter_room(2);finish_cards();freeze();clear_enemies()
 	slop=game.bosses[0];slop.take_hit(99,0,Vector2.ZERO);slop.tick(1);slop.tick(2);slop.take_hit(99,0,Vector2.ZERO)
 	check(not slop.shield_active,"Zero-minion phase three cannot softlock")
@@ -199,7 +210,7 @@ func run() -> void:
 	game.bosses[0].take_hit(999,0,Vector2.ZERO);game.check_boss_state()
 	check(not game.boss_rewarded and game.alive_bosses()==1,"One dual boss death cannot unlock exit")
 	game.bosses[1].take_hit(999,0,Vector2.ZERO);game.check_boss_state();finish_cards()
-	check(game.capabilities.triage and game.capabilities.change_stack,"Both deaths grant TRIAGE and CHANGE STACK")
+	check(game.capabilities.triage and game.capabilities.change_stack and game.state=="stage_clear","Both deaths grant rewards and open Capability Deployed")
 	# Hacker phases, two vectors, damage-triggered spawns and final victory.
 	await stage(2);game.enter_room(2);finish_cards();freeze();clear_enemies()
 	var hacker=game.bosses[0]

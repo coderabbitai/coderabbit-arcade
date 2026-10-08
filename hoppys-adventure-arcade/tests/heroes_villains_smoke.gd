@@ -76,14 +76,27 @@ func run() -> void:
 		rooms["%d_%d" % [game.stage_index,game.room]]=true
 		if game.state=="won": break
 		if game.state=="stage_clear":
-			game.advance_stage();await process_frame;freeze();game.begin_play()
+			await capture("capability_deployed_%d" % game.stage_index)
+			var confirm := InputEventAction.new()
+			confirm.action="heroes_popup_advance";confirm.pressed=true
+			game._input(confirm)
+			await process_frame;freeze()
+			var stage_confirm := InputEventAction.new()
+			stage_confirm.action="heroes_popup_advance";stage_confirm.pressed=true
+			game._input(stage_confirm)
+			await process_frame;freeze()
+			continue
+		if game.state=="boss_victory":
+			game._physics_process(1.0/60.0)
+			if game.state=="boss_victory" and game.victory_clock>.3: await capture("hoppy_victory_%d" % game.stage_index)
+			if step%15==0: await process_frame
 			continue
 		if game.state=="cards":
 			game._physics_process(1.0/60.0)
 			if game.state=="cards" and game.card_clock>.35:
 				await capture(game.card_queue[0])
 				var advance := InputEventAction.new()
-				advance.action="ui_accept";advance.pressed=true
+				advance.action="heroes_popup_advance";advance.pressed=true
 				game._unhandled_input(advance)
 			if step%15==0: await process_frame
 			continue
