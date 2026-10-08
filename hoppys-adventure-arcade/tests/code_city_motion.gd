@@ -1,11 +1,44 @@
 extends SceneTree
 const Catalog = preload("res://modes/beatem_up/catalog.gd")
+const Art = preload("res://modes/beatem_up/art.gd")
+const COMBAT_FRAMES = preload("res://Assets/code-city-brawl-player/combat.tres")
+const PLATFORMER_FRAMES = preload("res://Assets/bay-area-blitz-assets-only/bay_area/hoppy/platformer.tres")
 var game
 var failures := 0
 func _initialize() -> void: call_deferred("run")
 func check(ok: bool, message: String) -> void:
 	print("PASS: " if ok else "FAIL: ",message)
 	if not ok: failures+=1
+func phase_frame(phase: float) -> int:
+	return 0 if phase < .3 else 1 if phase < .64 else 2
+func opaque_width(frames: SpriteFrames, clip: String, index: int) -> float:
+	return frames.get_frame_texture(clip, index).get_image().get_used_rect().size.x
+## A swing that misses, or lands on one enemy placed inside reach. The burst is the last child of actors.
+func swing_effect(actor, facing: float, landed: bool) -> void:
+	actor.facing = facing
+	actor.swing_left = 0
+	actor.combo_window = 0
+	actor.queued = false
+	actor.held.show()
+	var foe = null
+	if landed:
+		foe = game.spawn_enemy("syntax_error_sprite", actor.position + Vector2(facing * 60, 0), false)
+		foe.set_physics_process(false)
+	actor.start_attack()
+	game.resolve_swing(actor)
+	var fx := game.actors.get_child(game.actors.get_child_count() - 1) as AnimatedSprite2D
+	# Misses always use melee_sweep. A hammer hit uses hammer_impact. Both leave the tip.
+	var pose := "hammer_impact" if landed and actor.attack_weapon == "refactor_hammer" else "melee_sweep"
+	var kind := "hit" if landed else "miss"
+	check(fx != null and fx.animation == pose and fx.flip_h == (facing > 0) and fx.position.is_equal_approx(actor.tip_position()), actor.weapon + " " + kind + " " + pose + " anchors at the tip facing " + str(facing))
+	if foe != null:
+		game.enemies.erase(foe)
+		foe.position = Vector2(-10000, -10000)
+		foe.queue_free()
+	if fx != null: fx.queue_free()
+	for item in game.pickups:
+		if is_instance_valid(item.node): item.node.queue_free()
+	game.pickups.clear()
 func capture(name: String) -> void:
 	if DisplayServer.get_name()=="headless": return
 	game.world.reset_physics_interpolation()
@@ -40,16 +73,32 @@ func run() -> void:
 		actor.position=Vector2(120+i*185,565)
 		actor.equip(weapon);actor.pickup_time=0
 		actor.tick(.01)
+		var sheet = Art.armed(weapon)
 		var ready_position: Vector2=actor.held.sprite.position
+		if sheet != null:
+			check(actor.body.sprite_frames==sheet and actor.body.animation=="hold_idle",weapon+" holds idle on its armed sheet")
+			check(not actor.held.sprite.visible,weapon+" hides the legacy cel while armed")
 		actor.start_attack();actor.swing_left=actor.swing_duration*.56;actor.swing_fired=true;actor.tick(0)
-		check(actor.combo==1 and actor.held.sprite.position.distance_to(ready_position)>8,weapon+" animates from guard to contact")
-		if weapon=="api_key_whip": check(actor.held.sprite.animation=="api_key_whip_extended","Whip uses its extended contact cel")
+		if sheet != null:
+			check(actor.combo==1 and actor.body.animation=="step1" and actor.body.frame==1,weapon+" contact plays step1 frame 1")
+			check(not actor.held.sprite.visible and actor.body.position.x==0,weapon+" keeps the legacy cel hidden and the feet planted")
+			var contact_trail: bool = weapon != "firewall_shield"
+			check((not actor.held.trail.points.is_empty())==contact_trail,weapon+" trail follows the armed contact window")
+		else:
+			check(actor.combo==1 and actor.held.sprite.position.distance_to(ready_position)>8,weapon+" animates from guard to contact")
+			if weapon=="api_key_whip": check(actor.held.sprite.animation=="api_key_whip_extended","Whip uses its extended contact cel")
 		for step in [2,3]:
 			actor.swing_left=0;actor.combo_window=.4;actor.start_attack()
 			check(actor.combo==step,weapon+" chains step "+str(step))
+			if sheet != null: check(actor.body.animation=="step%d"%step,weapon+" plays step "+str(step))
 		actor.facing=-1;actor.tick(0)
-		check(actor.held.scale.x==-1,weapon+" mirrors around the hand when facing left")
-		actor.facing=1
+		check(is_equal_approx(actor.held.scale.x,actor.facing),weapon+" mirrors around the hand when facing left")
+		if sheet != null:
+			check(actor.body.flip_h and is_equal_approx(actor.body.offset.x,-Art.armed_offset(weapon).x),weapon+" flips the armed pivot when facing left")
+		actor.facing=1;actor.tick(0)
+		check(is_equal_approx(actor.held.scale.x,actor.facing),weapon+" keeps the rig scale facing right")
+		if sheet != null:
+			check(not actor.body.flip_h and is_equal_approx(actor.body.offset.x,Art.armed_offset(weapon).x),weapon+" uses the armed pivot when facing right")
 		players.append(actor)
 		var label := Label.new()
 		label.text=weapon.replace("_"," ");label.position=Vector2(-75,20)
@@ -62,15 +111,82 @@ func run() -> void:
 			actor.swing_left=actor.swing_duration*(1-phase)
 			actor.swing_fired=true
 			actor.tick(0)
+			var sheet = Art.armed(actor.weapon)
+			if sheet == null: continue
+			var frame := phase_frame(phase)
+			check(actor.body.sprite_frames==sheet and actor.body.animation=="step%d"%actor.combo and actor.body.frame==frame,actor.weapon+" step frame "+str(frame)+" at "+str(phase))
+			check(actor.body.position.x==0 and not actor.held.sprite.visible,actor.weapon+" stays planted with the legacy cel hidden at "+str(phase))
+			var contact: bool = phase >= .3 and phase < .64 and actor.weapon != "firewall_shield"
+			check((not actor.held.trail.points.is_empty())==contact,actor.weapon+" trail at "+str(phase))
 		await capture("weapons_%02d" % int(phase*100))
-	p.invulnerable=0;p.swing_left=.2;p.take_hit(p.position-Vector2(30,0));p.tick(.01)
+	# Forced cache miss: still the legacy rig after every weapon has a sheet.
+	var fallback=game.Player.new()
+	fallback.arena=game;game.actors.add_child(fallback)
+	fallback.set_physics_process(false);fallback.controlled=false
+	fallback.position=Vector2(-500,565)
+	Art.armed_sheets["debug_stick"]=null
+	fallback.equip("debug_stick");fallback.pickup_time=0;fallback.tick(.01)
+	var guard_position: Vector2=fallback.held.sprite.position
+	fallback.start_attack();fallback.swing_left=fallback.swing_duration*.56;fallback.swing_fired=true;fallback.tick(0)
+	check(fallback.held.sprite.visible and fallback.held.sprite.position.distance_to(guard_position)>8,"Fallback debug stick animates from guard to contact")
+	check(fallback.body.sprite_frames==COMBAT_FRAMES and not fallback.armed,"Fallback debug stick uses the unarmed combat frames")
+	Art.armed_sheets.erase("debug_stick")
+	fallback.queue_free()
+	var carrier=null
+	for actor in players:
+		if Art.armed(actor.weapon)!=null:
+			carrier=actor
+			break
+	if carrier!=null:
+		for pose in ["walk_up","walk_down","jump"]:
+			carrier.show_pose(pose)
+			carrier.held.animate(carrier.weapon,1,0.0,false,Vector2.ZERO,0.0,0.0)
+			var behind: bool=pose=="walk_up"
+			check(carrier.held.carry.visible and not carrier.held.sprite.visible and carrier.held.carry.scale==carrier.body.scale and (carrier.held.get_index()<carrier.body.get_index())==behind,carrier.weapon+" carry on "+pose+(" sits behind the body" if behind else " sits in front of the body"))
+	p.invulnerable=0;p.swing_left=p.swing_duration*.56;p.swing_fired=true;p.tick(0)
+	if Art.armed(p.weapon)!=null and p.weapon!="firewall_shield":
+		check(not p.held.trail.points.is_empty(),p.weapon+" draws a contact trail before the hit")
+	p.take_hit(p.position-Vector2(30,0));p.tick(.01)
 	check(p.swing_left==0 and p.held.trail.points.is_empty(),"Damage cancels the swing trail and returns weapon to carry")
+	if Art.armed(p.weapon)!=null: check(p.body.animation=="hurt","Damage leaves the armed step clip for hurt")
 	var shield=players.filter(func(a): return a.weapon=="firewall_shield")[0]
 	shield.invulnerable=0;shield.swing_left=0;shield.tick(0)
-	var guard_rotation: float=shield.held.sprite.rotation
-	var guard_x: float=shield.held.sprite.position.x
-	shield.take_hit(shield.position-Vector2(30,0));shield.tick(.1)
-	check(shield.hp==3 and shield.block_time>0 and shield.held.sprite.rotation<guard_rotation-.1 and shield.held.sprite.position.x<guard_x-4,"Shield block recoils without damaging Hoppy")
+	if Art.armed("firewall_shield")!=null:
+		shield.take_hit(shield.position-Vector2(30,0));shield.tick(.1)
+		check(shield.hp==3 and shield.block_time>0 and shield.body.animation=="hurt","Shield block plays hurt without damaging Hoppy")
+	else:
+		var guard_rotation: float=shield.held.sprite.rotation
+		var guard_x: float=shield.held.sprite.position.x
+		shield.take_hit(shield.position-Vector2(30,0));shield.tick(.1)
+		check(shield.hp==3 and shield.block_time>0 and shield.held.sprite.rotation<guard_rotation-.1 and shield.held.sprite.position.x<guard_x-4,"Shield block recoils without damaging Hoppy")
+	var whip=Art.armed("api_key_whip")
+	if whip!=null:
+		var contact_width:=opaque_width(whip,"step2",1)
+		var widest:=contact_width
+		for frame_index in whip.get_frame_count("step2"):
+			widest=maxf(widest,opaque_width(whip,"step2",frame_index))
+		check(whip.get_frame_count("step2")>1 and contact_width==widest,"Whip contact frame is the widest step2 frame")
+	# Shield swings clear attack_weapon, so a landed burst anchors on the enemy. Misses still leave the tip.
+	for weapon in Catalog.WEAPONS:
+		if Art.armed(weapon)==null: continue
+		p.held.show();p.equip(weapon);p.pickup_time=0;p.hp=3;p.position=Vector2(400,560)
+		for facing in [1.0,-1.0]:
+			swing_effect(p,facing,false)
+		if weapon=="firewall_shield": continue
+		p.equip(weapon);p.pickup_time=0
+		for facing in [1.0,-1.0]:
+			swing_effect(p,facing,true)
+	var sheet_weapon:=""
+	for weapon in Catalog.WEAPONS:
+		if Art.armed(weapon)!=null:
+			sheet_weapon=weapon
+			break
+	if sheet_weapon!="":
+		p.held.show();p.equip(sheet_weapon);p.pickup_time=0;p.swing_left=0;p.stagger=0;p.facing=1
+		p.show_pose("run",true)
+		check(p.body.sprite_frames==Art.armed(sheet_weapon) and p.body.animation=="run" and not p.held.sprite.visible and not p.held.carry.visible,"Stage run plays the armed clip without carry or legacy overlays")
+		p.held.hide();p.show_pose("run",true)
+		check(p.armed_sheet()==null and not p.armed and p.body.sprite_frames==PLATFORMER_FRAMES and p.body.animation=="run","Hiding the weapon returns the finisher to the unarmed platformer frames")
 	for actor in players:
 		if actor!=p: actor.queue_free()
 	game.start_stage(2)
