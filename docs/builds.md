@@ -21,6 +21,21 @@ Each platform is its own artifact: `hoppys-adventure-arcade-macos`, `-windows` a
 - **Windows** (x86_64): unzip and run `HoppysAdventureArcade.exe`. SmartScreen may ask you to confirm (**More info → Run anyway**), because the build isn't code-signed.
 - **Linux** (x86_64): unzip and run `./HoppysAdventureArcade.x86_64`.
 
+## Run it at a booth
+
+Launch with `--booth` to run an unattended kiosk. Arguments go after `--`; for a macOS app, use `open -a … --args …`.
+
+```sh
+./HoppysAdventureArcade.x86_64 -- --booth
+./HoppysAdventureArcade.x86_64 -- --booth --route=heroes_vs_villains
+open -a "Hoppy’s Adventure Arcade.app" --args -- --booth --route=heroes_vs_villains
+```
+
+- **Fullscreen.** The game starts fullscreen without changing the saved settings.
+- **Idle reset.** After 90 seconds with no keyboard, mouse, touch or controller input, any game returns to the hub, whose rotating previews act as the attract screen.
+- **No quitting from the menu.** The menu's **Quit Game** does nothing in booth mode; staff close the window (Cmd+Q, Alt+F4).
+- **Launch route.** `--route=<name>` opens a route at launch (`heroes_vs_villains`, `code_city_brawl`, `bay_area_blitz`, `orbital_ops`, `enchanted_repo`, `runner`, `platformer`, `beatem_up`, `hub`), with or without `--booth`. An unknown name logs an error and opens the hub.
+
 ## Build locally
 
 ```sh

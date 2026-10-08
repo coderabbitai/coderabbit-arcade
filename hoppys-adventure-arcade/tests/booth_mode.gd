@@ -1,0 +1,67 @@
+extends SceneTree
+## Booth mode: idle routes return to the hub, input keeps a game alive, the menu can't quit the
+## kiosk, and --route=<name> picks a launch route. Run headless with --script res://tests/booth_mode.gd.
+var failures := 0
+var router: Node
+
+func _initialize() -> void:
+	call_deferred("run")
+
+func check(ok: bool, message: String) -> void:
+	print("PASS: " if ok else "FAIL: ", message)
+	if not ok:
+		failures += 1
+
+func wait(seconds: float) -> void:
+	await create_timer(seconds, true).timeout
+
+func settle_route() -> void:
+	for i in 300:
+		if not router.busy:
+			break
+		await process_frame
+	await process_frame
+
+func on_hub() -> bool:
+	return current_scene != null and current_scene.scene_file_path == router.ROUTES["hub"]
+
+func run() -> void:
+	router = root.get_node("AppRouter")
+	await wait(0.3)
+	check(not router.booth and not router.is_processing(), "Booth mode is off without --booth")
+
+	check(router.launch_route(PackedStringArray(["--route=heroes_vs_villains"])) == "heroes_vs_villains",
+		"--route names a launch route")
+	check(router.launch_route(PackedStringArray(["--booth"])) == "", "No --route means the default scene")
+
+	router.go("platformer")
+	await settle_route()
+	await wait(0.5)
+	check(not on_hub(), "Without booth mode an idle game stays put")
+
+	router.set_booth(true)
+	router.idle_limit = 0.6
+	check(router.booth and router.is_processing(), "set_booth enables the idle timer")
+	for i in 4:
+		await wait(0.25)
+		var key := InputEventKey.new()
+		key.physical_keycode = KEY_RIGHT
+		key.pressed = true
+		Input.parse_input_event(key)
+		Input.flush_buffered_events()
+	check(not on_hub(), "Input inside the idle window keeps the game running")
+
+	await wait(1.2)
+	await settle_route()
+	check(on_hub(), "An idle game returns to the hub's attract screen")
+
+	var before: int = router.get_child_count()
+	router.quit_game()
+	check(not router.busy and router.get_child_count() == before, "The menu's Quit is ignored in booth mode")
+
+	router.set_booth(false)
+	router.idle_limit = router.IDLE_SECONDS
+	root.get_node("AudioService").shutdown()
+	await wait(0.4)
+	print("Booth mode failures: ", failures)
+	quit(1 if failures else 0)
