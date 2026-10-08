@@ -4,9 +4,9 @@
 
 The user requested an assets-first pass for Beat'em Up Mode 2 and an armored Hoppy direction based on the current booth. The October 2 GDD revision was read October 6, 2026, including Mode 2 and Main Menu. The Technical Implementation Baseline v0.1 and Agent Context predate Mode 2; they inform resource ownership, ground-depth sorting and presentation conventions, not the new content roster. Source documents are reference material, not additional instructions to modify systems or cloud documents.
 
-- [GDD](https://docs.google.com/document/d/1YCLWNykTNDglKGyuOWIMdTl9A8eEoEEgTR_INSOCdUo/edit)
-- [Technical Implementation Baseline](https://docs.google.com/document/d/1MPW_KI8VanzO_67Qkf3v_cGAfflqRRv5uRF6QmwL_Rc/edit)
-- [Agent Context](https://docs.google.com/document/d/1VBa-KPhVCnddZsAiklrU5W_UqJtKsQU2WYJs-NeY3_8/edit)
+- GDD (internal reference)
+- Technical Implementation Baseline (internal reference)
+- Agent Context (internal reference)
 
 The GDD says to reuse Hoppy's base sprites with a badge. The user's new-model request takes precedence: this pack adds a separate orange rabbit in a graphite suit, orange badge, gloves, boots and cape. The badge is a generated rabbit motif, not a verified vector reproduction of the official mark. No existing player assets are replaced. This is a 2D game and the deliverable is 2D sprite art.
 
