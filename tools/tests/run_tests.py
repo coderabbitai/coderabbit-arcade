@@ -114,10 +114,25 @@ def check_isolation(godot: str) -> str | None:
         shutil.rmtree(home, ignore_errors=True)
 
 
+LEAK = re.compile(r"leaked at exit|still in use at exit")
+LEAK_DETAIL = re.compile(r"^(?:Leaked instance|Resource still in use|Orphan StringName)", re.M)
+
+
 def run_suite(godot: str, name: str, expected: list[re.Pattern[str]]) -> Result:
+    result = run_once(godot, name, expected)
+    if result.exit_code is not None and any(LEAK.search(problem) for problem in result.problems):
+        # Name what leaked: rerun once with --verbose for diagnosis only. The suite still fails.
+        detail = run_once(godot, name, expected, verbose=True)
+        result.problems += [f"leak detail (verbose rerun): {line.strip()}"
+                            for line in detail.log.splitlines() if LEAK_DETAIL.search(line)][:20]
+    return result
+
+
+def run_once(godot: str, name: str, expected: list[re.Pattern[str]], verbose: bool = False) -> Result:
     home = tempfile.mkdtemp(prefix="arcade-test-home-")
     env = isolated_env(home)
-    command = [godot, "--headless", "--path", str(PROJECT), "--script", f"res://tests/{name}.gd"]
+    command = [godot, "--headless", *(["--verbose"] if verbose else []), "--path", str(PROJECT),
+               "--script", f"res://tests/{name}.gd"]
     started = time.monotonic()
     try:
         completed = subprocess.run(command, env=env, capture_output=True, text=True, timeout=TIMEOUT)
@@ -181,18 +196,22 @@ def main() -> int:
         print("No suites selected.", file=sys.stderr)
         return 2
 
-    if not args.no_import:
-        imported = subprocess.run([args.godot, "--headless", "--path", str(PROJECT), "--import"],
-                                  capture_output=True, text=True, timeout=TIMEOUT)
-        if imported.returncode != 0:
-            print(ANSI.sub("", imported.stdout + imported.stderr)[-4000:], file=sys.stderr)
-            print("Resource import failed.", file=sys.stderr)
-            return 1
-
     leak = check_isolation(args.godot)
     if leak:
         print(f"Refusing to run: {leak}. Suites would touch real settings and leaderboards.", file=sys.stderr)
         return 2
+
+    if not args.no_import:
+        home = tempfile.mkdtemp(prefix="arcade-test-import-")
+        try:
+            imported = subprocess.run([args.godot, "--headless", "--path", str(PROJECT), "--import"],
+                                      env=isolated_env(home), capture_output=True, text=True, timeout=TIMEOUT)
+        finally:
+            shutil.rmtree(home, ignore_errors=True)
+        if imported.returncode != 0:
+            print(ANSI.sub("", imported.stdout + imported.stderr)[-4000:], file=sys.stderr)
+            print("Resource import failed.", file=sys.stderr)
+            return 1
 
     parallel = [s for s in planned if s not in config.serial]
     serial = [s for s in planned if s in config.serial]
