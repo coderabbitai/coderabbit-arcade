@@ -21,9 +21,13 @@ func swing_effect(actor, facing: float, landed: bool) -> void:
 	actor.queued = false
 	actor.held.show()
 	var foe = null
+	var foe_hp := 0.0
+	# Durability drops only when resolve_swing actually lands. A miss spawns the same tip burst.
+	var uses: int = actor.durability
 	if landed:
 		foe = game.spawn_enemy("syntax_error_sprite", actor.position + Vector2(facing * 60, 0), false)
 		foe.set_physics_process(false)
+		foe_hp = foe.hp
 	actor.start_attack()
 	game.resolve_swing(actor)
 	var fx := game.actors.get_child(game.actors.get_child_count() - 1) as AnimatedSprite2D
@@ -31,6 +35,8 @@ func swing_effect(actor, facing: float, landed: bool) -> void:
 	var pose := "hammer_impact" if landed and actor.attack_weapon == "refactor_hammer" else "melee_sweep"
 	var kind := "hit" if landed else "miss"
 	check(fx != null and fx.animation == pose and fx.flip_h == (facing > 0) and fx.position.is_equal_approx(actor.tip_position()), actor.weapon + " " + kind + " " + pose + " anchors at the tip facing " + str(facing))
+	if landed:
+		check((actor.durability == uses - 1 or actor.weapon == "") and (foe.dead or foe.hp < foe_hp), actor.weapon + " hit spends a charge and damages the foe facing " + str(facing))
 	if foe != null:
 		game.enemies.erase(foe)
 		foe.position = Vector2(-10000, -10000)
