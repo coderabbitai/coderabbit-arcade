@@ -33,6 +33,27 @@ class FindProblems(unittest.TestCase):
         self.assertIn("timed out", run_tests.find_problems("", None, [])[0])
 
 
+class ClassifyLeaks(unittest.TestCase):
+    AUDIO = ("Leaked instance: AudioStreamPlaybackMP3:1 - Reference count: 1\n"
+             "Leaked instance: AudioStreamPlaybackPolyphonic:2 - Reference count: 1\n"
+             "Resource still in use: res://Assets/Audio/Main Menu/track.mp3 (AudioStreamMP3)\n")
+
+    def test_audio_teardown_race_is_recognized(self):
+        audio_only, details = run_tests.classify_leaks(self.AUDIO)
+        self.assertTrue(audio_only)
+        self.assertEqual(len(details), 3)
+
+    def test_any_other_leak_is_not_tolerated(self):
+        audio_only, details = run_tests.classify_leaks(self.AUDIO + "Leaked instance: Node3D:9 - Node path:\n")
+        self.assertFalse(audio_only)
+        self.assertIn("leaked: Node3D", details)
+        texture = "Resource still in use: res://a.png (CompressedTexture2D)\n"
+        self.assertFalse(run_tests.classify_leaks(self.AUDIO + texture)[0])
+
+    def test_a_leak_without_detail_is_not_tolerated(self):
+        self.assertEqual(run_tests.classify_leaks("WARNING: 3 ObjectDB instances were leaked at exit\n"), (False, []))
+
+
 class LoadConfig(unittest.TestCase):
     def test_unknown_suites_and_missing_reasons_are_errors(self):
         text = ('[skip]\nghost = "gone"\nreal = " "\n[serial]\nspecter = "timing"\nreal = ""\n'
