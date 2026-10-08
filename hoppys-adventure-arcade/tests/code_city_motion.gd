@@ -13,8 +13,8 @@ func phase_frame(phase: float) -> int:
 	return 0 if phase < .3 else 1 if phase < .64 else 2
 func opaque_width(frames: SpriteFrames, clip: String, index: int) -> float:
 	return frames.get_frame_texture(clip, index).get_image().get_used_rect().size.x
-## A swing that misses, or lands on one enemy placed inside reach. The burst is the last child of actors.
-func swing_effect(actor, facing: float, landed: bool) -> void:
+## A swing that misses, or lands on one enemy placed `distance` ahead. The burst is the last child of actors.
+func swing_effect(actor, facing: float, landed: bool, distance := 60.0) -> void:
 	actor.facing = facing
 	actor.swing_left = 0
 	actor.combo_window = 0
@@ -22,19 +22,20 @@ func swing_effect(actor, facing: float, landed: bool) -> void:
 	actor.held.show()
 	var foe = null
 	var foe_hp := 0.0
-	# Durability drops only when resolve_swing actually lands. A miss spawns the same tip burst.
+	# Durability drops only when resolve_swing actually lands, so a hit can't pass as a miss.
 	var uses: int = actor.durability
 	if landed:
-		foe = game.spawn_enemy("syntax_error_sprite", actor.position + Vector2(facing * 60, 0), false)
+		foe = game.spawn_enemy("syntax_error_sprite", actor.position + Vector2(facing * distance, 0), false)
 		foe.set_physics_process(false)
 		foe_hp = foe.hp
 	actor.start_attack()
 	game.resolve_swing(actor)
 	var fx := game.actors.get_child(game.actors.get_child_count() - 1) as AnimatedSprite2D
-	# Misses always use melee_sweep. A hammer hit uses hammer_impact. Both leave the tip.
+	# Misses always use melee_sweep at the weapon tip. Hits burst on the victim; a hammer hit uses hammer_impact.
 	var pose := "hammer_impact" if landed and actor.attack_weapon == "refactor_hammer" else "melee_sweep"
-	var kind := "hit" if landed else "miss"
-	check(fx != null and fx.animation == pose and fx.flip_h == (facing > 0) and fx.position.is_equal_approx(actor.tip_position()), actor.weapon + " " + kind + " " + pose + " anchors at the tip facing " + str(facing))
+	var at: Vector2 = foe.position - Vector2(0, 55) if landed else actor.tip_position()
+	var kind := "hit bursts on the enemy" if landed else "miss sweeps from the tip"
+	check(fx != null and fx.animation == pose and fx.flip_h == (facing > 0) and fx.position.is_equal_approx(at), actor.weapon + " " + kind + " (" + pose + ") facing " + str(facing))
 	if landed:
 		check((actor.durability == uses - 1 or actor.weapon == "") and (foe.dead or foe.hp < foe_hp), actor.weapon + " hit spends a charge and damages the foe facing " + str(facing))
 	if foe != null:
@@ -172,7 +173,7 @@ func run() -> void:
 		for frame_index in whip.get_frame_count("step2"):
 			widest=maxf(widest,opaque_width(whip,"step2",frame_index))
 		check(whip.get_frame_count("step2")>1 and contact_width==widest,"Whip contact frame is the widest step2 frame")
-	# Shield swings clear attack_weapon, so a landed burst anchors on the enemy. Misses still leave the tip.
+	# Shield swings clear attack_weapon (unarmed combo damage), so only its misses are checked here.
 	for weapon in Catalog.WEAPONS:
 		if Art.armed(weapon)==null: continue
 		p.held.show();p.equip(weapon);p.pickup_time=0;p.hp=3;p.position=Vector2(400,560)
@@ -182,6 +183,10 @@ func run() -> void:
 		p.equip(weapon);p.pickup_time=0
 		for facing in [1.0,-1.0]:
 			swing_effect(p,facing,true)
+	# The whip outreaches any tip: a hit 200 px out still bursts on the enemy (armed sheet or legacy rig).
+	p.held.show();p.equip("api_key_whip");p.pickup_time=0;p.hp=3;p.position=Vector2(400,560)
+	for facing in [1.0,-1.0]:
+		swing_effect(p,facing,true,200.0)
 	var sheet_weapon:=""
 	for weapon in Catalog.WEAPONS:
 		if Art.armed(weapon)!=null:

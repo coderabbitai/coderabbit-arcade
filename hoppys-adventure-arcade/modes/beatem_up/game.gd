@@ -232,8 +232,8 @@ func resolve_swing(source: Node2D) -> void:
 		if in_reach:
 			if enemy.take_hit(damage,def.knock,source.position,source.combo==3 or weapon!=""):
 				hit = true
-				# Weapon effects burst from the weapon tip; the sweep cel is drawn travelling left.
-				fx("weapons","hammer_impact" if weapon=="refactor_hammer" else "melee_sweep",source.tip_position() if weapon!="" else enemy.position-Vector2(0,55),.6,.16,source.facing>0)
+				# Hits burst on the victim (reach outruns the tip); the sweep cel is drawn travelling left.
+				fx("weapons","hammer_impact" if weapon=="refactor_hammer" else "melee_sweep",enemy.position-Vector2(0,55),.6,.16,source.facing>0)
 				if weapon=="refactor_hammer": break
 	for prop in props:
 		if weapon=="refactor_hammer" and hit: break
