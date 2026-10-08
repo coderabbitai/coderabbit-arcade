@@ -22,6 +22,9 @@ var phase := ""                  # "", "exit_run", "fade_out", "fade_in", "enter
 var clock := 0.0                 # seconds into the current phase
 var tuning: Dictionary = DEFAULTS.duplicate()
 var music: AudioStreamPlayer
+## The shared track now audible. The player holds a mode-made looping copy of it, which has
+## no resource_path, so identity lives here.
+var music_track: AudioStream
 var base_db := 0.0
 var music_db := 0.0              # envelope applied on top of base_db
 var exit_x := INF                # world x Hoppy must pass before the fade (just off-screen right)
@@ -42,6 +45,7 @@ var _enter_runner := 0
 var _fade_db := 0.0
 var _swap_db := 0.0
 var _swap_stream: AudioStream
+var _swap_track: AudioStream
 var _swap_clock := 0.0
 var _swap_length := 0.0
 var _swapped := false
@@ -138,10 +142,22 @@ func banner(title: String, subtitle: String, seconds: float) -> void:
 	banner_panel.visible = banner_length > 0
 	_tick_banner(0)
 
-## Dips the music to its floor, swaps in `stream` at the bottom and brings it back up over
-## `seconds` in total. A stage change (play_exit / play_enter) drops a swap still in progress.
-func swap_music(stream: AudioStream, seconds: float) -> void:
+## Starts `stream` now, at the current envelope, dropping any swap in progress. `source` is the
+## shared track `stream` was copied from (music_track); omit it when `stream` is the track.
+func play_music(stream: AudioStream, source: AudioStream = null) -> void:
+	_stop_swap()
+	music_track = source if source else stream
+	if is_instance_valid(music):
+		music.stream = stream
+		music.play()
+	_apply_music()
+
+## Dips the music to its floor, swaps in `stream` (copied from `source`, as for play_music) at
+## the bottom and brings it back up over `seconds` in total. A stage change (play_exit /
+## play_enter) drops a swap still in progress.
+func swap_music(stream: AudioStream, seconds: float, source: AudioStream = null) -> void:
 	_swap_stream = stream
+	_swap_track = source if source else stream
 	_swap_length = maxf(seconds,0)
 	_swap_clock = 0
 	_swapped = false
@@ -165,6 +181,7 @@ func active() -> bool:
 
 ## Moves the scripted player during *_run phases; `player` is the owner's current one.
 func tick(dt: float, player: Node2D) -> void:
+	if is_inside_tree() and get_tree().paused: return
 	_tick_banner(dt)
 	_tick_swap(dt)
 	if phase != "":
@@ -304,6 +321,7 @@ func _tick_swap(dt: float) -> void:
 		_swap_db = lerpf(0,floor_db,clampf(_swap_clock/half,0,1)) if half > 0 else floor_db
 		if _swap_clock >= half:
 			_swapped = true
+			music_track = _swap_track
 			if is_instance_valid(music):
 				music.stream = _swap_stream
 				music.play()
@@ -313,6 +331,7 @@ func _tick_swap(dt: float) -> void:
 
 func _stop_swap() -> void:
 	_swap_stream = null
+	_swap_track = null
 	_swap_db = 0
 	_swapped = false
 

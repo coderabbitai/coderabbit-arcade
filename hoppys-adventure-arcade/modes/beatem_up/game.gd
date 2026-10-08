@@ -133,8 +133,7 @@ func start_stage(index: int, cinematic := false) -> void:
 	camera.position = Vector2(640,360)
 	camera.reset_physics_interpolation()
 	prompt.text = ""
-	music.stream = Catalog.looped(Catalog.MUSIC[index])
-	music.play()
+	flow.play_music(Catalog.looped(Catalog.MUSIC[index]),Catalog.MUSIC[index])
 	enter_room(0)
 	if cinematic:
 		state = "intro"
@@ -149,8 +148,7 @@ func enter_stage() -> void:
 	overlay.hide()
 	playing = false
 	state = "stage_enter"
-	toast_left = 0 # The banner owns the screen; begin_play() re-announces the encounter.
-	toast_label.hide()
+	hide_toast() # The banner owns the screen; begin_play() re-announces the encounter.
 	flow.play_enter("%02d / %s" % [stage_index+1,Catalog.TITLES[stage_index]],Catalog.STORIES[stage_index])
 
 ## stage_exit: Hoppy runs out, the screen dips to black and the next district is built under it.
@@ -158,6 +156,7 @@ func exit_stage() -> void:
 	playing = false
 	state = "stage_exit"
 	prompt.text = ""
+	hide_toast()
 	flow.banner("DISTRICT SECURED","Stage score saved · Next: "+Catalog.TITLES[stage_index+1],Catalog.FLOW.exit_banner)
 	flow.play_exit(advance_stage)
 
@@ -185,7 +184,7 @@ func enter_room(index: int) -> void:
 		boss.arena = self
 		boss.position = Vector2(room_start()+965,565)
 		actors.add_child(boss)
-		flow.swap_music(Catalog.looped(Catalog.BOSS_MUSIC),Catalog.FLOW.boss_dip)
+		flow.swap_music(Catalog.looped(Catalog.BOSS_MUSIC),Catalog.FLOW.boss_dip,Catalog.BOSS_MUSIC)
 		toast("THE GRAND MERGE CONFLICT",3)
 	else: toast("ENCOUNTER %d / 3 — clear the blockers" % (room+1),2)
 
@@ -544,6 +543,10 @@ func toast(message: String, seconds := 2.0) -> void:
 	toast_label.text = message
 	toast_label.show()
 	toast_left = seconds
+
+func hide_toast() -> void:
+	toast_left = 0
+	toast_label.hide()
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()

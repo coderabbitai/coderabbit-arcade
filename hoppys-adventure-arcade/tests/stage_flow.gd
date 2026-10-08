@@ -1,0 +1,275 @@
+extends SceneTree
+const Catalog = preload("res://modes/beatem_up/catalog.gd")
+const DT := 1.0/60.0
+var failures := 0
+var game
+func _initialize() -> void: call_deferred("run")
+func check(ok: bool, message: String) -> void:
+	print("PASS: " if ok else "FAIL: ", message)
+	if not ok: failures += 1
+func tick(n: int) -> void:
+	for i in n: game._physics_process(DT)
+func near(got: float, want: float) -> bool:
+	return absf(got-want) <= DT+1e-4
+func freeze() -> void:
+	game.set_physics_process(false)
+	if is_instance_valid(game.player):
+		game.player.set_physics_process(false)
+		game.player.controlled = false
+	for e in game.enemies:
+		if is_instance_valid(e): e.set_physics_process(false)
+	if is_instance_valid(game.boss): game.boss.set_physics_process(false)
+func clear_enemies() -> void:
+	for e in game.enemies:
+		if is_instance_valid(e):
+			e.set_physics_process(false)
+			e.queue_free()
+	game.enemies.clear()
+## Right edge sits at room_start()+1280, so exit_x is room_start()+1340 on any viewport.
+func frame_room() -> void:
+	var width: float = game.get_viewport().get_visible_rect().size.x
+	game.camera.zoom = Vector2.ONE
+	game.camera.position = Vector2(game.room_start()+1280.0-width*0.5, 360)
+	game.camera.reset_physics_interpolation()
+func pause_frozen(detail: String, return_state: String, via_event: bool) -> void:
+	var clock: float = game.flow.clock
+	var alpha: float = game.flow.veil.color.a
+	var volume: float = game.music.volume_db
+	if via_event:
+		var event := InputEventAction.new()
+		event.action = "pause"
+		event.pressed = true
+		game._unhandled_input(event)
+	else: game.pause(detail)
+	check(game.state=="paused" and game.pause_return_state==return_state, "Pause from %s" % return_state)
+	game._physics_process(DT)
+	game.flow.tick(0.5, game.player)
+	check(is_equal_approx(game.flow.clock, clock) and is_equal_approx(game.flow.veil.color.a, alpha) and is_equal_approx(game.music.volume_db, volume), "Pause freezes the %s fade" % return_state)
+	game.resume()
+	check(game.state==return_state, "Resume restores %s" % return_state)
+func run() -> void:
+	change_scene_to_file("res://scenes/beatem_up/code_city_brawl.tscn")
+	await process_frame
+	await process_frame
+	game = current_scene
+	game.test_mode = true
+	freeze()
+	check(is_equal_approx(game.flow.base_db, -13.0), "Music envelope is relative to the -13 dB base")
+	check_intro()
+	check_retry()
+	check_exit()
+	check_boss_dip()
+	check_cancel()
+	check(game.completion_count==0, "Transitions do not count as a completion")
+	print("Stage flow failures: ", failures)
+	game.queue_free()
+	root.get_node("AudioService").shutdown()
+	await create_timer(.4).timeout
+	quit(1 if failures else 0)
+## Accumulated 1/60 steps land one ulp under 4.5, so the page turns on the next tick.
+func cross_intro(page: int) -> void:
+	var hold: float = Catalog.FLOW.intro_hold
+	var guard := 0
+	while game.intro_clock+DT<hold and game.state=="intro" and game.intro_page==page and guard<400:
+		game._physics_process(DT)
+		guard += 1
+	check(game.state=="intro" and game.intro_page==page and game.intro_clock<hold, "Intro page %d holds at 4.5s - ε" % [page+1])
+	var extra := 0
+	while game.state=="intro" and game.intro_page==page and extra<3:
+		game._physics_process(DT)
+		extra += 1
+	if page<2: check(extra<=2 and game.state=="intro" and game.intro_page==page+1, "Intro page %d advances by 4.5s + ε" % [page+1])
+	else: check(extra<=2 and game.state=="stage_enter" and game.stage_index==0 and not game.playing, "Third page leads into the stage entrance by 4.5s + ε")
+func check_intro() -> void:
+	check(game.state=="intro" and game.intro_page==0 and not game.playing, "Opening sequence precedes combat")
+	cross_intro(0)
+	tick(30)
+	var page: int = game.intro_page
+	var clock: float = game.intro_clock
+	game.pause("x")
+	game._physics_process(1.0)
+	check(game.state=="paused" and game.pause_return_state=="intro" and game.intro_page==page and is_equal_approx(game.intro_clock, clock), "Pause freezes the intro page and its clock")
+	game.resume()
+	check(game.state=="intro" and game.intro_page==page and is_equal_approx(game.intro_clock, clock), "Resume keeps the intro page and its clock")
+	cross_intro(1)
+	cross_intro(2)
+	var guard := 0
+	while game.state=="stage_enter" and guard<120:
+		game._physics_process(DT)
+		guard += 1
+	check(game.state=="combat" and game.playing and game.stage_index==0, "Entrance reaches combat with no input")
+	check(is_equal_approx(game.player.position.x, Catalog.FLOW.enter_to_x), "Intro entrance stops Hoppy at x=180")
+func check_retry() -> void:
+	var p = game.player
+	p.hp = 1
+	p.invulnerable = 0
+	p.shield = false
+	p.weapon = ""
+	p.height = 0
+	p.take_hit(p.position+Vector2(-40, 0))
+	check(game.state=="game_over", "A last hit opens the retry overlay")
+	game.retry_stage()
+	freeze()
+	check(game.state=="stage_enter" and not game.overlay.visible, "Retry plays the stage entrance with the overlay hidden")
+	check(is_equal_approx(game.player.position.x, Catalog.FLOW.enter_from_x), "Retry spawns Hoppy at x=-60")
+	var guard := 0
+	while game.state=="stage_enter" and guard<120:
+		game._physics_process(DT)
+		guard += 1
+	check(game.state=="combat" and game.playing and not game.flow.active(), "Retry entrance reaches combat with no input")
+	check(is_equal_approx(game.player.position.x, Catalog.FLOW.enter_to_x), "Retry entrance stops Hoppy at x=180")
+	var armed := 0
+	var grace := true
+	for e in game.enemies:
+		if not is_instance_valid(e) or e.dead: continue
+		armed += 1
+		if e.cooldown < Catalog.FLOW.enemy_grace: grace = false
+	check(game.room==0 and armed>0 and grace, "Every room-0 enemy has telegraph grace at begin_play")
+func check_exit() -> void:
+	game.enter_room(2)
+	freeze()
+	clear_enemies()
+	game._physics_process(DT)
+	check(game.room==2 and game.gate_open and game.state=="combat", "Clearing room 3 opens the gate")
+	frame_room()
+	game.player.position = Vector2(game.room_start()+1210, 580)
+	game.score = 480
+	var volume_ok := true
+	var spent := {}
+	var order: Array[String] = []
+	var stage_changes := 0
+	var black_veil := -1.0
+	var black_db := 0.0
+	var exit_banner := false
+	var exit_cleared := false
+	var enter_banner := false
+	var banner_at_combat := false
+	var fade_out_prev := 0.0
+	var fade_out_rose := false
+	var fade_out_seen := false
+	var fade_in_prev := float(Catalog.FLOW.music_floor_db)
+	var fade_in_rose := false
+	var fade_in_fell := false
+	var fade_in_end := 99.0
+	var exit_paused := false
+	var enter_paused := false
+	var enter_tick := -1
+	var toast_ticks := 0
+	var toast_mid := false
+	var toast_hidden := false
+	var driven := 0
+	game._physics_process(DT)
+	check(game.state=="stage_exit" and game.flow.phase=="exit_run", "Crossing the gate starts the exit run")
+	if order.is_empty() or order.back()!=game.flow.phase: order.append(game.flow.phase)
+	game.toast("x", 1.0)
+	var guard := 0
+	while guard<600:
+		guard += 1
+		var phase_before: String = game.flow.phase
+		var stage_before: int = game.stage_index
+		if not exit_paused and phase_before=="fade_out" and game.flow.clock>0.12 and game.flow.clock<0.22:
+			pause_frozen("x", "stage_exit", false)
+			exit_paused = true
+			continue
+		if not enter_paused and game.state=="stage_enter" and phase_before=="fade_in" and game.flow.clock>0.12 and game.flow.clock<0.22:
+			pause_frozen("x", "stage_enter", true)
+			enter_paused = true
+			continue
+		game._physics_process(DT)
+		driven += 1
+		toast_ticks += 1
+		if not is_equal_approx(game.music.volume_db, game.flow.base_db+game.flow.music_db): volume_ok = false
+		spent[phase_before] = float(spent.get(phase_before, 0.0))+DT
+		if order.is_empty() or order.back()!=game.flow.phase: order.append(game.flow.phase)
+		if phase_before=="exit_run" and game.flow.banner_panel.visible and game.flow.banner_title.text=="DISTRICT SECURED" and game.flow.banner_panel.modulate.a>0.0:
+			exit_banner = true
+		if phase_before=="fade_out":
+			fade_out_seen = true
+			if game.flow.music_db > fade_out_prev+0.05: fade_out_rose = true
+			fade_out_prev = game.flow.music_db
+		if phase_before=="fade_in":
+			if game.flow.music_db > fade_in_prev+0.05: fade_in_rose = true
+			if game.flow.music_db < fade_in_prev-0.05: fade_in_fell = true
+			fade_in_prev = game.flow.music_db
+			fade_in_end = game.flow.music_db
+		if game.stage_index!=stage_before:
+			stage_changes += 1
+			black_veil = game.flow.veil.color.a
+			black_db = game.flow.music_db
+			exit_cleared = not game.flow.banner_panel.visible
+			freeze()
+		if game.flow.phase=="enter_run" and enter_tick<0: enter_tick = driven
+		if phase_before=="enter_run" and game.flow.banner_panel.visible and game.flow.banner_title.text=="02 / SECURITY SECTOR" and game.flow.banner_subtitle.text==Catalog.STORIES[1]:
+			enter_banner = true
+		if phase_before=="enter_run" and game.flow.phase=="":
+			banner_at_combat = game.state=="combat" and game.flow.banner_panel.visible and game.flow.banner_panel.modulate.a>0.9
+		if toast_ticks==30: toast_mid = game.state=="stage_exit" and game.toast_label.visible and near(game.toast_left, 0.5)
+		if toast_ticks>=60 and not game.toast_label.visible: toast_hidden = true
+		if game.state=="combat" and game.stage_index==1 and game.flow.phase=="": break
+	var banner_hide := -1
+	var after := 0
+	while game.flow.banner_panel.visible and after<180:
+		game._physics_process(DT)
+		driven += 1
+		after += 1
+		if not is_equal_approx(game.music.volume_db, game.flow.base_db+game.flow.music_db): volume_ok = false
+		if not game.flow.banner_panel.visible: banner_hide = driven
+	var sequence := ""
+	for phase in order: sequence += "/" + phase
+	check(sequence=="/exit_run/fade_out/fade_in/enter_run/", "Phase order is exit_run → fade_out → fade_in → enter_run → done (got %s)" % sequence)
+	check(near(float(spent.get("exit_run", -1)), 0.6), "exit_run lasts 0.6s (got %s)" % spent.get("exit_run"))
+	check(near(float(spent.get("fade_out", -1)), 0.35), "fade_out lasts 0.35s (got %s)" % spent.get("fade_out"))
+	check(near(float(spent.get("fade_in", -1)), 0.35), "fade_in lasts 0.35s (got %s)" % spent.get("fade_in"))
+	check(near(float(spent.get("enter_run", -1)), 0.8), "enter_run lasts 0.8s (got %s)" % spent.get("enter_run"))
+	check(game.state=="combat" and game.stage_index==1 and game.playing, "Exit returns through stage_enter into the next stage's combat")
+	check(is_equal_approx(game.player.position.x, Catalog.FLOW.enter_to_x), "The new stage's Hoppy ends at x=180")
+	check(game.checkpoint_score==480, "The exit saves the checkpoint score")
+	check(stage_changes==1 and is_equal_approx(black_veil, 1.0) and is_equal_approx(black_db, float(Catalog.FLOW.music_floor_db)), "on_black runs once, on a black veil, with music at the floor")
+	check(volume_ok, "music.volume_db == base_db + music_db throughout")
+	check(fade_out_seen and not fade_out_rose and is_equal_approx(black_db, -40.0), "Music never rises during fade_out and reaches -40 at black")
+	check(fade_in_rose and not fade_in_fell and is_equal_approx(fade_in_end, 0.0), "Music rises during fade_in and ends at 0")
+	check(exit_paused and enter_paused, "Pause was exercised during the exit fade and the next entrance")
+	check(exit_banner and exit_cleared, "DISTRICT SECURED shows during the exit run and clears at black")
+	check(enter_banner, "The entrance banner names 02 / SECURITY SECTOR and its story")
+	check(banner_at_combat, "The entrance banner is still up when combat starts")
+	check(game.state=="combat" and banner_hide>enter_tick and near(float(banner_hide-enter_tick)*DT, Catalog.FLOW.stage_banner), "The entrance banner hides 2.8s after enter_run began")
+	check(toast_mid and toast_hidden, "A 1s toast shown during the exit counts down while play is stopped")
+func check_boss_dip() -> void:
+	game.start_stage(2)
+	freeze()
+	var guard := 0
+	while game.state!="combat" and guard<120:
+		game._physics_process(DT)
+		guard += 1
+	check(game.state=="combat" and game.stage_index==2, "Stage 3 entrance reaches combat")
+	var before = game.music.stream
+	game.enter_room(2)
+	freeze()
+	var unchanged := true
+	var mid_db := 99.0
+	var swapped := false
+	var back := 99.0
+	for i in 40:
+		var elapsed := float(i+1)*DT
+		game._physics_process(DT)
+		if not is_equal_approx(game.music.volume_db, game.flow.base_db+game.flow.music_db): unchanged = false
+		if elapsed < 0.3-DT*0.5 and game.music.stream!=before: unchanged = false
+		if not swapped and game.music.stream!=before:
+			swapped = true
+			mid_db = game.flow.music_db
+			check(near(elapsed, 0.3), "Boss stream swaps at the midpoint (at %s s)" % snappedf(elapsed, 0.001))
+		if elapsed>=0.6-1e-4 and back>90.0: back = game.flow.music_db
+	check(unchanged, "Boss stream is unchanged before 0.3s and the envelope tracks volume_db")
+	check(swapped and is_equal_approx(mid_db, float(Catalog.FLOW.music_floor_db)), "Boss dip reaches about -40 dB as the stream swaps")
+	# The player holds a looping copy (no resource_path); the director names its source track.
+	check(game.flow.music_track==Catalog.BOSS_MUSIC and game.music.stream!=Catalog.BOSS_MUSIC and game.music.stream.loop and not Catalog.BOSS_MUSIC.loop, "Swapped stream is a looping copy of Catalog.BOSS_MUSIC (got '%s')" % (game.flow.music_track.resource_path if game.flow.music_track else ""))
+	check(is_equal_approx(back, 0.0) and is_equal_approx(game.flow.music_db, 0.0), "Boss dip is back to 0 dB by 0.6s")
+func check_cancel() -> void:
+	game.start_stage(1)
+	freeze()
+	check(game.state=="stage_enter" and game.flow.active(), "A direct stage start waits on the entrance")
+	var index: int = game.stage_index
+	game._physics_process(DT)
+	game.begin_play()
+	check(not game.flow.active() and is_equal_approx(game.flow.veil.color.a, 0.0), "begin_play cancels the flow and clears the veil")
+	check(game.state=="combat" and game.stage_index==index, "Cancel does not run on_black")
