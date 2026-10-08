@@ -95,6 +95,5 @@ func run() -> void:
 	else:
 		printerr(failures, " asset checks failed")
 	resources.clear()
-	root.get_node("AudioService").shutdown()
-	await create_timer(0.3).timeout
+	await root.get_node("AudioService").settle()
 	quit(0 if failures == 0 else 1)

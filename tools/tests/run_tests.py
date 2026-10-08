@@ -1,0 +1,182 @@
+"""Run every Godot test suite headless and fail on anything the engine reports.
+
+Usage:
+    python3 tools/tests/run_tests.py                     # all suites, in parallel
+    python3 tools/tests/run_tests.py -k runner -j 2      # suites whose name contains "runner"
+    python3 tools/tests/run_tests.py --list              # what would run, and what is skipped
+
+Every .gd file under hoppys-adventure-arcade/tests/ (except tests/lib/) is a suite and runs
+by default; new tests need no registration. tools/tests/suites.toml is the only way to keep a
+suite out, and each skip carries a reason. A suite fails if it exits nonzero, times out, or
+prints an engine/script error or an exit-time leak. Errors a suite provokes on purpose are
+allowed only through its expected_errors patterns, and every listed pattern must still match.
+
+Each suite gets its own HOME, so user:// writes (settings, leaderboards) never touch the
+developer's real files or another suite running in parallel. Standard library only.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import tomllib
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+PROJECT = ROOT / "hoppys-adventure-arcade"
+TESTS = PROJECT / "tests"
+CONFIG = Path(__file__).with_name("suites.toml")
+TIMEOUT = 600
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+# Lines that mean something went wrong even when a suite's own checks all passed.
+PROBLEM = re.compile(
+    r"^(?:ERROR:|SCRIPT ERROR|USER ERROR|Parse Error)"
+    r"|Failed to load script|leaked at exit|still in use at exit"
+)
+
+
+@dataclass
+class Result:
+    name: str
+    seconds: float
+    exit_code: int | None
+    problems: list[str] = field(default_factory=list)
+    log: str = ""
+
+    @property
+    def passed(self) -> bool:
+        return self.exit_code == 0 and not self.problems
+
+
+def discover() -> list[str]:
+    """Suite names are paths under tests/ without .gd, e.g. "runner_logic" or "assets/a1_check"."""
+    return sorted(
+        path.relative_to(TESTS).with_suffix("").as_posix()
+        for path in TESTS.rglob("*.gd")
+        if "lib" not in path.relative_to(TESTS).parts[:-1]
+    )
+
+
+def load_config(suites: list[str], text: str | None = None
+                ) -> tuple[dict[str, str], dict[str, list[re.Pattern[str]]], list[str]]:
+    config = tomllib.loads(CONFIG.read_text(encoding="utf-8") if text is None else text)
+    skips: dict[str, str] = config.get("skip", {})
+    expected = {name: [re.compile(p) for p in patterns] for name, patterns in config.get("expected_errors", {}).items()}
+    errors = [f"{CONFIG.name}: [{section}] names {name!r}, which is not a suite"
+              for section, names in (("skip", skips), ("expected_errors", expected))
+              for name in names if name not in suites]
+    errors += [f"{CONFIG.name}: skip for {name!r} needs a reason"
+               for name, reason in skips.items() if not reason.strip()]
+    return skips, expected, errors
+
+
+def run_suite(godot: str, name: str, expected: list[re.Pattern[str]]) -> Result:
+    home = tempfile.mkdtemp(prefix="arcade-test-home-")
+    env = {**os.environ, "HOME": home, "XDG_DATA_HOME": f"{home}/.local/share",
+           "XDG_CONFIG_HOME": f"{home}/.config", "XDG_CACHE_HOME": f"{home}/.cache"}
+    command = [godot, "--headless", "--path", str(PROJECT), "--script", f"res://tests/{name}.gd"]
+    started = time.monotonic()
+    try:
+        completed = subprocess.run(command, env=env, capture_output=True, text=True, timeout=TIMEOUT)
+        exit_code, log = completed.returncode, ANSI.sub("", completed.stdout + completed.stderr)
+    except subprocess.TimeoutExpired as timeout:
+        output = timeout.stdout or b""
+        exit_code, log = None, ANSI.sub("", output.decode() if isinstance(output, bytes) else output)
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+    return Result(name, time.monotonic() - started, exit_code, find_problems(log, exit_code, expected), log)
+
+
+def find_problems(log: str, exit_code: int | None, expected: list[re.Pattern[str]]) -> list[str]:
+    """Everything that fails a suite besides its exit code: engine errors, leaks, stale expectations."""
+    problems = [] if exit_code is not None else [f"timed out after {TIMEOUT}s"]
+    lines = log.splitlines()
+    problems += [line.strip() for line in lines
+                 if PROBLEM.search(line) and not any(pattern.search(line) for pattern in expected)]
+    problems += [f"expected error no longer occurs; remove it from {CONFIG.name}: {pattern.pattern}"
+                 for pattern in expected if not any(pattern.search(line) for line in lines)]
+    return problems
+
+
+def annotate(result: Result) -> None:
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    detail = "%0A".join(dict.fromkeys(result.problems))[:4000] or f"exit {result.exit_code}"
+    print(f"::error title=tests/{result.name}.gd::{detail}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--godot", default=os.environ.get("GODOT", "godot"),
+                        help="Godot 4.7.1 binary (default: $GODOT or godot)")
+    parser.add_argument("-k", dest="match", action="append", default=[],
+                        help="run suites whose name contains this text")
+    parser.add_argument("-j", "--jobs", type=int, default=min(4, os.cpu_count() or 1), help="suites to run at once")
+    parser.add_argument("--no-import", action="store_true", help="skip the resource import step")
+    parser.add_argument("--list", action="store_true", help="print the plan and exit")
+    parser.add_argument("--results", type=Path, default=ROOT / "build/test-results/summary.json")
+    args = parser.parse_args()
+
+    suites = discover()
+    skips, expected, config_errors = load_config(suites)
+    if config_errors:
+        print("\n".join(config_errors), file=sys.stderr)
+        return 2
+    selected = [s for s in suites if not args.match or any(m in s for m in args.match)]
+    planned = [s for s in selected if s not in skips]
+    if args.list:
+        for suite in selected:
+            print(f"skip  {suite}: {skips[suite]}" if suite in skips else f"run   {suite}")
+        return 0
+    if not planned:
+        print("No suites selected.", file=sys.stderr)
+        return 2
+
+    if not args.no_import:
+        imported = subprocess.run([args.godot, "--headless", "--path", str(PROJECT), "--import"],
+                                  capture_output=True, text=True, timeout=TIMEOUT)
+        if imported.returncode != 0:
+            print(ANSI.sub("", imported.stdout + imported.stderr)[-4000:], file=sys.stderr)
+            print("Resource import failed.", file=sys.stderr)
+            return 1
+
+    print(f"Running {len(planned)} suites ({len(selected) - len(planned)} skipped), {args.jobs} at a time.")
+    started = time.monotonic()
+    results: list[Result] = []
+    with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
+        futures = {pool.submit(run_suite, args.godot, s, expected.get(s, [])): s for s in planned}
+        for future in as_completed(futures):
+            result = future.result()
+            results.append(result)
+            print(f"{'PASS' if result.passed else 'FAIL'}  {result.name}  ({result.seconds:.0f}s)", flush=True)
+
+    failed = sorted((r for r in results if not r.passed), key=lambda r: r.name)
+    for result in failed:
+        print(f"\n--- {result.name}: exit {result.exit_code}")
+        for problem in dict.fromkeys(result.problems):
+            print(f"    {problem}")
+        print("    last output:\n" + "\n".join(f"      {line}" for line in result.log.splitlines()[-25:]))
+        annotate(result)
+
+    args.results.parent.mkdir(parents=True, exist_ok=True)
+    args.results.write_text(json.dumps({
+        "seconds": round(time.monotonic() - started, 1),
+        "skipped": {name: skips[name] for name in selected if name in skips},
+        "suites": [{"name": r.name, "passed": r.passed, "exit_code": r.exit_code, "seconds": round(r.seconds, 1),
+                    "problems": list(dict.fromkeys(r.problems))} for r in sorted(results, key=lambda r: r.name)],
+    }, indent=2) + "\n", encoding="utf-8")
+    print(f"\n{len(results) - len(failed)} passed, {len(failed)} failed, "
+          f"{len(selected) - len(planned)} skipped in {time.monotonic() - started:.0f}s")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

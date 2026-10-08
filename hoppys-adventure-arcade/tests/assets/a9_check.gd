@@ -199,8 +199,7 @@ func run() -> void:
 	check(not fixture.post.settings.pursuit and value(fixture.post, "grain") > 0.0, "preview restores safe integrated defaults")
 	fixture.free()
 	if root.has_node("AudioService"):
-		root.get_node("AudioService").shutdown()
-	await create_timer(0.3).timeout
+		await root.get_node("AudioService").settle()
 	print("ASSET A9: %s (%d checks)" % ["PASS" if failures == 0 else "FAIL", checks])
 	quit(0 if failures == 0 else 1)
 

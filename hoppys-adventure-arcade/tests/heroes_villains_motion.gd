@@ -117,7 +117,7 @@ func run() -> void:
 		root.get_texture().get_image().save_png("res://../docs/previews/heroes-villains/movement_cycles.png")
 		layer.queue_free()
 	print("Heroes vs. Villains motion failures: ",failures)
-	root.get_node("AudioService").shutdown()
 	game.queue_free()
 	await process_frame;await process_frame
+	await root.get_node("AudioService").settle()
 	quit(1 if failures else 0)

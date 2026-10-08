@@ -93,5 +93,18 @@ func shutdown() -> void:
 	music.stream = null
 	sfx.stream = null
 
+## Stops all audio, then waits until the audio thread has let go of every playback, so the
+## caller can quit without "leaked at exit" reports. A fixed delay races the mixer under load.
+func settle(max_seconds := 2.0) -> void:
+	var held: Array[AudioStreamPlayback] = []
+	for player: AudioStreamPlayer in [music, sfx]:
+		if player.has_stream_playback():
+			held.append(player.get_stream_playback())
+	shutdown()
+	var deadline := Time.get_ticks_msec() + int(max_seconds * 1000.0)
+	while held.any(func(playback: AudioStreamPlayback) -> bool: return playback.get_reference_count() > 1) \
+			and Time.get_ticks_msec() < deadline:
+		await get_tree().create_timer(0.02, true, false, true).timeout
+
 func _exit_tree() -> void:
 	shutdown()

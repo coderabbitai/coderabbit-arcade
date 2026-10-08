@@ -92,6 +92,5 @@ func run() -> void:
 	router.go("hub")
 	await worst(60)
 	report("swap_to_hub")
-	root.get_node("AudioService").shutdown()
-	await create_timer(0.2).timeout
+	await root.get_node("AudioService").settle()
 	quit(0)

@@ -75,7 +75,6 @@ func run() -> void:
 	print("A6 HUNTER CENSUS: %d draws, %d triangles, no textures" % [draws,triangles])
 	print("A6 HUNTER ENVELOPE: ",envelope)
 	visual.free()
-	root.get_node("AudioService").shutdown()
-	await create_timer(0.3).timeout
+	await root.get_node("AudioService").settle()
 	print("ASSET A6: %s (%d checks)" % ["PASS" if failures == 0 else "FAIL",checks])
 	quit(0 if failures == 0 else 1)

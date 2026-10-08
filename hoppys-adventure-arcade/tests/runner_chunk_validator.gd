@@ -1132,4 +1132,8 @@ func _report() -> void:
 	junk.clear()
 	wall_scene = null
 	print("RUNNER CHUNKS: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures / ", checks, " checks)")
-	quit(failures)
+	_quit_quietly(failures)
+
+func _quit_quietly(code: int) -> void:
+	await root.get_node("AudioService").settle()
+	quit(code)

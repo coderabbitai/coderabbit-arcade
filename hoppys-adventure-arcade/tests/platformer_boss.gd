@@ -135,6 +135,5 @@ func run() -> void:
 	print("BOSS TEST: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
 	change_scene_to_file("res://scenes/platformer/platformer_menu.tscn")
 	await frames(2)
-	root.get_node("AudioService").shutdown()
-	await create_timer(0.4).timeout
+	await root.get_node("AudioService").settle()
 	quit(failures)

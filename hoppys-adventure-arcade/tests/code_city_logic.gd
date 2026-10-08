@@ -195,6 +195,5 @@ func run() -> void:
 	check(Catalog.MUSIC[0].resource_path.ends_with("Zodik - Future Travel.ogg") and Catalog.MUSIC[1].resource_path.ends_with("helldrake(extended).ogg") and Catalog.MUSIC[2].resource_path.ends_with("kim_lightyear_-_angel_eyes_vision_ii.mp3") and Catalog.BOSS_MUSIC.resource_path.ends_with("Kim Lightyear - The Final.mp3"),"All four user music mappings match")
 	print("Code City logic failures: ",failures)
 	game.queue_free()
-	root.get_node("AudioService").shutdown()
-	await create_timer(.4).timeout
+	await root.get_node("AudioService").settle()
 	quit(1 if failures else 0)

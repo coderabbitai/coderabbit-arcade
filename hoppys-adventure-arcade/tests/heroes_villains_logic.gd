@@ -244,7 +244,6 @@ func run() -> void:
 		check(looped!=track and looped.get_length()>0,"Mapped music duplicates and loads: "+track.resource_path.get_file())
 		if looped is AudioStreamWAV: check(looped.loop_end>0 and track.loop_mode==AudioStreamWAV.LOOP_DISABLED,"WAV loop does not mutate shared import")
 	game.queue_free();await process_frame
-	root.get_node("AudioService").shutdown()
-	await create_timer(.3).timeout
+	await root.get_node("AudioService").settle()
 	print("Heroes vs. Villains logic failures: ",failures)
 	quit(0 if failures==0 else 1)

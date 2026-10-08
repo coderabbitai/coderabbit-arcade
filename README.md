@@ -38,11 +38,10 @@ In Orbital Ops' zero-gravity bay, hold Jump or Up to rise, hold Down to descend,
 ## Tests
 
 ```sh
-godot --headless --path hoppys-adventure-arcade --import
-godot --headless --path hoppys-adventure-arcade --script res://tests/runner_logic.gd
+python3 tools/tests/run_tests.py --godot /path/to/Godot
 ```
 
-Each file in `hoppys-adventure-arcade/tests/` is a standalone script that exits nonzero on failure. CI runs the headless suites on every PR. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
+Every script in `hoppys-adventure-arcade/tests/` is a standalone suite, and CI runs all of them on every PR, except the few listed with a reason in [`tools/tests/suites.toml`](tools/tests/suites.toml). A suite fails on a nonzero exit, an engine or script error, or a leak. See [CONTRIBUTING.md](CONTRIBUTING.md#tests) for details.
 
 ## Contributing
 

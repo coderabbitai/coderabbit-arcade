@@ -148,6 +148,6 @@ func run() -> void:
 		if is_instance_valid(current_scene) and current_scene.scene_file_path.ends_with("beatem_menu.tscn") and not root.get_node("AppRouter").busy: break
 	check(current_scene.scene_file_path.ends_with("beatem_menu.tscn") and not paused,"Victory returns to an unpaused mode menu")
 	current_scene.queue_free();await process_frame
-	root.get_node("AudioService").shutdown();await create_timer(.3).timeout
+	await root.get_node("AudioService").settle()
 	print("Heroes vs. Villains smoke failures: ",failures)
 	quit(0 if failures==0 else 1)

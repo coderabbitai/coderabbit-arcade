@@ -3808,4 +3808,8 @@ func _report() -> void:
 	spawner_script = null
 	player_script = null
 	print("RUNNER LOGIC: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures / ", checks, " checks)")
-	quit(failures)
+	_quit_quietly(failures)
+
+func _quit_quietly(code: int) -> void:
+	await root.get_node("AudioService").settle()
+	quit(code)

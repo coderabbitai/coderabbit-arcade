@@ -1,0 +1,17 @@
+# Configuration for tools/tests/run_tests.py.
+#
+# Every .gd file under hoppys-adventure-arcade/tests/ runs headless in CI by default.
+# A [skip] entry is the only way to keep a suite out, and it must say why.
+
+[skip]
+capture_runner_menu_previews = "Writes menu preview screenshots; needs a window and GPU. Run it locally without --headless."
+perf_probe = "Measures GPU frame times, which are meaningless headless. Run it locally."
+runner_perf_probe = "Measures runner frame times on a GPU. Run it locally."
+runner_pickup_hitch = "Measures GPU hitches during pickups. Run it locally."
+menu_smoke = "Drives the menu with pointer hover, which a headless run never produces."
+menu_hoppy_smoke = "Drives the menu with pointer hover, which a headless run never produces."
+
+# Engine errors a suite triggers on purpose. Each pattern must match at least one line of
+# that suite's output, so the list can't outlive the behavior it describes.
+[expected_errors]
+runner_logic = ['^ERROR: ConfigFile parse error at user://test_leaderboard_']

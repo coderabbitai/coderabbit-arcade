@@ -51,6 +51,5 @@ func run() -> void:
 	check(hoppy.runner.process_mode == Node.PROCESS_MODE_DISABLED, "Hidden rig stops processing")
 	check(hoppy.get_child_count() == 3, "Switching reuses portrait nodes")
 	print("MENU HOPPY SMOKE: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
-	root.get_node("AudioService").shutdown()
-	await wait(0.3)
+	await root.get_node("AudioService").settle()
 	quit(failures)

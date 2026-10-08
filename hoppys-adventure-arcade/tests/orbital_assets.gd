@@ -98,8 +98,7 @@ func run() -> void:
 	await finish()
 
 func finish(code: int = 0) -> void:
-	root.get_node("AudioService").shutdown()
-	await create_timer(0.3).timeout
+	await root.get_node("AudioService").settle()
 	quit(code)
 
 func plate(key: String, pos: Vector2, size: Vector2, opacity: float = 1.0) -> void:

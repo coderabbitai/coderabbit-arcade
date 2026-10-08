@@ -120,6 +120,5 @@ func run() -> void:
 	await process_frame;await process_frame
 	check(not paused and current_scene.name=="BeatemMenu","Completion returns cleanly to the mode menu")
 	current_scene.queue_free()
-	root.get_node("AudioService").shutdown()
-	await create_timer(.4).timeout
+	await root.get_node("AudioService").settle()
 	quit(1 if failures else 0)

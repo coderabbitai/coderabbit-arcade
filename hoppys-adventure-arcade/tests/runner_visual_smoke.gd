@@ -256,8 +256,7 @@ func run() -> void:
 	await check_runner_audio()
 	await check_runner_full_loop()
 	await check_runner_menu_reset()
-	root.get_node("AudioService").shutdown()
-	await create_timer(0.3).timeout
+	await root.get_node("AudioService").settle()
 	failures += _logger.errors()
 	print("RUNNER VISUAL SMOKE: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
 	OS.remove_logger(_logger)
