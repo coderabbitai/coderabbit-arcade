@@ -1,8 +1,12 @@
 @static_unload
 extends RefCounted
 const BASE := "res://Assets/code-city-brawl-assets-only/code_city/"
+const ARMED := "res://Assets/hoppy-armed/code_city/"
 static var manifest: Dictionary = {}
 static var resources: Dictionary = {}
+static var armed_manifest: Dictionary = {}
+static var armed_sheets: Dictionary = {}
+static var carry_icons: Dictionary = {}
 static func frames(key: String) -> SpriteFrames:
 	if not resources.has(key): resources[key] = load(BASE + key + ".tres")
 	return resources[key]
@@ -17,6 +21,27 @@ static func sprite(key: String, pose: String, scale_factor := 1.0, foot := true)
 		s.offset = Vector2(spec.cell[0] * 0.5 - spec.pivot[0], spec.cell[1] * 0.5 - spec.pivot[1])
 	s.play(pose)
 	return s
+## Manifest entry (cell, pivot, clips, anchors) of a weapon's armed sheet; empty without one.
+static func armed_spec(weapon: String) -> Dictionary:
+	if armed_manifest.is_empty() and FileAccess.file_exists(ARMED + "manifest.json"):
+		armed_manifest = JSON.parse_string(FileAccess.get_file_as_string(ARMED + "manifest.json"))
+	return armed_manifest.get("weapons", {}).get(weapon, {})
+## Hoppy holding the weapon, or null while the weapon has no baked sheet yet (legacy rig).
+## Loaded on first use, so a sheet is picked up as soon as its resource and manifest entry exist.
+static func armed(weapon: String) -> SpriteFrames:
+	if not armed_sheets.has(weapon):
+		var path := ARMED + weapon + ".tres"
+		var spec := armed_spec(weapon)
+		armed_sheets[weapon] = load(path) as SpriteFrames if spec.has("anchors") and ResourceLoader.exists(path) else null
+	return armed_sheets[weapon]
+## Foot-pivot offset of a facing-right armed sheet, so it stands where the unarmed body does.
+static func armed_offset(weapon: String) -> Vector2:
+	var spec := armed_spec(weapon)
+	return Vector2(spec.cell[0] * 0.5 - spec.pivot[0], spec.cell[1] * 0.5 - spec.pivot[1])
+## The weapon cel downsampled to one texel per body texel, for poses with no armed frame.
+static func carry(weapon: String) -> Texture2D:
+	if not carry_icons.has(weapon): carry_icons[weapon] = load(ARMED + "carry/" + weapon + ".png")
+	return carry_icons[weapon]
 static func shadow(radius := 27.0) -> Polygon2D:
 	var p := Polygon2D.new()
 	var points := PackedVector2Array()

@@ -4,6 +4,10 @@ const Catalog = preload("res://modes/beatem_up/catalog.gd")
 const BASE_FRAMES = preload("res://Assets/bay-area-blitz-assets-only/bay_area/hoppy/platformer.tres")
 const COMBAT_FRAMES = preload("res://Assets/code-city-brawl-player/combat.tres")
 const WeaponRig = preload("res://modes/beatem_up/weapon_rig.gd")
+const BODY_OFFSET := Vector2(0,-38)
+## Poses with a baked armed clip. The three attack poses become step1..3 by combo.
+const ARMED_CLIPS := {"idle":"hold_idle","run":"run","pickup":"equip","hurt":"hurt"}
+const ATTACK_POSES := ["jab","swing","kick"]
 var arena: Node2D
 var body: AnimatedSprite2D
 var held: Node2D
@@ -31,6 +35,7 @@ var attack_weapon := ""
 var swing_serial := 0
 var knock := Vector2.ZERO
 var controlled := true
+var armed := false
 
 func _ready() -> void:
 	collision_layer = 0
@@ -38,11 +43,12 @@ func _ready() -> void:
 	add_child(Art.shadow())
 	body = AnimatedSprite2D.new()
 	body.sprite_frames = COMBAT_FRAMES
-	body.offset = Vector2(0,-38)
+	body.offset = BODY_OFFSET
 	body.scale = Vector2.ONE * 1.55
 	body.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	add_child(body)
 	held = WeaponRig.new()
+	held.body = body
 	add_child(held)
 	held.hide()
 
@@ -95,10 +101,13 @@ func tick(dt: float) -> void:
 		if height <= 0: rise = 0
 	body.position.y = -height
 	body.modulate.a = .4 if invulnerable > 0 and int(invulnerable*14)%2==0 else 1.0
+	var kind := shown_weapon()
+	held.visible = kind != ""
 	var pose := "idle"
 	var base := false
 	if stagger > 0: pose = "hurt"
 	elif swing_left > 0: pose = attack_pose()
+	elif block_time > 0 and armed_sheet() != null: pose = "hurt"
 	elif pickup_time > 0: pose = "pickup"
 	elif height > 0: pose = "jump"
 	elif movement.length() > .1:
@@ -109,21 +118,50 @@ func tick(dt: float) -> void:
 	show_pose(pose,base)
 	var attacking := swing_left>0
 	var progress := clampf(1.0-swing_left/swing_duration,0,1)
-	if attacking and visual_weapon!="" and visual_weapon!="firewall_shield":
-		# Match Hoppy's hands to the weapon's windup/contact/recovery timeline.
+	body.position.x=0
+	if attacking and armed:
+		# The baked step's windup, contact and follow-through; the hit at .44 lands on contact.
+		body.pause()
+		body.frame=0 if progress<.3 else 1 if progress<.64 else 2
+	elif attacking and visual_weapon!="" and visual_weapon!="firewall_shield":
+		# Legacy rig: match Hoppy's hands to the weapon's windup/contact/recovery timeline.
 		body.pause()
 		body.frame=0 if progress<.3 or progress>.82 else 1
 		body.position.x=facing*sin(progress*PI)*5
-	else: body.position.x=0
 	held.position=Vector2(0,-height)
 	held.scale=Vector2(facing,1)
-	held.animate(visual_weapon if attacking else weapon,combo,progress,attacking,movement,dt,block_time)
+	held.animate(kind,combo,progress,attacking,movement,dt,block_time)
+
+## The weapon Hoppy is drawn with: the swing's weapon mid-attack, else the one he holds.
+func shown_weapon() -> String:
+	return visual_weapon if swing_left > 0 else weapon
+
+## Hoppy's baked sheet holding the shown weapon, or null: unarmed, no sheet yet (the
+## legacy rig draws it), or the arena hid the weapon with held.hide() (finisher, death).
+func armed_sheet() -> SpriteFrames:
+	var kind := shown_weapon()
+	return Art.armed(kind) if kind != "" and held.visible else null
 
 func show_pose(pose: String, base := false) -> void:
-	var frames: SpriteFrames = BASE_FRAMES if base else COMBAT_FRAMES
+	var sheet := armed_sheet()
+	var clip: String = ARMED_CLIPS.get(pose,"")
+	if swing_left > 0 and pose in ATTACK_POSES: clip = "step%d" % combo
+	armed = sheet != null and sheet.has_animation(clip)
+	var frames: SpriteFrames = sheet if armed else BASE_FRAMES if base else COMBAT_FRAMES
 	if body.sprite_frames != frames: body.sprite_frames = frames
 	body.flip_h = facing < 0
-	body.play(pose)
+	if armed:
+		# flip_h mirrors the texture inside its rect, not the offset: mirror the pivot shift too.
+		var shift := Art.armed_offset(shown_weapon())
+		body.offset = Vector2(-shift.x if body.flip_h else shift.x, shift.y)
+		held.clear()
+	else: body.offset = BODY_OFFSET
+	body.play(clip if armed else pose)
+
+## Arena position of the weapon tip at contact, where the swing effect is anchored.
+func tip_position() -> Vector2:
+	var local: Vector2 = held.tip_at(shown_weapon(),combo)
+	return position+held.position+Vector2(local.x*facing,local.y)
 
 func jump() -> void:
 	if height > 0 or stagger > 0: return
