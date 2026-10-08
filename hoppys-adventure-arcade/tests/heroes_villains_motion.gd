@@ -97,17 +97,55 @@ func run() -> void:
 	# Exercise GUI dispatch too: default ui_accept/A must not click Continue on the game-over overlay.
 	game.playing=false;game.state="game_over"
 	game.show_overlay("Game over", "Ready", "Continue", game.begin_play)
+	game._physics_process(.6)
 	var accept := InputEventJoypadButton.new()
 	accept.button_index=JOY_BUTTON_A;accept.pressed=true
 	root.push_input(accept)
 	accept.pressed=false;root.push_input(accept)
-	check(not game.playing and game.state=="game_over","Controller jump cannot activate focused Continue button")
-	game._physics_process(.6)
+	check(not game.playing and game.state=="game_over","Controller jump cannot activate the focused Continue button even once the overlay is armed")
 	var confirm := InputEventJoypadButton.new()
 	confirm.button_index=JOY_BUTTON_BACK;confirm.pressed=true
 	root.push_input(confirm)
 	confirm.pressed=false;root.push_input(confirm)
 	check(game.playing,"Controller View confirms focused Continue button")
+	# Pointer input needs a real window to hover and click Controls, so it only runs graphically.
+	for terminal in ["game_over","won"]:
+		if DisplayServer.get_name()=="headless": break
+		var hits := [0]
+		game.playing=false;game.state=terminal
+		game.show_overlay("Terminal","Ready","Activate",func(): hits[0]+=1)
+		await process_frame
+		game._physics_process(1.0/60.0)
+		var at: Vector2=game.primary.get_global_rect().get_center()
+		var hover := InputEventMouseMotion.new()
+		hover.position=at;hover.global_position=at
+		Input.parse_input_event(hover)
+		await process_frame
+		for pressed in [true,false]:
+			var touch := InputEventScreenTouch.new()
+			touch.index=0;touch.position=at;touch.pressed=pressed
+			root.push_input(touch)
+		for pressed in [true,false]:
+			var click := InputEventMouseButton.new()
+			click.button_index=MOUSE_BUTTON_LEFT;click.position=at;click.global_position=at;click.pressed=pressed
+			click.button_mask=MOUSE_BUTTON_MASK_LEFT if pressed else 0
+			root.push_input(click)
+		await process_frame
+		check(hits[0]==0 and game.state==terminal,"Next-frame left click and touch cannot activate the focused primary of the unarmed "+terminal+" overlay")
+		game._physics_process(.6)
+		at=game.primary.get_global_rect().get_center()
+		var rehover := InputEventMouseMotion.new()
+		rehover.position=at;rehover.global_position=at
+		Input.parse_input_event(rehover)
+		await process_frame
+		for pressed in [true,false]:
+			var click := InputEventMouseButton.new()
+			click.button_index=MOUSE_BUTTON_LEFT;click.position=at;click.global_position=at;click.pressed=pressed
+			click.button_mask=MOUSE_BUTTON_MASK_LEFT if pressed else 0
+			root.push_input(click)
+		await process_frame
+		check(hits[0]==1,"A left click activates the "+terminal+" overlay's primary once it is armed")
+	game.overlay.hide();game.state="combat";game.playing=true
 	for e in game.enemies: e.set_physics_process(false)
 	p.input_lock=0;p.position=Vector2(500,550)
 	for spec in [["move_right","run"],["move_up","walk_up"],["move_down","walk_down"]]:

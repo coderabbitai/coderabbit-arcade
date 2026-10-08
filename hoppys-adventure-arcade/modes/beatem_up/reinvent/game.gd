@@ -730,7 +730,7 @@ func _input(event: InputEvent) -> void:
 	# Filter before focused buttons receive ui_accept (which includes jump/A).
 	if state not in ["game_over","won"] or not overlay.visible: return
 	if terminal_overlay_clock<TERMINAL_OVERLAY_ARM:
-		if event.is_action_pressed("heroes_popup_advance") or event.is_action("ui_accept"):
+		if event.is_action_pressed("heroes_popup_advance") or event.is_action("ui_accept") or event is InputEventMouseButton or event is InputEventScreenTouch or event is InputEventScreenDrag:
 			get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("heroes_popup_advance"):

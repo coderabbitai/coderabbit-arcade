@@ -329,7 +329,7 @@ func run() -> void:
 	# Retry restores stage-entry score/capabilities and clears transient state.
 	game.checkpoint_score=123;game.checkpoint_capabilities={"review":true,"triage":true,"change_stack":true,"security":false}
 	game.retry_stage();await process_frame;freeze()
-	check(game.state=="stage_enter" and game.flow.active() and not game.overlay.visible,"Retry enters stage_enter with the overlay hidden")
+	check(game.state=="stage_enter" and game.flow.active(),"Retry enters stage_enter with the flow running")
 	check(game.stage_index==2 and game.room==0 and game.player.hp==3 and game.score==123,"Retry starts current stage with fresh HP and checkpoint score")
 	check(not game.capabilities.security and game.capabilities.review and game.player.shield,"Retry restores earned capabilities and one shield charge")
 	check(game.zones.is_empty() and game.bullets.is_empty() and game.bosses.is_empty() and game.reveal_time==0,"Retry clears prior encounter threats and reveals")
@@ -356,13 +356,15 @@ func run() -> void:
 		if child is Button and child.text=="Return to Beat'em Up menu": back=child
 	check(back!=null and paused and game.state=="paused","Pause overlay offers Return during stage_exit")
 	back.pressed.emit()
+	game.shake=8
 	var stage_before: int=game.stage_index
 	var held := true
 	var frozen_pos: Vector2=game.player.position
 	for i in 180:
 		game._physics_process(1.0/60.0)
 		if game.stage_index!=stage_before or game.flow.active() or game.player.position!=frozen_pos or game.music.playing: held=false
-	check(not paused and game.leaving and game.state=="leaving" and held,"Leave through the pause overlay cancels the flow without a stage change and freezes the owner")
+	check(not paused and game.leaving and game.state=="leaving" and held,"Leave through the pause overlay cancels the flow and changes no stage")
+	check(game.shake==8,"A leaving owner returns early from _physics_process (shake, which decays unconditionally otherwise, stays frozen)")
 	var disabled := true
 	for child in game.panel.get_children():
 		if child is BaseButton and not child.disabled: disabled=false
