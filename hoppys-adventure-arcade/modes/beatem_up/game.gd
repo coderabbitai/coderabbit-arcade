@@ -7,6 +7,9 @@ const Boss = preload("res://modes/beatem_up/boss.gd")
 const StageFlow = preload("res://modes/beatem_up/stage_flow.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
 const PAUSABLE := ["combat","intro","stage_enter","stage_exit"]
+## Results and game-over menus arm this long after appearing (see _input).
+const OVERLAY_ARM := .5
+const ARMED_OVERLAYS := ["won","game_over"]
 var rng := RandomNumberGenerator.new()
 var stage_index := 0
 var room := 0
@@ -19,6 +22,7 @@ var pause_return_state := "combat"
 var intro_page := 0
 var intro_clock := 0.0
 var intro_bar: ProgressBar
+var overlay_clock := 0.0
 var flow: StageFlow
 var gate_open := false
 var gate: AnimatedSprite2D
@@ -350,6 +354,7 @@ func sound(key: String, pos: Vector2) -> void:
 
 func _physics_process(dt: float) -> void:
 	if not is_instance_valid(player) or get_tree().paused or state=="leaving": return
+	overlay_clock += dt
 	if state=="finisher": _tick_finisher(dt)
 	elif state=="intro": _tick_intro(dt)
 	# Toasts, banners and transitions run outside combat too, so none freezes on screen.
@@ -660,6 +665,7 @@ func show_overlay(title: String, detail: String, action: String, callback: Calla
 		var back := Style.button("Return to Beat'em Up menu",54)
 		panel.add_child(back)
 		back.pressed.connect(leave)
+	overlay_clock = 0
 	overlay.show()
 	primary.grab_focus()
 
@@ -702,6 +708,14 @@ func pause(detail: String) -> void:
 	state = "paused"
 	get_tree().paused = true
 	show_overlay("REVIEW PAUSED",detail,"Resume",resume)
+
+## Jump's Space is also ui_accept, so a press carried over from the finisher or the fatal hit
+## would fire the focused button before the player sees the screen. Swallow confirms (whatever
+## they are bound to) and clicks, before the GUI gets them, for the first OVERLAY_ARM seconds.
+func _input(event: InputEvent) -> void:
+	if state not in ARMED_OVERLAYS or not overlay.visible or overlay_clock >= OVERLAY_ARM: return
+	if event.is_action("ui_accept") or event is InputEventMouseButton:
+		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause") and not event.is_echo():

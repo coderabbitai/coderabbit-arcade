@@ -62,6 +62,7 @@ func run() -> void:
 	check_cancel()
 	check(game.completion_count==0, "Transitions do not count as a completion")
 	await check_terminal_paths()
+	await check_armed_overlays()
 	print("Stage flow failures: ", failures)
 	if is_instance_valid(current_scene): current_scene.queue_free()
 	root.get_node("AudioService").shutdown()
@@ -383,3 +384,82 @@ func check_boss_terminal(phase: String) -> void:
 		game._physics_process(DT)
 		if game.flow.phase!="" or game.flow.veil.color.a>0.0 or game.state!="finisher" or game.stage_index!=2: held = false
 	check(held and blacks[0]==0 and game.flow.music_track==Catalog.BOSS_MUSIC and is_equal_approx(game.flow.music_db, 0.0), "Boss defeat during %s cancels the sequence and keeps the boss track" % phase)
+# --- Results and game-over menus arm after OVERLAY_ARM, so a carried-over jump can't skip them ---
+## Press and release through the viewport, as a player would: Space / pad A are jump and ui_accept.
+## Viewport coordinates: headless, the 64 px window is stretched, so window-space clicks miss.
+func confirm(kind: String) -> void:
+	var down: InputEvent
+	match kind:
+		"space":
+			var key := InputEventKey.new()
+			key.keycode = KEY_SPACE
+			key.physical_keycode = KEY_SPACE
+			down = key
+		"pad":
+			var pad := InputEventJoypadButton.new()
+			pad.button_index = JOY_BUTTON_A
+			down = pad
+		"click":
+			var click := InputEventMouseButton.new()
+			click.button_index = MOUSE_BUTTON_LEFT
+			click.position = game.primary.get_global_rect().get_center()
+			click.global_position = click.position
+			down = click
+	down.pressed = true
+	root.push_input(down, true)
+	var up: InputEvent = down.duplicate()
+	up.pressed = false
+	root.push_input(up, true)
+func arm() -> void:
+	for i in ceili(game.OVERLAY_ARM/DT)+1: game._physics_process(DT)
+func check_armed_overlays() -> void:
+	# Space is both jump and ui_accept: the carried-over press. (Pad A is jump only today; the
+	# guard swallows ui_accept itself, so it would cover A too if A were ever bound to it.)
+	var space := InputEventKey.new()
+	space.keycode = KEY_SPACE
+	space.physical_keycode = KEY_SPACE
+	space.pressed = true
+	check(InputMap.event_is_action(space, "ui_accept") and InputMap.event_is_action(space, "brawl_jump"), "Space is both jump and ui_accept")
+	game.start_stage(0)
+	freeze()
+	var guard := 0
+	while game.state!="combat" and guard<200:
+		game._physics_process(DT)
+		guard += 1
+	var p = game.player
+	p.hp = 1
+	p.invulnerable = 0
+	p.shield = false
+	p.weapon = ""
+	p.take_hit(p.position+Vector2(-40, 0))
+	check(game.state=="game_over" and game.primary.has_focus(), "Game over focuses Retry")
+	for kind in ["space", "pad", "click"]: confirm(kind)
+	check(game.state=="game_over" and game.overlay.visible, "Jump or a click on the frame game over appears does not press Retry")
+	arm()
+	confirm("space")
+	check(game.state=="stage_enter", "A press after 0.5 s presses Retry")
+	game.start_stage(2)
+	freeze()
+	guard = 0
+	while game.state!="combat" and guard<200:
+		game._physics_process(DT)
+		guard += 1
+	clear_enemies()
+	game.enter_room(2)
+	freeze()
+	var boss = game.boss
+	for damage in [12, 6, 6]:
+		boss.vulnerable = true
+		boss.take_hit(damage, 0, Vector2.ZERO, true)
+	freeze()
+	guard = 0
+	while game.state=="finisher" and guard<400:
+		game._physics_process(DT)
+		guard += 1
+	check(game.state=="won" and game.primary.has_focus(), "The Force Merge hands off to results with Return focused")
+	for kind in ["space", "pad", "click"]: confirm(kind)
+	check(game.state=="won" and game.overlay.visible, "Jump or a click on the frame results appear leaves them up")
+	arm()
+	confirm("click")
+	check(game.state=="leaving", "A click after 0.5 s presses Return")
+	await reload()
