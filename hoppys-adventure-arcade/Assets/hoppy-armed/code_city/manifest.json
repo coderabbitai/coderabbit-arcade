@@ -1,0 +1,414 @@
+{
+  "version": 1,
+  "mode": "code_city",
+  "filter": "nearest",
+  "generated_from": "built-in image generation; see PROMPTS.md",
+  "carry_calibration": {
+    "rule": "Each target length preserves its source cel's visible proportion at the pilot's baked weapon-to-unarmed-body ratio: carry_scale = (pilot baked_length / body_height) * body_height / pilot source_length.",
+    "pilot": {
+      "weapon": "debug_stick",
+      "hold_idle_bounds": [
+        77,
+        89,
+        29,
+        20
+      ],
+      "baked_length": 29
+    },
+    "carry_scale": 0.3411764705882353,
+    "body_height": 59,
+    "weapons": {
+      "debug_stick": {
+        "source_visible_bounds": [
+          22,
+          33,
+          107,
+          95
+        ],
+        "source_length": 85,
+        "target_length": 29
+      },
+      "linter_staff": {
+        "source_visible_bounds": [
+          12,
+          28,
+          115,
+          99
+        ],
+        "source_length": 103,
+        "target_length": 35
+      },
+      "api_key_whip": {
+        "source_visible_bounds": [
+          19,
+          33,
+          109,
+          95
+        ],
+        "source_length": 90,
+        "target_length": 31
+      },
+      "git_branch": {
+        "source_visible_bounds": [
+          16,
+          30,
+          112,
+          99
+        ],
+        "source_length": 96,
+        "target_length": 33
+      },
+      "firewall_shield": {
+        "source_visible_bounds": [
+          31,
+          27,
+          97,
+          101
+        ],
+        "source_length": 74,
+        "target_length": 25
+      },
+      "refactor_hammer": {
+        "source_visible_bounds": [
+          12,
+          28,
+          117,
+          99
+        ],
+        "source_length": 105,
+        "target_length": 36
+      }
+    }
+  },
+  "weapons": {
+    "debug_stick": {
+      "weapon": "debug_stick",
+      "file": "debug_stick.png",
+      "resource": "debug_stick.tres",
+      "cell": [
+        192,
+        128
+      ],
+      "grid": [
+        4,
+        4
+      ],
+      "pivot": [
+        72,
+        118
+      ],
+      "facing": "right",
+      "body_height": 59,
+      "unarmed_idle_height": 59,
+      "source_scale": 0.2610619469026549,
+      "source_component_bounds": [
+        [
+          98,
+          61,
+          282,
+          287
+        ],
+        [
+          400,
+          77,
+          605,
+          287
+        ],
+        [
+          686,
+          76,
+          905,
+          287
+        ],
+        [
+          1012,
+          80,
+          1234,
+          287
+        ],
+        [
+          64,
+          390,
+          296,
+          596
+        ],
+        [
+          385,
+          387,
+          584,
+          596
+        ],
+        [
+          668,
+          402,
+          941,
+          597
+        ],
+        [
+          995,
+          405,
+          1234,
+          596
+        ],
+        [
+          74,
+          678,
+          257,
+          907
+        ],
+        [
+          381,
+          714,
+          635,
+          907
+        ],
+        [
+          670,
+          721,
+          970,
+          907
+        ],
+        [
+          1020,
+          656,
+          1202,
+          907
+        ],
+        [
+          63,
+          1014,
+          314,
+          1209
+        ],
+        [
+          381,
+          1032,
+          608,
+          1208
+        ],
+        [
+          673,
+          997,
+          908,
+          1208
+        ],
+        [
+          977,
+          1004,
+          1214,
+          1210
+        ]
+      ],
+      "fragment_attachments": [],
+      "foot_anchor_semantics": "Ground midpoint for registration validation; it can lie between painted feet and is not an effect anchor.",
+      "clips": {
+        "hold_idle": {
+          "frames": [
+            0
+          ],
+          "fps": 1,
+          "loop": true
+        },
+        "run": {
+          "frames": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "fps": 12,
+          "loop": true
+        },
+        "step1": {
+          "frames": [
+            5,
+            6,
+            7
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "step2": {
+          "frames": [
+            8,
+            9,
+            10
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "step3": {
+          "frames": [
+            11,
+            12,
+            13
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "equip": {
+          "frames": [
+            14
+          ],
+          "fps": 1,
+          "loop": false
+        },
+        "hurt": {
+          "frames": [
+            15
+          ],
+          "fps": 1,
+          "loop": false
+        }
+      },
+      "anchors": {
+        "hand": {
+          "0": [
+            82,
+            102
+          ],
+          "1": [
+            85,
+            101
+          ],
+          "2": [
+            84,
+            100
+          ],
+          "3": [
+            86,
+            102
+          ],
+          "4": [
+            82,
+            105
+          ],
+          "5": [
+            82,
+            101
+          ],
+          "6": [
+            91,
+            101
+          ],
+          "7": [
+            88,
+            103
+          ],
+          "8": [
+            70,
+            90
+          ],
+          "9": [
+            88,
+            103
+          ],
+          "10": [
+            93,
+            104
+          ],
+          "11": [
+            82,
+            76
+          ],
+          "12": [
+            91,
+            108
+          ],
+          "13": [
+            84,
+            107
+          ],
+          "14": [
+            82,
+            102
+          ],
+          "15": [
+            83,
+            96
+          ]
+        },
+        "tip": {
+          "6": [
+            111,
+            98
+          ],
+          "9": [
+            111,
+            100
+          ],
+          "12": [
+            110,
+            115
+          ]
+        },
+        "foot": {
+          "0": [
+            72,
+            118
+          ],
+          "1": [
+            60,
+            118
+          ],
+          "2": [
+            64,
+            118
+          ],
+          "3": [
+            67,
+            118
+          ],
+          "4": [
+            66,
+            118
+          ],
+          "5": [
+            68,
+            118
+          ],
+          "6": [
+            62,
+            118
+          ],
+          "7": [
+            63,
+            118
+          ],
+          "8": [
+            76,
+            118
+          ],
+          "9": [
+            70,
+            118
+          ],
+          "10": [
+            64,
+            118
+          ],
+          "11": [
+            72,
+            118
+          ],
+          "12": [
+            78,
+            118
+          ],
+          "13": [
+            74,
+            118
+          ],
+          "14": [
+            70,
+            118
+          ],
+          "15": [
+            72,
+            118
+          ]
+        }
+      }
+    }
+  }
+}
