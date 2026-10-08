@@ -29,7 +29,8 @@ ALLOWED = (
     # Vendored Sunny Land TexturePacker files keep their upstream author's export path.
     "hoppys-adventure-arcade/Assets/Backgrounds/Sunny-land-forest-files/demo/assets/atlas/*.tps",
     # This checker and its tests contain the patterns themselves.
-    "tools/checks/*.py",
+    "tools/checks/repo_hygiene.py",
+    "tools/checks/test_repo_hygiene.py",
 )
 
 
@@ -63,28 +64,43 @@ def text_or_none(blob: bytes) -> str | None:
     return blob.decode("utf-8", errors="replace")
 
 
-def staged_files() -> list[tuple[str, str]]:
-    names = git("diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z").decode().split("\0")
-    files = []
-    for name in filter(None, names):
-        content = text_or_none(git("show", f":{name}"))
+def index_entries() -> dict[str, str]:
+    """Path -> blob id for every file in the index; submodules (mode 160000) have no blob to read."""
+    entries = {}
+    for record in filter(None, git("ls-files", "--stage", "-z").split(b"\0")):
+        meta, path = record.split(b"\t", 1)
+        mode, blob, _stage = meta.split()
+        if mode != b"160000":
+            entries[path.decode()] = blob.decode()
+    return entries
+
+
+def read_blobs(entries: dict[str, str]) -> list[tuple[str, str]]:
+    """Read indexed blobs, not working-tree files: a symlink is checked as its committed target
+    text and is never followed, and the result is exactly what a commit or checkout contains."""
+    if not entries:
+        return []
+    request = "".join(f"{blob}\n" for blob in entries.values()).encode()
+    output = subprocess.run(["git", "cat-file", "--batch"], input=request, check=True, capture_output=True).stdout
+    files, offset = [], 0
+    for path in entries:
+        header_end = output.index(b"\n", offset)
+        size = int(output[offset:header_end].split()[2])
+        content = text_or_none(output[header_end + 1:header_end + 1 + size])
+        offset = header_end + 1 + size + 1
         if content is not None:
-            files.append((name, content))
+            files.append((path, content))
     return files
+
+
+def staged_files() -> list[tuple[str, str]]:
+    names = git("diff", "--cached", "--name-only", "--diff-filter=ACMRT", "-z").decode().split("\0")
+    changed = set(filter(None, names))
+    return read_blobs({path: blob for path, blob in index_entries().items() if path in changed})
 
 
 def tracked_files() -> list[tuple[str, str]]:
-    names = git("ls-files", "-z").decode().split("\0")
-    files = []
-    for name in filter(None, names):
-        try:
-            with open(name, "rb") as handle:
-                content = text_or_none(handle.read())
-        except FileNotFoundError:  # deleted in the working tree but still tracked
-            continue
-        if content is not None:
-            files.append((name, content))
-    return files
+    return read_blobs(index_entries())
 
 
 def main() -> int:

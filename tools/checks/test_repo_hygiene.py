@@ -31,6 +31,10 @@ class Scan(unittest.TestCase):
         vendored = "hoppys-adventure-arcade/Assets/Backgrounds/Sunny-land-forest-files/demo/assets/atlas/x.tps"
         self.assertEqual(rules(vendored, "/Users/author/x"), [])
 
+    def test_only_the_checker_files_are_exempt(self):
+        self.assertEqual(rules("tools/checks/repo_hygiene.py", "/Users/alex/x"), [])
+        self.assertEqual(rules("tools/checks/new_tool.py", "/Users/alex/x"), ["local machine path"])
+
     def test_binary_content_is_skipped(self):
         self.assertIsNone(repo_hygiene.text_or_none(b"PNG\0/Users/alex/"))
         self.assertEqual(repo_hygiene.text_or_none(b"plain"), "plain")

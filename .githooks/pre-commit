@@ -12,12 +12,17 @@ else
   echo "pre-commit: gitleaks not installed; staged secrets were not scanned locally (brew install gitleaks)." >&2
 fi
 
+# Lint the staged version of each Python file, which is what the commit will contain.
 staged_python=()
 while IFS= read -r -d '' file; do staged_python+=("$file"); done \
-  < <(git diff --cached --name-only --diff-filter=ACMR -z -- '*.py')
+  < <(git diff --cached --name-only --diff-filter=ACMRT -z -- '*.py')
 if [ ${#staged_python[@]} -gt 0 ]; then
   if command -v ruff >/dev/null 2>&1; then
-    (cd "$root" && ruff check "${staged_python[@]}")
+    status=0
+    for file in "${staged_python[@]}"; do
+      git show ":$file" | (cd "$root" && ruff check --stdin-filename "$file" -) || status=1
+    done
+    exit "$status"
   else
     echo "pre-commit: ruff not installed; staged Python was not linted locally." >&2
   fi
