@@ -11,6 +11,7 @@ config_version=5
 [application]
 
 config/name="Hoppy’s Adventure Arcade"
+config/version="0.1.0"
 run/main_scene="res://scenes/main_menu/main_menu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
@@ -115,6 +116,8 @@ roll={
 common/physics_interpolation=true
 
 [rendering]
+
+textures/vram_compression/import_etc2_astc=true
 
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="gl_compatibility"

@@ -4,8 +4,9 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://cnwbddowongvs"
 path.s3tc="res://.godot/imported/hoppy_body_emissive.png-15b9193f78dd32e62b3bc8d4f2eb5591.s3tc.ctex"
+path.etc2="res://.godot/imported/hoppy_body_emissive.png-15b9193f78dd32e62b3bc8d4f2eb5591.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -15,7 +16,7 @@ generator_parameters={
 [deps]
 
 source_file="res://Assets/runner/hoppy/hoppy_body_emissive.png"
-dest_files=["res://.godot/imported/hoppy_body_emissive.png-15b9193f78dd32e62b3bc8d4f2eb5591.s3tc.ctex"]
+dest_files=["res://.godot/imported/hoppy_body_emissive.png-15b9193f78dd32e62b3bc8d4f2eb5591.s3tc.ctex", "res://.godot/imported/hoppy_body_emissive.png-15b9193f78dd32e62b3bc8d4f2eb5591.etc2.ctex"]
 
 [params]
 
