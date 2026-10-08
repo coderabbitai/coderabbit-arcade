@@ -208,9 +208,11 @@ def main() -> int:
                                       env=isolated_env(home), capture_output=True, text=True, timeout=TIMEOUT)
         finally:
             shutil.rmtree(home, ignore_errors=True)
-        if imported.returncode != 0:
-            print(ANSI.sub("", imported.stdout + imported.stderr)[-4000:], file=sys.stderr)
-            print("Resource import failed.", file=sys.stderr)
+        import_log = ANSI.sub("", imported.stdout + imported.stderr)
+        import_problems = find_problems(import_log, imported.returncode, [])
+        if imported.returncode != 0 or import_problems:
+            print(import_log[-4000:], file=sys.stderr)
+            print("Resource import failed:", *dict.fromkeys(import_problems), sep="\n  ", file=sys.stderr)
             return 1
 
     parallel = [s for s in planned if s not in config.serial]

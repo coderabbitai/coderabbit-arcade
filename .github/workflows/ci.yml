@@ -52,12 +52,10 @@ jobs:
           # A stale cache is safe: Godot reimports any source whose hash changed.
           restore-keys: godot-import-${{ env.GODOT_VERSION }}-
 
-      - name: Import project
-        run: ~/godot/godot --headless --path "$PROJECT" --import
-
-      # Every tests/**/*.gd runs; tools/tests/suites.toml lists the few skipped suites and why.
-      - name: Run headless suites
-        run: python3 tools/tests/run_tests.py --godot ~/godot/godot --no-import --jobs 4
+      # The runner imports first (failing on any engine error), then runs every tests/**/*.gd;
+      # tools/tests/suites.toml lists the few skipped or serial suites and why.
+      - name: Import and run headless suites
+        run: python3 tools/tests/run_tests.py --godot ~/godot/godot --jobs 4
 
       - name: Upload test results
         if: always()
