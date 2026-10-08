@@ -24,14 +24,15 @@ func settle_route() -> void:
 		await process_frame
 	await process_frame
 
-## Launch the game headless with user args and return its combined output.
-func launch(user_args: Array[String]) -> String:
+## Launch the game headless with user args for two simulated seconds (fixed 60 fps, so the
+## route fade always completes) and return its exit code and combined output.
+func launch(user_args: Array[String]) -> Dictionary:
 	var args: Array[String] = ["--headless", "--path", ProjectSettings.globalize_path("res://"),
-		"--quit-after", "30", "--"]
+		"--fixed-fps", "60", "--quit-after", "120", "--"]
 	args.append_array(user_args)
 	var output: Array = []
-	OS.execute(OS.get_executable_path(), args, output, true)
-	return "\n".join(output)
+	var code := OS.execute(OS.get_executable_path(), args, output, true)
+	return {"code": code, "log": "\n".join(output)}
 
 func on_hub() -> bool:
 	return current_scene != null and current_scene.scene_file_path == router.ROUTES["hub"]
@@ -47,12 +48,15 @@ func run() -> void:
 	check(launch == "", "No --route means the default scene")
 
 	var plain := launch([])
-	check(not plain.contains("booth mode on") and not plain.contains("launching route"),
+	check(plain.code == 0, "A plain launch exits cleanly")
+	check(not plain.log.contains("booth mode on") and not plain.log.contains("launched route"),
 		"A plain launch starts without booth mode or a launch route")
 	var kiosk := launch(["--booth", "--route=heroes_vs_villains"])
-	check(kiosk.contains("AppRouter: booth mode on"), "Launching with --booth turns booth mode on")
-	check(kiosk.contains("AppRouter: launching route heroes_vs_villains"),
-		"Launching with --route opens that route")
+	check(kiosk.code == 0, "A booth launch exits cleanly")
+	check(kiosk.log.contains("AppRouter: booth mode on"), "Launching with --booth turns booth mode on")
+	var opened: String = "AppRouter: launched route heroes_vs_villains (%s)" \
+		% router.ROUTES["heroes_vs_villains"]
+	check(kiosk.log.contains(opened), "Launching with --route opens that route's scene")
 
 	router.go("platformer")
 	await settle_route()

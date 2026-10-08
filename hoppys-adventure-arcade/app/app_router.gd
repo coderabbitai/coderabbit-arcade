@@ -46,8 +46,7 @@ func _ready() -> void:
 	set_booth(BOOTH_FLAG in args)
 	var start := launch_route(args)
 	if start != "":
-		print("AppRouter: launching route ", start)
-		go.call_deferred(start)
+		_launch.call_deferred(start)
 func go(route: String) -> void:
 	if busy or not ROUTES.has(route) or not ResourceLoader.exists(ROUTES[route]):
 		return
@@ -95,6 +94,12 @@ static func launch_route(args: PackedStringArray) -> String:
 				return route
 			push_error("Unknown --route %s; expected one of %s" % [route, ", ".join(ROUTES.keys())])
 	return ""
+
+func _launch(route: String) -> void:
+	await go(route)
+	var scene := get_tree().current_scene
+	var path := scene.scene_file_path if scene else "no scene"
+	print("AppRouter: launched route %s (%s)" % [route, path])
 
 func set_booth(enabled: bool) -> void:
 	booth = enabled
