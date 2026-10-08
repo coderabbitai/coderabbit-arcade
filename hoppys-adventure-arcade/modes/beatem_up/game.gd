@@ -228,7 +228,8 @@ func resolve_swing(source: Node2D) -> void:
 		if in_reach:
 			if enemy.take_hit(damage,def.knock,source.position,source.combo==3 or weapon!=""):
 				hit = true
-				fx("weapons","hammer_impact" if weapon=="refactor_hammer" else "melee_sweep",enemy.position-Vector2(0,55),.6,.16)
+				# Weapon effects burst from the weapon tip; the sweep cel is drawn travelling left.
+				fx("weapons","hammer_impact" if weapon=="refactor_hammer" else "melee_sweep",source.tip_position() if weapon!="" else enemy.position-Vector2(0,55),.6,.16,source.facing>0)
 				if weapon=="refactor_hammer": break
 	for prop in props:
 		if weapon=="refactor_hammer" and hit: break
@@ -243,7 +244,7 @@ func resolve_swing(source: Node2D) -> void:
 	if hit:
 		shake = 3 if source.combo<3 else 6
 		if weapon != "" and source.weapon == weapon: source.spend_weapon()
-	else: fx("weapons","melee_sweep",source.position+Vector2(source.facing*65,-source.height-50),.5,.13)
+	else: fx("weapons","melee_sweep",source.tip_position(),.5,.13,source.facing>0)
 
 static func melee_contains(offset: Vector2, facing: float, reach: float, depth: float) -> bool:
 	return offset.x*facing >= -20 and offset.x*facing <= reach and absf(offset.y) <= depth
@@ -332,9 +333,10 @@ func clear_threats() -> void:
 	bullets.clear()
 	warnings.clear()
 
-func fx(sheet: String, pose: String, pos: Vector2, magnify: float, lifetime: float) -> void:
+func fx(sheet: String, pose: String, pos: Vector2, magnify: float, lifetime: float, mirror := false) -> void:
 	var sprite := Art.sprite(sheet,pose,magnify,false)
 	sprite.position = pos
+	sprite.flip_h = mirror
 	actors.add_child(sprite)
 	var tween := sprite.create_tween()
 	tween.tween_property(sprite,"modulate:a",0.0,lifetime)
