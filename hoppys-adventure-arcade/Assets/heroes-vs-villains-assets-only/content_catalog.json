@@ -2,7 +2,7 @@
   "schema_version": 1,
   "status": "Asset integration definitions, NOT implemented gameplay or final balance.",
   "sources": {
-    "gdd": "https://docs.google.com/document/d/1YCLWNykTNDglKGyuOWIMdTl9A8eEoEEgTR_INSOCdUo/edit",
+    "gdd": "GDD (October 2, 2026 revision; internal reference)",
     "read_date": "2026-10-06",
     "baseline_version": "0.1; predates Mode 2"
   },
