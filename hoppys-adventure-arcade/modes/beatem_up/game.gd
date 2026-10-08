@@ -4,7 +4,9 @@ const Catalog = preload("res://modes/beatem_up/catalog.gd")
 const Player = preload("res://modes/beatem_up/player.gd")
 const Enemy = preload("res://modes/beatem_up/enemy.gd")
 const Boss = preload("res://modes/beatem_up/boss.gd")
+const StageFlow = preload("res://modes/beatem_up/stage_flow.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
+const PAUSABLE := ["combat","intro","stage_enter","stage_exit"]
 var rng := RandomNumberGenerator.new()
 var stage_index := 0
 var room := 0
@@ -13,7 +15,11 @@ var checkpoint_score := 0
 var elapsed := 0.0
 var playing := false
 var state := "intro"
+var pause_return_state := "combat"
 var intro_page := 0
+var intro_clock := 0.0
+var intro_bar: ProgressBar
+var flow: StageFlow
 var gate_open := false
 var gate: AnimatedSprite2D
 var world: Node2D
@@ -40,6 +46,7 @@ var boss_bar: ProgressBar
 var boss_text: Label
 var toast_label: Label
 var toast_left := 0.0
+var ui_layer: CanvasLayer
 var prompt: Label
 var overlay: ColorRect
 var panel: VBoxContainer
@@ -79,6 +86,10 @@ func _ready() -> void:
 		add_child(voice)
 		sound_pool.append(voice)
 	_build_ui()
+	flow = StageFlow.new()
+	add_child(flow)
+	flow.setup(ui_layer,music,Catalog.FLOW)
+	flow.phase_changed.connect(_on_flow_phase)
 	start_stage(0,true)
 
 func room_start() -> float: return room*1280.0
@@ -116,20 +127,42 @@ func start_stage(index: int, cinematic := false) -> void:
 		ground.add_child(decor)
 	player = Player.new()
 	player.arena = self
-	player.position = Vector2(180,580)
+	# Off-screen left: every stage opens with Hoppy running in (stage_flow.gd).
+	player.position = Vector2(Catalog.FLOW.enter_from_x,580)
 	actors.add_child(player)
 	camera.position = Vector2(640,360)
+	camera.reset_physics_interpolation()
+	prompt.text = ""
 	music.stream = Catalog.looped(Catalog.MUSIC[index])
 	music.play()
 	enter_room(0)
 	if cinematic:
 		state = "intro"
 		intro_page = 0
+		intro_clock = 0
 		show_intro()
-	else:
-		state = "stage_intro"
-		show_overlay("%02d / %s" % [index+1,Catalog.TITLES[index]],Catalog.STORIES[index],"Enter the district",begin_play)
+	else: enter_stage()
 	_update_hud()
+
+## stage_enter: Hoppy runs in under the title banner, then begin_play() (see _on_flow_phase).
+func enter_stage() -> void:
+	overlay.hide()
+	playing = false
+	state = "stage_enter"
+	toast_left = 0 # The banner owns the screen; begin_play() re-announces the encounter.
+	toast_label.hide()
+	flow.play_enter("%02d / %s" % [stage_index+1,Catalog.TITLES[stage_index]],Catalog.STORIES[stage_index])
+
+## stage_exit: Hoppy runs out, the screen dips to black and the next district is built under it.
+func exit_stage() -> void:
+	playing = false
+	state = "stage_exit"
+	prompt.text = ""
+	flow.banner("DISTRICT SECURED","Stage score saved · Next: "+Catalog.TITLES[stage_index+1],Catalog.FLOW.exit_banner)
+	flow.play_exit(advance_stage)
+
+func _on_flow_phase(phase: String) -> void:
+	if phase=="" and state=="stage_enter": begin_play()
 
 func enter_room(index: int) -> void:
 	room = index
@@ -152,8 +185,7 @@ func enter_room(index: int) -> void:
 		boss.arena = self
 		boss.position = Vector2(room_start()+965,565)
 		actors.add_child(boss)
-		music.stream = Catalog.looped(Catalog.BOSS_MUSIC)
-		music.play()
+		flow.swap_music(Catalog.looped(Catalog.BOSS_MUSIC),Catalog.FLOW.boss_dip)
 		toast("THE GRAND MERGE CONFLICT",3)
 	else: toast("ENCOUNTER %d / 3 — clear the blockers" % (room+1),2)
 
@@ -318,13 +350,15 @@ func sound(key: String, pos: Vector2) -> void:
 	voice.play()
 
 func _physics_process(dt: float) -> void:
-	if not is_instance_valid(player): return
-	if state=="finisher" and not get_tree().paused:
-		_tick_finisher(dt)
-	if not playing or get_tree().paused: return
-	elapsed += dt
+	if not is_instance_valid(player) or get_tree().paused: return
+	if state=="finisher": _tick_finisher(dt)
+	elif state=="intro": _tick_intro(dt)
+	# Toasts, banners and transitions run outside combat too, so none freezes on screen.
 	toast_left -= dt
 	toast_label.visible = toast_left > 0
+	flow.tick(dt,player)
+	if not playing: return
+	elapsed += dt
 	shake = maxf(0,shake-dt*28)
 	camera.position = camera.position.lerp(Vector2(room_start()+640,360),minf(1,dt*5))
 	camera.offset = Vector2(rng.randf_range(-shake,shake),rng.randf_range(-shake,shake))
@@ -341,10 +375,9 @@ func _physics_process(dt: float) -> void:
 		toast("BLOCKERS CLEARED — GO RIGHT  →",3)
 	if gate_open and player.position.x > room_start()+1205:
 		if room<2: enter_room(room+1)
-		else:
-			playing = false
-			state = "stage_clear"
-			show_overlay("DISTRICT SECURED", "Stage score saved. Next: "+Catalog.TITLES[stage_index+1],"Continue →",advance_stage)
+		elif stage_index+1 < Catalog.TITLES.size():
+			exit_stage()
+			return
 	if not gate_open:
 		hazard_clock -= dt
 		if hazard_clock <= 0:
@@ -438,10 +471,17 @@ func _tick_allies(dt: float) -> void:
 			allies.remove_at(i)
 
 func begin_play() -> void:
+	var entering := state in ["intro","stage_enter"]
+	if flow.active(): flow.cancel()
 	overlay.hide()
 	state = "combat"
 	playing = true
 	player.input_lock = .2
+	if entering:
+		toast("ENCOUNTER %d / 3 — clear the blockers" % (room+1),2)
+		# A fresh room's enemies telegraph no sooner than this after Hoppy gets control.
+		for e in enemies:
+			if is_instance_valid(e) and not e.dead: e.cooldown = maxf(e.cooldown,Catalog.FLOW.enemy_grace)
 
 func advance_stage() -> void:
 	checkpoint_score = score
@@ -507,6 +547,7 @@ func toast(message: String, seconds := 2.0) -> void:
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
+	ui_layer = layer
 	add_child(layer)
 	screen_fx = ColorRect.new()
 	screen_fx.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -619,26 +660,56 @@ func show_intro() -> void:
 	show_overlay(titles[intro_page],lines[intro_page],"Start the review →" if intro_page==2 else "Next →",next_intro)
 	var skip := Style.button("Skip intro",46)
 	panel.add_child(skip)
-	skip.pressed.connect(begin_play)
+	skip.pressed.connect(enter_stage)
+	# Drains while the page holds; the page turns by itself when it empties.
+	intro_bar = ProgressBar.new()
+	intro_bar.show_percentage = false
+	intro_bar.custom_minimum_size = Vector2(720,6)
+	intro_bar.max_value = 1.0
+	intro_bar.step = 0.0
+	intro_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for part in ["background","fill"]:
+		var box := StyleBoxFlat.new()
+		box.bg_color = Color("142735") if part=="background" else Style.MINT
+		intro_bar.add_theme_stylebox_override(part,box)
+	panel.add_child(intro_bar)
+	panel.move_child(intro_bar,2)
+	_tick_intro(0)
+
+func _tick_intro(dt: float) -> void:
+	intro_clock += dt
+	if is_instance_valid(intro_bar): intro_bar.value = 1.0-intro_clock/Catalog.FLOW.intro_hold
+	if intro_clock >= Catalog.FLOW.intro_hold: next_intro()
 
 func next_intro() -> void:
 	intro_page += 1
-	if intro_page>=3: begin_play()
+	intro_clock = 0
+	if intro_page>=3: enter_stage()
 	else: show_intro()
+
+func pause(detail: String) -> void:
+	pause_return_state = state
+	playing = false
+	state = "paused"
+	get_tree().paused = true
+	show_overlay("REVIEW PAUSED",detail,"Resume",resume)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause") and not event.is_echo():
-		if state=="combat":
-			playing = false
-			state = "paused"
-			get_tree().paused = true
-			show_overlay("REVIEW PAUSED","Chain three attacks for a knockback finisher. Jump or change lanes to dodge.\nApproach a weapon and press E / Y to equip it.","Resume",resume)
+		if state in PAUSABLE: pause("Chain three attacks for a knockback finisher. Jump or change lanes to dodge.\nApproach a weapon and press E / Y to equip it.")
 		elif state=="paused": resume()
 		get_viewport().set_input_as_handled()
 
 func resume() -> void:
 	get_tree().paused = false
-	begin_play()
+	match pause_return_state:
+		"intro":
+			state = "intro"
+			show_intro()
+		"stage_enter", "stage_exit":
+			state = pause_return_state
+			overlay.hide()
+		_: begin_play()
 
 func leave() -> void:
 	playing = false
@@ -647,11 +718,8 @@ func leave() -> void:
 	AppRouter.go("beatem_up")
 
 func _notification(what: int) -> void:
-	if what==NOTIFICATION_APPLICATION_FOCUS_OUT and state=="combat" and not test_mode:
-		playing = false
-		state = "paused"
-		get_tree().paused = true
-		show_overlay("REVIEW PAUSED","The window lost focus.","Resume",resume)
+	if what==NOTIFICATION_APPLICATION_FOCUS_OUT and state in PAUSABLE and not test_mode:
+		pause("The window lost focus.")
 
 func _exit_tree() -> void:
 	get_tree().paused = false

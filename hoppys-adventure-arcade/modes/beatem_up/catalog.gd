@@ -7,6 +7,14 @@ const MUSIC := [
 	preload("res://Assets/Audio/Beat'em Up/helldrake(extended).ogg"),
 	preload("res://Assets/Audio/Beat'em Up/kim_lightyear_-_angel_eyes_vision_ii.mp3")]
 const BOSS_MUSIC = preload("res://Assets/Audio/Beat'em Up/Kim Lightyear - The Final.mp3")
+## Hands-free stage flow (seconds, world px, px/s, dB). stage_flow.gd reads its DEFAULTS keys;
+## the rest are game.gd's: intro page hold, room-0 telegraph grace, boss-music dip, exit banner.
+const FLOW := {
+	"run_speed":300.0, "exit_min":.6, "exit_max":1.6, "exit_margin":60.0,
+	"fade_out":.35, "fade_in":.35, "music_floor_db":-40.0,
+	"enter_from_x":-60.0, "enter_to_x":180.0, "enter_max":1.6,
+	"stage_banner":2.8, "banner_slide":.3, "banner_fade":.6,
+	"exit_banner":2.0, "intro_hold":4.5, "enemy_grace":.8, "boss_dip":.6}
 const SOUND_ROOT := "res://Assets/Audio/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/"
 const SOUNDS := {
 	"jab": preload(SOUND_ROOT + "Weapons/Melee/sfx_wpn_punch1.wav"),
