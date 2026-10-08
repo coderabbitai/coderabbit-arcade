@@ -38,6 +38,7 @@ Versioned macOS, Windows and Linux builds come from the [Build workflow](.github
 - [Heroes vs. Villains](docs/heroes-vs-villains.md): controls, capabilities, four villains, audio and verification.
 - [Heroes vs. Villains asset pack](docs/heroes-vs-villains-assets.md): Mode 2 art, boss moveset catalog and Godot previews; assets only.
 - [Main menu / arcade hub](docs/main-menu.md)
+- [Soundtrack plan](docs/soundtrack.md): the theme song, its 8-bit derivatives, level music and how to produce and deliver them.
 
 ## Tests
 
