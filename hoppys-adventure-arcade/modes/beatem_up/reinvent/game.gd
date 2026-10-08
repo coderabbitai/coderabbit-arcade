@@ -233,7 +233,7 @@ func resolve_swing(source: Node2D) -> void:
 	if weapon=="security_scanner":
 		reveal_time=10
 		hit=true # A scan consumes one charge even without a target in the cone.
-		fx("capabilities_fx","scanner_cone",tip,1.3,.4,source.facing)
+		fx("capabilities_fx","scanner_cone",source.position+Vector2(source.facing*100,-50),1.3,.4,source.facing)
 	var targets: Array=enemies.duplicate()+bosses.duplicate()
 	var zone_points: Array[Vector2]=[]
 	for enemy in targets:
@@ -248,7 +248,7 @@ func resolve_swing(source: Node2D) -> void:
 		if weapon=="pr_merger" and not enemy.is_boss and enemy.hp<enemy.max_hp*.25: amount=999
 		if enemy.take_hit(amount,def.knock,source.position,source.combo==3):
 			hit=true
-			fx("capabilities_fx","unlock_sparkle",tip if weapon!="" else enemy.position-Vector2(0,55),.5,.18,source.facing)
+			fx("capabilities_fx","unlock_sparkle",enemy.position-Vector2(0,55),.5,.18,source.facing)
 			if weapon=="review_stamp": enemy.stun(.5)
 			if weapon=="triage_hammer": hammer_target=enemy
 			if source.combo==3 and capabilities.change_stack: zone_points.append(clamp_ground(enemy.position+Vector2(source.facing*65,0)))
@@ -268,6 +268,8 @@ func resolve_swing(source: Node2D) -> void:
 			for target in bosses:
 				if is_instance_valid(target) and not target.dead: target.stun(.8)
 		if weapon!="" and source.weapon==weapon: source.spend_weapon()
+	elif weapon!="security_scanner":
+		fx("capabilities_fx","unlock_sparkle",tip,.5,.18,source.facing)
 
 static func melee_contains(offset: Vector2, facing: float, reach: float, depth: float) -> bool:
 	return offset.x*facing >= -20 and offset.x*facing <= reach and absf(offset.y) <= depth
@@ -388,9 +390,9 @@ func _physics_process(dt: float) -> void:
 	if state=="boss_victory":
 		victory_clock=minf(VICTORY_DURATION,victory_clock+dt)
 		# A short celebratory hop; the ground position and combat stay frozen.
-		player.body.position.y=-18.0*sin(PI*clampf(victory_clock/.7,0,1))
+		player.hop(-18.0*sin(PI*clampf(victory_clock/.7,0,1)))
 		if victory_clock>=VICTORY_DURATION:
-			player.body.position.y=0
+			player.hop(0)
 			show_boss_reward()
 		return
 	if state=="cards":
@@ -540,7 +542,7 @@ func boss_defeated() -> void:
 	for enemy in enemies:
 		if is_instance_valid(enemy): enemy.queue_free()
 	enemies.clear()
-	player.swing_left=0;player.queued=false;player.held.hide()
+	player.swing_left=0;player.queued=false
 	score+=500
 	state="boss_victory";victory_clock=0
 	player.height=0;player.rise=0;player.velocity=Vector2.ZERO;player.knock=Vector2.ZERO

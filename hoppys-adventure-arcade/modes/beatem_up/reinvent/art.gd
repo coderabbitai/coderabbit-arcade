@@ -25,6 +25,10 @@ static func sprite(key: String, pose: String, magnify := 1.0, foot := true) -> A
 static func shadow(radius := 27.0) -> Polygon2D:
 	return Shared.shadow(radius)
 
+const BODY_SCALE := 1.65
+const ARMED_CELL := Vector2(256, 160)
+const ARMED_PIVOT := Vector2(96, 147)
+
 const ARMED_ROOT := "res://Assets/hoppy-armed/heroes/"
 static var armed_manifest: Dictionary = {}
 static var armed_manifest_loaded := false
@@ -74,6 +78,27 @@ static func carry_texture(weapon_id: String) -> Texture2D:
 		texture = load(path) as Texture2D
 	carry_textures[weapon_id] = texture
 	return texture
+
+static func armed_cell(weapon_id: String) -> Vector2:
+	var spec := armed_spec(weapon_id)
+	if spec.has("cell"):
+		return Vector2(spec.cell[0], spec.cell[1])
+	return ARMED_CELL
+
+static func armed_pivot(weapon_id: String) -> Vector2:
+	var spec := armed_spec(weapon_id)
+	if spec.has("pivot"):
+		return Vector2(spec.pivot[0], spec.pivot[1])
+	return ARMED_PIVOT
+
+## Foot pivot at the sprite origin. flip_h mirrors the cel in place, so offset.x flips with it.
+static func armed_offset(weapon_id: String, flipped: bool) -> Vector2:
+	var cell := armed_cell(weapon_id)
+	var pivot := armed_pivot(weapon_id)
+	var ox := cell.x * .5 - pivot.x
+	if flipped:
+		ox = -ox
+	return Vector2(ox, cell.y * .5 - pivot.y)
 
 ## Cell-pixel anchor, or null when this frame has no point of that kind.
 static func sheet_anchor(weapon_id: String, kind: String, frame: int) -> Variant:

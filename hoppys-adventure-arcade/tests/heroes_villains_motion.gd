@@ -190,26 +190,101 @@ func run() -> void:
 	check(is_equal_approx(p.body.offset.x,-32) and is_equal_approx(p.body.offset.y,-67),"Armed idle facing left negates offset.x only")
 	p.facing=1;p.tick(0)
 	check(not p.body.flip_h,"Armed idle facing right clears flip_h")
+	var stamp_sheet: SpriteFrames=p.body.sprite_frames
 	for spec in [[.15,0],[.5,1],[.85,2]]:
 		p.swing_left=0;p.combo=0;p.combo_window=0;p.start_attack()
 		p.swing_fired=true;p.swing_left=p.swing_duration*(1.0-spec[0]);p.tick(0)
 		check(p.body.animation=="step1" and p.body.frame==spec[1],"Armed attack progress %.2f shows step1 frame %d"%[spec[0],spec[1]])
-		check(p.body.animation!="idle","Armed attack progress %.2f never snaps to idle"%spec[0])
+		if spec[0]==.15: check(p.held.trail.get_point_count()==0,"Stamp trail is empty during windup")
+		if spec[0]==.5:
+			var trail: Line2D=p.held.trail
+			var trail_ok := trail.get_point_count()>0
+			for i in trail.get_point_count(): trail_ok=trail_ok and trail.get_point_position(i).y<=0
+			check(trail_ok,"Stamp trail exists at contact and stays above the feet")
+			check(trail.get_point_count()>0 and p.held.to_global(trail.get_point_position(trail.get_point_count()-1)).distance_to(p.swing_tip())<=4,"Stamp trail ends at swing_tip")
+			for side in [1,-1]:
+				p.facing=side;p.tick(0)
+				check(p.body.flip_h==(side<0) and is_equal_approx(p.body.offset.x,32*side) and is_equal_approx(p.body.offset.y,-67),"Attack frame mirrors offset facing %d"%side)
+			p.facing=1;p.tick(0)
+		if spec[0]==.85:
+			check(p.held.trail.get_point_count()==0,"Stamp trail is empty in follow-through")
 	p.facing=-1;p.tick(0)
 	check(p.body.flip_h,"Armed attack mirrors when facing left")
-	p.swing_left=0;p.swing_fired=true;p.tick(0)
+	p.facing=1
+	p.swing_left=0;p.combo=0;p.combo_window=0;p.start_attack()
+	p.swing_fired=true;p.swing_left=p.swing_duration*.5;p.weapon="";p.tick(0)
+	check(p.body.animation=="step1" and p.body.sprite_frames==stamp_sheet,"Mid-swing weapon loss keeps the armed attack")
+	p.swing_left=0;p.tick(0)
+	check(p.body.animation=="idle" and p.body.sprite_frames==p.COMBAT_FRAMES and p.body.offset==Vector2(0,-51) and not p.held.visible,"Weapon loss ends in unarmed idle")
+	p.equip("review_stamp")
+	check(p.pickup_time>0,"Equip starts pickup time")
+	p.tick(0.01)
+	check(p.body.animation=="equip" and p.body.sprite_frames==stamp_sheet,"Equip plays the baked equip clip")
+	p.pickup_time=0;p.swing_left=0;p.stagger=.4;p.tick(0)
+	check(p.body.animation=="hurt" and p.body.sprite_frames==stamp_sheet,"Hurt plays the baked hurt clip")
+	p.stagger=0;p.show_pose("run")
+	check(p.body.animation=="run" and p.body.sprite_frames!=p.COMBAT_FRAMES and p.body.sprite_frames!=p.MOTION_FRAMES,"Armed run uses the baked run clip")
+	for pose in ["jump","victory"]:
+		p.show_pose(pose)
+		check(p.held.carry.visible and p.body.animation==pose and p.body.sprite_frames==p.COMBAT_FRAMES,"Carry stays visible on unarmed "+pose)
+	p.hop(-18)
+	check(is_equal_approx(p.body.position.y,-18) and is_equal_approx(p.held.position.y,-18),"hop moves body and rig together")
+	p.hop(0)
 	for clip in ["walk_up","walk_down"]:
 		p.facing=-1;p.pose_move=Vector2(0,-1 if clip=="walk_up" else 1);p.show_pose(clip)
 		check(p.body.animation==clip and p.body.sprite_frames==p.MOTION_FRAMES and not p.body.flip_h,"Armed "+clip+" uses unflipped directional frames")
-		if clip=="walk_up": check(p.held.carry.visible and p.held.z_index==-1,"Carried stamp sits behind the body on walk_up")
+		if clip=="walk_up":
+			check(p.held.carry.visible and p.held.z_index==0 and p.held.get_index()<p.body.get_index(),"Carried stamp is ordered behind the body on walk_up")
+			p.show_pose("idle")
+			check(p.held.get_index()>p.body.get_index(),"Rig returns in front of the body after a side pose")
 	p.pose_move=Vector2.ZERO;p.facing=1
 	p.equip("triage_hammer");p.pickup_time=0;p.tick(0)
 	check(p.body.animation=="idle" and p.body.sprite_frames==p.COMBAT_FRAMES,"Sheetless hammer idles on combat frames")
 	check(p.held.sprite.visible and not p.held.carry.visible,"Sheetless hammer uses the legacy sprite")
-	check(p.held.sprite.offset.distance_to(Vector2(56,-32))<1.0,"Hammer is gripped by its handle")
+	var grip: Vector2=Vector2(96,96)-p.held.sprite.offset
+	var sheet_image: Image=(load("res://Assets/heroes-vs-villains-assets-only/heroes_villains/items_allies.png") as Texture2D).get_image().get_region(Rect2i(192,0,192,192))
+	check(sheet_image.get_pixelv(Vector2i(grip)).a>.5,"Hammer grip pixel is opaque")
+	var sum := Vector2.ZERO
+	var count := 0
+	for y in 192:
+		for x in 192:
+			if sheet_image.get_pixel(x,y).a>.5:
+				sum+=Vector2(x,y);count+=1
+	var centroid: Vector2=sum/maxf(count,1)
+	check(centroid.x>grip.x+20 and centroid.y<grip.y-15,"Hammer grip is the handle, head sits up-right")
 	p.swing_left=0;p.combo=0;p.combo_window=0;p.start_attack()
 	p.swing_fired=true;p.swing_left=p.swing_duration*.5;p.tick(0)
 	check(not p.body.animation.begins_with("step"),"Sheetless hammer never uses armed step clips")
+	p.swing_left=0;p.visual_weapon="";p.weapon="";p.tick(0)
+	# Hit sparkle placement versus swing tip.
+	game.playing=true
+	for e in game.enemies:
+		if is_instance_valid(e): e.queue_free()
+	game.enemies.clear()
+	for prop in game.props: prop.node.queue_free()
+	game.props.clear()
+	var swing_cases := [["miss","review_stamp",-1],["hit","review_stamp",1],["scan","security_scanner",-1]]
+	for spec in swing_cases:
+		p.swing_left=0;p.combo=0;p.combo_window=0;p.equip(spec[1]);p.pickup_time=0;p.facing=spec[2]
+		p.start_attack();p.swing_fired=true;p.swing_left=p.swing_duration*.56;p.tick(0)
+		var enemy: Node2D=null
+		if spec[0]=="hit":
+			enemy=game.spawn_enemy("merge_request_mob",p.position+Vector2(120,0),false)
+			enemy.set_physics_process(false)
+		p.attack_weapon=spec[1];p.swing_serial+=1
+		var fx_before: int=game.actors.get_child_count()
+		game.resolve_swing(p)
+		var fx_sprite=game.actors.get_child(game.actors.get_child_count()-1)
+		var made: bool=game.actors.get_child_count()>fx_before and fx_sprite is AnimatedSprite2D
+		check(made,"%s swing spawns an effect sprite"%spec[0])
+		if made:
+			if spec[0]=="miss": check(fx_sprite.position.distance_to(p.swing_tip())<=8 and fx_sprite.flip_h,"Miss sparkle sits on the mirrored swing tip")
+			if spec[0]=="hit":
+				check(fx_sprite.position.distance_to(enemy.position-Vector2(0,55))<=8 and not fx_sprite.flip_h,"Hit sparkle sits on the enemy")
+				check(fx_sprite.position.distance_to(p.swing_tip())>30 and enemy.position.distance_to(p.swing_tip())>30,"Hit sparkle is not at the swing tip")
+			if spec[0]=="scan": check(fx_sprite.position.distance_to(p.position+Vector2(-100,-50))<=8 and fx_sprite.flip_h,"Scanner cone is mirrored with the hero")
+		if enemy!=null:
+			enemy.queue_free();game.enemies.clear()
 	p.swing_left=0;p.visual_weapon="";p.weapon="";p.tick(0)
 
 	if DisplayServer.get_name()!="headless":
@@ -249,20 +324,23 @@ func run() -> void:
 		for item in game.pickups: item.node.queue_free()
 		game.pickups.clear()
 		p.hide();game.camera.position=Vector2(640,360)
+		game.playing=false
 		var actors: Array=[]
 		var specs := [["review_stamp",1],["triage_hammer",1],["change_stack_baton",1],["security_scanner",1],["pr_merger",1],["review_stamp",-1]]
 		for i in specs.size():
-			var q=game.Player.new();q.arena=game;q.set_physics_process(false)
-			game.actors.add_child(q);q.position=Vector2(190+i*180,560)
+			var q=game.Player.new();q.arena=game
+			game.actors.add_child(q);q.set_physics_process(false);q.position=Vector2(190+i*180,560)
 			q.equip(specs[i][0]);q.pickup_time=0;q.facing=specs[i][1]
 			actors.append(q)
-		for shot in [[.25,"25"],[.44,"44"],[.85,"85"]]:
+		for shot in [[.25,"25",0],[.44,"44",1],[.85,"85",2]]:
 			for q in actors:
 				q.swing_left=0;q.combo=0;q.combo_window=0;q.start_attack()
 				q.swing_fired=true;q.swing_left=q.swing_duration*(1.0-shot[0]);q.tick(0)
-			if shot[0]>.8: check(actors[0].body.animation=="step1","Baked stamp follow-through keeps the step pose in the capture")
 			await create_timer(.1).timeout
 			await RenderingServer.frame_post_draw
+			for idx in [0,5]:
+				check(actors[idx].body.animation=="step1" and actors[idx].body.frame==shot[2],"Baked stamp %d holds step1 frame %d after the draw"%[idx,shot[2]])
+			check(actors[5].body.flip_h,"Left-facing stamp stays mirrored in the capture")
 			root.get_texture().get_image().save_png("res://../docs/previews/heroes-villains/weapons_%s.png"%shot[1])
 		for q in actors: q.queue_free()
 	print("Heroes vs. Villains motion failures: ",failures)

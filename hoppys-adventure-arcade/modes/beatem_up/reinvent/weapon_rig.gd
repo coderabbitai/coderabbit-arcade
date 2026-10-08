@@ -2,7 +2,6 @@ extends Node2D
 ## Carry icon, swing trail, and the legacy weapon sprite for sheets that are
 ## not packed yet. The body draws a baked sheet when one exists.
 const Art = preload("res://modes/beatem_up/reinvent/art.gd")
-const BODY_SCALE := 1.65
 const CELL := Vector2(192, 192)
 const UNARMED_PIVOT := Vector2(64, 115)
 ## Grip pixel in the 192px item cel. The sprite offset pins this point to the paw,
@@ -31,7 +30,6 @@ const HANDS := {
 	"walk_up": Vector2(72, 86),
 	"walk_down": Vector2(80, 84),
 	"jump": Vector2(86, 78),
-	"pickup": Vector2(82, 98),
 	"defeat": Vector2(90, 102),
 	"victory": Vector2(76, 72),
 }
@@ -84,22 +82,25 @@ func _armed(kind: String, step: int, progress: float, active: bool) -> void:
 	if active:
 		var clip_frame := 0 if progress < .30 else 1 if progress < .64 else 2
 		sheet_frame = 5 + (maxi(step, 1) - 1) * 3 + clip_frame
-	var pivot := _pivot(kind)
+	var pivot := Art.armed_pivot(kind)
 	var hand: Variant = Art.sheet_anchor(kind, "hand", sheet_frame)
 	var tip: Variant = Art.sheet_anchor(kind, "tip", sheet_frame)
+	var contact := 5 + (maxi(step, 1) - 1) * 3 + 1
 	if tip == null and active:
-		tip = Art.sheet_anchor(kind, "tip", 5 + (maxi(step, 1) - 1) * 3 + 1)
+		tip = Art.sheet_anchor(kind, "tip", contact)
 	if tip == null:
 		tip = hand
 	if tip is Vector2:
-		tip_local = (tip - pivot) * BODY_SCALE
-	if active and progress >= .30 and progress < .64 and tip is Vector2 and hand is Vector2:
-		var aim: Vector2 = tip - hand
-		var angle := aim.angle() if aim.length() > 1.0 else 0.0
-		var sign := -1.0 if step == 2 else 1.0
-		for i in 8:
-			var a := angle + float(i) * .1 * sign
-			trail.add_point(tip_local + Vector2(cos(a), sin(a)) * (12.0 + float(i) * 6.0))
+		tip_local = (tip - pivot) * Art.BODY_SCALE
+	if active and progress >= .30 and progress < .64 and tip is Vector2:
+		var windup_frame := 5 + (maxi(step, 1) - 1) * 3
+		var windup: Variant = Art.sheet_anchor(kind, "tip", windup_frame)
+		if windup == null:
+			windup = Art.sheet_anchor(kind, "hand", windup_frame)
+		var start := tip_local
+		if windup is Vector2:
+			start = (windup - pivot) * Art.BODY_SCALE
+		_trail_toward(start, tip_local)
 
 func _carry(kind: String, pose: String, movement: Vector2) -> void:
 	sprite.hide()
@@ -108,7 +109,7 @@ func _carry(kind: String, pose: String, movement: Vector2) -> void:
 	if carry.texture != texture:
 		carry.texture = texture
 	var hand_cell: Vector2 = HANDS.get(pose, HANDS.idle)
-	var hand := (hand_cell - UNARMED_PIVOT) * BODY_SCALE
+	var hand := (hand_cell - UNARMED_PIVOT) * Art.BODY_SCALE
 	if movement.length() > .1:
 		hand.y -= sin(clock) * 2.0
 	var grip: Vector2 = GRIPS.get(kind, CELL * .5) * .25
@@ -116,7 +117,7 @@ func _carry(kind: String, pose: String, movement: Vector2) -> void:
 	carry.offset = size * .5 - grip
 	carry.position = hand
 	carry.rotation = 0.0
-	carry.scale = Vector2.ONE * BODY_SCALE
+	carry.scale = Vector2.ONE * Art.BODY_SCALE
 	tip_local = hand
 
 func _fallback(kind: String, step: int, progress: float, active: bool) -> void:
@@ -146,12 +147,12 @@ func _fallback(kind: String, step: int, progress: float, active: bool) -> void:
 	tip_local = hand + ((tip_tex - grip) * scale).rotated(angle)
 	if active and progress >= .30 and progress < .64:
 		var sign := -1.0 if step == 2 else 1.0
-		for i in 8:
-			var a := angle + float(i) * .09 * sign
-			trail.add_point(tip_local + Vector2(cos(a), sin(a)) * (8.0 + float(i) * 5.0))
+		var start := tip_local - Vector2(cos(angle - .35 * sign), sin(angle - .35 * sign)) * 36.0
+		_trail_toward(start, tip_local)
 
-func _pivot(kind: String) -> Vector2:
-	var spec := Art.armed_spec(kind)
-	if spec.has("pivot"):
-		return Vector2(spec.pivot[0], spec.pivot[1])
-	return Vector2(96, 147)
+## The arc ends on the tip and stays at or above the feet.
+func _trail_toward(start: Vector2, tip: Vector2) -> void:
+	for i in 8:
+		var point := start.lerp(tip, float(i) / 7.0)
+		point.y = minf(point.y, 0.0)
+		trail.add_point(point)

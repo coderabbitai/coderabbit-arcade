@@ -5,7 +5,6 @@ const BASE_FRAMES = preload("res://Assets/heroes-vs-villains-assets-only/heroes_
 const COMBAT_FRAMES = BASE_FRAMES
 const MOTION_FRAMES = preload("res://Assets/heroes-vs-villains-assets-only/heroes_villains/hoppy_locomotion.tres")
 const MOVE_SPEED := 264.0
-const BODY_SCALE := 1.65
 const UNARMED_OFFSET := Vector2(0, -51)
 const SHEET_POSES := ["idle", "run", "jab", "swing", "kick", "pickup", "hurt"]
 const WeaponRig = preload("res://modes/beatem_up/reinvent/weapon_rig.gd")
@@ -48,7 +47,7 @@ func _ready() -> void:
 	body = AnimatedSprite2D.new()
 	body.sprite_frames = COMBAT_FRAMES
 	body.offset = UNARMED_OFFSET
-	body.scale = Vector2.ONE * BODY_SCALE
+	body.scale = Vector2.ONE * Art.BODY_SCALE
 	body.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	add_child(body)
 	held = WeaponRig.new()
@@ -120,13 +119,6 @@ func tick(dt: float) -> void:
 		else:
 			pose = "run"
 			base = true
-	var attacking := swing_left>0
-	var progress := clampf(1.0-swing_left/maxf(swing_duration,.001),0,1) if attacking else 0.0
-	var sheet_id := visual_weapon if attacking else weapon
-	# Baked attacks already include the windup. The legacy rig still leans into the swing.
-	if attacking and sheet_id!="" and Art.armed_frames(sheet_id)==null:
-		body.position.x=facing*sin(progress*PI)*5
-	else: body.position.x=0
 	pose_move=movement
 	pose_dt=dt
 	show_pose(pose,base)
@@ -164,6 +156,10 @@ func show_pose(pose: String, _base := false) -> void:
 			elif progress>.8: pose="idle"
 		body.play(pose)
 		if attacking and visual_weapon!="" and armed==null: body.pause()
+	# Baked attacks already include the windup. The legacy rig still leans into the swing.
+	if attacking and sheet_id!="" and armed==null:
+		body.position.x=facing*sin(progress*PI)*5
+	else: body.position.x=0
 	_sync_weapon(pose,progress,attacking)
 
 func _armed_clip(pose: String) -> String:
@@ -173,23 +169,26 @@ func _armed_clip(pose: String) -> String:
 	return pose
 
 func _apply_armed_offset(sheet_id: String) -> void:
-	var spec := Art.armed_spec(sheet_id)
-	var cell := Vector2(256,160)
-	var pivot := Vector2(96,147)
-	if spec.has("cell"): cell=Vector2(spec.cell[0],spec.cell[1])
-	if spec.has("pivot"): pivot=Vector2(spec.pivot[0],spec.pivot[1])
-	# flip_h mirrors pixels inside the cel rect, so the foot pivot stays put only if offset.x flips too.
-	var ox := cell.x*.5-pivot.x
-	if body.flip_h: ox=-ox
-	body.offset=Vector2(ox,cell.y*.5-pivot.y)
+	body.offset=Art.armed_offset(sheet_id,body.flip_h)
 
 func _sync_weapon(pose: String, progress: float, attacking: bool) -> void:
 	var shown := visual_weapon if attacking else weapon
 	var mirror := 1.0 if pose in ["walk_up","walk_down"] else facing
-	held.position=Vector2(body.position.x,-height)
+	held.position=body.position
 	held.scale=Vector2(mirror,1)
-	held.z_index=-1 if pose=="walk_up" else 0
+	held.z_index=0
+	# z_index sorts against the stage, so a negative value hides the carry under the ground.
+	# Sibling order draws the walk_up icon behind the body and above the floor.
+	var behind := pose=="walk_up"
+	if behind and held.get_index()>body.get_index():
+		move_child(held,body.get_index())
+	elif not behind and held.get_index()<body.get_index():
+		move_child(held,get_child_count()-1)
 	held.animate(shown,combo,progress,attacking,pose_move,pose_dt,pose)
+
+func hop(offset_y: float) -> void:
+	body.position.y=offset_y
+	held.position.y=offset_y
 
 func swing_tip() -> Vector2:
 	return held.tip_global()
