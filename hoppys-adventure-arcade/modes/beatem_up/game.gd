@@ -349,7 +349,7 @@ func sound(key: String, pos: Vector2) -> void:
 	voice.play()
 
 func _physics_process(dt: float) -> void:
-	if not is_instance_valid(player) or get_tree().paused: return
+	if not is_instance_valid(player) or get_tree().paused or state=="leaving": return
 	if state=="finisher": _tick_finisher(dt)
 	elif state=="intro": _tick_intro(dt)
 	# Toasts, banners and transitions run outside combat too, so none freezes on screen.
@@ -487,11 +487,15 @@ func advance_stage() -> void:
 	start_stage(stage_index+1)
 
 func retry_stage() -> void:
+	flow.cancel() # A pending exit must not advance the stage being retried.
 	score = checkpoint_score
 	start_stage(stage_index)
 
+## Terminal paths (game over, leave) cancel the flow first, so a pending exit can never
+## rebuild the next stage at black or restart its music behind them.
 func game_over() -> void:
 	if state=="game_over": return
+	flow.cancel()
 	playing = false
 	state = "game_over"
 	_update_hud()
@@ -499,6 +503,8 @@ func game_over() -> void:
 
 func boss_defeated() -> void:
 	if state=="finisher" or state=="won": return
+	# No stage sequence may outlive the boss; a boss-music swap still finishes (it isn't one).
+	if flow.active(): flow.cancel()
 	playing = false
 	state = "finisher"
 	finish_clock = 0
@@ -704,6 +710,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func resume() -> void:
+	if state!="paused": return
 	get_tree().paused = false
 	match pause_return_state:
 		"intro":
@@ -715,7 +722,13 @@ func resume() -> void:
 		_: begin_play()
 
 func leave() -> void:
+	if state=="leaving": return
+	flow.cancel()
+	# The scene keeps running through the router's fade: nothing may start play or music again.
+	state = "leaving"
 	playing = false
+	for child in panel.get_children():
+		if child is BaseButton: child.disabled = true
 	get_tree().paused = false
 	music.stop()
 	AppRouter.go("beatem_up")

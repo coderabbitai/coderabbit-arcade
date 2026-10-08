@@ -164,12 +164,14 @@ func swap_music(stream: AudioStream, seconds: float, source: AudioStream = null)
 	_tick_swap(0)
 	_apply_music()
 
-## Abandons a running sequence without calling its on_black or emitting phase "": the owner is
-## cutting straight to play. Banners and music swaps carry on.
+## Abandons a running sequence and any music swap without calling on_black or emitting phase "":
+## the veil clears and the envelope returns to 0 dB. For owners cutting to play, retrying, or
+## ending the run. Banners carry on. (A swap never overlaps a sequence: both play_* drop it.)
 func cancel() -> void:
 	_serial += 1
 	_on_black = Callable()
 	_enter_queued = false
+	_stop_swap()
 	_fade_db = 0
 	_set_veil(0)
 	phase = ""

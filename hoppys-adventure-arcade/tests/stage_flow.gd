@@ -61,8 +61,9 @@ func run() -> void:
 	check_boss_dip()
 	check_cancel()
 	check(game.completion_count==0, "Transitions do not count as a completion")
+	await check_terminal_paths()
 	print("Stage flow failures: ", failures)
-	game.queue_free()
+	if is_instance_valid(current_scene): current_scene.queue_free()
 	root.get_node("AudioService").shutdown()
 	await create_timer(.4).timeout
 	quit(1 if failures else 0)
@@ -273,3 +274,112 @@ func check_cancel() -> void:
 	game.begin_play()
 	check(not game.flow.active() and is_equal_approx(game.flow.veil.color.a, 0.0), "begin_play cancels the flow and clears the veil")
 	check(game.state=="combat" and game.stage_index==index, "Cancel does not run on_black")
+# --- Terminal paths: game over, retry, boss defeat and leave must cancel a running sequence ---
+## From a fresh stage-1 entrance, clears to the room-3 gate, runs the exit and stops 0.1 s into
+## `phase`. fade_out is before black (stage 1); enter_run is after it (stage 2).
+func reach(phase: String) -> void:
+	game.start_stage(0)
+	freeze()
+	var guard := 0
+	while game.state!="combat" and guard<200:
+		game._physics_process(DT)
+		guard += 1
+	clear_enemies()
+	game.enter_room(2)
+	freeze()
+	clear_enemies()
+	game._physics_process(DT)
+	frame_room()
+	game.player.position = Vector2(game.room_start()+1210, 580)
+	guard = 0
+	while not (game.flow.phase==phase and game.flow.clock>=0.1) and guard<400:
+		game._physics_process(DT)
+		freeze()
+		guard += 1
+## Ticks 3 s and checks nothing moved on: stage, track, stream, phase, veil, owner state.
+func steady(label: String, want: String) -> void:
+	var stage: int = game.stage_index
+	var track = game.flow.music_track
+	var stream = game.music.stream
+	var held := true
+	for i in 180:
+		game._physics_process(DT)
+		if game.stage_index!=stage or game.flow.music_track!=track or game.music.stream!=stream: held = false
+		if game.flow.phase!="" or game.flow.veil.color.a>0.0 or game.state!=want or game.playing: held = false
+		if want=="leaving" and game.music.playing: held = false
+	check(held and is_equal_approx(game.flow.music_db, 0.0), label)
+## Leave routes away; wait for the router, confirm the menu, then load a fresh Code City.
+func reload() -> void:
+	while root.get_node("AppRouter").busy: await process_frame
+	check(current_scene.name=="BeatemMenu", "Leave still routes to the Beat'em Up menu")
+	change_scene_to_file("res://scenes/beatem_up/code_city_brawl.tscn")
+	await process_frame
+	await process_frame
+	game = current_scene
+	game.test_mode = true
+	freeze()
+func check_terminal_paths() -> void:
+	for phase in ["fade_out", "enter_run"]:
+		reach(phase)
+		var at: String = "%s (stage %d)" % [phase, game.stage_index+1]
+		game.game_over()
+		check(game.overlay.visible and not game.flow.active(), "Game over during %s cancels the flow" % at)
+		steady("Game over during %s: no rebuild, music change, veil or combat for 3 s" % at, "game_over")
+		reach(phase)
+		var stage: int = game.stage_index
+		game.retry_stage()
+		freeze()
+		var held := true
+		for i in 180:
+			game._physics_process(DT)
+			freeze()
+			if game.stage_index!=stage or game.flow.music_track!=Catalog.MUSIC[stage]: held = false
+		check(held and game.state=="combat" and game.flow.phase=="" and game.flow.veil.color.a==0.0, "Retry during %s re-enters the same stage; the pending exit never advances it" % at)
+		check_boss_terminal(phase)
+		for via_menu in [false, true]:
+			reach(phase)
+			at = "%s (stage %d)" % [phase, game.stage_index+1]
+			if via_menu:
+				game.pause("x")
+				var back: Button = null
+				for child in game.panel.get_children():
+					if child is Button and child.text=="Return to Beat'em Up menu": back = child
+				back.pressed.emit()
+				check(back.disabled, "The pause menu's Return disables the menu during the router fade")
+			else: game.leave()
+			check(not paused and not game.flow.active() and not game.music.playing, "%s during %s cancels the flow and stops music" % ["Pause-menu Return" if via_menu else "Leave", at])
+			steady("%s during %s: no rebuild, music restart, veil or combat for 3 s" % ["Pause-menu Return" if via_menu else "Leave", at], "leaving")
+			await reload()
+## No exit follows the boss, so drive a sequence directly in the boss room and count its black.
+func check_boss_terminal(phase: String) -> void:
+	game.start_stage(2)
+	freeze()
+	var guard := 0
+	while game.state!="combat" and guard<200:
+		game._physics_process(DT)
+		guard += 1
+	clear_enemies()
+	game.enter_room(2)
+	freeze()
+	for i in 40: game._physics_process(DT)
+	var boss = game.boss
+	for damage in [12, 6]:
+		boss.vulnerable = true
+		boss.take_hit(damage, 0, Vector2.ZERO, true)
+	freeze()
+	clear_enemies()
+	var blacks := [0]
+	if phase=="fade_out": game.flow.play_exit(func(): blacks[0] += 1)
+	else: game.flow.play_enter("x", "y")
+	guard = 0
+	while not (game.flow.phase==phase and game.flow.clock>=0.1) and guard<200:
+		game._physics_process(DT)
+		guard += 1
+	check(boss.phase==3 and game.flow.phase==phase, "The boss reaches its final phase during a synthetic %s" % phase)
+	boss.vulnerable = true
+	boss.take_hit(6, 0, Vector2.ZERO, true) # The real defeat path: take_hit → arena.boss_defeated()
+	var held := true
+	for i in 180:
+		game._physics_process(DT)
+		if game.flow.phase!="" or game.flow.veil.color.a>0.0 or game.state!="finisher" or game.stage_index!=2: held = false
+	check(held and blacks[0]==0 and game.flow.music_track==Catalog.BOSS_MUSIC and is_equal_approx(game.flow.music_db, 0.0), "Boss defeat during %s cancels the sequence and keeps the boss track" % phase)
