@@ -26,6 +26,10 @@ A Godot 4 arcade collection starring Hoppy, the CodeRabbit mascot. It has a reac
 
 In Orbital Ops' zero-gravity bay, hold Jump or Up to rise, hold Down to descend, and release to brake.
 
+## Builds
+
+Versioned macOS, Windows and Linux builds come from the [Build workflow](.github/workflows/build.yml): releases for `v*` tags, artifacts for every `main` push, and preview builds for PRs labelled `preview-build`. To build locally, run `python3 tools/build/export_game.py --smoke`. See [docs/builds.md](docs/builds.md).
+
 ## Docs
 
 - Platformer: [Bay Area Blitz](docs/bay-area-blitz.md), [Orbital Ops](docs/orbital-ops.md), [The Enchanted Repo](docs/enchanted-repo.md)

@@ -11,6 +11,10 @@ const ROUTES := {
 	"runner_game": "res://scenes/runner/runner_game.tscn",
 	"beatem_up": "res://scenes/beatem_up/beatem_menu.tscn"
 }
+## Packaged-build check (`<game> --headless -- --smoke-routes`): load every route, then quit
+## nonzero on the first failure. tools/build/export_game.py runs it against each export.
+const SMOKE_FLAG := "--smoke-routes"
+const SMOKE_FRAMES := 30
 var busy := false
 var veil: ColorRect
 func _ready() -> void:
@@ -24,6 +28,8 @@ func _ready() -> void:
 	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	veil.modulate.a = 0
 	add_child(veil)
+	if SMOKE_FLAG in OS.get_cmdline_user_args():
+		smoke_routes.call_deferred()
 func go(route: String) -> void:
 	if busy or not ROUTES.has(route) or not ResourceLoader.exists(ROUTES[route]):
 		return
@@ -54,3 +60,23 @@ func quit_game() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		quit_game()
+
+func smoke_routes() -> void:
+	# Let the launch scene finish its opening frames, as a player would, before switching.
+	for frame in SMOKE_FRAMES:
+		await get_tree().process_frame
+	for route in ROUTES:
+		var error := get_tree().change_scene_to_file(ROUTES[route])
+		print("SMOKE %s %s" % [route, error_string(error)])
+		if error != OK:
+			get_tree().quit(1)
+			return
+		for frame in SMOKE_FRAMES:
+			await get_tree().process_frame
+		get_tree().paused = false
+	print("SMOKE complete")
+	get_tree().unload_current_scene()
+	AudioService.shutdown()
+	# Give freed scenes and stopped voices a moment to release before exit (as the tests do).
+	await get_tree().create_timer(0.4).timeout
+	get_tree().quit()
