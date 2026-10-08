@@ -1,6 +1,7 @@
 extends SceneTree
-## Booth mode: idle routes return to the hub, input keeps a game alive, the menu can't quit the
-## kiosk, and --route=<name> picks a launch route. Run headless with --script res://tests/booth_mode.gd.
+## Booth mode: idle routes return to the hub, input keeps a game alive, the menu can't quit
+## the kiosk, and --route=<name> picks a launch route.
+## Run headless with --script res://tests/booth_mode.gd.
 var failures := 0
 var router: Node
 
@@ -30,9 +31,10 @@ func run() -> void:
 	await wait(0.3)
 	check(not router.booth and not router.is_processing(), "Booth mode is off without --booth")
 
-	check(router.launch_route(PackedStringArray(["--route=heroes_vs_villains"])) == "heroes_vs_villains",
-		"--route names a launch route")
-	check(router.launch_route(PackedStringArray(["--booth"])) == "", "No --route means the default scene")
+	var launch: String = router.launch_route(PackedStringArray(["--route=heroes_vs_villains"]))
+	check(launch == "heroes_vs_villains", "--route names a launch route")
+	launch = router.launch_route(PackedStringArray(["--booth"]))
+	check(launch == "", "No --route means the default scene")
 
 	router.go("platformer")
 	await settle_route()
@@ -57,7 +59,8 @@ func run() -> void:
 
 	var before: int = router.get_child_count()
 	router.quit_game()
-	check(not router.busy and router.get_child_count() == before, "The menu's Quit is ignored in booth mode")
+	check(not router.busy and router.get_child_count() == before,
+		"The menu's Quit is ignored in booth mode")
 
 	router.set_booth(false)
 	router.idle_limit = router.IDLE_SECONDS
