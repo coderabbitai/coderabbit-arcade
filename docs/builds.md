@@ -1,6 +1,6 @@
 # Builds
 
-Playable builds come from `tools/build/export_game.py`, both locally and in the [Build workflow](../.github/workflows/build.yml). Each build is versioned, records its commit and engine, and is smoke-tested before it's kept.
+Playable builds come from `tools/build/export_game.py`, both locally and in the [Build workflow](../.github/workflows/build.yml). Each build is versioned and records its commit and engine. The workflow runs on Linux, so it smoke-tests the Linux build. Smoke-test the macOS and Windows builds by running `export_game.py --smoke` on those systems; each artifact's `smoke` field in `BUILD_MANIFEST.json` says which builds were checked.
 
 ## Get a build
 
@@ -31,7 +31,7 @@ python3 tools/build/export_game.py --preset macOS --smoke
 
 - `fetch_godot.py` downloads the editor for your OS and the export templates listed in [`tools/build/godot.lock.json`](../tools/build/godot.lock.json). It refuses anything whose SHA-512 doesn't match. It prints the editor path; `export_game.py` uses it automatically, or `$GODOT` / `--godot` if you set one.
 - `export_game.py` checks the engine version and imports the project. It then exports each preset in `hoppys-adventure-arcade/export_presets.cfg` and zips the result as `hoppys-adventure-arcade-<version>-<commit>-<platform>.zip`.
-- `--smoke` unzips every build this machine can run and launches it with `--headless -- --smoke-routes`. That loads every `AppRouter` route from the packaged game and fails on any engine error, script error or leak. This catches files missing from the export, such as the art manifests the platformer and beat 'em ups read at runtime.
+- `--smoke` unzips the build for this machine's OS and launches it with `--headless -- --smoke-routes`. Builds for other systems are recorded as "not run on this host". That loads every `AppRouter` route from the packaged game and fails on any engine error, script error or leak. This catches files missing from the export, such as the art manifests the platformer and beat 'em ups read at runtime.
 
 ## Versions and releases
 

@@ -91,7 +91,11 @@ def project_version() -> str:
 
 
 def git(*args: str) -> str:
-    return run(["git", *args], timeout=60, cwd=ROOT).stdout.strip()
+    """Build provenance comes from Git; refuse to build without it rather than record blanks."""
+    result = run(["git", *args], timeout=60, cwd=ROOT)
+    if result.returncode != 0:
+        fail(f"git {' '.join(args)} failed; builds need a Git checkout to record their commit", result.stderr)
+    return result.stdout.strip()
 
 
 def sha256(path: Path) -> str:
@@ -131,15 +135,17 @@ def smoke(target: Target, artifact: Path, scratch: Path) -> str:
         return "not run on this host"
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True)
-    # `unzip`/`ditto` keep the app bundle's modes and symlinks; zipfile would not.
-    extract = ["ditto", "-x", "-k", str(artifact), str(scratch)] if target.host == "Darwin" \
-        else ["unzip", "-q", str(artifact), "-d", str(scratch)]
-    if run(extract, timeout=300).returncode != 0:
-        fail(f"could not unpack {artifact.name} for the smoke check")
     if target.host == "Darwin":
+        # ditto keeps the app bundle's modes and symlinks, which zipfile would drop.
+        if run(["ditto", "-x", "-k", str(artifact), str(scratch)], timeout=300).returncode != 0:
+            fail(f"could not unpack {artifact.name} for the smoke check")
         binary = next(scratch.glob("*.app/Contents/MacOS/*"))
     else:
+        # The Windows and Linux artifacts hold one binary; zipfile needs no host unzip tool.
+        with zipfile.ZipFile(artifact) as bundle:
+            bundle.extract(target.export_name, scratch)
         binary = scratch / target.export_name
+        binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
     result = run([str(binary), "--headless", "--", "--smoke-routes"], timeout=SMOKE_TIMEOUT)
     log = ANSI.sub("", result.stdout + result.stderr)
     if result.returncode != 0 or "SMOKE complete" not in log or SMOKE_FAILURE.search(log):
