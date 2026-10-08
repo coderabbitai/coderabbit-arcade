@@ -4,7 +4,10 @@ const Catalog = preload("res://modes/beatem_up/reinvent/catalog.gd")
 const Player = preload("res://modes/beatem_up/reinvent/player.gd")
 const Enemy = preload("res://modes/beatem_up/reinvent/enemy.gd")
 const Boss = preload("res://modes/beatem_up/reinvent/boss.gd")
+const StageFlow = preload("res://modes/beatem_up/stage_flow.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
+const PAUSABLE := ["combat","cards","boss_victory","stage_enter","stage_exit"]
+const TERMINAL_OVERLAY_ARM := .5
 var rng := RandomNumberGenerator.new()
 var stage_index := 0
 var room := 0
@@ -31,6 +34,7 @@ var ally_clock := 10.0
 var hazard_clock := 4.0
 var shake := 0.0
 var music: AudioStreamPlayer
+var flow: StageFlow
 var sound_pool: Array[AudioStreamPlayer2D] = []
 var sound_index := 0
 var hud: Label
@@ -39,10 +43,12 @@ var boss_bar: ProgressBar
 var boss_text: Label
 var toast_label: Label
 var toast_left := 0.0
+var ui_layer: CanvasLayer
 var prompt: Label
 var overlay: ColorRect
 var panel: VBoxContainer
 var primary: Button
+var terminal_overlay_clock := TERMINAL_OVERLAY_ARM
 var screen_fx: ColorRect
 var completion_count := 0
 var test_mode := false
@@ -63,6 +69,7 @@ var card: Control
 var card_queue: Array[String] = []
 var card_callback: Callable
 var card_clock := 0.0
+var card_progress: ProgressBar
 var capability_hud: Label
 var second_boss_bar: ProgressBar
 var second_boss_text: Label
@@ -97,6 +104,10 @@ func _ready() -> void:
 		add_child(voice)
 		sound_pool.append(voice)
 	_build_ui()
+	flow = StageFlow.new()
+	add_child(flow)
+	flow.setup(ui_layer,music,Catalog.FLOW)
+	flow.phase_changed.connect(_on_flow_phase)
 	start_stage(0,true)
 
 func room_start() -> float: return room*1280.0
@@ -124,18 +135,38 @@ func start_stage(index: int, cinematic := false) -> void:
 		var decor := Art.sprite(Catalog.KITS[index],["expo_truss","gantry","cables"][index],1.2,false)
 		decor.position=Vector2(i*1280+125,230)
 		ground.add_child(decor)
-	player=Player.new();player.arena=self;player.position=Vector2(180,580)
+	player=Player.new();player.arena=self;player.position=Vector2(Catalog.FLOW.enter_from_x,580)
 	actors.add_child(player)
 	player.shield=capabilities.review
 	camera.position=Vector2(640,360)
-	music.stream=Catalog.looped(Catalog.MUSIC[index]);music.play()
+	camera.reset_physics_interpolation()
+	flow.play_music(Catalog.looped(Catalog.MUSIC[index]),Catalog.MUSIC[index])
 	enter_room(0)
+	# enter_room clamps new arrivals to the room boundary. The director owns the actual entrance.
+	player.position.x=Catalog.FLOW.enter_from_x
 	if cinematic:
-		show_cards(["opening_situation","opening_complication","opening_resolution"],begin_play)
-	else:
-		state="stage_intro"
-		show_overlay("%02d / %s" % [index+1,Catalog.TITLES[index]],Catalog.STORIES[index],"Enter the stage",begin_play)
+		show_cards(["opening_situation","opening_complication","opening_resolution"],enter_stage)
+	else: enter_stage()
 	_update_hud()
+
+## stage_enter: Hoppy runs in under the title banner, then begin_play() on flow completion.
+func enter_stage() -> void:
+	overlay.hide()
+	playing=false
+	state="stage_enter"
+	toast_left=0;toast_label.hide();prompt.hide()
+	flow.play_enter("%02d / %s" % [stage_index+1,Catalog.TITLES[stage_index]],Catalog.STORIES[stage_index])
+
+## stage_exit: unlock cards are gone, so Hoppy runs out while the capability banner remains visible.
+func exit_stage() -> void:
+	playing=false
+	state="stage_exit"
+	prompt.hide();toast_left=0;toast_label.hide()
+	flow.banner("CAPABILITY DEPLOYED","Stage score saved · Next: "+Catalog.TITLES[stage_index+1],Catalog.FLOW.exit_banner)
+	flow.play_exit(advance_stage)
+
+func _on_flow_phase(phase: String) -> void:
+	if phase=="" and state=="stage_enter": begin_play()
 
 func enter_room(index: int) -> void:
 	clear_threats()
@@ -160,7 +191,7 @@ func enter_room(index: int) -> void:
 	spawn_prop(Catalog.PROPS[stage_index][1],Vector2(room_start()+960,628),1)
 	drop(["review_stamp","change_stack_baton","security_scanner"][stage_index],Vector2(room_start()+230,595))
 	if room==2:
-		music.stream=Catalog.looped(Catalog.BOSS_MUSIC[stage_index]);music.play()
+		flow.swap_music(Catalog.looped(Catalog.BOSS_MUSIC[stage_index]),Catalog.FLOW.boss_dip,Catalog.BOSS_MUSIC[stage_index])
 		match stage_index:
 			0: spawn_boss("ai_slop",Vector2(room_start()+945,565))
 			1:
@@ -342,9 +373,18 @@ func sound(key: String, pos: Vector2) -> void:
 	if voice.stream!=null: voice.play()
 
 func _physics_process(dt: float) -> void:
-	if not is_instance_valid(player): return
+	if not is_instance_valid(player) or state=="leaving": return
 	_layout_card()
 	if get_tree().paused: return
+	# Camera and stage-flow clocks keep running behind a presentation card. In particular, the
+	# room-three pan must finish while the boss introduction remains on screen.
+	flow.tick(dt,player)
+	camera.position=camera.position.lerp(Vector2(room_start()+640,360),minf(1,dt*5))
+	shake=maxf(0,shake-dt*28)
+	camera.offset=Vector2(rng.randf_range(-shake,shake),rng.randf_range(-shake,shake))
+	var view := get_viewport_rect().size
+	camera.zoom=Vector2.ONE*minf(view.x/1280.0,view.y/720.0)
+	if state in ["game_over","won"]: terminal_overlay_clock=minf(TERMINAL_OVERLAY_ARM,terminal_overlay_clock+dt)
 	if state=="boss_victory":
 		victory_clock=minf(VICTORY_DURATION,victory_clock+dt)
 		# A short celebratory hop; the ground position and combat stay frozen.
@@ -357,15 +397,12 @@ func _physics_process(dt: float) -> void:
 		card_clock+=dt
 		if is_instance_valid(card):
 			card.position.x=(1.0-clampf(card_clock/.3,0,1))*1280
+		if is_instance_valid(card_progress): card_progress.value=maxf(0,1.0-card_clock/card_hold())
+		if card_clock>=card_hold(): next_card()
 		return
 	if not playing: return
 	elapsed+=dt;toast_left-=dt;reveal_time=maxf(0,reveal_time-dt);surge_cooldown=maxf(0,surge_cooldown-dt)
 	toast_label.visible=toast_left>0
-	shake=maxf(0,shake-dt*28)
-	camera.position=camera.position.lerp(Vector2(room_start()+640,360),minf(1,dt*5))
-	camera.offset=Vector2(rng.randf_range(-shake,shake),rng.randf_range(-shake,shake))
-	var view := get_viewport_rect().size
-	camera.zoom=Vector2.ONE*minf(view.x/1280.0,view.y/720.0)
 	_tick_items(dt);_tick_threats(dt);_tick_allies(dt);_tick_capabilities(dt)
 	if not playing: return
 	check_boss_state()
@@ -468,10 +505,13 @@ func _tick_allies(dt: float) -> void:
 		if allies[i].life<=0: allies[i].node.queue_free();allies.remove_at(i)
 
 func begin_play() -> void:
+	var entering := state in ["stage_enter"]
+	if flow.active(): flow.cancel()
 	overlay.hide();card_host.hide()
 	state="combat";playing=true
 	player.input_lock=.2
 	player.review_charge=0
+	if entering: toast("ENCOUNTER %d / 3 — clear the blockers" % (room+1),2)
 
 func advance_stage() -> void:
 	checkpoint_score=score
@@ -479,12 +519,14 @@ func advance_stage() -> void:
 	start_stage(stage_index+1)
 
 func retry_stage() -> void:
+	flow.cancel()
 	score=checkpoint_score
 	capabilities=checkpoint_capabilities.duplicate()
 	start_stage(stage_index)
 
 func game_over() -> void:
 	if state=="game_over": return
+	flow.cancel()
 	playing = false
 	state = "game_over"
 	_update_hud()
@@ -492,6 +534,7 @@ func game_over() -> void:
 
 func boss_defeated() -> void:
 	if boss_rewarded: return
+	if flow.active(): flow.cancel()
 	boss_rewarded=true
 	playing=false;clear_threats()
 	for enemy in enemies:
@@ -513,19 +556,14 @@ func show_boss_reward() -> void:
 	match stage_index:
 		0:
 			capabilities.review=true;player.shield=true
-			show_cards(["unlock_review"],show_stage_clear)
+			show_cards(["unlock_review"],exit_stage)
 		1:
 			capabilities.triage=true;capabilities.change_stack=true
-			show_cards(["unlock_triage","unlock_change_stack"],show_stage_clear)
+			show_cards(["unlock_triage","unlock_change_stack"],exit_stage)
 		2:
 			capabilities.security=true
 			reveal_time=999
 			show_cards(["unlock_security","victory"],win)
-
-func show_stage_clear() -> void:
-	playing=false;state="stage_clear"
-	_update_hud()
-	show_overlay("CAPABILITY DEPLOYED", "Next: "+Catalog.TITLES[stage_index+1],"Continue →",advance_stage)
 
 func win() -> void:
 	if state=="won": return
@@ -541,6 +579,7 @@ func toast(message: String, seconds := 2.0) -> void:
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
+	ui_layer=layer
 	add_child(layer)
 	screen_fx = ColorRect.new()
 	screen_fx.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -667,6 +706,7 @@ func _update_hud() -> void:
 		second_boss_text.text=Catalog.BOSS_NAMES[live[1].kind]
 
 func show_overlay(title: String, detail: String, action: String, callback: Callable) -> void:
+	terminal_overlay_clock=0.0 if state in ["game_over","won"] else TERMINAL_OVERLAY_ARM
 	for child in panel.get_children():
 		panel.remove_child(child)
 		child.queue_free()
@@ -689,15 +729,13 @@ func show_overlay(title: String, detail: String, action: String, callback: Calla
 	overlay.show()
 	primary.grab_focus()
 
-func show_intro() -> void:
-	show_cards(["opening_situation","opening_complication","opening_resolution"],begin_play)
-
-func next_intro() -> void:
-	next_card()
-
 func _input(event: InputEvent) -> void:
 	# Filter before focused buttons receive ui_accept (which includes jump/A).
-	if state not in ["stage_intro","stage_clear","game_over","won"] or not overlay.visible: return
+	if state not in ["game_over","won"] or not overlay.visible: return
+	if terminal_overlay_clock<TERMINAL_OVERLAY_ARM:
+		if event.is_action_pressed("heroes_popup_advance") or event.is_action("ui_accept") or event is InputEventMouseButton or event is InputEventScreenTouch or event is InputEventScreenDrag:
+			get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("heroes_popup_advance"):
 		get_viewport().set_input_as_handled()
 		if not event.is_echo():
@@ -709,7 +747,7 @@ func _input(event: InputEvent) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause") and not event.is_echo():
 		if state=="paused": resume()
-		elif state in ["combat","cards","boss_victory"]:
+		elif state in PAUSABLE:
 			pause_return_state=state
 			playing=false;state="paused";get_tree().paused=true
 			show_overlay("REVIEW PAUSED","Chain attacks, sidestep warnings, and hold Q / LB to charge REVIEW.","Resume",resume)
@@ -719,18 +757,21 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func resume() -> void:
+	if state!="paused": return
 	get_tree().paused=false
-	if pause_return_state in ["cards","boss_victory"]: state=pause_return_state;overlay.hide()
+	if pause_return_state in ["cards","boss_victory","stage_enter","stage_exit"]: state=pause_return_state;overlay.hide()
 	else: begin_play()
 
 func leave() -> void:
 	if leaving: return
-	leaving=true;playing=false;get_tree().paused=false
+	leaving=true;flow.cancel();playing=false;state="leaving";get_tree().paused=false
+	for child in panel.get_children():
+		if child is BaseButton: child.disabled=true
 	music.stop()
 	AppRouter.go("beatem_up")
 
 func _notification(what: int) -> void:
-	if what==NOTIFICATION_APPLICATION_FOCUS_OUT and state in ["combat","cards","boss_victory"] and not test_mode:
+	if what==NOTIFICATION_APPLICATION_FOCUS_OUT and state in PAUSABLE and not test_mode:
 		pause_return_state=state
 		playing=false;state="paused";get_tree().paused=true
 		show_overlay("REVIEW PAUSED","The window lost focus.","Resume",resume)
@@ -848,13 +889,31 @@ func _load_card() -> void:
 	card.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	card_host.add_child(card)
 	card_clock=0;card.position.x=1280
-	var hint := Style.label("Enter / View (Select) · Next     Esc / Start · Pause",16)
-	hint.position=Vector2(300,696)
+	var hint := Style.label("Enter / View · Skip     Esc / Start · Pause",16)
+	hint.position=Vector2(360,670)
 	card.add_child(hint)
+	card_progress=ProgressBar.new()
+	card_progress.position=Vector2(360,696)
+	card_progress.size=Vector2(560,5)
+	card_progress.max_value=1.0
+	card_progress.value=1.0
+	card_progress.show_percentage=false
+	card_progress.mouse_filter=Control.MOUSE_FILTER_IGNORE
+	var progress_background := StyleBoxFlat.new()
+	progress_background.bg_color=Color("142735")
+	var progress_fill := StyleBoxFlat.new()
+	progress_fill.bg_color=Color("ffab54")
+	card_progress.add_theme_stylebox_override("background",progress_background)
+	card_progress.add_theme_stylebox_override("fill",progress_fill)
+	card.add_child(card_progress)
 	var name := card_queue[0]
 	if name.begins_with("boss_"): sound("reveal_"+name.trim_prefix("boss_"),player.position)
 	elif name.begins_with("unlock_"): sound("unlock",player.position)
 	_layout_card()
+
+func card_hold() -> float:
+	if card_queue.is_empty(): return 0.0
+	return float(Catalog.CARD_HOLD.get(card_queue[0],4.5))
 
 func next_card() -> void:
 	if state!="cards": return
