@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Local gates: catch what must never be pushed, before it leaves this machine.
+# Enable once per clone:  git config core.hooksPath .githooks
+set -euo pipefail
+root="$(git rev-parse --show-toplevel)"
+
+python3 "$root/tools/checks/repo_hygiene.py" --staged
+
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks git --pre-commit --staged --redact --no-banner "$root"
+else
+  echo "pre-commit: gitleaks not installed; staged secrets were not scanned locally (brew install gitleaks)." >&2
+fi
+
+staged_python=()
+while IFS= read -r -d '' file; do staged_python+=("$file"); done \
+  < <(git diff --cached --name-only --diff-filter=ACMR -z -- '*.py')
+if [ ${#staged_python[@]} -gt 0 ]; then
+  if command -v ruff >/dev/null 2>&1; then
+    (cd "$root" && ruff check "${staged_python[@]}")
+  else
+    echo "pre-commit: ruff not installed; staged Python was not linted locally." >&2
+  fi
+fi
