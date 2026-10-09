@@ -50,6 +50,9 @@ var boss_bar: ProgressBar
 var boss_text: Label
 var toast_label: Label
 var toast_left := 0.0
+## A toast raised while the stage title banner fades into combat waits for it, so the two never stack.
+var held_toast := ""
+var held_toast_seconds := 2.0
 var ui_layer: CanvasLayer
 var prompt: Label
 var overlay: ColorRect
@@ -363,6 +366,7 @@ func _physics_process(dt: float) -> void:
 	toast_left -= dt
 	toast_label.visible = toast_left > 0
 	flow.tick(dt,player)
+	if held_toast != "" and state=="combat" and not flow.banner_active(): toast(held_toast,held_toast_seconds)
 	if not playing: return
 	elapsed += dt
 	shake = maxf(0,shake-dt*28)
@@ -553,11 +557,18 @@ func _tick_finisher(dt: float) -> void:
 		show_overlay("MERGED. SHIPPED. SAVED.","Code City is back online.\nScore: %d   ·   Time: %d:%02d" % [score,int(elapsed)/60,int(elapsed)%60],"Return to Beat'em Up menu",leave)
 
 func toast(message: String, seconds := 2.0) -> void:
+	# Combat opens under the fading stage title; anything said then waits for it (latest wins).
+	if state=="combat" and flow.banner_active():
+		held_toast = message
+		held_toast_seconds = seconds
+		return
+	held_toast = ""
 	toast_label.text = message
 	toast_label.show()
 	toast_left = seconds
 
 func hide_toast() -> void:
+	held_toast = ""
 	toast_left = 0
 	toast_label.hide()
 

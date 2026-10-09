@@ -43,6 +43,9 @@ var boss_bar: ProgressBar
 var boss_text: Label
 var toast_label: Label
 var toast_left := 0.0
+## A toast raised while the stage title banner fades into combat waits for it, so the two never stack.
+var held_toast := ""
+var held_toast_seconds := 2.0
 var ui_layer: CanvasLayer
 var prompt: Label
 var overlay: ColorRect
@@ -154,14 +157,14 @@ func enter_stage() -> void:
 	overlay.hide()
 	playing=false
 	state="stage_enter"
-	toast_left=0;toast_label.hide();prompt.hide()
+	toast_left=0;held_toast="";toast_label.hide();prompt.hide()
 	flow.play_enter("%02d / %s" % [stage_index+1,Catalog.TITLES[stage_index]],Catalog.STORIES[stage_index])
 
 ## stage_exit: unlock cards are gone, so Hoppy runs out while the capability banner remains visible.
 func exit_stage() -> void:
 	playing=false
 	state="stage_exit"
-	prompt.hide();toast_left=0;toast_label.hide()
+	prompt.hide();toast_left=0;held_toast="";toast_label.hide()
 	flow.banner("CAPABILITY DEPLOYED","Stage score saved · Next: "+Catalog.TITLES[stage_index+1],Catalog.FLOW.exit_banner)
 	flow.play_exit(advance_stage)
 
@@ -381,6 +384,10 @@ func _physics_process(dt: float) -> void:
 	# Camera and stage-flow clocks keep running behind a presentation card. In particular, the
 	# room-three pan must finish while the boss introduction remains on screen.
 	flow.tick(dt,player)
+	if held_toast!="" and state=="combat" and not flow.banner_active(): toast(held_toast,held_toast_seconds)
+	# A fallen villain collapses on this clock: during the fight, the victory hop, cards and exit.
+	for target in bosses:
+		if is_instance_valid(target) and target.dead: target.defeat_tick(dt)
 	camera.position=camera.position.lerp(Vector2(room_start()+640,360),minf(1,dt*5))
 	shake=maxf(0,shake-dt*28)
 	camera.offset=Vector2(rng.randf_range(-shake,shake),rng.randf_range(-shake,shake))
@@ -550,7 +557,7 @@ func boss_defeated() -> void:
 	player.show_pose("victory")
 	player.z_index=2 # Keep the celebration visible in front of defeated bosses.
 	shake=0;camera.offset=Vector2.ZERO
-	toast_label.hide();prompt.hide()
+	held_toast="";toast_label.hide();prompt.hide()
 	sound("win",player.position)
 	_update_hud()
 
@@ -575,6 +582,11 @@ func win() -> void:
 	show_overlay("THE CODEBASE IS TRUSTED", "All four capabilities deployed.\nScore: %d   ·   Time: %d:%02d" % [score,int(elapsed)/60,int(elapsed)%60],"Return to Beat'em Up menu",leave)
 
 func toast(message: String, seconds := 2.0) -> void:
+	# Combat opens under the fading stage title; anything said then waits for it (latest wins).
+	if state=="combat" and flow.banner_active():
+		held_toast=message;held_toast_seconds=seconds
+		return
+	held_toast=""
 	toast_label.text = message
 	toast_label.show()
 	toast_left = seconds

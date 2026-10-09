@@ -34,6 +34,18 @@ const HANDS := {
 	"victory": Vector2(90, 96),
 }
 const CARRY_POSES := ["walk_up", "walk_down", "jump", "defeat", "victory"]
+## Contact trail per combo step, as in Code City: an arc around the paw for swings and slams,
+## a short streak behind the tip for thrusts and punches.
+const TRAIL_STYLE := {
+	"review_stamp": ["streak", "arc", "streak"],
+	"triage_hammer": ["arc", "arc", "arc"],
+	"change_stack_baton": ["streak", "arc", "streak"],
+	"security_scanner": ["arc", "streak", "streak"],
+	"pr_merger": ["streak", "streak", "streak"],
+}
+const TRAIL_POINTS := 9
+const TRAIL_ARC := 1.0 # radians swept back from the tip
+const TRAIL_STREAK := 36.0 # rig pixels behind the tip
 var sprite: AnimatedSprite2D
 var carry: Sprite2D
 var trail: Line2D
@@ -95,14 +107,58 @@ func _armed(kind: String, step: int, progress: float, active: bool) -> void:
 	if tip is Vector2:
 		tip_local = (tip - pivot) * Art.BODY_SCALE
 	if active and progress >= .30 and progress < .64 and tip is Vector2:
-		var windup_frame := 5 + (maxi(step, 1) - 1) * 3
-		var windup: Variant = Art.sheet_anchor(kind, "tip", windup_frame)
+		var windup: Variant = Art.sheet_anchor(kind, "tip", contact - 1)
 		if windup == null:
-			windup = Art.sheet_anchor(kind, "hand", windup_frame)
-		var start := tip_local
-		if windup is Vector2:
-			start = (windup - pivot) * Art.BODY_SCALE
-		_trail_toward(start, tip_local)
+			windup = Art.sheet_anchor(kind, "hand", contact - 1)
+		var paw: Variant = Art.sheet_anchor(kind, "hand", contact)
+		var paw_local: Vector2 = tip_local if paw == null else (paw - pivot) * Art.BODY_SCALE
+		var windup_local: Vector2 = tip_local if windup == null else (windup - pivot) * Art.BODY_SCALE
+		var styles: Array = TRAIL_STYLE.get(kind, ["arc", "arc", "arc"])
+		_armed_trail(styles[clampi(step, 1, 3) - 1], paw_local, windup_local, torso_box(kind, step))
+
+## Rig-space box behind the contact paw, from the hips to eye level. No trail point enters it.
+func torso_box(kind: String, step: int) -> Rect2:
+	var pivot := Art.armed_pivot(kind)
+	var paw: Variant = Art.sheet_anchor(kind, "hand", 5 + (clampi(step, 1, 3) - 1) * 3 + 1)
+	var height := float(Art.armed_spec(kind).get("body_height", 86))
+	var right: float = paw.x - 8.0 if paw is Vector2 else pivot.x
+	var top_left := (Vector2(pivot.x - 24.0, pivot.y - .8 * height) - pivot) * Art.BODY_SCALE
+	var bottom_right := (Vector2(right, pivot.y - .3 * height) - pivot) * Art.BODY_SCALE
+	return Rect2(top_left, (bottom_right - top_left).max(Vector2.ZERO))
+
+## Arcs sweep back from the tip on whichever side stays out of the torso (ties: the forward
+## side); streaks run back along the tip's motion from the windup. Either way the trail ends on
+## the tip, stops before the torso and stays above the feet.
+func _armed_trail(style: String, paw: Vector2, windup: Vector2, torso: Rect2) -> void:
+	var points: Array[Vector2] = []
+	if style == "arc":
+		var reach := tip_local - paw
+		var best := INF
+		for side in [1.0, -1.0]:
+			var arc: Array[Vector2] = []
+			var score := 0.0
+			for i in TRAIL_POINTS:
+				var point: Vector2 = paw + reach.rotated(side * TRAIL_ARC * float(i) / float(TRAIL_POINTS - 1))
+				arc.append(point)
+				score += (1000.0 if torso.has_point(point) else 0.0) - point.x * .001
+			if score < best:
+				best = score
+				points = arc
+	else:
+		var motion := tip_local - windup
+		if motion.length() < 1.0:
+			motion = tip_local - paw
+		var back := -motion.normalized() if motion.length() >= 1.0 else Vector2.LEFT
+		for i in TRAIL_POINTS:
+			points.append(tip_local + back * TRAIL_STREAK * float(i) / float(TRAIL_POINTS - 1))
+	var kept: Array[Vector2] = []
+	for i in points.size():
+		if torso.has_point(points[i]) or (i > 0 and torso.has_point((points[i] + points[i - 1]) * .5)):
+			break
+		kept.append(Vector2(points[i].x, minf(points[i].y, 0.0)))
+	kept.reverse()
+	for point in kept:
+		trail.add_point(point)
 
 func _carry(kind: String, pose: String, movement: Vector2) -> void:
 	sprite.hide()

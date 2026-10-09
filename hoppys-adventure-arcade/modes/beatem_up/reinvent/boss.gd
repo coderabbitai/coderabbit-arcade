@@ -25,6 +25,11 @@ var vector_body: AnimatedSprite2D
 var vector_aim := Vector2.ZERO
 var vector_direction := Vector2.ZERO
 var flash := 0.0
+## Seconds since this villain fell. The collapse runs on the arena clock (defeat_tick), so pause
+## freezes it and a hand-stepped test sees the frame a player would.
+var defeat_clock := 0.0
+## Fade-and-drop length for art with no collapse clip, and for the Hacker's second vector.
+const DEFEAT_DROP := .6
 
 func _ready() -> void:
 	max_hp = {"ai_slop":30.0,"agent_army":12.0 if fused else 8.0,"ten_thousand_line_pr":24.0,"ai_augmented_hacker":36.0}[kind]
@@ -168,12 +173,55 @@ func take_hit(damage: float, _force: float, _from: Vector2, _finisher := false) 
 	flash=.14
 	if hp<=0:
 		hp=0;dead=true
-		pose("defeat" if body.sprite_frames.has_animation("defeat") else "melt")
+		fall()
 		arena.clear_owned_threats(self)
-		if is_instance_valid(vector): vector.hide()
 		arena.score+=500
 		arena.sound("collapse",position)
 	return true
+
+## The multi-frame collapse when the art has one, else the single defeat pose; "" for neither.
+func defeat_clip() -> String:
+	for clip in ["defeat_action","defeat"]:
+		if body.sprite_frames.has_animation(clip): return clip
+	return ""
+
+## Starts the collapse with a small burst. A visible second vector is revealed and drops with it.
+func fall() -> void:
+	defeat_clock=0;flash=0
+	body.modulate=Color.WHITE
+	var clip := defeat_clip()
+	if clip!="":
+		body.play(clip);body.pause();body.frame=0
+	arena.fx("capabilities_fx","spawn_burst",position-Vector2(0,70),1.4,.5)
+	if is_instance_valid(vector) and vector.visible:
+		vector_body.modulate.a=1.0
+		arena.fx("capabilities_fx","spawn_burst",vector.position-Vector2(0,60),1.0,.5)
+	queue_redraw()
+
+## Advances the collapse; the arena calls it every unpaused tick until the stage ends.
+func defeat_tick(dt: float) -> void:
+	if not dead: return
+	defeat_clock+=dt
+	var drop := clampf(defeat_clock/DEFEAT_DROP,0,1)
+	var clip := defeat_clip()
+	if clip!="": body.frame=clip_frame(clip,defeat_clock)
+	else:
+		body.modulate.a=1.0-drop
+		body.position.y=36.0*drop
+	if is_instance_valid(vector) and vector.visible:
+		vector_body.modulate.a=1.0-drop
+		vector_body.position.y=36.0*drop
+		if drop>=1: vector.hide()
+
+## Frame of a non-looping clip `seconds` in, honouring per-frame durations; holds the last frame.
+func clip_frame(clip: String, seconds: float) -> int:
+	var frames := body.sprite_frames
+	var beats := seconds*frames.get_animation_speed(clip)
+	var count := frames.get_frame_count(clip)
+	for i in count:
+		beats-=frames.get_frame_duration(clip,i)
+		if beats<0: return i
+	return count-1
 
 func change_phase(next: int) -> void:
 	phase=next

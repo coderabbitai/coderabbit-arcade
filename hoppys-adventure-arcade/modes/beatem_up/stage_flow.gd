@@ -18,6 +18,8 @@ const DEFAULTS := {
 	"enter_from_x":-60.0, "enter_to_x":180.0, "enter_max":1.6,
 	"stage_banner":2.8, "banner_slide":.3, "banner_fade":.6}
 const EXITING := ["exit_run","fade_out","fade_in"]
+## Share of exit_max a far-off Hoppy gets to pass exit_x, leaving a few frames of slack.
+const EXIT_BUDGET := .9
 var phase := ""                  # "", "exit_run", "fade_out", "fade_in", "enter_run"
 var clock := 0.0                 # seconds into the current phase
 var tuning: Dictionary = DEFAULTS.duplicate()
@@ -28,6 +30,7 @@ var music_track: AudioStream
 var base_db := 0.0
 var music_db := 0.0              # envelope applied on top of base_db
 var exit_x := INF                # world x Hoppy must pass before the fade (just off-screen right)
+var exit_speed := 0.0            # run_speed, or faster when exit_x is too far to reach by exit_max
 var veil: ColorRect
 var banner_panel: Control
 var banner_text: Control
@@ -116,6 +119,7 @@ func play_exit(on_black: Callable) -> void:
 	_enter_queued = false
 	_exit_runner = 0
 	exit_x = INF
+	exit_speed = float(tuning.run_speed)
 	_stop_swap()
 	_go("exit_run")
 
@@ -181,6 +185,10 @@ func cancel() -> void:
 func active() -> bool:
 	return phase != ""
 
+## True while a banner is on screen, including its fade into combat.
+func banner_active() -> bool:
+	return banner_length > 0
+
 ## Moves the scripted player during *_run phases; `player` is the owner's current one.
 func tick(dt: float, player: Node2D) -> void:
 	if is_inside_tree() and get_tree().paused: return
@@ -200,7 +208,11 @@ func _tick_phase(dt: float, player: Node2D) -> void:
 					_exit_runner = player.get_instance_id()
 					_settle(player)
 					exit_x = _screen_right(player)+float(tuning.exit_margin)
-				_run(player,dt)
+					# Far from the edge, run faster so Hoppy is off screen before exit_max cuts to the fade.
+					var budget := float(tuning.exit_max)*EXIT_BUDGET
+					var needed: float = (exit_x-player.global_position.x)/budget if budget > 0 else 0.0
+					exit_speed = maxf(float(tuning.run_speed),needed)
+				_run(player,dt,exit_speed)
 			if phase=="exit_run":
 				var out: bool = player != null and player.global_position.x >= exit_x
 				if (out and clock >= float(tuning.exit_min)) or clock >= float(tuning.exit_max): _go("fade_out")
@@ -267,10 +279,15 @@ func _place_entrant(player: Node2D) -> void:
 	player.position.x = float(tuning.enter_from_x)
 	player.reset_physics_interpolation()
 
-func _run(player: Node2D, dt: float) -> void:
-	player.position.x += float(tuning.run_speed)*dt
+func _run(player: Node2D, dt: float, speed := -1.0) -> void:
+	var run_speed := float(tuning.run_speed)
+	if speed < 0: speed = run_speed
+	player.position.x += speed*dt
 	player.set("facing",1.0)
 	if player.has_method("show_pose"): player.show_pose("run",true)
+	# The stride keeps pace with a sped-up exit instead of skating.
+	var body = player.get("body")
+	if body is AnimatedSprite2D and run_speed > 0: body.speed_scale = speed/run_speed
 
 ## Lands a mid-air or mid-swing Hoppy before scripting him. Unknown properties are ignored.
 func _settle(player: Node2D) -> void:
