@@ -393,7 +393,14 @@ func steady(label: String, want: String) -> void:
 	check(held and is_equal_approx(game.flow.music_db, 0.0), label)
 ## Leave routes away; wait for the router, confirm the menu, then load a fresh Code City.
 func reload() -> void:
-	while root.get_node("AppRouter").busy: await process_frame
+	# The router fades on a clock; a stuck route must fail the suite, not hang it.
+	var deadline: int = Time.get_ticks_msec()+5000
+	while root.get_node("AppRouter").busy:
+		if Time.get_ticks_msec() > deadline:
+			check(false, "AppRouter finishes routing within 5 s")
+			quit(1)
+			return
+		await process_frame
 	check(current_scene.name=="BeatemMenu", "Leave still routes to the Beat'em Up menu")
 	change_scene_to_file("res://scenes/beatem_up/code_city_brawl.tscn")
 	await process_frame
@@ -427,6 +434,10 @@ func check_terminal_paths() -> void:
 				var back: Button = null
 				for child in game.panel.get_children():
 					if child is Button and child.text=="Return to Beat'em Up menu": back = child
+				if back == null:
+					check(false, "The pause menu offers Return during %s" % at)
+					quit(1)
+					return
 				back.pressed.emit()
 				check(back.disabled, "The pause menu's Return disables the menu during the router fade")
 			else: game.leave()

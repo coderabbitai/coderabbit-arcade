@@ -61,7 +61,14 @@ func auto_win() -> void:
 	game._physics_process(.1)
 	check(game.state=="won","Victory card auto-advances into won by 6.0 s")
 func reload_game() -> void:
-	while root.get_node("AppRouter").busy: await process_frame
+	# The router fades on a clock; a stuck route must fail the suite, not hang it.
+	var deadline: int=Time.get_ticks_msec()+5000
+	while root.get_node("AppRouter").busy:
+		if Time.get_ticks_msec()>deadline:
+			check(false,"AppRouter finishes routing within 5 s")
+			quit(1)
+			return
+		await process_frame
 	change_scene_to_file("res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn")
 	await process_frame;await process_frame
 	game=current_scene;game.test_mode=true
@@ -355,6 +362,9 @@ func run() -> void:
 	for child in game.panel.get_children():
 		if child is Button and child.text=="Return to Beat'em Up menu": back=child
 	check(back!=null and paused and game.state=="paused","Pause overlay offers Return during stage_exit")
+	if back==null:
+		quit(1)
+		return
 	back.pressed.emit()
 	game.shake=8
 	var stage_before: int=game.stage_index
