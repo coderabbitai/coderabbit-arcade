@@ -559,7 +559,8 @@ func boss_defeated() -> void:
 	player.show_pose("victory")
 	player.z_index=2 # Keep the celebration visible in front of defeated bosses.
 	shake=0;camera.offset=Vector2.ZERO
-	held_toast="";toast_label.hide();prompt.text="" # Clear it; a hidden label would never show again.
+	# Toasts tick in every state now, so end this one rather than only hiding the label.
+	toast_left=0;held_toast="";toast_label.hide();prompt.text="" # Clear the prompt; a hidden label would never show again.
 	sound("win",player.position)
 	_update_hud()
 
