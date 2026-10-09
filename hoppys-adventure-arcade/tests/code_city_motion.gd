@@ -61,19 +61,6 @@ func carry_should_behind(kind: String, pose: String) -> bool:
 	if pose=="walk_down": return kind=="firewall_shield"
 	return false
 
-func carry_face_hits(carry: Sprite2D, image: Image, box: Rect2, body_scale: float, pivot: Vector2) -> int:
-	if image.is_compressed(): image.decompress()
-	var size := Vector2(image.get_width(),image.get_height())
-	var shift := size*.5 if carry.centered else Vector2.ZERO
-	var xform := carry.get_transform()
-	var hits := 0
-	for y in image.get_height():
-		for x in image.get_width():
-			if image.get_pixel(x,y).a<=.5: continue
-			var cel: Vector2=xform*(Vector2(x+.5,y+.5)+carry.offset-shift)/body_scale+pivot
-			if box.has_point(cel): hits+=1
-	return hits
-
 ## Every weapon, both facings. walk_up is behind for all and has no face box. Jump is behind for
 ## all. walk_down is in front except the shield, so those carries must miss the face box.
 func check_carry_faces(players: Array) -> void:
@@ -98,7 +85,7 @@ func check_carry_faces(players: Array) -> void:
 				check(drawn==expect and told==expect,label+(" draws behind the body" if expect else " draws in front of the body")+" (held %d, body %d)"%[actor.held.get_index(),actor.body.get_index()])
 				if not FACE_BOX.has(pose): continue
 				var image: Image=Art.carry(weapon).get_image()
-				var hits := carry_face_hits(carry,image,FACE_BOX[pose],actor.body.scale.y,FACE_PIVOT)
+				var hits := ArmedMeasure.carry_face_hits(carry,image,FACE_BOX[pose],actor.body.scale.y,FACE_PIVOT)
 				if hits>0: covered.append("%s %s facing %d: %d"%[weapon,pose,face,hits])
 				check(drawn or hits==0,label+" keeps the face clear (%d texels in the face box, behind %s)"%[hits,drawn])
 		actor.facing=1
@@ -184,137 +171,17 @@ func capture(name: String, toast_text := "") -> void:
 	if not rendered: return
 	DirAccess.make_dir_recursive_absolute("res://../docs/previews/code-city-motion")
 	root.get_texture().get_image().save_png("res://../docs/previews/code-city-motion/"+name+".png")
-func _restore_run_actor(actor, saved: Dictionary) -> void:
-	actor.position = saved.position
-	actor.facing = saved.facing
-	actor.weapon = saved.weapon
-	actor.visual_weapon = saved.visual_weapon
-	actor.durability = saved.durability
-	actor.pickup_time = saved.pickup_time
-	actor.swing_left = saved.swing_left
-	actor.combo = saved.combo
-	actor.combo_window = saved.combo_window
-	actor.height = saved.height
-	actor.rise = saved.rise
-	actor.stagger = saved.stagger
-	actor.queued = saved.queued
-	actor.knock = saved.knock
-	actor.velocity = saved.velocity
-	actor.held.visible = saved.held_visible
-	actor.body.position = saved.body_position
-	actor.body.modulate = saved.modulate
-	actor.body.sprite_frames = saved.frames
-	actor.body.flip_h = saved.flip
-	actor.body.speed_scale = saved.speed_scale
-	var anim := str(saved.animation)
-	if actor.body.sprite_frames != null and actor.body.sprite_frames.has_animation(anim):
-		actor.body.animation = anim
-		actor.body.pause()
-		var count: int = actor.body.sprite_frames.get_frame_count(anim)
-		if count > 0:
-			actor.body.frame = clampi(int(saved.frame), 0, count - 1)
-	actor.body.offset = saved.offset
 
 ## Armed run keeps the body still, in the sheet and on the stage-exit run-out.
 func check_armed_run_registration(actor) -> void:
-	var saved := {
-		"position": actor.position,
-		"facing": actor.facing,
-		"weapon": actor.weapon,
-		"visual_weapon": actor.visual_weapon,
-		"durability": actor.durability,
-		"pickup_time": actor.pickup_time,
-		"swing_left": actor.swing_left,
-		"combo": actor.combo,
-		"combo_window": actor.combo_window,
-		"height": actor.height,
-		"rise": actor.rise,
-		"stagger": actor.stagger,
-		"queued": actor.queued,
-		"knock": actor.knock,
-		"velocity": actor.velocity,
-		"held_visible": actor.held.visible,
-		"frames": actor.body.sprite_frames,
-		"animation": actor.body.animation,
-		"offset": actor.body.offset,
-		"flip": actor.body.flip_h,
-		"speed_scale": actor.body.speed_scale,
-		"body_position": actor.body.position,
-		"modulate": actor.body.modulate,
-		"frame": actor.body.frame,
-	}
-	for weapon in Catalog.WEAPONS:
-		var sheet: SpriteFrames = Art.armed(weapon)
-		var spec: Dictionary = Art.armed_spec(weapon)
-		if sheet == null or spec.is_empty() or not spec.has("cell") or not spec.has("pivot"):
-			for facing in [1.0, -1.0]:
-				check(false, "%s facing %d armed run uses the sheet, clip run, and armed offset (no armed sheet)" % [weapon, int(facing)])
-				check(false, "%s facing %d armed run body stays within 3 * scale px (no armed sheet)" % [weapon, int(facing)])
-			continue
-		actor.swing_left = 0
-		actor.visual_weapon = ""
-		actor.stagger = 0
-		actor.height = 0
-		actor.held.show()
-		actor.equip(weapon)
-		actor.pickup_time = 0
+	var sheet_for := func(weapon): return Art.armed(weapon)
+	var spec_for := func(weapon): return Art.armed_spec(weapon)
+	var offset_for := func(weapon, facing: float) -> Vector2:
 		var base_offset: Vector2 = Art.armed_offset(weapon)
-		for facing in [1.0, -1.0]:
-			actor.facing = facing
-			actor.swing_left = 0
-			actor.show_pose("run")
-			var expected_offset := Vector2(-base_offset.x if facing < 0.0 else base_offset.x, base_offset.y)
-			var frames: SpriteFrames = actor.body.sprite_frames
-			var pose_ok: bool = frames == sheet and actor.body.animation == "run" and frames.has_animation("run") and frames.get_frame_count("run") == 4
-			var detail: String = "clip %s offset %s expected %s" % [actor.body.animation, actor.body.offset, expected_offset]
-			var worlds := PackedFloat32Array()
-			var cels := PackedFloat32Array()
-			var measured: bool = pose_ok
-			var limit: float = 3.0 * float(actor.body.scale.x)
-			if pose_ok:
-				var pivot_x := float(spec.pivot[0])
-				var sign: float = -1.0 if facing < 0.0 else 1.0
-				for f in 4:
-					actor.body.pause()
-					actor.body.frame = f
-					var frame_ok: bool = actor.body.sprite_frames == sheet and actor.body.animation == "run" and actor.body.offset.is_equal_approx(expected_offset) and actor.body.flip_h == (facing < 0.0)
-					if not frame_ok:
-						pose_ok = false
-						measured = false
-						detail = "frame %d clip %s offset %s expected %s flip %s" % [f, actor.body.animation, actor.body.offset, expected_offset, actor.body.flip_h]
-						break
-					var cel := ArmedMeasure.armed_run_cel(actor.body, spec, f)
-					if is_nan(cel):
-						measured = false
-						detail = "frame %d has no body pixels behind the paw" % f
-						break
-					cels.append(cel)
-					worlds.append((cel - pivot_x) * actor.body.scale.x * sign)
-			else:
-				measured = false
-			check(pose_ok, "%s facing %d armed run uses the sheet, clip run, and armed offset (%s)" % [weapon, int(facing), detail])
-			var worst := 0.0
-			var worst_at := "n/a"
-			if worlds.size() == 4:
-				for i in worlds.size():
-					var nxt := (i + 1) % worlds.size()
-					var step := absf(worlds[nxt] - worlds[i])
-					if step > worst:
-						worst = step
-						worst_at = "%d to %d" % [i + 1, nxt + 1]
-			check(measured and worlds.size() == 4 and worst <= limit, "%s facing %d armed run body stays within %.2f px across run frames (worst %.2f between %s; world x %s; cel x %s)" % [weapon, int(facing), limit, worst, worst_at, ArmedMeasure.fmt_xs(worlds), ArmedMeasure.fmt_xs(cels)])
-	actor.swing_left = 0
-	actor.visual_weapon = ""
-	actor.held.show()
-	actor.equip("debug_stick")
-	actor.pickup_time = 0
-	var exit_sheet: SpriteFrames = Art.armed("debug_stick")
-	game.flow.play_exit(func(): pass)
-	for _tick in 4:
-		game.flow.tick(1.0 / 60.0, actor)
-	check(exit_sheet != null and actor.body.animation == "run" and actor.body.sprite_frames == exit_sheet, "debug_stick stage exit run uses the armed sheet (clip %s)" % actor.body.animation)
-	game.flow.cancel()
-	_restore_run_actor(actor, saved)
+		return Vector2(-base_offset.x if facing < 0.0 else base_offset.x, base_offset.y)
+	var require_cell := true
+	var show_held := true
+	ArmedMeasure.check_armed_run_registration(actor, Catalog.WEAPONS, check, sheet_for, spec_for, offset_for, "debug_stick", game.flow, require_cell, show_held)
 
 func run() -> void:
 	change_scene_to_file("res://scenes/beatem_up/code_city_brawl.tscn")
