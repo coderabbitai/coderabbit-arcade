@@ -9,6 +9,13 @@ const MAX_TRIANGLES := 18000
 const MAX_MATERIALS := 4
 const MAX_BONES := 40
 const MAX_SURFACES := 6
+const DISSOLVE_PROGRESS := [0.0, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.0]
+const DISSOLVE_RETENTION_BANDS := {
+	0.60: Vector2(0.82, 0.87),
+	0.75: Vector2(0.52, 0.58),
+	0.90: Vector2(0.18, 0.23),
+	0.95: Vector2(0.01, 0.05),
+}
 
 var checks := 0
 var failures := 0
@@ -109,8 +116,9 @@ func check_rest_positions(model: Node3D, model_script: Script) -> void:
 	check(model_script.call("rest_positions", old_mesh, 0).is_empty(), "missing rest-position attributes are rejected")
 
 
-func dissolve_mask(viewport: SubViewport, instance: Node3D, amount: float, label: String) -> PackedByteArray:
-	instance.call("set_dissolve", amount)
+func dissolve_mask(viewport: SubViewport, instance: Node3D, progress: float, label: String) -> PackedByteArray:
+	# Convert global cinematic progress to linear dissolve input; the shader remaps that input to its threshold.
+	instance.call("set_dissolve", clampf((progress - 0.55) / 0.45, 0.0, 1.0))
 	for frame in 3:
 		await process_frame
 	await RenderingServer.frame_post_draw
@@ -120,13 +128,39 @@ func dissolve_mask(viewport: SubViewport, instance: Node3D, amount: float, label
 		if argument.begins_with("--capture-dir="):
 			var directory := argument.trim_prefix("--capture-dir=")
 			DirAccess.make_dir_recursive_absolute(directory)
-			pixels.save_png(directory.path_join("%s-%03d.png" % [label, roundi(amount * 100)]))
+			pixels.save_png(directory.path_join("%s-p%03d.png" % [label, roundi(progress * 100)]))
 	var bytes := pixels.get_data()
 	var mask := PackedByteArray()
 	mask.resize(pixels.get_width() * pixels.get_height())
 	for index in mask.size():
 		mask[index] = 1 if bytes[index * 4 + 3] > 127 else 0
 	return mask
+
+
+func check_retention_band(progress: float, visible: int, intact: int, pose_name: String) -> float:
+	var fraction := float(visible) / maxi(intact, 1)
+	if DISSOLVE_RETENTION_BANDS.has(progress):
+		var band: Vector2 = DISSOLVE_RETENTION_BANDS[progress]
+		check(fraction >= band.x and fraction <= band.y,
+			"%s pose retains %.0f%% to %.0f%% at global cinematic progress %.2f (observed %.4f)" %
+			[pose_name, band.x * 100.0, band.y * 100.0, progress, fraction])
+	return fraction
+
+
+func check_dissolve_smoothness(masks: Dictionary, intact: int, pose_name: String) -> void:
+	var previous_progress := 0.55
+	var previous_visible: int = masks[previous_progress].count(1)
+	for index in range(2, DISSOLVE_PROGRESS.size()):
+		var progress: float = DISSOLVE_PROGRESS[index]
+		var visible: int = masks[progress].count(1)
+		var decrease := float(previous_visible - visible) / maxi(intact, 1)
+		check(visible <= previous_visible,
+			"%s dissolve coverage is monotonic from progress %.2f to %.2f" % [pose_name, previous_progress, progress])
+		check(decrease <= 0.19,
+			"%s dissolve coverage decreases by at most 19%% from progress %.2f to %.2f (observed %.4f)" %
+			[pose_name, previous_progress, progress, decrease])
+		previous_progress = progress
+		previous_visible = visible
 
 
 func check_dissolve_render(instance: Node3D) -> void:
@@ -157,14 +191,14 @@ func check_dissolve_render(instance: Node3D) -> void:
 	camera.current = true
 	var rest_camera := camera.transform
 	var masks := {}
-	for amount: float in [0.0, 0.5, 0.75, 0.9, 1.0]:
-		masks[amount] = await dissolve_mask(viewport, instance, amount, "rest")
+	for progress: float in DISSOLVE_PROGRESS:
+		masks[progress] = await dissolve_mask(viewport, instance, progress, "rest")
 	var intact: int = masks[0.0].count(1)
 	check(intact > 10000, "GPU fixture has a measurable intact silhouette")
-	check(masks[0.5].count(1) < intact and masks[0.5].count(1) > 0, "dissolve begins before its midpoint")
-	check(masks[0.75].count(1) < masks[0.5].count(1), "dissolve progresses from midpoint to three quarters")
-	var rest_fraction := float(masks[0.9].count(1)) / maxi(intact, 1)
-	check(rest_fraction >= 0.15, "self-test retains at least 15% of pixels at dissolve 0.9 in rest pose")
+	check_dissolve_smoothness(masks, intact, "rest")
+	var rest_retention := {}
+	for progress: float in DISSOLVE_RETENTION_BANDS:
+		rest_retention[progress] = check_retention_band(progress, masks[progress].count(1), intact, "rest")
 	check(masks[1.0].count(1) == 0, "dissolve 1 removes every pixel")
 	# This exported defeat is a uniform collapse into fx_core. Counter-transform the
 	# camera to hold projected geometry fixed, isolating the mask from silhouette changes.
@@ -179,20 +213,24 @@ func check_dissolve_render(instance: Node3D) -> void:
 	camera.size = 2.2 * collapse.basis.get_scale().x
 	var defeat_intact := 0
 	var max_changed := 0
-	var defeat_fraction := 0.0
-	for amount: float in [0.0, 0.5, 0.75, 0.9, 1.0]:
-		var actual := await dissolve_mask(viewport, instance, amount, "defeat")
-		var expected: PackedByteArray = masks[amount]
+	var defeat_retention := {}
+	var defeat_masks := {}
+	for progress: float in DISSOLVE_PROGRESS:
+		var actual := await dissolve_mask(viewport, instance, progress, "defeat")
+		defeat_masks[progress] = actual
+		var expected: PackedByteArray = masks[progress]
 		var changed := 0
 		for index in actual.size():
 			if actual[index] != expected[index]: changed += 1
 		max_changed = maxi(max_changed, changed)
-		check(float(changed) / maxi(intact, 1) <= 0.01, "dissolve mask stays pose-invariant at progress %.2f" % amount)
-		if amount == 0.0: defeat_intact = actual.count(1)
-		if amount == 0.9:
-			defeat_fraction = float(actual.count(1)) / maxi(defeat_intact, 1)
-			check(defeat_fraction >= 0.15, "self-test retains at least 15% of pixels at dissolve 0.9 in defeat pose")
-	print("BOSS KIT GPU: rest_0.9=%.4f defeat_0.9=%.4f max_mask_delta=%d/%d" % [rest_fraction, defeat_fraction, max_changed, intact])
+		check(float(changed) / maxi(intact, 1) <= 0.01, "dissolve mask stays pose-invariant at global progress %.2f" % progress)
+		if progress == 0.0: defeat_intact = actual.count(1)
+		if DISSOLVE_RETENTION_BANDS.has(progress):
+			defeat_retention[progress] = check_retention_band(progress, actual.count(1), defeat_intact, "defeat")
+		if progress == 1.0:
+			check(actual.count(1) == 0, "dissolve removes every defeat-pose pixel at global progress 1.0")
+	check_dissolve_smoothness(defeat_masks, defeat_intact, "defeat")
+	print("BOSS KIT GPU: rest_p95=%.4f defeat_p95=%.4f max_mask_delta=%d/%d" % [rest_retention[0.95], defeat_retention[0.95], max_changed, intact])
 	instance.reparent(root)
 	viewport.free()
 

@@ -33,8 +33,15 @@ void fragment() {
 	// Rest-space cells stay fixed while pause, hit-stop and skip drive the progress.
 	float outward = clamp(length(boss_position - dissolve_origin) / max(dissolve_radius, 0.01), 0.0, 1.0);
 	float noise = smoothstep(0.25, 0.75, boss_noise(boss_position * dissolve_scale)) * 0.8 + outward * 0.2;
-	// Retain recognizable islands into the final tenth, with an exact empty endpoint.
-	float threshold = dissolve * dissolve * dissolve;
+	// Linear dissolve spans cinematic p=0.55..1.0. Calibrated screen coverage at
+	// p=0.60/0.75/0.90/0.95 is about 93/65/30/10%, including revealed back surfaces.
+	float d = dissolve * 9.0;
+	float threshold;
+	if (d < 1.0) { threshold = mix(0.0, 0.125, d); }
+	else if (d < 4.0) { threshold = mix(0.125, 0.51, (d - 1.0) / 3.0); }
+	else if (d < 7.0) { threshold = mix(0.51, 0.82, (d - 4.0) / 3.0); }
+	else if (d < 8.0) { threshold = mix(0.82, 0.89, d - 7.0); }
+	else { threshold = mix(0.89, 1.0, d - 8.0); }
 	if (dissolve >= 1.0 || (dissolve > 0.0 && noise < threshold)) { discard; }
 	float edge = dissolve > 0.0 ? 1.0 - smoothstep(threshold, threshold + dissolve_edge, noise) : 0.0;
 	vec3 base = texture(albedo_map, UV).rgb * albedo_color.rgb * phase_tint.rgb;
