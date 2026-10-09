@@ -69,10 +69,18 @@ func clear() -> void:
 func tip_at(kind: String, step: int) -> Vector2:
 	if kind == "": return Vector2(65,-50)
 	var spec := Art.armed_spec(kind)
-	if Art.armed(kind) == null or not spec.clips.has("step%d" % step): return tip
-	var contact := _anchor_key(spec, step, 1)
-	var anchor: Array = spec.anchors.tip.get(contact, spec.anchors.hand[contact])
-	return _texel(spec, anchor)
+	var clips: Variant = spec.get("clips", {})
+	var clip: Variant = clips.get("step%d" % step) if clips is Dictionary else null
+	var frames: Variant = clip.get("frames") if clip is Dictionary else null
+	if Art.armed(kind) == null or not frames is Array or frames.size() < 2: return tip
+	# Contact-frame tip, else the contact paw, else the rig's current tip.
+	var contact := str(int(frames[1]))
+	var anchors: Variant = spec.get("anchors", {})
+	for kind_of in ["tip", "hand"]:
+		var table: Variant = anchors.get(kind_of, {}) if anchors is Dictionary else {}
+		var anchor: Variant = table.get(contact) if table is Dictionary else null
+		if anchor is Array and anchor.size() >= 2: return _texel(spec, anchor)
+	return tip
 
 ## Manifest anchors are keyed by sheet frame index; JSON parses that index as a float.
 func _anchor_key(spec: Dictionary, step: int, phase: int) -> String:

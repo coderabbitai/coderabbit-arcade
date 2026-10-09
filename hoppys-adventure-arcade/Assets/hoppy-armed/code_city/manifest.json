@@ -1842,7 +1842,7 @@
       "foot_planting": {
         "default": "idle, run, equip, and hurt use the foot centre; attack frames use the rear foot.",
         "overrides": {},
-        "note": "All attack frames, including human frames 7, 8, 14, and 15, use the rear planted foot."
+        "note": "All attack frames (5-13), including 6, 7, and 13, use the rear planted foot; idle, run, equip, and hurt use the foot centre."
       }
     },
     "firewall_shield": {

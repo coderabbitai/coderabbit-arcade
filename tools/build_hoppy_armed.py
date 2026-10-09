@@ -225,7 +225,7 @@ MODES = (
                 hold_idle_weapon_bounds=(82, 70, 44, 35),
                 motion="overhead / side / overhead slam",
                 per_frame_foot_pivot=True,
-                foot_plant_note="All attack frames, including human frames 7, 8, 14, and 15, use the rear planted foot.",
+                foot_plant_note="All attack frames (5-13), including 6, 7, and 13, use the rear planted foot; idle, run, equip, and hurt use the foot centre.",
                 # The sheet carries the head forward; the cel puts it behind the paw. Mirror the
                 # carry and keep the cel's pommel grip, mirrored.
                 carry_orientation="flip_h",
