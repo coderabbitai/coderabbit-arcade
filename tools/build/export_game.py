@@ -50,7 +50,7 @@ class Target:
 
 TARGETS = (
     Target("macOS", "macos", "HoppysAdventureArcade.zip", "Darwin"),
-    Target("Windows", "windows", "HoppysAdventureArcade.exe", "Windows"),
+    Target("Windows Desktop", "windows", "HoppysAdventureArcade.exe", "Windows"),
     Target("Linux", "linux", "HoppysAdventureArcade.x86_64", "Linux"),
 )
 
