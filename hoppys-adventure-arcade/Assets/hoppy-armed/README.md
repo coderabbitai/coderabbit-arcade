@@ -57,7 +57,9 @@ Leave out `--mode` to rebuild both. Run it from the repository root, then reimpo
 - a packed frame touches its cell edge;
 - with `per_frame_foot_pivot`, the planted foot moves more than about 3 px between frames of one clip, or a sole misses the pivot row;
 - a hand or tip anchor has no opaque pixel near its hand-picked target;
-- a carry icon drifts more than 10% from its calibrated length.
+- a weapon's `hold_idle_weapon_bounds` fall outside the `hold_idle` cell or cover no opaque pixels;
+- a carry icon drifts more than 10% from its calibrated length;
+- the mode's `refinements.json` is missing or malformed, since `PROMPTS.md` is generated from it.
 
 `tests/hoppy_armed_assets.gd` checks the packed result: all eleven sheets must be present with their resources, manifest entries, masters and carry icons, and each one's frames, clips, pivot, anchors, body height and carry calibration must match the contract.
 

@@ -849,6 +849,17 @@ def orient_carry(icon: Image.Image, spec: Weapon | None, label: str) -> tuple[Im
     return icon, {"orientation": spec.carry_orientation, "grip": [x, y]}
 
 
+def check_hold_bounds(frame: Image.Image, bounds: tuple[int, int, int, int], label: str) -> None:
+    """Fail unless a registered (left, top, width, height) weapon box fits the hold_idle cell
+    and covers painted (alpha >= 128) pixels; carry calibration measures the weapon from it."""
+    left, top, width, height = bounds
+    if width <= 0 or height <= 0 or left < 0 or top < 0 or left + width > frame.width or top + height > frame.height:
+        raise ValueError(f"{label}: hold_idle weapon bounds {bounds} fall outside the {frame.width}x{frame.height} cell")
+    painted = frame.crop((left, top, left + width, top + height)).getchannel("A").point(lambda alpha: 255 if alpha >= 128 else 0)
+    if painted.getbbox() is None:
+        raise ValueError(f"{label}: hold_idle weapon bounds {bounds} contain no painted pixels")
+
+
 def write_carry_icons(pack: Path, mode: Mode, packed: dict[str, PackedWeapon]) -> dict[str, object]:
     """Build carries from each baked hold_idle sheet when one is available."""
     source = Image.open(mode.weapon_source).convert("RGBA")
@@ -856,13 +867,8 @@ def write_carry_icons(pack: Path, mode: Mode, packed: dict[str, PackedWeapon]) -
     destination.mkdir(parents=True, exist_ok=True)
 
     pilot = packed[mode.pilot]
-    hold_left, hold_top, hold_width, hold_height = pilot.hold_idle_bounds
-    hold_bounds = (hold_left, hold_top, hold_left + hold_width, hold_top + hold_height)
-    hold_idle = pilot.frames[0].image
-    if hold_bounds[2] > hold_idle.width or hold_bounds[3] > hold_idle.height:
-        raise ValueError(f"pilot weapon bounds overflow {mode.directory} hold_idle")
-    if hold_idle.crop(hold_bounds).getchannel("A").getbbox() is None:
-        raise ValueError(f"pilot weapon bounds contain no painted pixels: {mode.directory}")
+    _, _, hold_width, hold_height = pilot.hold_idle_bounds
+    check_hold_bounds(pilot.frames[0].image, pilot.hold_idle_bounds, f"{mode.directory} pilot")
     pilot_baked_length = max(hold_width, hold_height)
 
     pilot_source = source.crop(rect_for_grid(mode.carry_frames[mode.pilot], source.size))
@@ -1002,7 +1008,7 @@ def write_prompts(pack: Path, mode: Mode) -> None:
     """Render data-owned generation and refinement history without guessing it."""
     source = pack / "refinements.json"
     if not source.exists():
-        return
+        raise FileNotFoundError(f"missing generation history: {source}")
     records = json.loads(source.read_text(encoding="utf-8"))
     if not isinstance(records, list):
         raise ValueError(f"{source}: expected a list")
@@ -1065,6 +1071,7 @@ def pack_mode(mode: Mode) -> None:
         idle_dx, idle_dy = placements[0].offset
         hold_left, hold_top, hold_width, hold_height = weapon.hold_idle_weapon_bounds
         registered_hold_bounds = (hold_left + idle_dx, hold_top + idle_dy, hold_width, hold_height)
+        check_hold_bounds(frames[0], registered_hold_bounds, f"{mode.directory}/{weapon.weapon}")
         packed[weapon.weapon] = PackedWeapon(weapon, components, placements, scale, registered_hold_bounds)
         sheets[weapon.weapon] = sheet
         entries[weapon.weapon] = {
