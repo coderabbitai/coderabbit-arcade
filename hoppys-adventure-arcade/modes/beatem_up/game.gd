@@ -146,6 +146,7 @@ func start_stage(index: int, cinematic := false) -> void:
 		state = "intro"
 		intro_page = 0
 		intro_clock = 0
+		hide_toast() # enter_room(0)'s line would sit behind the intro; begin_play announces the room.
 		show_intro()
 	else: enter_stage()
 	_update_hud()

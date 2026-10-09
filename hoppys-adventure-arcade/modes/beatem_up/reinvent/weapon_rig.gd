@@ -34,6 +34,9 @@ const HANDS := {
 	"victory": Vector2(90, 96),
 }
 const CARRY_POSES := ["walk_up", "walk_down", "jump", "defeat", "victory"]
+## Quarter turn (clockwise, around the paw) for carries whose head would otherwise cover Hoppy's
+## face: the scanner's screen sits above its handle, so it points forward instead.
+const CARRY_TURN := {"security_scanner": PI * .5}
 ## Contact trail per combo step, as in Code City: an arc around the paw for swings and slams,
 ## a short streak behind the tip for thrusts and punches.
 const TRAIL_STYLE := {
@@ -170,11 +173,12 @@ func _carry(kind: String, pose: String, movement: Vector2) -> void:
 	var hand := (hand_cell - UNARMED_PIVOT) * Art.BODY_SCALE
 	if movement.length() > .1:
 		hand.y -= sin(clock) * 2.0
-	var grip: Vector2 = GRIPS.get(kind, CELL * .5) * .25
+	# Each carry is its 192 px cel scaled to the baked weapon length, so the grip scales with it.
+	var grip: Vector2 = GRIPS.get(kind, CELL * .5) * float(texture.get_width()) / CELL.x
 	var size := Vector2(texture.get_width(), texture.get_height())
 	carry.offset = size * .5 - grip
 	carry.position = hand
-	carry.rotation = 0.0
+	carry.rotation = CARRY_TURN.get(kind, 0.0)
 	carry.scale = Vector2.ONE * Art.BODY_SCALE
 	tip_local = hand
 

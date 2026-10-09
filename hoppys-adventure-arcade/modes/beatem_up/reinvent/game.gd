@@ -157,14 +157,14 @@ func enter_stage() -> void:
 	overlay.hide()
 	playing=false
 	state="stage_enter"
-	toast_left=0;held_toast="";toast_label.hide();prompt.hide()
+	toast_left=0;held_toast="";toast_label.hide();prompt.text=""
 	flow.play_enter("%02d / %s" % [stage_index+1,Catalog.TITLES[stage_index]],Catalog.STORIES[stage_index])
 
 ## stage_exit: unlock cards are gone, so Hoppy runs out while the capability banner remains visible.
 func exit_stage() -> void:
 	playing=false
 	state="stage_exit"
-	prompt.hide();toast_left=0;held_toast="";toast_label.hide()
+	prompt.text="";toast_left=0;held_toast="";toast_label.hide()
 	flow.banner("CAPABILITY DEPLOYED","Stage score saved · Next: "+Catalog.TITLES[stage_index+1],Catalog.FLOW.exit_banner)
 	flow.play_exit(advance_stage)
 
@@ -557,7 +557,7 @@ func boss_defeated() -> void:
 	player.show_pose("victory")
 	player.z_index=2 # Keep the celebration visible in front of defeated bosses.
 	shake=0;camera.offset=Vector2.ZERO
-	held_toast="";toast_label.hide();prompt.hide()
+	held_toast="";toast_label.hide();prompt.text="" # Clear it; a hidden label would never show again.
 	sound("win",player.position)
 	_update_hud()
 
