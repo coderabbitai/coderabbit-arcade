@@ -225,6 +225,7 @@ func run() -> void:
 	game.start_stage(2)
 	await process_frame;await process_frame
 	game.begin_play();game.set_physics_process(false)
+	game.flow.banner("","",0) # the test jumps straight into the boss room; the title banner has long finished
 	p=game.player;p.set_physics_process(false);p.controlled=false
 	for e in game.enemies: e.queue_free()
 	game.enemies.clear()

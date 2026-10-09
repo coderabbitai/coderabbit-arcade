@@ -1,8 +1,12 @@
 extends SceneTree
 const Catalog = preload("res://modes/beatem_up/catalog.gd")
 const DT := 1.0/60.0
+const ENCOUNTER := "ENCOUNTER 1 / 3 — clear the blockers"
 var failures := 0
 var game
+var encounter_overlap := false
+var ticks_since_clear := -1
+var shown_after := -1
 func _initialize() -> void: call_deferred("run")
 func check(ok: bool, message: String) -> void:
 	print("PASS: " if ok else "FAIL: ", message)
@@ -11,6 +15,16 @@ func tick(n: int) -> void:
 	for i in n: game._physics_process(DT)
 func near(got: float, want: float) -> bool:
 	return absf(got-want) <= DT+1e-4
+func encounter_showing() -> bool:
+	return game.toast_label.visible and game.toast_label.text==ENCOUNTER
+## Combat under a live title banner must not paint the encounter line. Once the banner
+## clock hits zero, the held line is due on that same physics tick.
+func note_encounter_banner() -> void:
+	if game.flow.banner_panel.visible and encounter_showing(): encounter_overlap = true
+	if game.state=="combat" and game.stage_index==1 and game.flow.phase=="" and not game.flow.banner_active():
+		if ticks_since_clear < 0: ticks_since_clear = 0
+		else: ticks_since_clear += 1
+		if shown_after < 0 and encounter_showing(): shown_after = ticks_since_clear
 func freeze() -> void:
 	game.set_physics_process(false)
 	if is_instance_valid(game.player):
@@ -160,6 +174,11 @@ func check_exit() -> void:
 	var toast_mid := false
 	var toast_hidden := false
 	var driven := 0
+	var near_exit_speed := -1.0
+	var encounter_held := false
+	encounter_overlap = false
+	ticks_since_clear = -1
+	shown_after = -1
 	game._physics_process(DT)
 	check(game.state=="stage_exit" and game.flow.phase=="exit_run", "Crossing the gate starts the exit run")
 	if order.is_empty() or order.back()!=game.flow.phase: order.append(game.flow.phase)
@@ -203,8 +222,11 @@ func check_exit() -> void:
 		if game.flow.phase=="enter_run" and enter_tick<0: enter_tick = driven
 		if phase_before=="enter_run" and game.flow.banner_panel.visible and game.flow.banner_title.text=="02 / SECURITY SECTOR" and game.flow.banner_subtitle.text==Catalog.STORIES[1]:
 			enter_banner = true
+		if phase_before=="exit_run": near_exit_speed = game.flow.exit_speed
 		if phase_before=="enter_run" and game.flow.phase=="":
 			banner_at_combat = game.state=="combat" and game.flow.banner_panel.visible and game.flow.banner_panel.modulate.a>0.9
+			encounter_held = game.state=="combat" and game.flow.banner_active() and game.held_toast==ENCOUNTER and not encounter_showing()
+		note_encounter_banner()
 		if toast_ticks==30: toast_mid = game.state=="stage_exit" and game.toast_label.visible and near(game.toast_left, 0.5)
 		if toast_ticks>=60 and not game.toast_label.visible: toast_hidden = true
 		if game.state=="combat" and game.stage_index==1 and game.flow.phase=="": break
@@ -215,6 +237,7 @@ func check_exit() -> void:
 		driven += 1
 		after += 1
 		if not is_equal_approx(game.music.volume_db, game.flow.base_db+game.flow.music_db): volume_ok = false
+		note_encounter_banner()
 		if not game.flow.banner_panel.visible: banner_hide = driven
 	var sequence := ""
 	for phase in order: sequence += "/" + phase
@@ -236,6 +259,65 @@ func check_exit() -> void:
 	check(banner_at_combat, "The entrance banner is still up when combat starts")
 	check(game.state=="combat" and banner_hide>enter_tick and near(float(banner_hide-enter_tick)*DT, Catalog.FLOW.stage_banner), "The entrance banner hides 2.8s after enter_run began")
 	check(toast_mid and toast_hidden, "A 1s toast shown during the exit counts down while play is stopped")
+	check(is_equal_approx(near_exit_speed, float(Catalog.FLOW.run_speed)), "A near gate exit keeps run_speed (got %s)" % near_exit_speed)
+	check(encounter_held, "The encounter toast is held, not shown, while the entrance banner is up")
+	check(not encounter_overlap, "The encounter toast is never visible while the entrance banner is")
+	check(shown_after>=0 and shown_after<=1, "The encounter toast appears within 1 tick of the banner clearing (delay %s)" % shown_after)
+	check_far_exit()
+	check_toast_probe()
+## Hoppy starts deep in the room. exit_run must carry him past exit_x before exit_max, faster than a walk.
+func check_far_exit() -> void:
+	frame_room()
+	game.player.position = Vector2(game.room_start()+100.0, 580)
+	game.exit_stage()
+	check(game.state=="stage_exit" and game.flow.phase=="exit_run", "A far Hoppy still starts the exit run")
+	var spent := 0.0
+	var guard := 0
+	while game.flow.phase!="fade_out" and guard<400:
+		var phase_before: String = game.flow.phase
+		game._physics_process(DT)
+		if phase_before=="exit_run": spent += DT
+		guard += 1
+	var run_speed := float(Catalog.FLOW.run_speed)
+	check(game.flow.phase=="fade_out", "Far exit reaches fade_out (phase %s after %ss)" % [game.flow.phase, spent])
+	check(game.player.global_position.x>=game.flow.exit_x, "Far exit clears exit_x before fade_out (x %s, exit_x %s)" % [game.player.global_position.x, game.flow.exit_x])
+	check(spent>0.0 and spent<=float(Catalog.FLOW.exit_max), "Far exit_run stays within exit_max (spent %s)" % spent)
+	check(game.flow.exit_speed>run_speed, "Far exit runs faster than run_speed (got %s)" % game.flow.exit_speed)
+	check(is_equal_approx(game.player.body.speed_scale, game.flow.exit_speed/run_speed), "Far exit matches stride to exit_speed (scale %s vs %s)" % [game.player.body.speed_scale, game.flow.exit_speed/run_speed])
+	if game.flow.active(): game.flow.cancel()
+	game.state = "combat"
+	game.playing = true
+	freeze()
+## A second entrance: two combat lines raised under the banner, and only the later one plays, at its own duration.
+func check_toast_probe() -> void:
+	clear_enemies()
+	game.gate_open = true
+	game.hazard_clock = 30.0
+	game.ally_clock = 30.0
+	game.enter_stage()
+	var guard := 0
+	while not (game.state=="combat" and game.flow.phase=="") and guard<400:
+		game._physics_process(DT)
+		guard += 1
+	check(game.state=="combat" and game.flow.banner_active(), "Probe entrance is in combat with the title banner still up")
+	check(game.held_toast==ENCOUNTER and not game.toast_label.visible, "Probe entrance holds the encounter line")
+	game.toast("earlier", 0.8)
+	check(game.held_toast=="earlier" and is_equal_approx(game.held_toast_seconds, 0.8) and not game.toast_label.visible, "A combat toast raised during the banner is held")
+	game.toast("probe", 1.5)
+	check(game.held_toast=="probe" and is_equal_approx(game.held_toast_seconds, 1.5) and not game.toast_label.visible, "A later combat toast replaces the one still held")
+	var overlap := false
+	var left := -1.0
+	var shown := false
+	guard = 0
+	while game.flow.banner_active() and guard<400:
+		game._physics_process(DT)
+		guard += 1
+		var painting: bool = game.toast_label.visible and game.toast_label.text=="probe"
+		if game.flow.banner_panel.visible and painting: overlap = true
+		if not game.flow.banner_active() and not shown:
+			shown = painting
+			left = game.toast_left
+	check(shown and not overlap and is_equal_approx(left, 1.5), "Held probe appears at 1.5s once the banner clears (left %s, overlap %s)" % [left, overlap])
 func check_boss_dip() -> void:
 	game.start_stage(2)
 	freeze()

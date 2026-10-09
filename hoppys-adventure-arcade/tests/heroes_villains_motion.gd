@@ -337,6 +337,14 @@ func run() -> void:
 		check(whiff_ok and whiff.flip_h==(side<0),"Unarmed whiff sparkle is ±70,-50 facing %d"%side)
 	p.swing_left=0;p.visual_weapon="";p.weapon="";p.tick(0)
 
+	await check_defeat_visuals()
+	check_contact_trails()
+	check_far_stage_exit()
+	check_entrance_toasts()
+	p=game.player
+	p.set_physics_process(false)
+	p.controlled=false
+
 	if DisplayServer.get_name()!="headless":
 		game.world.hide()
 		var layer := CanvasLayer.new()
@@ -402,3 +410,313 @@ func run() -> void:
 	game.queue_free()
 	await process_frame;await process_frame
 	quit(1 if failures else 0)
+
+const ENCOUNTER := "ENCOUNTER 1 / 3 — clear the blockers"
+const TRAIL_STYLE := {
+	"review_stamp": ["streak","arc","streak"],
+	"triage_hammer": ["arc","arc","arc"],
+	"change_stack_baton": ["streak","arc","streak"],
+	"security_scanner": ["arc","streak","streak"],
+	"pr_merger": ["streak","streak","streak"],
+}
+const DT := 1.0/60.0
+
+func clip_seconds(frames: SpriteFrames, clip: String) -> float:
+	var speed := frames.get_animation_speed(clip)
+	var beats := 0.0
+	for i in frames.get_frame_count(clip): beats += frames.get_frame_duration(clip,i)
+	return beats/maxf(speed,.001)
+
+func textures_differ(a: Texture2D, b: Texture2D) -> bool:
+	if a==null or b==null: return false
+	if a is AtlasTexture and b is AtlasTexture:
+		return a.atlas!=b.atlas or not a.region.is_equal_approx(b.region)
+	return a!=b
+
+func burst_ids() -> Dictionary:
+	var seen := {}
+	for child in game.actors.get_children(): seen[child.get_instance_id()]=true
+	return seen
+
+func new_bursts(seen: Dictionary) -> int:
+	var count := 0
+	for child in game.actors.get_children():
+		if seen.has(child.get_instance_id()): continue
+		if child is AnimatedSprite2D and child.animation=="spawn_burst": count += 1
+	return count
+
+func free_fx() -> void:
+	for child in game.actors.get_children():
+		if child is AnimatedSprite2D and child.animation=="spawn_burst": child.queue_free()
+
+func release_boss(boss) -> void:
+	if boss!=null and is_instance_valid(boss):
+		if is_instance_valid(boss.vector): boss.vector.queue_free()
+		boss.queue_free()
+	game.bosses.clear()
+	game.boss=null
+	free_fx()
+
+## Clock-driven collapse for every villain, including a fused clone and the hacker's second vector.
+func check_defeat_visuals() -> void:
+	var saved_room: int=game.room
+	var saved_state: String=game.state
+	var saved_playing: bool=game.playing
+	var saved_cam: Vector2=game.camera.position
+	if game.room==2: game.room=0
+	var cases := [
+		{"kind":"ai_slop","fused":false,"clip":"defeat","phase":3,"vector":false},
+		{"kind":"agent_army","fused":false,"clip":"defeat_action","phase":0,"vector":false},
+		{"kind":"agent_army","fused":true,"clip":"defeat_action","phase":0,"vector":false},
+		{"kind":"ten_thousand_line_pr","fused":false,"clip":"defeat_action","phase":0,"vector":false},
+		{"kind":"ai_augmented_hacker","fused":false,"clip":"defeat_action","phase":3,"vector":true},
+	]
+	var integrated := false
+	for spec in cases:
+		var label: String=spec.kind+(" fused" if spec.fused else "")
+		var boss=game.spawn_boss(spec.kind,Vector2(880,560),spec.fused)
+		boss.set_physics_process(false)
+		if spec.kind=="ai_slop": boss.phase=spec.phase
+		if spec.vector:
+			boss.change_phase(3)
+			boss.state="chase"
+			boss.shield_active=false
+		var seen := burst_ids()
+		var killed: bool=boss.take_hit(999,0,boss.position)
+		var clip: String=spec.clip
+		check(killed and boss.dead and boss.body.animation==clip,"Defeat of %s plays %s (got %s, dead %s)"%[label,clip,boss.body.animation,boss.dead])
+		check(boss.body.frame==0 and not boss.body.is_playing(),"%s collapse starts paused on frame 0"%label)
+		var bursts := new_bursts(seen)
+		check(bursts==(2 if spec.vector else 1),"%s spawns a collapse burst (%d)"%[label,bursts])
+		var frame_at_death: int=boss.body.frame
+		var clock_at_death: float=boss.defeat_clock
+		# Longer than one cel at 4fps, so a sprite left on its own clock would leave frame 0.
+		await create_timer(.35).timeout
+		check(boss.body.frame==frame_at_death and is_equal_approx(boss.defeat_clock,clock_at_death),"%s frame waits for defeat_tick"%label)
+		var clocked := 0.0
+		if not integrated:
+			var before: float=boss.defeat_clock
+			game.state="boss_victory"
+			game.victory_clock=0
+			game.playing=false
+			game._physics_process(DT)
+			check(boss.defeat_clock>before,"A dead boss's defeat_clock advances during boss_victory")
+			clocked=boss.defeat_clock-before
+			game.state="combat"
+			game.playing=saved_playing
+			game.victory_clock=0
+			game.player.hop(0)
+			game.camera.position=saved_cam
+			integrated=true
+		if spec.vector:
+			check(boss.vector.visible and is_equal_approx(boss.vector_body.modulate.a,1.0),"Hacker vector is revealed at full alpha on death")
+			boss.defeat_tick(.3)
+			clocked+=.3
+			var alpha: float=boss.vector_body.modulate.a
+			check(alpha>0.0 and alpha<1.0 and boss.vector_body.position.y>0.0,"Hacker vector is mid-fall at 0.3s (alpha %s, y %s)"%[alpha,boss.vector_body.position.y])
+			boss.defeat_tick(.31)
+			clocked+=.31
+			check(not boss.vector.visible,"Hacker vector is gone after 0.6s")
+		var length := clip_seconds(boss.body.sprite_frames,clip)
+		var remain: float=length+.02-clocked
+		if remain>0.0: boss.defeat_tick(remain)
+		var last: int=boss.body.sprite_frames.get_frame_count(clip)-1
+		check(boss.body.frame==last,"%s holds the last collapse frame (%d, got %d)"%[label,last,boss.body.frame])
+		var idle_frame: Texture2D=boss.body.sprite_frames.get_frame_texture("idle",0)
+		var final_frame: Texture2D=boss.body.sprite_frames.get_frame_texture(clip,last)
+		check(textures_differ(final_frame,idle_frame),"%s last collapse frame differs from idle"%label)
+		boss.defeat_tick(.4)
+		check(boss.body.frame==last,"%s stays on the last collapse frame"%label)
+		release_boss(boss)
+	game.room=saved_room
+	game.state=saved_state
+	game.playing=saved_playing
+	game.victory_clock=0
+	game.player.hop(0)
+
+## Rig-local torso the trail must not enter. Mirrors the runtime box; the test does not call it.
+func test_torso(kind: String, step: int) -> Rect2:
+	var pivot := Art.armed_pivot(kind)
+	var contact := 5+(step-1)*3+1
+	var paw: Variant=Art.sheet_anchor(kind,"hand",contact)
+	var height := float(Art.armed_spec(kind).get("body_height",86))
+	var right: float=paw.x-8.0 if paw is Vector2 else pivot.x
+	var top_left := (Vector2(pivot.x-24.0,pivot.y-.8*height)-pivot)*Art.BODY_SCALE
+	var bottom_right := (Vector2(right,pivot.y-.3*height)-pivot)*Art.BODY_SCALE
+	return Rect2(top_left,(bottom_right-top_left).max(Vector2.ZERO))
+
+func contact_locals(kind: String, step: int) -> Array:
+	var pivot := Art.armed_pivot(kind)
+	var contact := 5+(step-1)*3+1
+	var paw: Variant=Art.sheet_anchor(kind,"hand",contact)
+	var tip: Variant=Art.sheet_anchor(kind,"tip",contact)
+	var paw_local := Vector2.ZERO
+	var tip_local := Vector2.ZERO
+	if paw is Vector2: paw_local=(paw-pivot)*Art.BODY_SCALE
+	if tip is Vector2: tip_local=(tip-pivot)*Art.BODY_SCALE
+	return [paw_local,tip_local,paw is Vector2 and tip is Vector2]
+
+func check_one_trail(actor, kind: String, step: int, facing: int) -> void:
+	var style: String=TRAIL_STYLE[kind][step-1]
+	var label := "%s step %d facing %d %s"%[kind,step,facing,style]
+	var trail: Line2D=actor.held.trail
+	var count: int=trail.get_point_count()
+	var anchors: Array=contact_locals(kind,step)
+	var box: Rect2=test_torso(kind,step)
+	var outside := count>=2
+	var above := true
+	for i in count:
+		var point: Vector2=trail.get_point_position(i)
+		if box.has_point(point): outside=false
+		if point.y>1e-4: above=false
+		if i>0:
+			var mid: Vector2=(point+trail.get_point_position(i-1))*.5
+			if box.has_point(mid): outside=false
+	var tip_ok: bool=count>0 and actor.held.to_global(trail.get_point_position(count-1)).distance_to(actor.swing_tip())<=4.0
+	var shape_ok := false
+	if style=="streak":
+		var length := 0.0
+		for i in maxi(count-1,0):
+			length+=trail.get_point_position(i).distance_to(trail.get_point_position(i+1))
+		shape_ok=length<=37.0
+	else:
+		var paw: Vector2=anchors[0]
+		var reach: float=paw.distance_to(anchors[1])
+		shape_ok=anchors[2]
+		for i in count:
+			var point: Vector2=trail.get_point_position(i)
+			# y is clamped to the feet, so a point sitting on y=0 may leave the arc.
+			if point.y>=-1e-4: continue
+			if absf(point.distance_to(paw)-reach)>2.0: shape_ok=false
+	check(outside and above and tip_ok and shape_ok and anchors[2],label+" stays outside the torso, ends at the tip (%d pts)"%count)
+
+func check_contact_trails() -> void:
+	var actor=game.player
+	var was_controlled: bool=actor.controlled
+	actor.controlled=false
+	for action in ["move_left","move_right","move_up","move_down","brawl_attack","brawl_jump"]:
+		if InputMap.has_action(action): Input.action_release(action)
+	for kind in Catalog.WEAPONS:
+		for step in [1,2,3]:
+			for facing in [1,-1]:
+				actor.swing_left=0
+				actor.combo=0
+				actor.combo_window=0
+				actor.queued=false
+				actor.stagger=0
+				actor.height=0
+				actor.rise=0
+				actor.visual_weapon=""
+				actor.facing=facing
+				actor.equip(kind)
+				actor.pickup_time=0
+				for i in step:
+					actor.swing_left=0
+					if i>0: actor.combo_window=.4
+					actor.start_attack()
+				actor.swing_fired=true
+				actor.swing_left=actor.swing_duration*.5
+				actor.tick(0)
+				check_one_trail(actor,kind,step,facing)
+	actor.swing_left=0
+	actor.combo=0
+	actor.visual_weapon=""
+	actor.weapon=""
+	actor.facing=1
+	actor.controlled=was_controlled
+	actor.tick(0)
+
+## Shared director, driven directly: a far Hoppy still passes exit_x before the fade.
+func check_far_stage_exit() -> void:
+	var actor=game.player
+	var saved_pos: Vector2=actor.position
+	var saved_cam: Vector2=game.camera.position
+	var saved_zoom: Vector2=game.camera.zoom
+	var saved_state: String=game.state
+	var saved_playing: bool=game.playing
+	var width: float=game.get_viewport().get_visible_rect().size.x
+	game.camera.zoom=Vector2.ONE
+	game.camera.position=Vector2(game.room_start()+1280.0-width*.5,360)
+	actor.position=Vector2(game.room_start()+150.0,550)
+	actor.set_physics_process(false)
+	game.flow.play_exit(Callable())
+	var spent := 0.0
+	var guard := 0
+	while game.flow.phase!="fade_out" and guard<200:
+		var before: String=game.flow.phase
+		game.flow.tick(DT,actor)
+		if before=="exit_run": spent+=DT
+		guard+=1
+	# _go("fade_out") zeroes flow.clock, so the exit_run duration is the time we just summed.
+	check(game.flow.phase=="fade_out" and actor.global_position.x>=game.flow.exit_x,"HvV far exit clears exit_x before fade_out (x %s, exit_x %s, phase %s)"%[actor.global_position.x,game.flow.exit_x,game.flow.phase])
+	check(spent<=float(Catalog.FLOW.exit_max) and game.flow.clock<=float(Catalog.FLOW.exit_max),"HvV far exit_run stays within exit_max (spent %s, clock %s)"%[spent,game.flow.clock])
+	game.flow.cancel()
+	actor.position=saved_pos
+	actor.facing=1
+	actor.body.speed_scale=1
+	actor.show_pose("idle")
+	game.camera.position=saved_cam
+	game.camera.zoom=saved_zoom
+	game.state=saved_state
+	game.playing=saved_playing
+
+func silence_room() -> void:
+	for enemy in game.enemies:
+		if is_instance_valid(enemy): enemy.set_physics_process(false)
+	game.player.set_physics_process(false)
+	game.player.controlled=false
+	game.hazard_clock=30.0
+	game.ally_clock=30.0
+	game.gate_open=true
+
+func check_entrance_toasts() -> void:
+	game.start_stage(0,false)
+	silence_room()
+	var held_ok := false
+	var overlap := false
+	var since := -1
+	var shown_after := -1
+	var guard := 0
+	while guard<500:
+		guard+=1
+		game._physics_process(DT)
+		var showing: bool=game.toast_label.visible and game.toast_label.text==ENCOUNTER
+		if game.flow.banner_panel.visible and showing: overlap=true
+		if not held_ok and game.state=="combat" and game.flow.phase=="" and game.flow.banner_active():
+			held_ok=game.held_toast==ENCOUNTER and not showing
+		if game.state=="combat" and game.flow.phase=="" and not game.flow.banner_active():
+			if since<0: since=0
+			else: since+=1
+			if shown_after<0 and showing: shown_after=since
+			if since>1: break
+	check(held_ok,"HvV holds the encounter toast while the entrance banner is up")
+	check(not overlap,"HvV encounter toast is never visible while the entrance banner is")
+	check(shown_after>=0 and shown_after<=1,"HvV encounter toast appears within 1 tick of the banner clearing (delay %s)"%shown_after)
+	silence_room()
+	game.enter_stage()
+	var injected := false
+	var replaced := false
+	var probe_overlap := false
+	var probe_left := -1.0
+	var probe_shown := false
+	guard=0
+	while guard<500:
+		guard+=1
+		game._physics_process(DT)
+		if not injected and game.state=="combat" and game.flow.phase=="" and game.flow.banner_active():
+			check(game.held_toast==ENCOUNTER and not game.toast_label.visible,"HvV probe entrance holds the encounter line")
+			game.toast("earlier",.8)
+			var earlier_held: bool=game.held_toast=="earlier" and is_equal_approx(game.held_toast_seconds,.8) and not game.toast_label.visible
+			game.toast("probe",1.5)
+			replaced=earlier_held and game.held_toast=="probe" and is_equal_approx(game.held_toast_seconds,1.5) and not game.toast_label.visible
+			injected=true
+		var painting: bool=game.toast_label.visible and game.toast_label.text=="probe"
+		if game.flow.banner_panel.visible and painting: probe_overlap=true
+		if injected and not game.flow.banner_active() and not probe_shown:
+			probe_shown=painting
+			probe_left=game.toast_left
+			break
+	check(replaced,"HvV later combat toast replaces the one held under the banner")
+	# HvV counts toast_left down after releasing the hold, so the first visible frame is one tick under 1.5.
+	check(probe_shown and not probe_overlap and absf(probe_left-1.5)<=DT+1e-4,"HvV held probe appears at 1.5s once the banner clears (left %s)"%probe_left)
+	silence_room()
