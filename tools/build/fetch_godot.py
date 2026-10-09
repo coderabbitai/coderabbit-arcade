@@ -106,7 +106,8 @@ def install_editor(lock: dict, cache: Path) -> Path:
 def install_templates(lock: dict, cache: Path, destination: Path) -> Path:
     name = f"Godot_v{lock['version']}_export_templates.tpz"
     marker = destination / ".verified"
-    if marker.exists() and marker.read_text() == lock["sha512"][name]:
+    if (marker.exists() and marker.read_text() == lock["sha512"][name]
+            and all((destination / template).is_file() for template in lock["templates"])):
         return destination
     archive = fetch(lock, name, cache)
     destination.mkdir(parents=True, exist_ok=True)

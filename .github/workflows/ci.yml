@@ -126,6 +126,8 @@ jobs:
       # The same check runs locally in .githooks/pre-commit, so most problems never get pushed.
       - name: No local paths or internal links
         run: python tools/checks/repo_hygiene.py --all
+      - name: Release packaging unit tests
+        run: python -m unittest discover -s tools/build -v
       - name: Hygiene checker unit tests
         run: python -m unittest discover -s tools/checks -v
 

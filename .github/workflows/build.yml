@@ -1,6 +1,6 @@
 name: Build
 
-# Exports macOS, Windows and Linux builds with tools/build/export_game.py and boots the Linux
+# Exports macOS, Windows, Linux and Web builds with tools/build/export_game.py and boots the Linux
 # build headless through every route. Every PR is export-checked; downloadable builds are kept
 # for main, v* tags, manual runs and PRs labelled `preview-build`. A v* tag publishes a release.
 on:
@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: build-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
   export:
@@ -42,7 +42,9 @@ jobs:
           key: godot-export-${{ hashFiles('tools/build/godot.lock.json') }}
 
       - name: Fetch and verify Godot
-        run: echo "GODOT=$(python3 tools/build/fetch_godot.py --templates)" >> "$GITHUB_ENV"
+        run: |
+          godot_path=$(python3 tools/build/fetch_godot.py --templates)
+          echo "GODOT=$godot_path" >> "$GITHUB_ENV"
 
       - name: Export and smoke-test
         run: python3 tools/build/export_game.py --godot "$GODOT" --smoke
@@ -84,10 +86,22 @@ jobs:
           compression-level: 0
           retention-days: ${{ env.RETENTION_DAYS }}
           if-no-files-found: error
+      - name: Upload Web build
+        if: env.KEEP_BUILDS == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hoppys-adventure-arcade-web
+          path: |
+            build/dist/*-web.zip
+            build/dist/BUILD_MANIFEST.json
+            build/dist/SHA256SUMS.txt
+          compression-level: 0
+          retention-days: ${{ env.RETENTION_DAYS }}
+          if-no-files-found: error
 
   release:
     name: release
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     needs: export
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -99,13 +113,31 @@ jobs:
           pattern: hoppys-adventure-arcade-*
           merge-multiple: true
           path: dist
-      - name: Publish release
+      - name: Verify release downloads
+        run: |
+          cd dist
+          test "$(find . -maxdepth 1 -name '*.zip' | wc -l)" -eq 4
+          sha256sum --check SHA256SUMS.txt
+
+      - name: Publish playtest prerelease
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" dist/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Hoppy's Adventure Arcade $TAG" \
-            --generate-notes \
-            --prerelease
+          # Stage all assets in a draft before making the release visible. A failed
+          # upload can be retried without creating a second release or a partial public one.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft > release.json; then
+            if ! jq -e '.isDraft' release.json > /dev/null; then
+              echo "::error::Release $TAG is already published. Use a new version/tag for a new build."
+              exit 1
+            fi
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "Hoppy's Adventure Arcade $TAG" \
+              --generate-notes \
+              --draft --prerelease
+          fi
+          gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          gh release edit "$TAG" --draft=false --prerelease --latest=false --repo "$GITHUB_REPOSITORY"
