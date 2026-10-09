@@ -39,6 +39,8 @@ var review_charge := 0.0
 var review_cooldown := 0.0
 var pose_dt := 0.0
 var pose_move := Vector2.ZERO
+## Drawn unarmed with no carry (knockout.gd sets it while he is airborne); the weapon is kept.
+var stowed := false
 
 func _ready() -> void:
 	collision_layer = 0
@@ -131,7 +133,7 @@ func show_pose(pose: String, _base := false) -> void:
 	if pose=="death": pose="defeat"
 	var attacking := swing_left>0
 	var progress := clampf(1.0-swing_left/maxf(swing_duration,.001),0,1) if attacking else 0.0
-	var sheet_id := visual_weapon if attacking else weapon
+	var sheet_id := shown_weapon(attacking)
 	var armed: SpriteFrames = Art.armed_frames(sheet_id)
 	var clip := _armed_clip(pose)
 	var use_sheet := armed!=null and pose in SHEET_POSES and armed.has_animation(clip)
@@ -162,6 +164,12 @@ func show_pose(pose: String, _base := false) -> void:
 	else: body.position.x=0
 	_sync_weapon(pose,progress,attacking)
 
+## The weapon Hoppy is drawn with: the swing's weapon mid-attack, else the one he holds; none
+## while stowed.
+func shown_weapon(attacking: bool) -> String:
+	if stowed: return ""
+	return visual_weapon if attacking else weapon
+
 func _armed_clip(pose: String) -> String:
 	if pose in ["jab","swing","kick"]: return "step%d" % clampi(combo,1,3)
 	if pose=="idle": return "hold_idle"
@@ -172,7 +180,7 @@ func _apply_armed_offset(sheet_id: String) -> void:
 	body.offset=Art.armed_offset(sheet_id,body.flip_h)
 
 func _sync_weapon(pose: String, progress: float, attacking: bool) -> void:
-	var shown := visual_weapon if attacking else weapon
+	var shown := shown_weapon(attacking)
 	var mirror := 1.0 if pose in ["walk_up","walk_down"] else facing
 	held.position=body.position
 	held.scale=Vector2(mirror,1)
@@ -280,6 +288,5 @@ func take_hit(source: Vector2, status := "", force := 180.0) -> bool:
 	arena.shake = 8
 	if hp <= 0:
 		body.position.x=0
-		show_pose("death",true)
-		arena.game_over()
+		arena.knockout(source)
 	return true

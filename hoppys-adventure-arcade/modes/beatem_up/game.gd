@@ -5,8 +5,9 @@ const Player = preload("res://modes/beatem_up/player.gd")
 const Enemy = preload("res://modes/beatem_up/enemy.gd")
 const Boss = preload("res://modes/beatem_up/boss.gd")
 const StageFlow = preload("res://modes/beatem_up/stage_flow.gd")
+const Knockout = preload("res://modes/beatem_up/knockout.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
-const PAUSABLE := ["combat","intro","stage_enter","stage_exit"]
+const PAUSABLE := ["combat","intro","stage_enter","stage_exit","knockout"]
 ## Results and game-over menus arm this long after appearing (see _input).
 const OVERLAY_ARM := .5
 const ARMED_OVERLAYS := ["won","game_over"]
@@ -24,6 +25,8 @@ var intro_clock := 0.0
 var intro_bar: ProgressBar
 var overlay_clock := 0.0
 var flow: StageFlow
+## The last-life knockout between the fatal hit and game_over().
+var ko := Knockout.new(Catalog.KNOCKOUT)
 var gate_open := false
 var gate: AnimatedSprite2D
 var world: Node2D
@@ -104,6 +107,7 @@ func clamp_ground(pos: Vector2) -> Vector2:
 	return Vector2(clampf(pos.x,room_start()+55,room_start()+(1270 if gate_open else 1150)),clampf(pos.y,455,650))
 
 func start_stage(index: int, cinematic := false) -> void:
+	ko.cancel()
 	playing = false
 	get_tree().paused = false
 	for child in world.get_children(): child.queue_free()
@@ -368,6 +372,7 @@ func _physics_process(dt: float) -> void:
 	toast_label.visible = toast_left > 0
 	flow.tick(dt,player)
 	if held_toast != "" and state=="combat" and not flow.banner_active(): toast(held_toast,held_toast_seconds)
+	if state=="knockout": _tick_knockout(dt)
 	if not playing: return
 	elapsed += dt
 	shake = maxf(0,shake-dt*28)
@@ -503,10 +508,30 @@ func retry_stage() -> void:
 	score = checkpoint_score
 	start_stage(stage_index)
 
+## The fatal hit: play stops at once (enemies, bullets and hazards freeze), the screen clears of
+## toasts and banners, and the knockout plays out before game_over(). Repeats are ignored.
+func knockout(source: Vector2) -> void:
+	if state in ["knockout","game_over","leaving"]: return
+	flow.cancel()
+	playing = false
+	state = "knockout"
+	hide_toast()
+	prompt.text = ""
+	flow.banner("","",0)
+	_update_hud()
+	ko.play(self,source,game_over)
+
+## Play is stopped through the knockout, so its camera shake decays here.
+func _tick_knockout(dt: float) -> void:
+	ko.tick(dt)
+	shake = maxf(0,shake-dt*28)
+	camera.offset = Vector2(rng.randf_range(-shake,shake),rng.randf_range(-shake,shake))
+
 ## Terminal paths (game over, leave) cancel the flow first, so a pending exit can never
 ## rebuild the next stage at black or restart its music behind them.
 func game_over() -> void:
 	if state=="game_over": return
+	ko.cancel()
 	flow.cancel()
 	playing = false
 	state = "game_over"
@@ -748,10 +773,14 @@ func resume() -> void:
 		"stage_enter", "stage_exit":
 			state = pause_return_state
 			overlay.hide()
+		"knockout":
+			state = "knockout"
+			overlay.hide()
 		_: begin_play()
 
 func leave() -> void:
 	if state=="leaving": return
+	ko.cancel()
 	flow.cancel()
 	# The scene keeps running through the router's fade: nothing may start play or music again.
 	state = "leaving"

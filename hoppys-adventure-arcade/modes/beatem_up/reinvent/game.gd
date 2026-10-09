@@ -5,8 +5,9 @@ const Player = preload("res://modes/beatem_up/reinvent/player.gd")
 const Enemy = preload("res://modes/beatem_up/reinvent/enemy.gd")
 const Boss = preload("res://modes/beatem_up/reinvent/boss.gd")
 const StageFlow = preload("res://modes/beatem_up/stage_flow.gd")
+const Knockout = preload("res://modes/beatem_up/knockout.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
-const PAUSABLE := ["combat","cards","boss_victory","stage_enter","stage_exit"]
+const PAUSABLE := ["combat","cards","boss_victory","stage_enter","stage_exit","knockout"]
 const TERMINAL_OVERLAY_ARM := .5
 var rng := RandomNumberGenerator.new()
 var stage_index := 0
@@ -35,6 +36,8 @@ var hazard_clock := 4.0
 var shake := 0.0
 var music: AudioStreamPlayer
 var flow: StageFlow
+## The last-life knockout between the fatal hit and game_over().
+var ko := Knockout.new(Catalog.KNOCKOUT)
 var sound_pool: Array[AudioStreamPlayer2D] = []
 var sound_index := 0
 var hud: Label
@@ -118,6 +121,7 @@ func clamp_ground(pos: Vector2) -> Vector2:
 	return Vector2(clampf(pos.x,room_start()+55,room_start()+(1270 if gate_open else 1150)),clampf(pos.y,455,650))
 
 func start_stage(index: int, cinematic := false) -> void:
+	ko.cancel()
 	playing=false
 	get_tree().paused=false
 	for child in world.get_children(): child.queue_free()
@@ -397,6 +401,7 @@ func _physics_process(dt: float) -> void:
 	var view := get_viewport_rect().size
 	camera.zoom=Vector2.ONE*minf(view.x/1280.0,view.y/720.0)
 	if state in ["game_over","won"]: terminal_overlay_clock=minf(TERMINAL_OVERLAY_ARM,terminal_overlay_clock+dt)
+	if state=="knockout": ko.tick(dt)
 	if state=="boss_victory":
 		victory_clock=minf(VICTORY_DURATION,victory_clock+dt)
 		# A short celebratory hop; the ground position and combat stay frozen.
@@ -535,8 +540,20 @@ func retry_stage() -> void:
 	capabilities=checkpoint_capabilities.duplicate()
 	start_stage(stage_index)
 
+## The fatal hit: play stops at once (enemies, bullets and hazards freeze), the screen clears of
+## toasts and banners, and the knockout plays out before game_over(). Repeats are ignored.
+func knockout(source: Vector2) -> void:
+	if state in ["knockout","game_over","leaving"]: return
+	flow.cancel()
+	playing=false;state="knockout"
+	toast_left=0;held_toast="";toast_label.hide();prompt.text=""
+	flow.banner("","",0)
+	_update_hud()
+	ko.play(self,source,game_over)
+
 func game_over() -> void:
 	if state=="game_over": return
+	ko.cancel()
 	flow.cancel()
 	playing = false
 	state = "game_over"
@@ -776,12 +793,12 @@ func _unhandled_input(event: InputEvent) -> void:
 func resume() -> void:
 	if state!="paused": return
 	get_tree().paused=false
-	if pause_return_state in ["cards","boss_victory","stage_enter","stage_exit"]: state=pause_return_state;overlay.hide()
+	if pause_return_state in ["cards","boss_victory","stage_enter","stage_exit","knockout"]: state=pause_return_state;overlay.hide()
 	else: begin_play()
 
 func leave() -> void:
 	if leaving: return
-	leaving=true;flow.cancel();playing=false;state="leaving";get_tree().paused=false
+	leaving=true;ko.cancel();flow.cancel();playing=false;state="leaving";get_tree().paused=false
 	for child in panel.get_children():
 		if child is BaseButton: child.disabled=true
 	music.stop()

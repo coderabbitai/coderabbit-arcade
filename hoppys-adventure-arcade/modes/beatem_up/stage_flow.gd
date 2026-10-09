@@ -52,6 +52,7 @@ var _swap_track: AudioStream
 var _swap_clock := 0.0
 var _swap_length := 0.0
 var _swapped := false
+var _duck_db := 0.0
 
 func setup(ui_layer: CanvasLayer, music_player: AudioStreamPlayer, overrides := {}) -> void:
 	tuning = DEFAULTS.duplicate()
@@ -168,14 +169,22 @@ func swap_music(stream: AudioStream, seconds: float, source: AudioStream = null)
 	_tick_swap(0)
 	_apply_music()
 
-## Abandons a running sequence and any music swap without calling on_black or emitting phase "":
-## the veil clears and the envelope returns to 0 dB. For owners cutting to play, retrying, or
-## ending the run. Banners carry on. (A swap never overlaps a sequence: both play_* drop it.)
+## Holds the envelope at or under `db` (<= 0) until called again; 0 lifts it. For an owner's
+## moment outside any sequence, such as the knockout's music duck.
+func duck(db: float) -> void:
+	_duck_db = minf(db,0.0)
+	_apply_music()
+
+## Abandons a running sequence, any music swap and any duck without calling on_black or emitting
+## phase "": the veil clears and the envelope returns to 0 dB. For owners cutting to play,
+## retrying, or ending the run. Banners carry on. (A swap never overlaps a sequence: both play_*
+## drop it.)
 func cancel() -> void:
 	_serial += 1
 	_on_black = Callable()
 	_enter_queued = false
 	_stop_swap()
+	_duck_db = 0
 	_fade_db = 0
 	_set_veil(0)
 	phase = ""
@@ -355,5 +364,5 @@ func _stop_swap() -> void:
 	_swapped = false
 
 func _apply_music() -> void:
-	music_db = minf(_fade_db,_swap_db)
+	music_db = minf(minf(_fade_db,_swap_db),_duck_db)
 	if is_instance_valid(music): music.volume_db = base_db+music_db

@@ -242,6 +242,5 @@ func take_hit(source: Vector2, status := "", force := 180.0) -> bool:
 	if hp <= 0:
 		held.hide()
 		body.position.x=0
-		show_pose("death",true)
-		arena.game_over()
+		arena.knockout(source)
 	return true

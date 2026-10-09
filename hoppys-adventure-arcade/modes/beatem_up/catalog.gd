@@ -15,6 +15,18 @@ const FLOW := {
 	"enter_from_x":-60.0, "enter_to_x":180.0, "enter_max":1.6,
 	"stage_banner":2.8, "banner_slide":.3, "banner_fade":.6,
 	"exit_banner":2.0, "intro_hold":4.5, "enemy_grace":.8, "boss_dip":.6}
+const FX_ROOT := "res://Assets/code-city-brawl-assets-only/code_city/"
+## Last-life knockout (knockout.gd DEFAULTS keys; seconds since the hit, world px, radians, dB).
+## Hoppy recoils facing the hit, then turns with the blow and the death clip does the tipping
+## over: slumping through the climb, folding on the way down, flat at touchdown, a rebound, the
+## settled heap, head first along the throw.
+const KNOCKOUT := {
+	"hit_stop":.12, "launch_end":.75, "land_end":1.0, "length":2.2,
+	"distance":140.0, "height":70.0, "bounce":10.0, "tip":.45, "pivot":40.0, "turn":.12,
+	"hit_pose":"hurt", "clip":"death", "clip_starts":[.12,.24,.42,.75,.84,.93],
+	"hit_fx":{"frames":FX_ROOT+"weapons.tres","pose":"hammer_impact","scale":.75,"rise":50.0,"front":true},
+	"dust_fx":{"frames":FX_ROOT+"combat_fx.tres","pose":"slam_impact","scale":1.2,"squash":.5,"rise":20.0,"front":false},
+	"land_sound":"kick", "head":Vector2(20,-40), "star_size":8.0, "callout_color":Color("ffd36b")}
 const SOUND_ROOT := "res://Assets/Audio/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/"
 const SOUNDS := {
 	"jab": preload(SOUND_ROOT + "Weapons/Melee/sfx_wpn_punch1.wav"),
