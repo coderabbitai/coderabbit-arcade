@@ -850,6 +850,7 @@ func check_preview() -> void:
 	game.reset_physics_interpolation()
 	await RenderingServer.frame_post_draw
 	await RenderingServer.frame_post_draw
+	var failed_before := failures
 	var frame = game.state=="knockout" and game.ko.phase=="out_cold" and game.ko.clock+0.001>=1.6
 	check(frame, tag("the preview is out cold at %.3f s" % game.ko.clock))
 	var popped = game.ko.callout.visible and is_equal_approx(float(game.ko.callout.modulate.a), 1.0)
@@ -859,11 +860,6 @@ func check_preview() -> void:
 	check(chrome, tag("the menu, the toast and the stage banner stay off the preview"))
 	check(loose_sprites()==0, tag("no stray sprite is left in actors (%d)" % loose_sprites()))
 	var image: Image = root.get_texture().get_image()
-	# The rendered run refreshes the committed preview, as the smoke suites do.
-	var folder := "heroes-villains" if heroes else "code-city"
-	DirAccess.make_dir_recursive_absolute("res://../docs/previews/"+folder)
-	var saved = image.save_png("res://../docs/previews/"+folder+"/knockout.png")==OK
-	check(saved, tag("knockout preview saved"))
 	var stars = p.get_node_or_null("KnockoutStars")
 	var cluster: Vector2 = p.position
 	if stars: cluster = p.position+stars.position
@@ -888,6 +884,14 @@ func check_preview() -> void:
 	var callout_delta := callout_hits-callout_bare
 	check(star_delta>=40, tag("star pixels %d drawn, %d hidden, difference %d" % [star_hits, star_bare, star_delta]))
 	check(callout_delta>=200, tag("callout pixels %d drawn, %d hidden, difference %d" % [callout_hits, callout_bare, callout_delta]))
+	# The rendered run refreshes the committed preview, as the smoke suites do, but only with a
+	# frame that passed every check above.
+	if failures==failed_before:
+		var folder := "heroes-villains" if heroes else "code-city"
+		DirAccess.make_dir_recursive_absolute("res://../docs/previews/"+folder)
+		var saved = image.save_png("res://../docs/previews/"+folder+"/knockout.png")==OK
+		check(saved, tag("knockout preview saved"))
+	else: print(tag("knockout preview not saved: its frame failed a check"))
 	game.ko.callout.show()
 	if is_instance_valid(game.ko.stars): game.ko.stars.show()
 	guard = 0
