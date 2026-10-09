@@ -45,6 +45,7 @@ These assets were made for this project, either by hand, by procedure, or with i
 | Hoppy 2D sprite pack | `Character/Hoppy/2D/hoppy-sprite-pack/` | Generated from internal comic references | ⚠️ brand sign-off |
 | Hoppy brawler combat supplement | `code-city-brawl-player/` | Image generation; exact prompt in `PROMPT.md`, reproducible atlas packing in `tools/build_hoppy_brawler.py` | ⚠️ brand sign-off and project asset terms |
 | Hoppy armed supplement | `hoppy-armed/` | Built-in image generation; exact prompts in each mode's `PROMPTS.md` / `refinements.json`, untouched masters in `sources/`, deterministic packing in `tools/build_hoppy_armed.py`. See its [`README.md`](hoppys-adventure-arcade/Assets/hoppy-armed/README.md). | ⚠️ brand sign-off and project asset terms |
+| Beat'em-up story illustrations | `beatemup-story/` | Built-in image generation; exact prompts and regeneration history in `refinements.json`, untouched masters in `sources/`, deterministic packing in `tools/build_story_scenes.py`. | ⚠️ brand sign-off and project asset terms |
 | Hoppy 3D mascot | `runner/hoppy/` | Built by `tools/blender/build_hoppy.py` | ⚠️ brand sign-off |
 | Runner props, previews and procedural assets | `runner/` | See [`runner/LICENSES.md`](hoppys-adventure-arcade/Assets/runner/LICENSES.md) | ✅ |
 | Bay Area Blitz pack | `bay-area-blitz-assets-only/` | Image generation | ⚠️ confirm the generator's terms allow redistribution |

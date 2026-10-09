@@ -22,6 +22,9 @@ func capture(name: String) -> void:
 	await RenderingServer.frame_post_draw
 	DirAccess.make_dir_recursive_absolute("res://../docs/previews/heroes-villains")
 	root.get_texture().get_image().save_png("res://../docs/previews/heroes-villains/"+name+".png")
+## Story scenes are captured once their caption is typed; slide-in cards once they have landed.
+func card_settled() -> bool:
+	return game.state=="cards" and game.card_clock>(3.0 if game.card.has_method("advance") else .35)
 func run() -> void:
 	change_scene_to_file("res://scenes/beatem_up/beatem_menu.tscn")
 	await process_frame;await process_frame
@@ -44,7 +47,7 @@ func run() -> void:
 	var opening_steps := 0
 	while game.state in ["cards","stage_enter"] and opening_steps<2400:
 		game._physics_process(1.0/60.0);opening_steps+=1
-		if game.state=="cards" and game.card_clock>.35: await capture(game.card_queue[0])
+		if card_settled(): await capture(game.card_queue[0])
 		if game.state=="stage_enter" and game.flow.phase=="enter_run" and game.flow.clock>.5: await capture("stage_enter_banner_0")
 		if opening_steps%15==0: await process_frame
 	check(game.state=="combat" and game.playing,"Opening cards and stage_enter complete hands-free")
@@ -100,8 +103,7 @@ func run() -> void:
 			continue
 		if game.state=="cards":
 			game._physics_process(1.0/60.0)
-			if game.state=="cards" and game.card_clock>.35:
-				await capture(game.card_queue[0])
+			if card_settled(): await capture(game.card_queue[0])
 			if step%15==0: await process_frame
 			continue
 		if game.playing:
