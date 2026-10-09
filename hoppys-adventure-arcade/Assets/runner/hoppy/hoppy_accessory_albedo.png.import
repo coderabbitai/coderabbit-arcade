@@ -4,9 +4,8 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://0smaw6gfvyj5"
 path.s3tc="res://.godot/imported/hoppy_accessory_albedo.png-c122b57ea96ce5ad67ded19ac527ca90.s3tc.ctex"
-path.etc2="res://.godot/imported/hoppy_accessory_albedo.png-c122b57ea96ce5ad67ded19ac527ca90.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"imported_formats": ["s3tc_bptc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -16,7 +15,7 @@ generator_parameters={
 [deps]
 
 source_file="res://Assets/runner/hoppy/hoppy_accessory_albedo.png"
-dest_files=["res://.godot/imported/hoppy_accessory_albedo.png-c122b57ea96ce5ad67ded19ac527ca90.s3tc.ctex", "res://.godot/imported/hoppy_accessory_albedo.png-c122b57ea96ce5ad67ded19ac527ca90.etc2.ctex"]
+dest_files=["res://.godot/imported/hoppy_accessory_albedo.png-c122b57ea96ce5ad67ded19ac527ca90.s3tc.ctex"]
 
 [params]
 

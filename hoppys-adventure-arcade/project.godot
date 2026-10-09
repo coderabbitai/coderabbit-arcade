@@ -26,10 +26,11 @@ AppRouter="*res://app/app_router.gd"
 
 window/size/viewport_width=1280
 window/size/viewport_height=720
+window/size/mode=2
+window/size/borderless=true
 window/size/window_width_override=1280
 window/size/window_height_override=720
 window/stretch/mode="canvas_items"
-window/stretch/aspect="expand"
 window/size/min_width=960
 window/size/min_height=540
 
@@ -117,8 +118,7 @@ common/physics_interpolation=true
 
 [rendering]
 
-textures/vram_compression/import_etc2_astc=true
-
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true
