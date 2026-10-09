@@ -816,9 +816,10 @@ func check_fatal_frame() -> void:
 	var ended: float = game.ko.clock
 	var over = game.state=="game_over" and ended>=LENGTH-0.001 and ended<=LENGTH+DT+0.001
 	check(over, tag("that knockout still ends in game over (clock %.4f)" % ended))
-## Rendered only: one out-cold frame per mode. Headless returns before any check.
+## Rendered only: one out-cold frame per mode. Headless, or with the render loop off (where
+## frame_post_draw never fires), it returns before any check.
 func check_preview() -> void:
-	if DisplayServer.get_name()=="headless": return
+	if DisplayServer.get_name()=="headless" or not RenderingServer.render_loop_enabled: return
 	ready_combat()
 	sweep()
 	var p = game.player
