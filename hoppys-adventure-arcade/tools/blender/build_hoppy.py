@@ -446,6 +446,8 @@ def led_mask(object_name, index, count):
 CAPE_TOP, CAPE_HEM = 1.20, .50
 CAPE_THICKNESS = .012
 CAPE_TEETH, CAPE_TOOTH = 5, .05  # Jagged hero hem: five points, 5 cm deep.
+CAPE_CLEARANCE = .005  # Lining gap over the suit where the cape drapes on the back.
+CAPE_BODY = None  # Torso mesh the cape drapes over; set once the torso exists.
 
 
 def ramp01(a, b, x):
@@ -479,7 +481,14 @@ def cape_point(u, v):
     normal = Vector((math.sin(theta) / rx, 0, math.cos(theta) / rz)).normalized()
     point = Vector((rx * math.sin(theta), y, cz + rz * math.cos(theta)))
     # Vertical folds deepen toward the hem.
-    return point + normal * .02 * v ** 1.3 * math.sin(u * 6 * math.pi + .6), normal
+    point = point + normal * .02 * v ** 1.3 * math.sin(u * 6 * math.pi + .6)
+    if CAPE_BODY is not None:
+        # Drape: where the lining would sink into the suit (shoulder blades, upper back), lift
+        # the cloth onto the torso's back surface plus the lining gap.
+        body = surface_z(CAPE_BODY, point.x - normal.x * CAPE_THICKNESS, point.y)
+        if body is not None:
+            point.z = max(point.z, body + CAPE_CLEARANCE + CAPE_THICKNESS * normal.z)
+    return point, normal
 
 
 def collar_point(u, v):
@@ -551,6 +560,26 @@ def slab(name, surface, nu, nv, outer_mat, inner_mat, bone):
         if index >= len(outer) + len(rim): polygon.material_index = 1
         elif index >= len(outer): polygon.use_smooth = False
     return object_name
+
+
+def surface_z(object_name, x, y):
+    """Godot z of the mesh's back surface at (x, y), or None where a ray from behind misses."""
+    obj = object_named(object_name, 'MESH')
+    ok, location, _normal, _index = obj.ray_cast(xyz((x, y, 2.0)), xyz((0, 0, -1)))
+    return -location.y if ok else None
+
+
+def require_clear_of(object_name, body, gap):
+    """Fail the build if any vertex of object_name sits within `gap` of body's back surface."""
+    obj = object_named(object_name, 'MESH')
+    worst = None
+    for vertex in obj.data.vertices:
+        co = obj.matrix_world @ vertex.co
+        back = surface_z(body, co.x, co.z)
+        if back is not None and -co.y < back + gap:
+            depth = back + gap + co.y
+            worst = depth if worst is None else max(worst, depth)
+    require(worst is None, '%s within %.3f m of %s (by %.4f m)' % (object_name, gap, body, worst or 0))
 
 
 def surface_hit(object_name, x, y, from_back):
@@ -779,9 +808,13 @@ chest_plate = conformed('Chest armour plate', rabbit_outline(1.0, 0.0, .002, 72,
 conformed('Chest badge', rabbit_outline(.75), rabbit_outline(.75, .0025), 0, 1.05, chest_plate, False, glove, 'spine', depth=.006)
 # Hero cape: stand-up collar, drape over the shoulder blades and tail, deep folds, jagged hem.
 # Its back carries the rabbit badge and, below it, the power-up LED strip the chase camera reads.
+CAPE_BODY = torso
 hero_cape = slab('Hero cape', cape_point, 30, 16, cape_shell, lining, 'cape')
 cape_weights(hero_cape)
 slab('Cape collar', collar_point, 16, 3, cape_shell, lining, 'chest')
+# Rest-pose clearance (CodeRabbit PR #61): the cape may not cut into the suit. The collar's base is
+# deliberately seated into the shoulders, under the cape top, like the arm roots in the torso.
+require_clear_of(hero_cape, torso, .002)
 cape_parts = [conformed('Cape badge', rabbit_outline(.8), rabbit_outline(.8, .0025), 0, 1.04, hero_cape, True, glove, 'cape')]
 for led in range(4):
     name = conformed('Cape power LED ' + str(led), rounded_rect(.018, .042, .005), rounded_rect(.015, .039, .0035),
