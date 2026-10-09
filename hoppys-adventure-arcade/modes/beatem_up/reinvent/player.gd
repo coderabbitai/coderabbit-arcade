@@ -178,8 +178,9 @@ func _sync_weapon(pose: String, progress: float, attacking: bool) -> void:
 	held.scale=Vector2(mirror,1)
 	held.z_index=0
 	# z_index sorts against the stage, so a negative value hides the carry under the ground.
-	# Sibling order draws the walk_up icon behind the body and above the floor.
-	var behind := pose=="walk_up"
+	# Sibling order draws a carry behind the body (back view, and wherever it would cover the face)
+	# while keeping it above the floor.
+	var behind: bool=held.carry_behind(shown,pose)
 	if behind and held.get_index()>body.get_index():
 		move_child(held,body.get_index())
 	elif not behind and held.get_index()<body.get_index():

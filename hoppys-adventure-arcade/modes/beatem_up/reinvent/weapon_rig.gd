@@ -37,6 +37,11 @@ const CARRY_POSES := ["walk_up", "walk_down", "jump", "defeat", "victory"]
 ## Quarter turn (clockwise, around the paw) for carries whose head would otherwise cover Hoppy's
 ## face: the scanner's screen sits above its handle, so it points forward instead.
 const CARRY_TURN := {"security_scanner": PI * .5}
+## Carries drawn behind the body: the back view, the jump (the paw is at Hoppy's chin) and the
+## defeat (he lies face down by the paw). Toward the camera the paw is at chest height, where
+## these larger carries would still reach the face.
+const BEHIND_POSES := ["walk_up", "jump", "defeat"]
+const BEHIND_WALK_DOWN := ["review_stamp", "pr_merger"]
 ## Contact trail per combo step, as in Code City: an arc around the paw for swings and slams,
 ## a short streak behind the tip for thrusts and punches.
 const TRAIL_STYLE := {
@@ -70,6 +75,10 @@ func _ready() -> void:
 	trail.width = 4
 	trail.default_color = Color(1, .4, .08, .75)
 	add_child(trail)
+
+## True when this weapon's carry draws behind the body in this pose, so it never covers the face.
+func carry_behind(kind: String, pose: String) -> bool:
+	return pose in BEHIND_POSES or (pose == "walk_down" and kind in BEHIND_WALK_DOWN)
 
 func tip_global() -> Vector2:
 	return to_global(tip_local)

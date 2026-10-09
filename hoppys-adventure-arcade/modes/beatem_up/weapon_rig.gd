@@ -13,12 +13,16 @@ const GRIPS := {
 const ANGLES := {"debug_stick":.6,"linter_staff":.6,"api_key_whip":.0,
 	"git_branch":.6,"firewall_shield":0.0,"refactor_hammer":2.5}
 ## Paw texel per frame of the unarmed poses that have no armed frame (96 px combat
-## cells, foot pivot (48,86)). The back view holds the weapon behind the body.
+## cells, foot pivot (48,86)). See BEHIND_POSES for where the carry draws behind the body.
 const CARRY_HANDS := {
 	"walk_up": [Vector2(58,64), Vector2(60,61)],
 	"walk_down": [Vector2(60,68), Vector2(58,64)],
 	"jump": [Vector2(60,66)]}
 const UNARMED_PIVOT := Vector2(48,86)
+## Carries drawn behind the body: the back view, and the jump, where the paw is at Hoppy's chin.
+## Toward the camera only the shield is wide enough to reach his cheek.
+const BEHIND_POSES := ["walk_up","jump"]
+const BEHIND_WALK_DOWN := ["firewall_shield"]
 var body: AnimatedSprite2D
 var sprite: AnimatedSprite2D
 var carry: Sprite2D
@@ -49,7 +53,11 @@ func animate(kind: String, step: int, progress: float, active: bool, movement: V
 	if sheet != null and body.sprite_frames == sheet: _armed_trail(kind, step, progress, active)
 	elif CARRY_HANDS.has(body.animation): _carry(kind)
 	elif sheet == null: _legacy(kind, step, progress, active, movement, block)
-	_layer(carry.visible and body.animation == "walk_up")
+	_layer(carry.visible and carry_behind(kind, body.animation))
+
+## True when this weapon's carry draws behind the body in this pose, so it never covers the face.
+func carry_behind(kind: String, pose: String) -> bool:
+	return pose in BEHIND_POSES or (pose == "walk_down" and kind in BEHIND_WALK_DOWN)
 
 ## Hides every overlay; the body alone shows the weapon until the next animate().
 func clear() -> void:
@@ -104,7 +112,7 @@ func _carry(kind: String) -> void:
 	carry.position = (hand-UNARMED_PIVOT)*body.scale.y
 	carry.show()
 
-## Draws the rig under the body (back view) or over it.
+## Draws the rig under the body (see carry_behind) or over it.
 func _layer(behind: bool) -> void:
 	var parent := get_parent()
 	if body == null or parent != body.get_parent(): return
