@@ -799,7 +799,11 @@ func _unhandled_input(event: InputEvent) -> void:
 func resume() -> void:
 	if state!="paused": return
 	get_tree().paused=false
-	if pause_return_state in ["cards","boss_victory","stage_enter","stage_exit","knockout"]: state=pause_return_state;overlay.hide()
+	# The return state only means something while paused; consume it so a stale one can't steer
+	# a later resume (every pause sets it first).
+	var back := pause_return_state
+	pause_return_state="combat"
+	if back in ["cards","boss_victory","stage_enter","stage_exit","knockout"]: state=back;overlay.hide()
 	else: begin_play()
 
 func leave() -> void:

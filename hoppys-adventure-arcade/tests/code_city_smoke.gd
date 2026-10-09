@@ -32,6 +32,9 @@ func run() -> void:
 	await process_frame;await process_frame
 	game=current_scene
 	game.test_mode=true
+	# A window that starts unfocused can focus-pause the game before test_mode is set.
+	paused=false
+	if game.state=="paused": game.resume()
 	freeze()
 	# Verify event mappings against the live controller, including gamepad buttons.
 	# The run itself never confirms: no begin_play, advance_stage, or button press.

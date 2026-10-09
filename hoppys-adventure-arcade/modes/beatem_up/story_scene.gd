@@ -119,11 +119,14 @@ func _ready() -> void:
 		seconds = type_end()+.2
 		_render()
 
-## Shows scene `at` of `source` (a catalog script with STORY, STORY_ACCENT and STORY_SERIES).
-## The clock is left alone: the host's next advance() places the scene in time.
+## Shows scene `at` of `source` (a catalog script with STORY, STORY_ACCENT and STORY_SERIES),
+## clamped to the scenes it has. The clock is left alone: the host's next advance() places the
+## scene in time.
 func show_scene(source: Variant, at: int) -> void:
-	index = at
-	scene = source.STORY[at]
+	var count: int = source.STORY.size()
+	if count==0: return
+	index = clampi(at,0,count-1)
+	scene = source.STORY[index]
 	picture.texture = texture_for(scene)
 	kicker.text = scene.kicker
 	kicker.add_theme_color_override("font_color",source.STORY_ACCENT)
@@ -132,11 +135,14 @@ func show_scene(source: Variant, at: int) -> void:
 	_paint_drain(source.STORY_ACCENT)
 	_render()
 
-## The painted scene once it is imported, otherwise the stage art standing in for it.
+## The painted scene once it is imported, otherwise the stage art standing in for it (also when
+## the painting is listed but fails to load, e.g. a stale import cache).
 static func texture_for(entry: Dictionary) -> Texture2D:
 	for key in ["image","fallback"]:
 		var path: String = entry.get(key,"")
-		if path!="" and ResourceLoader.exists(path): return load(path) as Texture2D
+		if path=="" or not ResourceLoader.exists(path): continue
+		var texture := load(path) as Texture2D
+		if texture!=null: return texture
 	return null
 
 ## Places the scene `at` seconds into a hold of `hold_seconds`. The host's clock is the only clock.

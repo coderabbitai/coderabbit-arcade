@@ -321,6 +321,9 @@ func run() -> void:
 	await process_frame;await process_frame
 	game=current_scene
 	game.test_mode=true
+	# A window that starts unfocused can focus-pause the game before test_mode is set.
+	paused=false
+	if game.state=="paused": game.resume()
 	game.begin_play()
 	game.set_physics_process(false)
 	var p=game.player

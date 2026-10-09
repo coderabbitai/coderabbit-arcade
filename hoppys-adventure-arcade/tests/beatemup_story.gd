@@ -398,7 +398,36 @@ func check_code_city(hold: float) -> void:
 	check(game.state == "stage_enter" and not game.story.visible, "Skip intro goes straight to the stage with the story hidden")
 	reopen_city()
 	await run_city_hands_free(hold)
+	check_intro_guard()
 	await check_return_to_menu()
+
+## Resuming into "intro" once the intro is over (reachable only by forcing the state) hands off
+## to the stage entrance instead of indexing past the last scene, and the scene clamps its index.
+func check_intro_guard() -> void:
+	reopen_city()
+	var count := City.STORY.size()
+	game.intro_page = count
+	game.pause_return_state = "intro"
+	game.state = "paused"
+	paused = true
+	game.resume()
+	check(game.state == "stage_enter" and not paused and not game.story.visible and not game.overlay.visible, "Resuming into a finished intro hands off to the stage entrance")
+	var scene := mount(StoryScene.new()) as StoryScene
+	scene.show_scene(City, count)
+	check(scene.index == count-1 and scene.kicker.text == str(City.STORY[count-1]["kicker"]), "An index past the last scene shows the last one")
+	scene.show_scene(City, -1)
+	check(scene.index == 0 and scene.kicker.text == str(City.STORY[0]["kicker"]), "A negative index shows the first scene")
+	drop_holder()
+	# A resume consumes its return state, so a later hand-forced pause resumes into play, not
+	# into an intro that is over (code_city_logic forces one after a startup focus pause).
+	reopen_city()
+	game.pause("x")
+	game.resume()
+	check(game.state == "intro" and game.pause_return_state == "combat", "Resuming the intro consumes its return state")
+	game.state = "paused"
+	paused = true
+	game.resume()
+	check(game.state == "combat" and game.playing and not paused and not game.story.visible, "A hand-forced pause afterwards resumes into play with the story hidden")
 
 func run_city_hands_free(hold: float) -> void:
 	reopen_city()
@@ -507,6 +536,18 @@ func check_hvv(hold: float) -> void:
 		game.show_cards([plain], game.enter_stage)
 		var story: bool = game.card.has_method("advance")
 		check(not story and is_equal_approx(game.card.position.x, 1280.0), "%s still slides in from x=1280 and is not a story scene" % plain)
+	# A resume consumes its return state, so a later hand-forced pause resumes into play rather
+	# than into a card queue that has emptied.
+	game.flow.cancel()
+	game.show_cards(["opening_situation", "opening_complication", "opening_resolution"], game.enter_stage)
+	freeze()
+	pause_press()
+	pause_press()
+	check(game.state == "cards" and not paused and game.pause_return_state == "combat", "Resuming a card consumes its return state")
+	game.state = "paused"
+	paused = true
+	game.resume()
+	check(game.state == "combat" and game.playing and not paused and not game.card_host.visible, "A hand-forced HvV pause afterwards resumes into play with the cards hidden")
 
 func advance_press(echo: bool) -> void:
 	var key := InputEventKey.new()

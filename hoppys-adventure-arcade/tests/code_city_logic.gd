@@ -31,6 +31,9 @@ func run() -> void:
 	game=current_scene
 	Game=game.get_script()
 	game.test_mode=true
+	# A window that starts unfocused can focus-pause the game before test_mode is set.
+	paused=false
+	if game.state=="paused": game.resume()
 	freeze()
 	check(game.state=="intro" and not game.playing,"Opening sequence precedes combat")
 	var intro_steps := 0

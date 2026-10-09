@@ -72,12 +72,18 @@ func reload_game() -> void:
 	change_scene_to_file("res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn")
 	await process_frame;await process_frame
 	game=current_scene;game.test_mode=true
+	# A window that starts unfocused can focus-pause the game before test_mode is set.
+	paused=false
+	if game.state=="paused": game.resume()
 	freeze()
 	steps(1200,func(): return game.state=="combat")
 func run() -> void:
 	change_scene_to_file("res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn")
 	await process_frame;await process_frame
 	game=current_scene;game.test_mode=true
+	# A window that starts unfocused can focus-pause the game before test_mode is set.
+	paused=false
+	if game.state=="paused": game.resume()
 	freeze()
 	check(game.state=="cards" and not game.playing,"Opening panels precede combat")
 	finish_cards()

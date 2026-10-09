@@ -41,7 +41,11 @@ func run() -> void:
 	check(game.scene_file_path.ends_with("heroes_vs_villains.tscn"),"Router loads new mode")
 	if not game.scene_file_path.ends_with("heroes_vs_villains.tscn"):
 		quit(1);return
-	game.test_mode=true;freeze()
+	game.test_mode=true
+	# A window that starts unfocused can focus-pause the game before test_mode is set.
+	paused=false
+	if game.state=="paused": game.resume()
+	freeze()
 	game._physics_process(.35)
 	await capture("opening")
 	var opening_steps := 0

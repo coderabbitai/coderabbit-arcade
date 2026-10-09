@@ -24,7 +24,11 @@ func advance_key(echo := false) -> InputEventKey:
 func run() -> void:
 	change_scene_to_file("res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn")
 	await process_frame;await process_frame
-	game=current_scene;game.test_mode=true;paused=false;game.set_physics_process(false)
+	game=current_scene;game.test_mode=true
+	# A window that starts unfocused can focus-pause the game before test_mode is set.
+	paused=false
+	if game.state=="paused": game.resume()
+	game.set_physics_process(false)
 	var p=game.player
 	p.set_physics_process(false)
 	# Every card auto-advances after its hold; the dedicated press skips exactly one card.
