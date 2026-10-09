@@ -16,6 +16,10 @@ func freeze() -> void:
 func capture(name: String) -> void:
 	if DisplayServer.get_name()=="headless" or captures.has(name): return
 	captures[name]=true
+	# The bot steps the game by hand between engine ticks; draw the current state, not the last tick.
+	if is_instance_valid(game):
+		game.world.reset_physics_interpolation()
+		game.camera.reset_physics_interpolation()
 	await process_frame
 	await RenderingServer.frame_post_draw
 	DirAccess.make_dir_recursive_absolute("res://../docs/previews/code-city")
