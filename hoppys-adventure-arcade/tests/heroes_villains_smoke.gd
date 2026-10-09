@@ -14,10 +14,17 @@ func freeze() -> void:
 func capture(name: String) -> void:
 	if DisplayServer.get_name()=="headless" or captures.has(name): return
 	captures[name]=true
+	# The bot steps the game by hand between engine ticks; draw the current state, not the last tick.
+	if is_instance_valid(game):
+		game.world.reset_physics_interpolation()
+		game.camera.reset_physics_interpolation()
 	await process_frame
 	await RenderingServer.frame_post_draw
 	DirAccess.make_dir_recursive_absolute("res://../docs/previews/heroes-villains")
 	root.get_texture().get_image().save_png("res://../docs/previews/heroes-villains/"+name+".png")
+## Story scenes are captured once their caption is typed; slide-in cards once they have landed.
+func card_settled() -> bool:
+	return game.state=="cards" and game.card_clock>(3.0 if game.card.has_method("advance") else .35)
 func run() -> void:
 	change_scene_to_file("res://scenes/beatem_up/beatem_menu.tscn")
 	await process_frame;await process_frame
@@ -25,17 +32,29 @@ func run() -> void:
 	await capture("mode_select")
 	check(current_scene.selected_mode==1 and current_scene.description.text.contains("FOUR VILLAINS"),"Mode select previews Heroes vs. Villains")
 	root.get_node("AppRouter").go("heroes_vs_villains")
-	for i in 100:
+	# The router fades on a clock; rendered frames can be far shorter than 1/60 s.
+	var deadline: int=Time.get_ticks_msec()+5000
+	while Time.get_ticks_msec()<deadline:
 		await process_frame
 		if is_instance_valid(current_scene) and current_scene.scene_file_path.ends_with("heroes_vs_villains.tscn") and not root.get_node("AppRouter").busy: break
 	game=current_scene
 	check(game.scene_file_path.ends_with("heroes_vs_villains.tscn"),"Router loads new mode")
 	if not game.scene_file_path.ends_with("heroes_vs_villains.tscn"):
 		quit(1);return
-	game.test_mode=true;freeze()
+	game.test_mode=true
+	# A window that starts unfocused can focus-pause the game before test_mode is set.
+	paused=false
+	if game.state=="paused": game.resume()
+	freeze()
 	game._physics_process(.35)
 	await capture("opening")
-	while game.state=="cards": game.next_card()
+	var opening_steps := 0
+	while game.state in ["cards","stage_enter"] and opening_steps<2400:
+		game._physics_process(1.0/60.0);opening_steps+=1
+		if card_settled(): await capture(game.card_queue[0])
+		if game.state=="stage_enter" and game.flow.phase=="enter_run" and game.flow.clock>.5: await capture("stage_enter_banner_0")
+		if opening_steps%15==0: await process_frame
+	check(game.state=="combat" and game.playing,"Opening cards and stage_enter complete hands-free")
 	# Live event mappings: movement, jump, combo, pickup and charged ability.
 	var key := InputEventKey.new();key.physical_keycode=KEY_W;key.pressed=true
 	Input.parse_input_event(key);await process_frame
@@ -75,16 +94,11 @@ func run() -> void:
 		p.invulnerable=999
 		rooms["%d_%d" % [game.stage_index,game.room]]=true
 		if game.state=="won": break
-		if game.state=="stage_clear":
-			await capture("capability_deployed_%d" % game.stage_index)
-			var confirm := InputEventAction.new()
-			confirm.action="heroes_popup_advance";confirm.pressed=true
-			game._input(confirm)
-			await process_frame;freeze()
-			var stage_confirm := InputEventAction.new()
-			stage_confirm.action="heroes_popup_advance";stage_confirm.pressed=true
-			game._input(stage_confirm)
-			await process_frame;freeze()
+		if game.state in ["stage_exit","stage_enter"]:
+			game._physics_process(1.0/60.0)
+			if game.state=="stage_exit" and game.flow.phase=="fade_out" and game.flow.veil.color.a>.4: await capture("stage_exit_fade_%d" % game.stage_index)
+			if game.state=="stage_enter" and game.flow.phase=="enter_run" and game.flow.clock>.5: await capture("stage_enter_banner_%d" % game.stage_index)
+			if step%15==0: await process_frame
 			continue
 		if game.state=="boss_victory":
 			game._physics_process(1.0/60.0)
@@ -93,11 +107,7 @@ func run() -> void:
 			continue
 		if game.state=="cards":
 			game._physics_process(1.0/60.0)
-			if game.state=="cards" and game.card_clock>.35:
-				await capture(game.card_queue[0])
-				var advance := InputEventAction.new()
-				advance.action="heroes_popup_advance";advance.pressed=true
-				game._unhandled_input(advance)
+			if card_settled(): await capture(game.card_queue[0])
 			if step%15==0: await process_frame
 			continue
 		if game.playing:
@@ -143,7 +153,8 @@ func run() -> void:
 	check(game.capabilities.review and game.capabilities.triage and game.capabilities.change_stack and game.capabilities.security,"All capabilities persist through the run")
 	await capture("victory_result")
 	game.leave()
-	for i in 100:
+	deadline=Time.get_ticks_msec()+5000
+	while Time.get_ticks_msec()<deadline:
 		await process_frame
 		if is_instance_valid(current_scene) and current_scene.scene_file_path.ends_with("beatem_menu.tscn") and not root.get_node("AppRouter").busy: break
 	check(current_scene.scene_file_path.ends_with("beatem_menu.tscn") and not paused,"Victory returns to an unpaused mode menu")

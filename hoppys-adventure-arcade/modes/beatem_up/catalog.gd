@@ -7,7 +7,49 @@ const MUSIC := [
 	preload("res://Assets/Audio/Beat'em Up/helldrake(extended).ogg"),
 	preload("res://Assets/Audio/Beat'em Up/kim_lightyear_-_angel_eyes_vision_ii.mp3")]
 const BOSS_MUSIC = preload("res://Assets/Audio/Beat'em Up/Kim Lightyear - The Final.mp3")
+## Hands-free stage flow (seconds, world px, px/s, dB). stage_flow.gd reads its DEFAULTS keys;
+## the rest are game.gd's: intro page hold, room-0 telegraph grace, boss-music dip, exit banner.
+const FLOW := {
+	"run_speed":300.0, "exit_min":.6, "exit_max":1.6, "exit_margin":60.0,
+	"fade_out":.35, "fade_in":.35, "music_floor_db":-40.0,
+	"enter_from_x":-60.0, "enter_to_x":180.0, "enter_max":1.6,
+	"stage_banner":2.8, "banner_slide":.3, "banner_fade":.6,
+	"exit_banner":2.0, "intro_hold":4.5, "enemy_grace":.8, "boss_dip":.6}
+const FX_ROOT := "res://Assets/code-city-brawl-assets-only/code_city/"
+## Last-life knockout (knockout.gd DEFAULTS keys; seconds since the hit, world px, radians, dB).
+## Hoppy recoils facing the hit, then turns with the blow and the death clip does the tipping
+## over: slumping through the climb, folding on the way down, flat at touchdown, a rebound, the
+## settled heap, head first along the throw.
+const KNOCKOUT := {
+	"hit_stop":.12, "launch_end":.75, "land_end":1.0, "length":2.2,
+	"distance":140.0, "height":70.0, "bounce":10.0, "tip":.45, "pivot":40.0, "turn":.12,
+	"hit_pose":"hurt", "clip":"death", "clip_starts":[.12,.24,.42,.75,.84,.93],
+	"hit_fx":{"frames":FX_ROOT+"weapons.tres",
+		"pose":"hammer_impact","scale":.75,"rise":50.0,"front":true},
+	"dust_fx":{"frames":FX_ROOT+"combat_fx.tres",
+		"pose":"slam_impact","scale":1.2,"squash":.5,"rise":20.0,"front":false},
+	"land_sound":"kick", "head":Vector2(20,-40), "star_size":8.0, "callout_color":Color("ffd36b")}
 const SOUND_ROOT := "res://Assets/Audio/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/"
+## The opening: three story scenes (story_scene.gd), each held for FLOW.intro_hold. image is the
+## painted scene; until it is imported, the district art in fallback stands in. from/to frame the
+## Ken Burns move as Vector3(focus x, focus y, zoom).
+const STORY_ROOT := "res://Assets/beatemup-story/code_city/"
+const STAGE_ART := "res://Assets/code-city-brawl-assets-only/code_city/"
+const STORY_ACCENT := Color("79e0c4")
+const STORY_SERIES := ""
+const STORY := [
+	{"image":STORY_ROOT+"under_siege.png", "fallback":STAGE_ART+"district_background.png",
+		"kicker":"CODE CITY: UNDER SIEGE",
+		"caption":"Rogue Code and Slop Code have escaped the review pipeline.\nThe terminals go dark.",
+		"from":Vector3(.5,.45,1.0), "to":Vector3(.6,.36,1.22)},
+	{"image":STORY_ROOT+"pipeline_breached.png", "fallback":STAGE_ART+"security_background.png",
+		"kicker":"REVIEW PIPELINE: BREACHED",
+		"caption":"The firewall is failing. Conflicting branches have taken over Git HQ.",
+		"from":Vector3(.64,.44,1.14), "to":Vector3(.36,.46,1.2)},
+	{"image":STORY_ROOT+"hoppy_clocks_in.png", "fallback":STAGE_ART+"hq_background.png",
+		"kicker":"HOPPY CLOCKS IN",
+		"caption":"The codebase needs a review. And Hoppy delivers.\nClear three districts and force the final merge.",
+		"from":Vector3(.5,.38,1.25), "to":Vector3(.5,.48,1.0)}]
 const SOUNDS := {
 	"jab": preload(SOUND_ROOT + "Weapons/Melee/sfx_wpn_punch1.wav"),
 	"swing": preload(SOUND_ROOT + "Weapons/Melee/sfx_wpn_punch2.wav"),

@@ -59,10 +59,14 @@ jobs:
             code_city_logic
             code_city_motion
             code_city_smoke
+            stage_flow
+            beatemup_knockout
+            beatemup_story
             heroes_villains_assets
             heroes_villains_logic
             heroes_villains_motion
             heroes_villains_smoke
+            hoppy_armed_assets
             enchanted_assets
             enchanted_boundaries
             enchanted_repo_smoke

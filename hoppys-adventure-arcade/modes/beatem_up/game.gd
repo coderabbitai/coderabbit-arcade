@@ -4,7 +4,14 @@ const Catalog = preload("res://modes/beatem_up/catalog.gd")
 const Player = preload("res://modes/beatem_up/player.gd")
 const Enemy = preload("res://modes/beatem_up/enemy.gd")
 const Boss = preload("res://modes/beatem_up/boss.gd")
+const StageFlow = preload("res://modes/beatem_up/stage_flow.gd")
+const Knockout = preload("res://modes/beatem_up/knockout.gd")
+const StoryScene = preload("res://modes/beatem_up/story_scene.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
+const PAUSABLE := ["combat","intro","stage_enter","stage_exit","knockout"]
+## Results and game-over menus arm this long after appearing (see _input).
+const OVERLAY_ARM := .5
+const ARMED_OVERLAYS := ["won","game_over"]
 var rng := RandomNumberGenerator.new()
 var stage_index := 0
 var room := 0
@@ -13,7 +20,16 @@ var checkpoint_score := 0
 var elapsed := 0.0
 var playing := false
 var state := "intro"
+var pause_return_state := "combat"
 var intro_page := 0
+var intro_clock := 0.0
+## The opening's story scenes, with Next / Skip intro / Return in the lower bar.
+var story: StoryScene
+var intro_next: Button
+var overlay_clock := 0.0
+var flow: StageFlow
+## The last-life knockout between the fatal hit and game_over().
+var ko := Knockout.new(Catalog.KNOCKOUT)
 var gate_open := false
 var gate: AnimatedSprite2D
 var world: Node2D
@@ -40,6 +56,10 @@ var boss_bar: ProgressBar
 var boss_text: Label
 var toast_label: Label
 var toast_left := 0.0
+## A toast raised while the stage title banner fades into combat waits for it, so the two never stack.
+var held_toast := ""
+var held_toast_seconds := 2.0
+var ui_layer: CanvasLayer
 var prompt: Label
 var overlay: ColorRect
 var panel: VBoxContainer
@@ -79,6 +99,10 @@ func _ready() -> void:
 		add_child(voice)
 		sound_pool.append(voice)
 	_build_ui()
+	flow = StageFlow.new()
+	add_child(flow)
+	flow.setup(ui_layer,music,Catalog.FLOW)
+	flow.phase_changed.connect(_on_flow_phase)
 	start_stage(0,true)
 
 func room_start() -> float: return room*1280.0
@@ -86,6 +110,7 @@ func clamp_ground(pos: Vector2) -> Vector2:
 	return Vector2(clampf(pos.x,room_start()+55,room_start()+(1270 if gate_open else 1150)),clampf(pos.y,455,650))
 
 func start_stage(index: int, cinematic := false) -> void:
+	ko.cancel()
 	playing = false
 	get_tree().paused = false
 	for child in world.get_children(): child.queue_free()
@@ -116,20 +141,43 @@ func start_stage(index: int, cinematic := false) -> void:
 		ground.add_child(decor)
 	player = Player.new()
 	player.arena = self
-	player.position = Vector2(180,580)
+	# Off-screen left: every stage opens with Hoppy running in (stage_flow.gd).
+	player.position = Vector2(Catalog.FLOW.enter_from_x,580)
 	actors.add_child(player)
 	camera.position = Vector2(640,360)
-	music.stream = Catalog.looped(Catalog.MUSIC[index])
-	music.play()
+	camera.reset_physics_interpolation()
+	prompt.text = ""
+	flow.play_music(Catalog.looped(Catalog.MUSIC[index]),Catalog.MUSIC[index])
 	enter_room(0)
 	if cinematic:
 		state = "intro"
 		intro_page = 0
+		intro_clock = 0
+		hide_toast() # enter_room(0)'s line would sit behind the intro; begin_play announces the room.
 		show_intro()
-	else:
-		state = "stage_intro"
-		show_overlay("%02d / %s" % [index+1,Catalog.TITLES[index]],Catalog.STORIES[index],"Enter the district",begin_play)
+	else: enter_stage()
 	_update_hud()
+
+## stage_enter: Hoppy runs in under the title banner, then begin_play() (see _on_flow_phase).
+func enter_stage() -> void:
+	overlay.hide()
+	story.hide()
+	playing = false
+	state = "stage_enter"
+	hide_toast() # The banner owns the screen; begin_play() re-announces the encounter.
+	flow.play_enter("%02d / %s" % [stage_index+1,Catalog.TITLES[stage_index]],Catalog.STORIES[stage_index])
+
+## stage_exit: Hoppy runs out, the screen dips to black and the next district is built under it.
+func exit_stage() -> void:
+	playing = false
+	state = "stage_exit"
+	prompt.text = ""
+	hide_toast()
+	flow.banner("DISTRICT SECURED","Stage score saved · Next: "+Catalog.TITLES[stage_index+1],Catalog.FLOW.exit_banner)
+	flow.play_exit(advance_stage)
+
+func _on_flow_phase(phase: String) -> void:
+	if phase=="" and state=="stage_enter": begin_play()
 
 func enter_room(index: int) -> void:
 	room = index
@@ -152,8 +200,7 @@ func enter_room(index: int) -> void:
 		boss.arena = self
 		boss.position = Vector2(room_start()+965,565)
 		actors.add_child(boss)
-		music.stream = Catalog.looped(Catalog.BOSS_MUSIC)
-		music.play()
+		flow.swap_music(Catalog.looped(Catalog.BOSS_MUSIC),Catalog.FLOW.boss_dip,Catalog.BOSS_MUSIC)
 		toast("THE GRAND MERGE CONFLICT",3)
 	else: toast("ENCOUNTER %d / 3 — clear the blockers" % (room+1),2)
 
@@ -197,7 +244,8 @@ func resolve_swing(source: Node2D) -> void:
 		if in_reach:
 			if enemy.take_hit(damage,def.knock,source.position,source.combo==3 or weapon!=""):
 				hit = true
-				fx("weapons","hammer_impact" if weapon=="refactor_hammer" else "melee_sweep",enemy.position-Vector2(0,55),.6,.16)
+				# Hits burst on the victim (reach outruns the tip); the sweep cel is drawn travelling left.
+				fx("weapons","hammer_impact" if weapon=="refactor_hammer" else "melee_sweep",enemy.position-Vector2(0,55),.6,.16,source.facing>0)
 				if weapon=="refactor_hammer": break
 	for prop in props:
 		if weapon=="refactor_hammer" and hit: break
@@ -212,7 +260,7 @@ func resolve_swing(source: Node2D) -> void:
 	if hit:
 		shake = 3 if source.combo<3 else 6
 		if weapon != "" and source.weapon == weapon: source.spend_weapon()
-	else: fx("weapons","melee_sweep",source.position+Vector2(source.facing*65,-source.height-50),.5,.13)
+	else: fx("weapons","melee_sweep",source.tip_position(),.5,.13,source.facing>0)
 
 static func melee_contains(offset: Vector2, facing: float, reach: float, depth: float) -> bool:
 	return offset.x*facing >= -20 and offset.x*facing <= reach and absf(offset.y) <= depth
@@ -301,9 +349,10 @@ func clear_threats() -> void:
 	bullets.clear()
 	warnings.clear()
 
-func fx(sheet: String, pose: String, pos: Vector2, magnify: float, lifetime: float) -> void:
+func fx(sheet: String, pose: String, pos: Vector2, magnify: float, lifetime: float, mirror := false) -> void:
 	var sprite := Art.sprite(sheet,pose,magnify,false)
 	sprite.position = pos
+	sprite.flip_h = mirror
 	actors.add_child(sprite)
 	var tween := sprite.create_tween()
 	tween.tween_property(sprite,"modulate:a",0.0,lifetime)
@@ -318,13 +367,18 @@ func sound(key: String, pos: Vector2) -> void:
 	voice.play()
 
 func _physics_process(dt: float) -> void:
-	if not is_instance_valid(player): return
-	if state=="finisher" and not get_tree().paused:
-		_tick_finisher(dt)
-	if not playing or get_tree().paused: return
-	elapsed += dt
+	if not is_instance_valid(player) or get_tree().paused or state=="leaving": return
+	overlay_clock += dt
+	if state=="finisher": _tick_finisher(dt)
+	elif state=="intro": _tick_intro(dt)
+	# Toasts, banners and transitions run outside combat too, so none freezes on screen.
 	toast_left -= dt
 	toast_label.visible = toast_left > 0
+	flow.tick(dt,player)
+	if held_toast != "" and state=="combat" and not flow.banner_active(): toast(held_toast,held_toast_seconds)
+	if state=="knockout": _tick_knockout(dt)
+	if not playing: return
+	elapsed += dt
 	shake = maxf(0,shake-dt*28)
 	camera.position = camera.position.lerp(Vector2(room_start()+640,360),minf(1,dt*5))
 	camera.offset = Vector2(rng.randf_range(-shake,shake),rng.randf_range(-shake,shake))
@@ -332,8 +386,9 @@ func _physics_process(dt: float) -> void:
 	camera.zoom = Vector2.ONE*minf(view.x/1280.0,view.y/720.0)
 	_tick_items(dt)
 	_tick_threats(dt)
-	_tick_allies(dt)
+	# A fatal hit starts the knockout here, so no ally arrives or speaks on that frame.
 	if not playing: return
+	_tick_allies(dt)
 	if not gate_open and living_enemies()==0 and not is_instance_valid(boss):
 		gate_open = true
 		gate.hide()
@@ -341,10 +396,9 @@ func _physics_process(dt: float) -> void:
 		toast("BLOCKERS CLEARED — GO RIGHT  →",3)
 	if gate_open and player.position.x > room_start()+1205:
 		if room<2: enter_room(room+1)
-		else:
-			playing = false
-			state = "stage_clear"
-			show_overlay("DISTRICT SECURED", "Stage score saved. Next: "+Catalog.TITLES[stage_index+1],"Continue →",advance_stage)
+		elif stage_index+1 < Catalog.TITLES.size():
+			exit_stage()
+			return
 	if not gate_open:
 		hazard_clock -= dt
 		if hazard_clock <= 0:
@@ -438,28 +492,63 @@ func _tick_allies(dt: float) -> void:
 			allies.remove_at(i)
 
 func begin_play() -> void:
+	var entering := state in ["intro","stage_enter"]
+	if flow.active(): flow.cancel()
 	overlay.hide()
+	story.hide()
 	state = "combat"
 	playing = true
 	player.input_lock = .2
+	if entering:
+		toast("ENCOUNTER %d / 3 — clear the blockers" % (room+1),2)
+		# A fresh room's enemies telegraph no sooner than this after Hoppy gets control.
+		for e in enemies:
+			if is_instance_valid(e) and not e.dead: e.cooldown = maxf(e.cooldown,Catalog.FLOW.enemy_grace)
 
 func advance_stage() -> void:
 	checkpoint_score = score
 	start_stage(stage_index+1)
 
 func retry_stage() -> void:
+	flow.cancel() # A pending exit must not advance the stage being retried.
 	score = checkpoint_score
 	start_stage(stage_index)
 
+## The fatal hit: play stops at once (enemies, bullets and hazards freeze), the screen clears of
+## toasts and banners, and the knockout plays out before game_over(). Repeats are ignored.
+func knockout(source: Vector2) -> void:
+	if state in ["knockout","game_over","leaving"]: return
+	flow.cancel()
+	playing = false
+	state = "knockout"
+	hide_toast()
+	prompt.text = ""
+	flow.banner("","",0)
+	_update_hud()
+	ko.play(self,source,game_over)
+
+## Play is stopped through the knockout, so its camera shake decays here.
+func _tick_knockout(dt: float) -> void:
+	ko.tick(dt)
+	shake = maxf(0,shake-dt*28)
+	camera.offset = Vector2(rng.randf_range(-shake,shake),rng.randf_range(-shake,shake))
+
+## Terminal paths (game over, leave) cancel the flow first, so a pending exit can never
+## rebuild the next stage at black or restart its music behind them.
 func game_over() -> void:
 	if state=="game_over": return
+	ko.cancel()
+	flow.cancel()
 	playing = false
 	state = "game_over"
 	_update_hud()
 	show_overlay("REVIEW FAILED", "Retry %s with 3 HP and fresh equipment." % Catalog.TITLES[stage_index],"Retry current stage",retry_stage)
 
 func boss_defeated() -> void:
-	if state=="finisher" or state=="won": return
+	# A knocked-out Hoppy can't win: the knockout ends in game over.
+	if state in ["finisher","won","knockout"]: return
+	# No stage sequence may outlive the boss; a boss-music swap still finishes (it isn't one).
+	if flow.active(): flow.cancel()
 	playing = false
 	state = "finisher"
 	finish_clock = 0
@@ -501,12 +590,24 @@ func _tick_finisher(dt: float) -> void:
 		show_overlay("MERGED. SHIPPED. SAVED.","Code City is back online.\nScore: %d   ·   Time: %d:%02d" % [score,int(elapsed)/60,int(elapsed)%60],"Return to Beat'em Up menu",leave)
 
 func toast(message: String, seconds := 2.0) -> void:
+	# Combat opens under the fading stage title; anything said then waits for it (latest wins).
+	if state=="combat" and flow.banner_active():
+		held_toast = message
+		held_toast_seconds = seconds
+		return
+	held_toast = ""
 	toast_label.text = message
 	toast_label.show()
 	toast_left = seconds
 
+func hide_toast() -> void:
+	held_toast = ""
+	toast_left = 0
+	toast_label.hide()
+
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
+	ui_layer = layer
 	add_child(layer)
 	screen_fx = ColorRect.new()
 	screen_fx.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -563,6 +664,15 @@ func _build_ui() -> void:
 	controls.offset_top = -27
 	controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ui.add_child(controls)
+	# Over the HUD (the scenes are full-bleed), under the pause overlay.
+	story = StoryScene.new()
+	story.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	story.hint.text = "Esc · Pause"
+	story.hide()
+	ui.add_child(story)
+	intro_next = _intro_button("Next →",next_intro)
+	_intro_button("Skip intro",enter_stage)
+	_intro_button("Return to Beat'em Up menu",leave)
 	overlay = ColorRect.new()
 	overlay.color = Color(.025,.04,.065,.91)
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -610,48 +720,105 @@ func show_overlay(title: String, detail: String, action: String, callback: Calla
 		var back := Style.button("Return to Beat'em Up menu",54)
 		panel.add_child(back)
 		back.pressed.connect(leave)
+	overlay_clock = 0
 	overlay.show()
 	primary.grab_focus()
 
+## Page intro_page of the opening as a story scene (Catalog.STORY). It turns by itself after
+## FLOW.intro_hold while its bar drains; resume calls this again to restore the page. Past the
+## last page the intro is over, so it hands off to the stage entrance as next_intro() does.
 func show_intro() -> void:
-	var titles := ["CODE CITY: UNDER SIEGE", "REVIEW PIPELINE: BREACHED", "HOPPY CLOCKS IN"]
-	var lines := ["Rogue Code and Slop Code have escaped the review pipeline.\nThe terminals go dark.","The firewall is failing. Conflicting branches have taken over Git HQ.","The codebase needs a review. And Hoppy delivers.\nClear three districts and force the final merge."]
-	show_overlay(titles[intro_page],lines[intro_page],"Start the review →" if intro_page==2 else "Next →",next_intro)
-	var skip := Style.button("Skip intro",46)
-	panel.add_child(skip)
-	skip.pressed.connect(begin_play)
+	if intro_page>=Catalog.STORY.size():
+		enter_stage()
+		return
+	overlay.hide()
+	story.show_scene(Catalog,intro_page)
+	intro_next.text = "Start the review →" if intro_page==Catalog.STORY.size()-1 else "Next →"
+	story.show()
+	intro_next.grab_focus()
+	_tick_intro(0)
+
+func _tick_intro(dt: float) -> void:
+	intro_clock += dt
+	story.advance(intro_clock,Catalog.FLOW.intro_hold)
+	if intro_clock >= Catalog.FLOW.intro_hold: next_intro()
 
 func next_intro() -> void:
 	intro_page += 1
-	if intro_page>=3: begin_play()
+	intro_clock = 0
+	if intro_page>=Catalog.STORY.size(): enter_stage()
 	else: show_intro()
+
+## A small focusable action in the story scene's lower bar. It only acts while the intro runs,
+## so a press that reaches it under the pause overlay or during the leave fade does nothing.
+func _intro_button(text: String, action: Callable) -> Button:
+	var button := Style.button(text,32)
+	button.custom_minimum_size = Vector2(0,32)
+	button.add_theme_font_size_override("font_size",14)
+	button.pressed.connect(_intro_action.bind(action))
+	story.actions.add_child(button)
+	return button
+
+func _intro_action(action: Callable) -> void:
+	if state=="intro": action.call()
+
+func pause(detail: String) -> void:
+	pause_return_state = state
+	playing = false
+	state = "paused"
+	get_tree().paused = true
+	show_overlay("REVIEW PAUSED",detail,"Resume",resume)
+
+## Jump's Space is also ui_accept, so a press carried over from the finisher or the fatal hit
+## would fire the focused button before the player sees the screen. Swallow confirms (whatever
+## they are bound to), clicks and touches, before the GUI gets them, for the first OVERLAY_ARM
+## seconds. A native touch presses buttons too, not only its emulated click.
+func _input(event: InputEvent) -> void:
+	if state not in ARMED_OVERLAYS or not overlay.visible or overlay_clock >= OVERLAY_ARM: return
+	if event.is_action("ui_accept") or event is InputEventMouseButton or event is InputEventScreenTouch or event is InputEventScreenDrag:
+		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause") and not event.is_echo():
-		if state=="combat":
-			playing = false
-			state = "paused"
-			get_tree().paused = true
-			show_overlay("REVIEW PAUSED","Chain three attacks for a knockback finisher. Jump or change lanes to dodge.\nApproach a weapon and press E / Y to equip it.","Resume",resume)
+		if state in PAUSABLE: pause("Chain three attacks for a knockback finisher. Jump or change lanes to dodge.\nApproach a weapon and press E / Y to equip it.")
 		elif state=="paused": resume()
 		get_viewport().set_input_as_handled()
 
 func resume() -> void:
+	if state!="paused": return
 	get_tree().paused = false
-	begin_play()
+	# The return state only means something while paused; consume it so a stale one can't steer
+	# a later resume (pause() always sets it first).
+	var back := pause_return_state
+	pause_return_state = "combat"
+	match back:
+		"intro":
+			state = "intro"
+			show_intro()
+		"stage_enter", "stage_exit":
+			state = back
+			overlay.hide()
+		"knockout":
+			state = "knockout"
+			overlay.hide()
+		_: begin_play()
 
 func leave() -> void:
+	if state=="leaving": return
+	ko.cancel()
+	flow.cancel()
+	# The scene keeps running through the router's fade: nothing may start play or music again.
+	state = "leaving"
 	playing = false
+	for child in panel.get_children():
+		if child is BaseButton: child.disabled = true
 	get_tree().paused = false
 	music.stop()
 	AppRouter.go("beatem_up")
 
 func _notification(what: int) -> void:
-	if what==NOTIFICATION_APPLICATION_FOCUS_OUT and state=="combat" and not test_mode:
-		playing = false
-		state = "paused"
-		get_tree().paused = true
-		show_overlay("REVIEW PAUSED","The window lost focus.","Resume",resume)
+	if what==NOTIFICATION_APPLICATION_FOCUS_OUT and state in PAUSABLE and not test_mode:
+		pause("The window lost focus.")
 
 func _exit_tree() -> void:
 	get_tree().paused = false
