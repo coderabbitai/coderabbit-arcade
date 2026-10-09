@@ -25,6 +25,8 @@ There are three gated encounters per district. Clear every living combatant, inc
 - **Boss music** dips, swaps tracks at the bottom and comes back up over 0.6 seconds instead of cutting hard.
 - **Ending.** The Force Merge finisher and the results screen complete the run. The results and game-over menus ignore confirm, click and touch input for their first 0.5 seconds, so a jump or attack press carried over from combat can't select an option.
 
+![Hoppy running into the Security Sector under its title banner](previews/code-city/stage_banner.png)
+
 [Mode 2: Heroes vs. Villains](heroes-vs-villains.md) is separately playable from the mode menu.
 
 ## Districts and combat
@@ -49,6 +51,8 @@ CR Bot supplies an Approval Shield, the Linting Fairy supplies speed, and Senior
 | Refactor Hammer | 3 | Slow, four-damage single-target strike |
 
 Each weapon has a baked sheet of Hoppy holding it, so grip, pixel scale and layering match the body in every frame. With a weapon equipped, idle, side running, pickup and hurt play the sheet's `hold_idle`, `run`, `equip` and `hurt` clips. The three combo steps play `step1`–`step3`: thrusts and alternating sweeps for the stick, staff and branch; a crack, an extended lash and a recoil for the whip; overhead and side swings for the hammer. Each step shows a windup, contact or follow-through frame chosen from the attack clock. Contact occurs at 44% of the swing, inside the contact frame. The shield stays in guard during the unarmed combo and shows its block-recoil frame on blocks. Hits burst on the enemy; swing and miss effects start at the weapon tip (the sheet's contact-frame anchor), mirrored with facing, and a trail follows the contact frame. Poses with no armed frame (walking toward or away from the camera, and jumping) draw a pixel-matched carry icon at Hoppy's paw, behind the body in the back view. Facing locks through each swing, and damage cancels the motion. Reach, timing, durability and damage are unchanged. A weapon without a sheet would fall back to the older hand-animated weapon cel.
+
+![All six armed weapons at the contact frame](previews/code-city-motion/weapons_44.png)
 
 Weapons require the pickup action; consumables collect on contact. A successful offensive swing consumes one durability charge even if it hits multiple targets. Misses cost no charge. Breaking a weapon returns Hoppy to the unarmed combo. The hammer selects the first valid enemy in encounter order, then props if no enemy was hit; it is not a nearest-target lock-on system.
 
@@ -107,3 +111,7 @@ Godot 4.7.1: all 19 headless suites listed in CI passed, including the three Cod
 Follow-up validation: existing Code City logic and asset checks passed; the new motion suite passed headlessly and with rendered pose captures. Both headless and rendered full traversals reached Force Merge with the moving boss. `git diff --check` passed. Difficulty still needs player feedback.
 
 Phase 3 exposure polish: logic and motion regression tests passed, including both storm/clone recovery openings, full-window cue persistence, pause synchronization and defeat cleanup. The rendered motion test was inspected; its preview is `docs/previews/code-city-motion/boss_phase3_exposed.png`.
+
+### Hands-free stage flow and armed sheets — October 8, 2026
+
+Godot 4.7.1: the project imported headless and all 26 headless suites listed in CI passed, including `stage_flow` and `hoppy_armed_assets`. The rendered smoke run completed all nine encounters with no confirm input between stages. The rendered motion run's `weapons_25/44/70` captures were compared against the armed sheet cells for all six weapons, and the stage fade and banner captures were inspected. Ruff and `git diff --check` passed. As before, the traversal bot checks reachability, not difficulty.
