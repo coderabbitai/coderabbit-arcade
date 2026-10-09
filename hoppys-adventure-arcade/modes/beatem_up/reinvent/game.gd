@@ -383,6 +383,9 @@ func _physics_process(dt: float) -> void:
 	if get_tree().paused: return
 	# Camera and stage-flow clocks keep running behind a presentation card. In particular, the
 	# room-three pan must finish while the boss introduction remains on screen.
+	# Toasts count down in every state, so none freezes behind a card, the victory hop or the exit.
+	toast_left-=dt
+	toast_label.visible=toast_left>0
 	flow.tick(dt,player)
 	if held_toast!="" and state=="combat" and not flow.banner_active(): toast(held_toast,held_toast_seconds)
 	# A fallen villain collapses on this clock: during the fight, the victory hop, cards and exit.
@@ -410,8 +413,7 @@ func _physics_process(dt: float) -> void:
 		if card_clock>=card_hold(): next_card()
 		return
 	if not playing: return
-	elapsed+=dt;toast_left-=dt;reveal_time=maxf(0,reveal_time-dt);surge_cooldown=maxf(0,surge_cooldown-dt)
-	toast_label.visible=toast_left>0
+	elapsed+=dt;reveal_time=maxf(0,reveal_time-dt);surge_cooldown=maxf(0,surge_cooldown-dt)
 	_tick_items(dt);_tick_threats(dt);_tick_allies(dt);_tick_capabilities(dt)
 	if not playing: return
 	check_boss_state()
