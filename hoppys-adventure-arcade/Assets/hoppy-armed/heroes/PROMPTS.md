@@ -1,0 +1,88 @@
+# heroes armed Hoppy generation prompts
+
+Built-in image generation, October 8, 2026. Source masters preserve generated alpha unchanged. `tools/build_hoppy_armed.py` only crops, nearest-neighbour scales, registers, and packs artwork.
+
+## review_stamp: base generation prompt
+
+Generation zero of the review_stamp pilot, kept as `sources/review_stamp-generation0.png`. The other weapons' prompts follow its template.
+
+Create a NEW 16-bit pixel-art brawler animation sheet of EXACTLY the armored orange rabbit shown in the first reference: cream muzzle, long orange ears, black and charcoal armored suit, orange chest crest, belt, dark cape, orange legs, friendly determined eyes. Have him visibly hold the orange REVIEW STAMP from the second reference image with both paws wrapping the stamp handle in every sprite. Preserve the stamp's exact orange, amber, white highlight, charcoal and steel-gray colors, rectangular stamping base, and rubber-stamp silhouette. The stamp must be drawn at exactly the same chunky pixel density as the rabbit, not finer. Transparent alpha background. FOUR columns by FOUR rows, sixteen equally spaced complete sprites, large empty transparent gutters, 30px outer margin, no text, no borders, no ground, shadow, detached effects, duplicate character, or UI. Face RIGHT. Same character size, feet baseline, and weapon scale in every pose. Row-major: 1 ready idle with stamp at carry height below shoulder; 2 through 5 four-step sideways run cycle carrying it; 6 through 8 stamp-down windup, contact, follow-through; 9 through 11 sweep windup, contact, follow-through; 12 through 14 slam windup, contact, follow-through; 15 lifting stamp after pickup; 16 stagger hurt while still holding stamp. This is a clean in-game sprite sheet, not concept art.
+
+## review_stamp
+
+### Exact generation prompt
+
+Use case: precise-object-edit
+Asset type: 4x4 transparent pixel-art brawler sprite-sheet source master
+Input image: the provided 4x4 armored orange rabbit sprite sheet is the edit target.
+Primary request: Change only row 3, columns 1 through 3, frames 9, 10, and 11, the three step-2 sweep poses. Preserve frames 1-8 and 12-16 exactly as provided: their pixels, pose, palette, transparent background, grid spacing, margins, and complete sprites.
+Subject: the exact same armored orange rabbit, cream muzzle, long orange ears, black and charcoal suit, orange chest crest, belt, dark cape, orange legs, facing right.
+Critical correction: In EACH of frames 9, 10, and 11, Hoppy holds a complete orange review-stamp with the rounded orange knob clearly enclosed by the near paw AND the full rectangular orange-and-black stamp base visibly attached below it. The rectangular base must be visible, chunky, opaque, and unmistakable, matching the base silhouette, orange, amber highlight, charcoal, white highlight, and steel-gray colours already visible in frames 6-8 and 12-14. It must not resemble a boxing glove, plunger, floating knob, club, or hammer.
+Pose detail: Frame 9 sweep windup has stamp raised/back with complete base; frame 10 sweep contact projects the stamp forward with its complete rectangular base visible; frame 11 sweep follow-through has the complete base visibly attached and readable. Keep the knob in a rabbit paw in all three.
+Style/medium: crisp 16-bit pixel art at the same chunky pixel density as every unchanged rabbit and stamp frame. Exact 4 columns x 4 rows, equal cell spacing, generous transparent gutters, no grid lines, no text, no shadows, no detached effects, no new characters, no backgrounds.
+Constraints: change only frames 9-11; retain transparent alpha; every frame remains a single complete connected sprite fully inside its own cell; preserve rabbit identity and feet baseline.
+
+### Refinements
+
+Regenerations: 1. Regenerated and merged only the step 2 sweep sprites so each pose shows a complete orange-and-black rectangular stamp base beneath a rounded knob held in Hoppy's paw. The other thirteen approved source sprites remain unchanged.
+
+## triage_hammer
+
+### Exact generation prompt
+
+Use case: stylized-concept
+Asset type: project-bound 4 by 4 transparent source master for a Godot pixel-art brawler animation sheet.
+Primary request: Create a NEW 16-bit pixel-art brawler animation sheet of the armored orange Hoppy holding the black, charcoal, orange, amber, and steel-gray triage hammer. In every sprite the full hammer head remains visibly attached to its handle and the paws visibly wrap the handle, never the head.
+Animation layout: 1 carry idle; 2-5 run; 6-8 overhead hammer windup/contact/follow; 9-11 side hammer windup/contact/follow; 12-14 heavy downward slam windup/contact/follow; 15 equip; 16 hurt.
+Constraints: transparent alpha, exactly four columns by four rows, one complete connected Hoppy-plus-hammer sprite per cell, large gutters, same identity, scale and foot baseline, no detached effects or clipped parts.
+
+### Refinements
+
+Regenerations: 0. The first generated master was retained. Hoppy holds the triage hammer by its handle in every cell, including overhead, side, and heavy-slam attacks.
+
+## change_stack_baton
+
+### Exact generation prompt
+
+Use case: precise-object-edit
+Asset type: transparent 4x4 pixel-art source-master edit
+Input image: the existing armored orange Hoppy change-stack-baton source master.
+Primary request: Change only row-major cells 6, 7, 8 and 10. Preserve every other cell exactly.
+Critical source-gate contract: keep at least 50 transparent pixels between every sprite. Each of the 16 sprites must be one isolated opaque connected component inside its own grid quarter; no baton may bridge into a neighbouring cell.
+Weapon: a consistently long, straight orange change-stack baton with charcoal segments, steel-gray joints and orange caps. Both paws grip the full shaft. Cell 6 is long-thrust windup, cell 7 is the further-reaching long-thrust contact, cell 8 is the long forward follow-through, and cell 10 is a low full-length sweep contact. The rear foot stays in the same horizontal stance in all changed cells.
+Constraints: preserve transparent alpha, Hoppy identity, foot baseline and broad gutters. No text, background, effects, clipping, duplicate character or detached fragments.
+
+### Refinements
+
+Regenerations: 2. Generation zero had duplicate grid-cell component centroids and regeneration one restored one connected Hoppy-plus-baton sprite per cell. Regeneration two retains that master as sources/change_stack_baton-generation1.png and selectively replaces cells 6, 7, 8 and 10: step 1 now extends the full long baton through contact and follow-through, and step 2 contact uses a stable planted rear-foot stance. A candidate with a cell bridge was discarded before merge; the retained source has 16 isolated components and no fragments.
+
+## security_scanner
+
+### Exact generation prompt
+
+Use case: precise-object-edit
+Asset type: transparent 4x4 pixel-art source-master edit
+Input image: the existing armored orange Hoppy security-scanner source master.
+Primary request: Change only row-major source cells 9, 10, 11, 13 and 14. Preserve all other eleven source cells exactly.
+Weapon: the security scanner is a compact orange-and-charcoal handheld device held by its pistol grip in the forward paw, green display, emitting face pointing right. Cells 9-11 are a distinct focused scan: cell 9 braced windup; cell 10 locked, eye-level aim with both paws; cell 11 guarded chest settle. Cells 13-14 are a distinct pulse: cell 13 deep low lunge windup; cell 14 deepest forward push, both arms fully extended at waist or below chest. The pulse must read lower and farther forward than the eye-level focused scan.
+Constraints: preserve true transparency, Hoppy identity, baseline and at least 50 transparent pixels between sprites. Keep one isolated connected Hoppy-plus-scanner component; no text, background, beam, projectile, HUD, glow trail, clipping or detached fragment.
+
+### Refinements
+
+Regenerations: 3. The generation-zero master is retained at sources/security_scanner-generation0.png. Regeneration one selectively replaced scan-sweep, focused-scan and pulse poses so the scanner is an aimed tool. Regeneration two retains that result at sources/security_scanner-generation1.png and corrected cell 13. The final permitted regeneration retains that current master at sources/security_scanner-generation2.png and selectively replaces cells 9-11 and 13-14: focused scan now locks the scanner at eye level with a bracing paw, while the pulse is a lower, deeper full-body forward push. The scan head remains connected to its handle and paw in every changed cell.
+
+## pr_merger
+
+### Exact generation prompt
+
+Use case: precise-object-edit
+Asset type: transparent 4x4 pixel-art source-master edit
+Input image: the existing armored orange Hoppy pr_merger source master.
+Primary request: Change only row-major cell 10; preserve the other fifteen cells exactly.
+Weapon: pr_merger is a powered orange, charcoal and steel-gray gauntlet WORN on Hoppy's forward paw. The cuff, wrist, forearm and paw must be one continuous opaque silhouette.
+Pose detail: cell 10 is the hook-contact strike, a broad curved lateral arc crossing in front of the body. The elbow is visibly raised and bent above and behind the wrist, with shoulder rotated and the gauntlet at the arc's far-right endpoint. It must not resemble the straight jab contact in cell 7.
+Constraints: preserve transparent alpha, Hoppy identity, baseline and one connected Hoppy-plus-gauntlet silhouette. No text, background, glow, detached impact effect, clipping, fragments or duplicate character.
+
+### Refinements
+
+Regenerations: 4. Generation zero visually read as a worn gauntlet but separated several cuffs in alpha. Generation one joined the cuff but placed frame 14 too far above its source grid, and generation two fit the sheet safely. Regeneration three retains that generation-two master at sources/pr_merger-generation2.png and selectively replaces cells 9-11 with a hook sequence. Authorized exception attempt four retains that result at sources/pr_merger-generation3.png and replaces only cell 10, the hook contact: its raised elbow and gauntlet now sweep in a broad lateral arc across Hoppy's body, clearly distinct from the straight jab. The cuff remains continuous from wrist to paw.

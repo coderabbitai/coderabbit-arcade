@@ -1,0 +1,21 @@
+{
+  "version": "4.7.1-stable",
+  "template_version": "4.7.1.stable",
+  "release_url": "https://github.com/godotengine/godot-builds/releases/download/4.7.1-stable",
+  "sha512": {
+    "Godot_v4.7.1-stable_linux.x86_64.zip": "4ccdab7a48eeccbe8819a2fc1f6262f8d72065d98601bcb3743fcbd7ebd39f373758a788ee3293a05ec5b2c48538266c437404312e372225cd2df273945a2de9",
+    "Godot_v4.7.1-stable_macos.universal.zip": "a5c6443e193829de9a3237b57ef5e01c23839888900e241543da0dd4bac1050125e19469f0cca9a9958ac346070d98cab8e5d6aee16b181c6d06cda86bd07224",
+    "Godot_v4.7.1-stable_win64.exe.zip": "a6b02c527c18ba9936e63562032701432b2dc57d98d6483ceaccb00fe14af16af5773ae8a55e7b4d614edf121c4d9e420d870f804edb1dac16362298a01ce6c4",
+    "Godot_v4.7.1-stable_export_templates.tpz": "afcc83d8d3d298038f19c58744a0d660fa75dd4baa33cb55d1011bb2565a2a8c2381728924564cb909e37c205a23f21b521b23bd057993afd43ae4da0b2f9d47"
+  },
+  "templates": [
+    "version.txt",
+    "macos.zip",
+    "linux_release.x86_64",
+    "linux_debug.x86_64",
+    "windows_release_x86_64.exe",
+    "windows_release_x86_64_console.exe",
+    "windows_debug_x86_64.exe",
+    "windows_debug_x86_64_console.exe"
+  ]
+}

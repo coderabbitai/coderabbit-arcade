@@ -59,10 +59,14 @@ jobs:
             code_city_logic
             code_city_motion
             code_city_smoke
+            stage_flow
+            beatemup_knockout
+            beatemup_story
             heroes_villains_assets
             heroes_villains_logic
             heroes_villains_motion
             heroes_villains_smoke
+            hoppy_armed_assets
             enchanted_assets
             enchanted_boundaries
             enchanted_repo_smoke
@@ -119,15 +123,11 @@ jobs:
       - name: gdlint (advisory)
         continue-on-error: true
         run: gdlint hoppys-adventure-arcade
+      # The same check runs locally in .githooks/pre-commit, so most problems never get pushed.
       - name: No local paths or internal links
-        run: |
-          # The vendored Sunny Land TexturePacker files keep their upstream author's path; they are third-party and untouched.
-          if git grep -nE '/Users/[A-Za-z0-9._-]+/|docs\.google\.com' -- . \
-            ':!.github/workflows/ci.yml' \
-            ':!hoppys-adventure-arcade/Assets/Backgrounds/Sunny-land-forest-files/demo/assets/atlas/*.tps'; then
-            echo "::error::Local machine paths or internal document links found"
-            exit 1
-          fi
+        run: python tools/checks/repo_hygiene.py --all
+      - name: Hygiene checker unit tests
+        run: python -m unittest discover -s tools/checks -v
 
   gitleaks:
     name: gitleaks

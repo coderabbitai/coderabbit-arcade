@@ -31,10 +31,20 @@ func run() -> void:
 	game=current_scene
 	Game=game.get_script()
 	game.test_mode=true
+	# A window that starts unfocused can focus-pause the game before test_mode is set.
+	paused=false
+	if game.state=="paused": game.resume()
 	freeze()
 	check(game.state=="intro" and not game.playing,"Opening sequence precedes combat")
-	game.begin_play()
-	check(game.playing and game.stage_index==0,"Skip/complete enters stage 1")
+	var intro_steps := 0
+	while game.state=="intro" and intro_steps<900:
+		game._physics_process(1.0/60.0)
+		intro_steps += 1
+	check(game.state=="stage_enter","Intro auto-advances into the stage entrance")
+	while game.state=="stage_enter" and intro_steps<1100:
+		game._physics_process(1.0/60.0)
+		intro_steps += 1
+	check(game.playing and game.state=="combat" and game.stage_index==0,"Entrance reaches stage 1 combat")
 	var p=game.player
 	check(p.get_child(0).polygon.size()==24,"Ground shadow has visible geometry independent of jump height")
 	clear_enemies()
@@ -149,7 +159,9 @@ func run() -> void:
 	game.enter_room(2);freeze()
 	p=game.player
 	var boss=game.boss
-	check(game.music.stream is AudioStreamMP3 and game.music.stream.loop,"Boss music has an independent looping stream")
+	check(game.flow.music_track==Catalog.MUSIC[2],"Stage track plays until the boss-music dip bottoms out")
+	game.flow.tick(.65,game.player)
+	check(game.music.stream is AudioStreamMP3 and game.music.stream.loop and game.music.stream!=Catalog.BOSS_MUSIC and game.flow.music_track==Catalog.BOSS_MUSIC and not Catalog.BOSS_MUSIC.loop,"Boss music dips in as an independent looping stream")
 	boss.vulnerable=false
 	boss.take_hit(4,0,p.position,true)
 	check(boss.hp==24,"Boss rejects damage outside recovery")
@@ -193,6 +205,12 @@ func run() -> void:
 	check(game.bullets.is_empty() and game.warnings.is_empty() and game.player.effects.is_empty(),"Retry clears threats and temporary effects")
 	check(game.screen_fx.material.get_shader_parameter("phase")==0.0 and game.camera.offset==Vector2.ZERO,"Retry clears boss screen effects and camera shake")
 	check(Catalog.MUSIC[0].resource_path.ends_with("Zodik - Future Travel.ogg") and Catalog.MUSIC[1].resource_path.ends_with("helldrake(extended).ogg") and Catalog.MUSIC[2].resource_path.ends_with("kim_lightyear_-_angel_eyes_vision_ii.mp3") and Catalog.BOSS_MUSIC.resource_path.ends_with("Kim Lightyear - The Final.mp3"),"All four user music mappings match")
+	# Code-made bindings must answer every pad, not only device 0 (booths, reconnects).
+	for binding in [["brawl_jump",0],["brawl_attack",2],["brawl_pickup",3]]:
+		for device in [0,1,3]:
+			var pad := InputEventJoypadButton.new()
+			pad.device=device;pad.button_index=binding[1];pad.pressed=true
+			check(InputMap.event_is_action(pad,binding[0]),"%s answers pad %d" % [binding[0],device])
 	print("Code City logic failures: ",failures)
 	game.queue_free()
 	root.get_node("AudioService").shutdown()

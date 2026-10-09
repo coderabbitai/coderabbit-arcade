@@ -1,0 +1,2189 @@
+{
+  "version": 1,
+  "mode": "code_city",
+  "filter": "nearest",
+  "generated_from": "built-in image generation; see PROMPTS.md",
+  "carry_calibration": {
+    "rule": "Each target length preserves its source cel's visible proportion at the pilot's baked weapon-to-unarmed-body ratio: carry_scale = (pilot baked_length / body_height) * body_height / pilot source_length.",
+    "pilot": {
+      "weapon": "debug_stick",
+      "hold_idle_bounds": [
+        77,
+        89,
+        29,
+        20
+      ],
+      "baked_length": 29
+    },
+    "carry_scale": 0.3411764705882353,
+    "body_height": 59,
+    "weapons": {
+      "debug_stick": {
+        "source_visible_bounds": [
+          22,
+          33,
+          107,
+          95
+        ],
+        "source_length": 85,
+        "target_length": 29
+      },
+      "linter_staff": {
+        "source_visible_bounds": [
+          12,
+          28,
+          115,
+          99
+        ],
+        "source_length": 103,
+        "target_length": 63,
+        "rule": "Baked hold_idle visible weapon bounds for this armed sheet.",
+        "carry_scale": 0.6116504854368932,
+        "hold_idle_bounds": [
+          51,
+          84,
+          63,
+          31
+        ],
+        "baked_length": 63
+      },
+      "api_key_whip": {
+        "source_visible_bounds": [
+          19,
+          33,
+          109,
+          95
+        ],
+        "source_length": 90,
+        "target_length": 33,
+        "rule": "Baked hold_idle visible weapon bounds for this armed sheet.",
+        "carry_scale": 0.36666666666666664,
+        "hold_idle_bounds": [
+          84,
+          92,
+          33,
+          31
+        ],
+        "baked_length": 33,
+        "orientation": "flip_h",
+        "grip": [
+          8,
+          24
+        ]
+      },
+      "git_branch": {
+        "source_visible_bounds": [
+          16,
+          30,
+          112,
+          99
+        ],
+        "source_length": 96,
+        "target_length": 40,
+        "rule": "Baked hold_idle visible weapon bounds for this armed sheet.",
+        "carry_scale": 0.4166666666666667,
+        "hold_idle_bounds": [
+          78,
+          83,
+          40,
+          30
+        ],
+        "baked_length": 40
+      },
+      "firewall_shield": {
+        "source_visible_bounds": [
+          31,
+          27,
+          97,
+          101
+        ],
+        "source_length": 74,
+        "target_length": 38,
+        "rule": "Baked hold_idle visible weapon bounds for this armed sheet.",
+        "carry_scale": 0.5135135135135135,
+        "hold_idle_bounds": [
+          84,
+          74,
+          32,
+          38
+        ],
+        "baked_length": 38
+      },
+      "refactor_hammer": {
+        "source_visible_bounds": [
+          12,
+          28,
+          117,
+          99
+        ],
+        "source_length": 105,
+        "target_length": 44,
+        "rule": "Baked hold_idle visible weapon bounds for this armed sheet.",
+        "carry_scale": 0.41904761904761906,
+        "hold_idle_bounds": [
+          80,
+          82,
+          44,
+          35
+        ],
+        "baked_length": 44,
+        "orientation": "flip_h",
+        "grip": [
+          8,
+          38
+        ]
+      }
+    }
+  },
+  "weapons": {
+    "debug_stick": {
+      "weapon": "debug_stick",
+      "file": "debug_stick.png",
+      "resource": "debug_stick.tres",
+      "cell": [
+        192,
+        128
+      ],
+      "grid": [
+        4,
+        4
+      ],
+      "pivot": [
+        72,
+        118
+      ],
+      "facing": "right",
+      "body_height": 59,
+      "unarmed_idle_height": 59,
+      "source_scale": 0.2610619469026549,
+      "source_component_bounds": [
+        [
+          98,
+          61,
+          282,
+          287
+        ],
+        [
+          400,
+          77,
+          605,
+          287
+        ],
+        [
+          686,
+          76,
+          905,
+          287
+        ],
+        [
+          1012,
+          80,
+          1234,
+          287
+        ],
+        [
+          64,
+          390,
+          296,
+          596
+        ],
+        [
+          385,
+          387,
+          584,
+          596
+        ],
+        [
+          668,
+          402,
+          941,
+          597
+        ],
+        [
+          995,
+          405,
+          1234,
+          596
+        ],
+        [
+          74,
+          678,
+          257,
+          907
+        ],
+        [
+          381,
+          714,
+          635,
+          907
+        ],
+        [
+          670,
+          721,
+          970,
+          907
+        ],
+        [
+          1020,
+          656,
+          1202,
+          907
+        ],
+        [
+          63,
+          1014,
+          314,
+          1209
+        ],
+        [
+          381,
+          1032,
+          608,
+          1208
+        ],
+        [
+          673,
+          997,
+          908,
+          1208
+        ],
+        [
+          977,
+          1004,
+          1214,
+          1210
+        ]
+      ],
+      "fragment_attachments": [],
+      "foot_anchor_semantics": "Ground midpoint for registration validation; it can lie between painted feet and is not an effect anchor. Body-registered run frames keep their feet on the pivot row, not on pivot x.",
+      "clips": {
+        "hold_idle": {
+          "frames": [
+            0
+          ],
+          "fps": 1,
+          "loop": true
+        },
+        "run": {
+          "frames": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "fps": 12,
+          "loop": true
+        },
+        "step1": {
+          "frames": [
+            5,
+            6,
+            7
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "step2": {
+          "frames": [
+            8,
+            9,
+            10
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "step3": {
+          "frames": [
+            11,
+            12,
+            13
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "equip": {
+          "frames": [
+            14
+          ],
+          "fps": 1,
+          "loop": false
+        },
+        "hurt": {
+          "frames": [
+            15
+          ],
+          "fps": 1,
+          "loop": false
+        }
+      },
+      "anchors": {
+        "hand": {
+          "0": [
+            82,
+            102
+          ],
+          "1": [
+            83,
+            101
+          ],
+          "2": [
+            86,
+            100
+          ],
+          "3": [
+            84,
+            102
+          ],
+          "4": [
+            82,
+            105
+          ],
+          "5": [
+            82,
+            101
+          ],
+          "6": [
+            91,
+            101
+          ],
+          "7": [
+            88,
+            103
+          ],
+          "8": [
+            70,
+            90
+          ],
+          "9": [
+            88,
+            103
+          ],
+          "10": [
+            93,
+            104
+          ],
+          "11": [
+            82,
+            76
+          ],
+          "12": [
+            91,
+            108
+          ],
+          "13": [
+            84,
+            107
+          ],
+          "14": [
+            82,
+            102
+          ],
+          "15": [
+            83,
+            96
+          ]
+        },
+        "tip": {
+          "6": [
+            111,
+            98
+          ],
+          "9": [
+            111,
+            100
+          ],
+          "12": [
+            110,
+            115
+          ]
+        },
+        "foot": {
+          "0": [
+            72,
+            118
+          ],
+          "1": [
+            58,
+            118
+          ],
+          "2": [
+            66,
+            118
+          ],
+          "3": [
+            65,
+            118
+          ],
+          "4": [
+            66,
+            118
+          ],
+          "5": [
+            68,
+            118
+          ],
+          "6": [
+            62,
+            118
+          ],
+          "7": [
+            63,
+            118
+          ],
+          "8": [
+            76,
+            118
+          ],
+          "9": [
+            70,
+            118
+          ],
+          "10": [
+            64,
+            118
+          ],
+          "11": [
+            72,
+            118
+          ],
+          "12": [
+            78,
+            118
+          ],
+          "13": [
+            74,
+            118
+          ],
+          "14": [
+            70,
+            118
+          ],
+          "15": [
+            72,
+            118
+          ]
+        }
+      },
+      "run_registration": "body"
+    },
+    "linter_staff": {
+      "weapon": "linter_staff",
+      "file": "linter_staff.png",
+      "resource": "linter_staff.tres",
+      "cell": [
+        192,
+        128
+      ],
+      "grid": [
+        4,
+        4
+      ],
+      "pivot": [
+        72,
+        118
+      ],
+      "facing": "right",
+      "body_height": 59,
+      "unarmed_idle_height": 59,
+      "source_scale": 0.2783018867924528,
+      "source_component_bounds": [
+        [
+          64,
+          81,
+          299,
+          293
+        ],
+        [
+          394,
+          88,
+          629,
+          291
+        ],
+        [
+          679,
+          87,
+          932,
+          303
+        ],
+        [
+          1005,
+          88,
+          1243,
+          293
+        ],
+        [
+          61,
+          398,
+          314,
+          598
+        ],
+        [
+          318,
+          398,
+          580,
+          597
+        ],
+        [
+          658,
+          416,
+          961,
+          597
+        ],
+        [
+          990,
+          411,
+          1242,
+          597
+        ],
+        [
+          35,
+          713,
+          288,
+          901
+        ],
+        [
+          358,
+          721,
+          647,
+          899
+        ],
+        [
+          679,
+          713,
+          983,
+          899
+        ],
+        [
+          1004,
+          634,
+          1205,
+          902
+        ],
+        [
+          77,
+          976,
+          361,
+          1183
+        ],
+        [
+          381,
+          977,
+          672,
+          1182
+        ],
+        [
+          689,
+          933,
+          932,
+          1183
+        ],
+        [
+          989,
+          983,
+          1239,
+          1183
+        ]
+      ],
+      "fragment_attachments": [],
+      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden. Body-registered run frames keep their feet on the pivot row, not on pivot x.",
+      "clips": {
+        "hold_idle": {
+          "frames": [
+            0
+          ],
+          "fps": 1,
+          "loop": true
+        },
+        "run": {
+          "frames": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "fps": 12,
+          "loop": true
+        },
+        "step1": {
+          "frames": [
+            5,
+            6,
+            7
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "step2": {
+          "frames": [
+            8,
+            9,
+            10
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "step3": {
+          "frames": [
+            11,
+            12,
+            13
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "equip": {
+          "frames": [
+            14
+          ],
+          "fps": 1,
+          "loop": false
+        },
+        "hurt": {
+          "frames": [
+            15
+          ],
+          "fps": 1,
+          "loop": false
+        }
+      },
+      "anchors": {
+        "hand": {
+          "0": [
+            78,
+            106
+          ],
+          "1": [
+            73,
+            110
+          ],
+          "2": [
+            75,
+            107
+          ],
+          "3": [
+            73,
+            109
+          ],
+          "4": [
+            73,
+            109
+          ],
+          "5": [
+            72,
+            87
+          ],
+          "6": [
+            111,
+            97
+          ],
+          "7": [
+            108,
+            99
+          ],
+          "8": [
+            77,
+            96
+          ],
+          "9": [
+            104,
+            103
+          ],
+          "10": [
+            114,
+            102
+          ],
+          "11": [
+            103,
+            81
+          ],
+          "12": [
+            95,
+            89
+          ],
+          "13": [
+            108,
+            100
+          ],
+          "14": [
+            86,
+            89
+          ],
+          "15": [
+            69,
+            107
+          ]
+        },
+        "tip": {
+          "6": [
+            144,
+            96
+          ],
+          "9": [
+            139,
+            102
+          ],
+          "12": [
+            129,
+            85
+          ]
+        },
+        "foot": {
+          "0": [
+            72,
+            118
+          ],
+          "1": [
+            70,
+            118
+          ],
+          "2": [
+            80,
+            118
+          ],
+          "3": [
+            67,
+            118
+          ],
+          "4": [
+            71,
+            118
+          ],
+          "5": [
+            72,
+            118
+          ],
+          "6": [
+            72,
+            118
+          ],
+          "7": [
+            72,
+            118
+          ],
+          "8": [
+            72,
+            118
+          ],
+          "9": [
+            72,
+            118
+          ],
+          "10": [
+            72,
+            118
+          ],
+          "11": [
+            72,
+            118
+          ],
+          "12": [
+            72,
+            118
+          ],
+          "13": [
+            72,
+            118
+          ],
+          "14": [
+            72,
+            118
+          ],
+          "15": [
+            72,
+            118
+          ]
+        }
+      },
+      "run_registration": "body",
+      "foot_planting": {
+        "default": "idle, equip, and hurt use the foot centre; run frames hold the body steady; attack frames use the rear foot.",
+        "overrides": {},
+        "note": ""
+      }
+    },
+    "api_key_whip": {
+      "weapon": "api_key_whip",
+      "file": "api_key_whip.png",
+      "resource": "api_key_whip.tres",
+      "cell": [
+        192,
+        128
+      ],
+      "grid": [
+        4,
+        4
+      ],
+      "pivot": [
+        72,
+        118
+      ],
+      "facing": "right",
+      "body_height": 59,
+      "unarmed_idle_height": 59,
+      "source_scale": 0.2757009345794392,
+      "source_component_bounds": [
+        [
+          100,
+          83,
+          320,
+          297
+        ],
+        [
+          395,
+          85,
+          629,
+          291
+        ],
+        [
+          701,
+          89,
+          939,
+          286
+        ],
+        [
+          991,
+          90,
+          1237,
+          303
+        ],
+        [
+          88,
+          399,
+          345,
+          612
+        ],
+        [
+          396,
+          371,
+          588,
+          600
+        ],
+        [
+          659,
+          407,
+          972,
+          598
+        ],
+        [
+          982,
+          415,
+          1248,
+          618
+        ],
+        [
+          55,
+          714,
+          283,
+          897
+        ],
+        [
+          365,
+          723,
+          676,
+          898
+        ],
+        [
+          683,
+          712,
+          959,
+          912
+        ],
+        [
+          990,
+          651,
+          1196,
+          898
+        ],
+        [
+          68,
+          1016,
+          364,
+          1189
+        ],
+        [
+          982,
+          415,
+          1248,
+          618
+        ],
+        [
+          704,
+          993,
+          941,
+          1216
+        ],
+        [
+          963,
+          959,
+          1218,
+          1192
+        ]
+      ],
+      "fragment_attachments": [],
+      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden. Body-registered run frames keep their feet on the pivot row, not on pivot x.",
+      "clips": {
+        "hold_idle": {
+          "frames": [
+            0
+          ],
+          "fps": 1,
+          "loop": true
+        },
+        "run": {
+          "frames": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "fps": 12,
+          "loop": true
+        },
+        "step1": {
+          "frames": [
+            5,
+            6,
+            7
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "step2": {
+          "frames": [
+            8,
+            9,
+            10
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "step3": {
+          "frames": [
+            11,
+            12,
+            13
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "equip": {
+          "frames": [
+            14
+          ],
+          "fps": 1,
+          "loop": false
+        },
+        "hurt": {
+          "frames": [
+            15
+          ],
+          "fps": 1,
+          "loop": false
+        }
+      },
+      "anchors": {
+        "hand": {
+          "0": [
+            86,
+            100
+          ],
+          "1": [
+            112,
+            112
+          ],
+          "2": [
+            114,
+            112
+          ],
+          "3": [
+            115,
+            116
+          ],
+          "4": [
+            114,
+            112
+          ],
+          "5": [
+            65,
+            81
+          ],
+          "6": [
+            103,
+            101
+          ],
+          "7": [
+            108,
+            101
+          ],
+          "8": [
+            75,
+            109
+          ],
+          "9": [
+            102,
+            101
+          ],
+          "10": [
+            104,
+            100
+          ],
+          "11": [
+            95,
+            82
+          ],
+          "12": [
+            103,
+            100
+          ],
+          "13": [
+            108,
+            101
+          ],
+          "14": [
+            107,
+            100
+          ],
+          "15": [
+            90,
+            98
+          ]
+        },
+        "tip": {
+          "6": [
+            149,
+            94
+          ],
+          "9": [
+            149,
+            91
+          ],
+          "12": [
+            145,
+            96
+          ]
+        },
+        "foot": {
+          "0": [
+            72,
+            118
+          ],
+          "1": [
+            72,
+            118
+          ],
+          "2": [
+            72,
+            118
+          ],
+          "3": [
+            72,
+            118
+          ],
+          "4": [
+            72,
+            118
+          ],
+          "5": [
+            72,
+            118
+          ],
+          "6": [
+            72,
+            118
+          ],
+          "7": [
+            72,
+            118
+          ],
+          "8": [
+            72,
+            118
+          ],
+          "9": [
+            72,
+            118
+          ],
+          "10": [
+            72,
+            118
+          ],
+          "11": [
+            72,
+            118
+          ],
+          "12": [
+            72,
+            118
+          ],
+          "13": [
+            72,
+            118
+          ],
+          "14": [
+            72,
+            118
+          ],
+          "15": [
+            72,
+            118
+          ]
+        }
+      },
+      "run_registration": "body",
+      "source_order": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        7,
+        14,
+        15
+      ],
+      "foot_planting": {
+        "default": "idle, equip, and hurt use the foot centre; run frames hold the body steady; attack frames use the rear foot.",
+        "overrides": {},
+        "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot, including step3 contact and step3 follow (the reused step1 follow cel), so the foot stays planted through the recoil. Idle, run, and equip plant the body foot named by body_foot_targets, which already holds the run body steady; hurt uses the foot centre.",
+        "body_foot_targets": {
+          "0": [
+            75,
+            95
+          ],
+          "1": [
+            67,
+            93
+          ],
+          "2": [
+            64,
+            94
+          ],
+          "3": [
+            57,
+            87
+          ],
+          "4": [
+            74,
+            104
+          ],
+          "14": [
+            64,
+            89
+          ]
+        }
+      }
+    },
+    "git_branch": {
+      "weapon": "git_branch",
+      "file": "git_branch.png",
+      "resource": "git_branch.tres",
+      "cell": [
+        192,
+        128
+      ],
+      "grid": [
+        4,
+        4
+      ],
+      "pivot": [
+        72,
+        118
+      ],
+      "facing": "right",
+      "body_height": 57,
+      "unarmed_idle_height": 59,
+      "source_scale": 0.271889400921659,
+      "source_component_bounds": [
+        [
+          70,
+          76,
+          294,
+          293
+        ],
+        [
+          374,
+          85,
+          608,
+          291
+        ],
+        [
+          682,
+          90,
+          944,
+          292
+        ],
+        [
+          998,
+          90,
+          1247,
+          296
+        ],
+        [
+          38,
+          400,
+          308,
+          599
+        ],
+        [
+          318,
+          394,
+          549,
+          599
+        ],
+        [
+          630,
+          414,
+          946,
+          597
+        ],
+        [
+          970,
+          411,
+          1250,
+          596
+        ],
+        [
+          43,
+          714,
+          316,
+          900
+        ],
+        [
+          372,
+          703,
+          668,
+          897
+        ],
+        [
+          695,
+          686,
+          973,
+          898
+        ],
+        [
+          1005,
+          681,
+          1235,
+          900
+        ],
+        [
+          45,
+          1010,
+          349,
+          1202
+        ],
+        [
+          361,
+          1025,
+          658,
+          1197
+        ],
+        [
+          690,
+          965,
+          945,
+          1202
+        ],
+        [
+          969,
+          1007,
+          1245,
+          1202
+        ]
+      ],
+      "fragment_attachments": [],
+      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden. Body-registered run frames keep their feet on the pivot row, not on pivot x.",
+      "clips": {
+        "hold_idle": {
+          "frames": [
+            0
+          ],
+          "fps": 1,
+          "loop": true
+        },
+        "run": {
+          "frames": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "fps": 12,
+          "loop": true
+        },
+        "step1": {
+          "frames": [
+            5,
+            6,
+            7
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "step2": {
+          "frames": [
+            8,
+            9,
+            10
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "step3": {
+          "frames": [
+            11,
+            12,
+            13
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "equip": {
+          "frames": [
+            14
+          ],
+          "fps": 1,
+          "loop": false
+        },
+        "hurt": {
+          "frames": [
+            15
+          ],
+          "fps": 1,
+          "loop": false
+        }
+      },
+      "anchors": {
+        "hand": {
+          "0": [
+            86,
+            100
+          ],
+          "1": [
+            97,
+            94
+          ],
+          "2": [
+            92,
+            102
+          ],
+          "3": [
+            93,
+            99
+          ],
+          "4": [
+            100,
+            99
+          ],
+          "5": [
+            80,
+            87
+          ],
+          "6": [
+            95,
+            101
+          ],
+          "7": [
+            96,
+            100
+          ],
+          "8": [
+            100,
+            102
+          ],
+          "9": [
+            97,
+            102
+          ],
+          "10": [
+            103,
+            91
+          ],
+          "11": [
+            103,
+            96
+          ],
+          "12": [
+            100,
+            102
+          ],
+          "13": [
+            100,
+            101
+          ],
+          "14": [
+            91,
+            84
+          ],
+          "15": [
+            75,
+            98
+          ]
+        },
+        "tip": {
+          "6": [
+            149,
+            98
+          ],
+          "9": [
+            142,
+            107
+          ],
+          "12": [
+            145,
+            98
+          ]
+        },
+        "foot": {
+          "0": [
+            72,
+            118
+          ],
+          "1": [
+            84,
+            118
+          ],
+          "2": [
+            87,
+            118
+          ],
+          "3": [
+            62,
+            118
+          ],
+          "4": [
+            55,
+            118
+          ],
+          "5": [
+            72,
+            118
+          ],
+          "6": [
+            72,
+            118
+          ],
+          "7": [
+            72,
+            118
+          ],
+          "8": [
+            72,
+            118
+          ],
+          "9": [
+            72,
+            118
+          ],
+          "10": [
+            72,
+            118
+          ],
+          "11": [
+            72,
+            118
+          ],
+          "12": [
+            72,
+            118
+          ],
+          "13": [
+            72,
+            118
+          ],
+          "14": [
+            72,
+            118
+          ],
+          "15": [
+            72,
+            118
+          ]
+        }
+      },
+      "run_registration": "body",
+      "foot_planting": {
+        "default": "idle, equip, and hurt use the foot centre; run frames hold the body steady; attack frames use the rear foot.",
+        "overrides": {},
+        "note": ""
+      }
+    },
+    "refactor_hammer": {
+      "weapon": "refactor_hammer",
+      "file": "refactor_hammer.png",
+      "resource": "refactor_hammer.tres",
+      "cell": [
+        192,
+        128
+      ],
+      "grid": [
+        4,
+        4
+      ],
+      "pivot": [
+        72,
+        118
+      ],
+      "facing": "right",
+      "body_height": 59,
+      "unarmed_idle_height": 59,
+      "source_scale": 0.2964824120603015,
+      "source_component_bounds": [
+        [
+          81,
+          26,
+          321,
+          225
+        ],
+        [
+          454,
+          23,
+          734,
+          224
+        ],
+        [
+          812,
+          30,
+          1095,
+          224
+        ],
+        [
+          1191,
+          23,
+          1494,
+          224
+        ],
+        [
+          75,
+          286,
+          367,
+          488
+        ],
+        [
+          417,
+          246,
+          640,
+          496
+        ],
+        [
+          796,
+          313,
+          1106,
+          496
+        ],
+        [
+          1203,
+          312,
+          1495,
+          490
+        ],
+        [
+          55,
+          542,
+          301,
+          744
+        ],
+        [
+          440,
+          556,
+          768,
+          743
+        ],
+        [
+          834,
+          552,
+          1141,
+          742
+        ],
+        [
+          1184,
+          507,
+          1405,
+          746
+        ],
+        [
+          51,
+          809,
+          379,
+          996
+        ],
+        [
+          441,
+          793,
+          757,
+          996
+        ],
+        [
+          826,
+          757,
+          1106,
+          987
+        ],
+        [
+          1211,
+          801,
+          1515,
+          989
+        ]
+      ],
+      "fragment_attachments": [],
+      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden. Body-registered run frames keep their feet on the pivot row, not on pivot x.",
+      "clips": {
+        "hold_idle": {
+          "frames": [
+            0
+          ],
+          "fps": 1,
+          "loop": true
+        },
+        "run": {
+          "frames": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "fps": 12,
+          "loop": true
+        },
+        "step1": {
+          "frames": [
+            5,
+            6,
+            7
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "step2": {
+          "frames": [
+            8,
+            9,
+            10
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "step3": {
+          "frames": [
+            11,
+            12,
+            13
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "equip": {
+          "frames": [
+            14
+          ],
+          "fps": 1,
+          "loop": false
+        },
+        "hurt": {
+          "frames": [
+            15
+          ],
+          "fps": 1,
+          "loop": false
+        }
+      },
+      "anchors": {
+        "hand": {
+          "0": [
+            90,
+            98
+          ],
+          "1": [
+            89,
+            96
+          ],
+          "2": [
+            102,
+            97
+          ],
+          "3": [
+            101,
+            97
+          ],
+          "4": [
+            99,
+            95
+          ],
+          "5": [
+            100,
+            81
+          ],
+          "6": [
+            119,
+            101
+          ],
+          "7": [
+            111,
+            101
+          ],
+          "8": [
+            92,
+            100
+          ],
+          "9": [
+            111,
+            100
+          ],
+          "10": [
+            110,
+            100
+          ],
+          "11": [
+            91,
+            77
+          ],
+          "12": [
+            113,
+            101
+          ],
+          "13": [
+            112,
+            100
+          ],
+          "14": [
+            98,
+            85
+          ],
+          "15": [
+            94,
+            91
+          ]
+        },
+        "tip": {
+          "6": [
+            154,
+            110
+          ],
+          "9": [
+            158,
+            91
+          ],
+          "12": [
+            159,
+            102
+          ]
+        },
+        "foot": {
+          "0": [
+            72,
+            118
+          ],
+          "1": [
+            64,
+            118
+          ],
+          "2": [
+            80,
+            118
+          ],
+          "3": [
+            74,
+            118
+          ],
+          "4": [
+            71,
+            118
+          ],
+          "5": [
+            72,
+            118
+          ],
+          "6": [
+            72,
+            118
+          ],
+          "7": [
+            72,
+            118
+          ],
+          "8": [
+            72,
+            118
+          ],
+          "9": [
+            72,
+            118
+          ],
+          "10": [
+            72,
+            118
+          ],
+          "11": [
+            72,
+            118
+          ],
+          "12": [
+            72,
+            118
+          ],
+          "13": [
+            72,
+            118
+          ],
+          "14": [
+            72,
+            118
+          ],
+          "15": [
+            72,
+            118
+          ]
+        }
+      },
+      "run_registration": "body",
+      "foot_planting": {
+        "default": "idle, equip, and hurt use the foot centre; run frames hold the body steady; attack frames use the rear foot.",
+        "overrides": {},
+        "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot; run frames hold the body steady; idle, equip, and hurt use the foot centre."
+      }
+    },
+    "firewall_shield": {
+      "weapon": "firewall_shield",
+      "file": "firewall_shield.png",
+      "resource": "firewall_shield.tres",
+      "cell": [
+        192,
+        128
+      ],
+      "grid": [
+        4,
+        4
+      ],
+      "pivot": [
+        72,
+        118
+      ],
+      "facing": "right",
+      "body_height": 59,
+      "unarmed_idle_height": 59,
+      "source_scale": 0.2757009345794392,
+      "source_component_bounds": [
+        [
+          63,
+          80,
+          284,
+          294
+        ],
+        [
+          361,
+          80,
+          607,
+          294
+        ],
+        [
+          663,
+          80,
+          919,
+          294
+        ],
+        [
+          1002,
+          82,
+          1233,
+          294
+        ],
+        [
+          67,
+          378,
+          305,
+          594
+        ],
+        [
+          384,
+          389,
+          637,
+          594
+        ],
+        [
+          676,
+          389,
+          976,
+          594
+        ],
+        [
+          996,
+          377,
+          1231,
+          594
+        ],
+        [
+          28,
+          664,
+          285,
+          888
+        ],
+        [
+          405,
+          676,
+          655,
+          887
+        ],
+        [
+          691,
+          691,
+          963,
+          888
+        ],
+        [
+          1001,
+          676,
+          1226,
+          888
+        ],
+        [
+          49,
+          961,
+          293,
+          1180
+        ],
+        [
+          354,
+          959,
+          596,
+          1180
+        ],
+        [
+          675,
+          971,
+          904,
+          1180
+        ],
+        [
+          988,
+          977,
+          1228,
+          1180
+        ]
+      ],
+      "fragment_attachments": [],
+      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden. Body-registered run frames keep their feet on the pivot row, not on pivot x.",
+      "clips": {
+        "hold_idle": {
+          "frames": [
+            0
+          ],
+          "fps": 1,
+          "loop": true
+        },
+        "run": {
+          "frames": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "fps": 12,
+          "loop": true
+        },
+        "step1": {
+          "frames": [
+            5,
+            6,
+            7
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "step2": {
+          "frames": [
+            8,
+            9,
+            10
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "step3": {
+          "frames": [
+            11,
+            12,
+            13
+          ],
+          "fps": 9,
+          "loop": false
+        },
+        "equip": {
+          "frames": [
+            14
+          ],
+          "fps": 1,
+          "loop": false
+        },
+        "hurt": {
+          "frames": [
+            15
+          ],
+          "fps": 1,
+          "loop": false
+        }
+      },
+      "anchors": {
+        "hand": {
+          "0": [
+            90,
+            101
+          ],
+          "1": [
+            90,
+            100
+          ],
+          "2": [
+            90,
+            99
+          ],
+          "3": [
+            88,
+            101
+          ],
+          "4": [
+            84,
+            105
+          ],
+          "5": [
+            100,
+            101
+          ],
+          "6": [
+            119,
+            101
+          ],
+          "7": [
+            104,
+            104
+          ],
+          "8": [
+            76,
+            95
+          ],
+          "9": [
+            101,
+            108
+          ],
+          "10": [
+            111,
+            109
+          ],
+          "11": [
+            98,
+            82
+          ],
+          "12": [
+            95,
+            112
+          ],
+          "13": [
+            80,
+            109
+          ],
+          "14": [
+            84,
+            110
+          ],
+          "15": [
+            90,
+            106
+          ]
+        },
+        "tip": {
+          "6": [
+            148,
+            94
+          ],
+          "9": [
+            132,
+            98
+          ],
+          "12": [
+            112,
+            97
+          ]
+        },
+        "foot": {
+          "0": [
+            72,
+            118
+          ],
+          "1": [
+            77,
+            118
+          ],
+          "2": [
+            64,
+            118
+          ],
+          "3": [
+            76,
+            118
+          ],
+          "4": [
+            69,
+            118
+          ],
+          "5": [
+            72,
+            118
+          ],
+          "6": [
+            72,
+            118
+          ],
+          "7": [
+            72,
+            118
+          ],
+          "8": [
+            72,
+            118
+          ],
+          "9": [
+            72,
+            118
+          ],
+          "10": [
+            72,
+            118
+          ],
+          "11": [
+            72,
+            118
+          ],
+          "12": [
+            72,
+            118
+          ],
+          "13": [
+            72,
+            118
+          ],
+          "14": [
+            72,
+            118
+          ],
+          "15": [
+            72,
+            118
+          ]
+        }
+      },
+      "run_registration": "body",
+      "foot_planting": {
+        "default": "idle, equip, and hurt use the foot centre; run frames hold the body steady; attack frames use the rear foot.",
+        "overrides": {},
+        "note": ""
+      }
+    }
+  }
+}

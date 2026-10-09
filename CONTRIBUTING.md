@@ -9,7 +9,12 @@ Thanks for helping out! This guide covers setup, workflow, testing and the asset
    ```sh
    godot --path hoppys-adventure-arcade
    ```
-3. Before running the test scripts for the first time, import the resources:
+3. Turn on the local commit checks once per clone:
+   ```sh
+   git config core.hooksPath .githooks
+   ```
+   Before each commit, `.githooks/pre-commit` blocks local machine paths and links to internal documents or chats (`tools/checks/repo_hygiene.py`). It also scans staged changes for secrets with [gitleaks](https://github.com/gitleaks/gitleaks) and lints staged Python with ruff, when those are installed. CI runs the same checks, but only the local hook stops a problem before it reaches the remote's history.
+4. Before running the test scripts for the first time, import the resources:
    ```sh
    godot --headless --path hoppys-adventure-arcade --import
    ```

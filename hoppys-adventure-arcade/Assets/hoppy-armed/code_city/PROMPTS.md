@@ -1,0 +1,65 @@
+# code_city armed Hoppy generation prompts
+
+Built-in image generation, October 8, 2026. Source masters preserve generated alpha unchanged. `tools/build_hoppy_armed.py` only crops, nearest-neighbour scales, registers, and packs artwork.
+
+## debug_stick
+
+### Exact generation prompt
+
+Create a NEW 16-bit pixel-art brawler animation sheet of EXACTLY the orange rabbit shown in the first reference: cream muzzle, long orange ears, black shirt, orange legs, small cream tail, friendly determined eyes. Have him visibly hold the blue cyan DEBUG STICK from the second reference image with BOTH paws wrapping its handle in every sprite. Preserve the debug stick's exact cyan-blue, dark navy, and gold colors and its baton shape. The weapon must be drawn at exactly the same chunky pixel density as the rabbit, not finer. Transparent alpha background. FOUR columns by FOUR rows, sixteen equally spaced complete sprites, large empty transparent gutters, 30px outer margin, no text, no borders, no ground, shadow, detached effects, duplicate character, or UI. Face RIGHT. Same character size, feet baseline, and weapon scale in every pose. Row-major: 1 ready idle at carry height below shoulder; 2 through 5 four-step sideways run cycle carrying stick; 6 through 8 thrust windup, thrust contact, thrust follow-through; 9 through 11 sweep windup, sweep contact, sweep follow-through; 12 through 14 sweep windup, sweep contact, sweep follow-through; 15 lifting stick after pickup; 16 stagger hurt while still holding stick. This is a clean in-game sprite sheet, not concept art.
+
+### Refinements
+
+Regenerations: 0. The first generated master was retained. After independent visual review, the deterministic packer was corrected to recover connected components across grid gutters, plant every frame's feet at its gameplay pivot, store per-frame hand and attack-tip anchors on solid painted pixels, and calibrate carry icons to the baked hold_idle weapon length. Ground-lined runtime clip strips were added for motion inspection. The thrust windup remains visually close to the carry pose by approved choice.
+
+## linter_staff
+
+### Exact generation prompt
+
+Create a NEW 16-bit pixel-art brawler animation sheet of the approved orange Code City Hoppy pilot: cream muzzle, long orange ears, black shirt, orange legs, small cream tail, and dark outline. Have both paws visibly wrap the Linter Staff shaft. Preserve the long green audit staff, broad scanner head, lime lights, dark navy metal, chunky pixel density, and the pilot's proportions and baseline. Transparent alpha background. Four columns and four rows, sixteen complete isolated sprites with generous transparent gutters, no text, ground, shadow, effects, duplicate character, or UI. Face right. Row-major: ready carry, four sideways run poses, wide sweep windup/contact/follow, back sweep windup/contact/follow, spinning staff windup/contact/follow, pickup lift, and hurt holding the staff.
+
+### Refinements
+
+Regenerations: 0. The first generated master passed the transparent-alpha, sixteen-component, no-edge-touch source gate. The contact frames retain a broad scanner-head silhouette for wide sweep, back sweep, and spin.
+
+## api_key_whip
+
+### Exact generation prompt
+
+Retained master, attempt 3: Create a NEW 16-bit pixel-art brawler animation sheet of the approved orange Code City Hoppy pilot: cream muzzle, long orange ears, black shirt, orange legs, small cream tail, dark outline, and friendly determined eyes. Have both paws visibly grip the gold ring hilt of the Api Key Whip in every cell. Preserve the cyan-blue cable, navy segments, gold key striking end, chunky pixel density, pilot proportions, and baseline. Transparent alpha background. Four columns by four rows, sixteen complete isolated sprites with generous transparent gutters, no text, ground, shadow, effects, duplicate character, or UI. Face right. Row-major: ready carry, four sideways run poses, whip-crack windup/contact with fully extended lash/follow, back-sweep windup/contact with fully extended lash/follow, overhead windup/contact with fully extended lash/compact recoil, pickup lift, and hurt holding the whip.
+
+Targeted partial attempt 4, rejected for identity drift: change only the whip's dangling right-side cable and key tip so the cable makes a compact upward recoil curve entirely inside its cell, ending beside the rabbit's front paws or shoulder instead of hanging below the soles. Keep the rabbit exactly unchanged: same orange body, cream muzzle and tail, black shirt, pose, pixel density, black outline, scale and transparent background. Keep both paws gripping the gold key-hilt. Preserve the cyan-blue cable, navy segments and gold key-hilt palette. Do not add any new character, text, shadow, background, border, effect, or ground. All pixels must remain safely inside the existing crop.
+
+### Refinements
+
+Regenerations: 4. Attempts 1 and 3 produced sixteen-component masters but could not both retain a fully extended lash and fit the packed cell; attempt 2 was rejected before packing because it omitted a full grid row. Attempt 3 is the retained master. The approved fourth partial attempt regenerated the unsafe step-3 follow-through, but it did not preserve the pilot identity closely enough. By coordinator-approved fallback, packed human frame 14 maps to source cell 8 through source_order [0,1,2,3,4,5,6,7,8,9,10,11,12,7,14,15], an already valid compact recoil/follow-through. The retained source master also contains the historical cell-8 duplicate in source cell 14. Round-2 independent review confirmed no visible 13→14 pop.
+
+## git_branch
+
+### Exact generation prompt
+
+Create a NEW 16-bit pixel-art brawler animation sheet of the approved orange Code City Hoppy pilot: cream muzzle, long orange ears, black shirt, orange legs, small cream tail, and dark outline. Have both paws visibly wrap the Git Branch handle. Preserve the purple branched wooden-circuit club, violet bulbs, gold details, dark navy metal, chunky pixel density, and the pilot's proportions and baseline. Transparent alpha background. Four columns and four rows, sixteen complete isolated sprites with generous transparent gutters, no text, ground, shadow, detached effects, duplicate character, or UI. Face right. Row-major: ready carry, four sideways run poses, thrust windup/contact/follow, sweep windup/contact/follow, heavy shove windup/contact/follow, pickup lift, and hurt holding the club.
+
+### Refinements
+
+Regenerations: 0. The first generated master passed the transparent-alpha, sixteen-component, no-edge-touch source gate. Its purple branched circuit club remains readable in thrust, sweep, and heavy shove contacts.
+
+## refactor_hammer
+
+### Exact generation prompt
+
+Regeneration 1: Create a NEW 16-bit pixel-art brawler animation sheet of the approved orange Code City Hoppy pilot: cream muzzle, long orange ears, black shirt, orange legs, small cream tail, and dark outline. Have both paws visibly wrap the HANDLE of the oversized Refactor Hammer, never the hammer head. Preserve its gold, purple, dark navy, and metal colours, chunky pixel density, and the pilot's proportions and baseline. Transparent alpha background. Four columns and four rows, sixteen complete isolated sprites with generous transparent gutters, no text, ground, shadow, detached effects, duplicate character, or UI. Face right. Row-major: 1 ready carry; 2–5 sideways run; 6 overhead windup, 7 overhead strike contact, 8 follow-through; 9 side-swing windup, 10 side contact, 11 follow-through; 12 overhead-slam windup with hammer raised, 13 LOW OVERHEAD SLAM contact with the hammer head down in front of Hoppy, 14 follow-through, 15 pickup lift, 16 hurt holding the handle.
+
+### Refinements
+
+Regenerations: 1. The first generated master failed the independent review because its step-3 poses were one slot late. Regeneration 1 is the retained 1536×1024 master: it passed transparent alpha, sixteen components, and no edge touching. In every cell Hoppy holds the purple-and-gold hammer by its handle; cells 12–15 read overhead windup, low slam contact, follow-through, and pickup lift.
+
+## firewall_shield
+
+### Exact generation prompt
+
+Create a NEW 16-bit pixel-art brawler animation sheet of the approved orange Code City Hoppy pilot: cream muzzle, long orange ears, black shirt, orange legs, small cream tail, and dark outline. Have both paws visibly wrap the internal handle of the red translucent hexagonal Firewall Shield. Preserve its red, coral, dark navy, and metal colors, chunky pixel density, and the pilot's proportions and baseline. Every cell must be one connected opaque rabbit-and-shield silhouette with no detached effects or fragments. Transparent alpha background. Four columns and four rows, sixteen complete isolated sprites with generous transparent gutters, no text, ground, shadow, duplicate character, or UI. Face right. Row-major: ready guard, four sideways run poses with shield in front, shield-up jab windup/contact/follow, guarded swing windup/contact/follow, guarded kick windup/contact/follow, pickup lift, and braced block recoil while holding shield in guard.
+
+### Refinements
+
+Regenerations: 1. Attempt 1 produced seventeen disconnected major components and was rejected by the source gate. Attempt 2 passed transparent alpha, sixteen connected components, and no edge touching. The shield stays forward in guard throughout, and slot 16 is a braced block recoil.
