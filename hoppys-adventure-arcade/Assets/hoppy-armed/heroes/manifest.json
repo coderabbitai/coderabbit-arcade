@@ -785,7 +785,7 @@
       "foot_planting": {
         "default": "idle, run, equip, and hurt use the foot centre; attack frames use the rear foot.",
         "overrides": {},
-        "note": "Attack frames plant the rear foot; frame 14 uses the lower planted rear-foot row that excludes the hammer head. Idle, run, equip, and hurt use the foot centre."
+        "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot; step3 follow measures it on a lower row that excludes the hammer head. Idle, run, equip, and hurt use the foot centre."
       }
     },
     "change_stack_baton": {
@@ -1137,7 +1137,7 @@
       "foot_planting": {
         "default": "idle, run, equip, and hurt use the foot centre; attack frames use the rear foot.",
         "overrides": {},
-        "note": "Attack frames plant the rear foot; frame 15 uses its lower equip-foot row. Idle, run, equip, and hurt use the foot centre."
+        "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot; equip is measured on its own lower foot row. Idle, run, equip, and hurt use the foot centre."
       }
     },
     "security_scanner": {
@@ -1491,7 +1491,7 @@
         "overrides": {
           "4": "rear"
         },
-        "note": "Attack frames plant the rear foot. Frame 5 uses its one visible planted rear foot; the other run frames and idle, equip, and hurt use the foot centre."
+        "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot. The last run frame (run 4 of 4) uses its one visible planted rear foot; idle, the other run frames, equip, and hurt use the foot centre."
       }
     },
     "pr_merger": {
@@ -1845,7 +1845,7 @@
         "overrides": {
           "4": "rear"
         },
-        "note": "Attack frames plant the rear foot. Frame 5 uses its one visible planted rear foot; the other run frames and idle, equip, and hurt use the foot centre."
+        "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot. The last run frame (run 4 of 4) uses its one visible planted rear foot; idle, the other run frames, equip, and hurt use the foot centre."
       }
     }
   }

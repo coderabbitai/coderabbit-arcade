@@ -46,8 +46,10 @@ class Weapon:
     per_frame_foot_pivot: bool = False
     foot_plant_overrides: dict[int, str] = field(default_factory=dict)
     foot_plant_note: str = ""
-    # Optional source-space spans for poses where a loose weapon otherwise
-    # occupies the row used to find the character's planted feet.
+    # Optional (left, right) x spans in pre-registration packed-cell pixels (the
+    # frame as packed, before it is shifted onto the pivot). Each names the
+    # character's planted foot for a pose where a loose weapon otherwise
+    # occupies the row used to find it.
     body_foot_targets: tuple[tuple[int, int] | None, ...] = ()
     # Optional packed-frame -> generated-source-cell mapping. An empty tuple
     # retains the source's row-major order exactly.
@@ -185,7 +187,7 @@ MODES = (
                 hold_idle_weapon_bounds=(97, 83, 33, 31),
                 motion="crack / extended lash / recoil",
                 per_frame_foot_pivot=True,
-                foot_plant_note="Frames 13 and 14 use the rear planted foot; the corrected contact keeps it planted through the extended lash.",
+                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot, including step3 contact and step3 follow (the reused step1 follow cel), so the foot stays planted through the recoil. Idle, run, and equip plant the body foot named by body_foot_targets; hurt uses the foot centre.",
                 body_foot_targets=(
                     (75, 95), (67, 93), (64, 94), (57, 87),
                     (74, 104), None, None, None,
@@ -225,7 +227,7 @@ MODES = (
                 hold_idle_weapon_bounds=(82, 70, 44, 35),
                 motion="overhead / side / overhead slam",
                 per_frame_foot_pivot=True,
-                foot_plant_note="All attack frames (5-13), including 6, 7, and 13, use the rear planted foot; idle, run, equip, and hurt use the foot centre.",
+                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot; idle, run, equip, and hurt use the foot centre.",
                 # The sheet carries the head forward; the cel puts it behind the paw. Mirror the
                 # carry and keep the cel's pommel grip, mirrored.
                 carry_orientation="flip_h",
@@ -289,7 +291,7 @@ MODES = (
                 motion="overhead / side / heavy slam",
                 per_frame_foot_pivot=True,
                 source_order=(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 11, 14, 15),
-                foot_plant_note="Attack frames plant the rear foot; frame 14 uses the lower planted rear-foot row that excludes the hammer head. Idle, run, equip, and hurt use the foot centre.",
+                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot; step3 follow measures it on a lower row that excludes the hammer head. Idle, run, equip, and hurt use the foot centre.",
             ),
             Weapon(
                 weapon="change_stack_baton",
@@ -305,7 +307,7 @@ MODES = (
                 motion="long thrust / sweep / thrust",
                 per_frame_foot_pivot=True,
                 source_order=(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 11, 14, 15),
-                foot_plant_note="Attack frames plant the rear foot; frame 15 uses its lower equip-foot row. Idle, run, equip, and hurt use the foot centre.",
+                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot; equip is measured on its own lower foot row. Idle, run, equip, and hurt use the foot centre.",
             ),
             Weapon(
                 weapon="security_scanner",
@@ -322,7 +324,7 @@ MODES = (
                 per_frame_foot_pivot=True,
                 foot_plant_overrides={4: "rear"},
                 source_order=(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 11, 14, 15),
-                foot_plant_note="Attack frames plant the rear foot. Frame 5 uses its one visible planted rear foot; the other run frames and idle, equip, and hurt use the foot centre.",
+                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot. The last run frame (run 4 of 4) uses its one visible planted rear foot; idle, the other run frames, equip, and hurt use the foot centre.",
             ),
             Weapon(
                 weapon="pr_merger",
@@ -339,7 +341,7 @@ MODES = (
                 per_frame_foot_pivot=True,
                 foot_plant_overrides={4: "rear"},
                 source_order=(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 11, 14, 15),
-                foot_plant_note="Attack frames plant the rear foot. Frame 5 uses its one visible planted rear foot; the other run frames and idle, equip, and hurt use the foot centre.",
+                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot. The last run frame (run 4 of 4) uses its one visible planted rear foot; idle, the other run frames, equip, and hurt use the foot centre.",
             ),
         ),
     ),

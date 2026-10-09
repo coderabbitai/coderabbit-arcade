@@ -1148,7 +1148,7 @@
       "foot_planting": {
         "default": "idle, run, equip, and hurt use the foot centre; attack frames use the rear foot.",
         "overrides": {},
-        "note": "Frames 13 and 14 use the rear planted foot; the corrected contact keeps it planted through the extended lash.",
+        "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot, including step3 contact and step3 follow (the reused step1 follow cel), so the foot stays planted through the recoil. Idle, run, and equip plant the body foot named by body_foot_targets; hurt uses the foot centre.",
         "body_foot_targets": {
           "0": [
             75,
@@ -1842,7 +1842,7 @@
       "foot_planting": {
         "default": "idle, run, equip, and hurt use the foot centre; attack frames use the rear foot.",
         "overrides": {},
-        "note": "All attack frames (5-13), including 6, 7, and 13, use the rear planted foot; idle, run, equip, and hurt use the foot centre."
+        "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot; idle, run, equip, and hurt use the foot centre."
       }
     },
     "firewall_shield": {
