@@ -56,7 +56,7 @@ Regenerations: 0. The first generated master was retained. The split blue-and-cr
 
 ## code_city: hoppy_clocks_in
 
-Selected master: `code_city/sources/hoppy_clocks_in-generation0.png`. Retained masters: `code_city/sources/hoppy_clocks_in-generation0.png`.
+Selected master: `code_city/sources/hoppy_clocks_in-generation1.png`. Retained masters: `code_city/sources/hoppy_clocks_in-generation0.png`, `code_city/sources/hoppy_clocks_in-generation1.png`.
 
 ### Exact generation prompt history
 
@@ -76,9 +76,24 @@ Text (verbatim): ""
 Constraints: no readable text, no words, no logos, no watermark, no UI, no typography, no letterforms, no armor, no cape, no human character, exactly one Hoppy, no extra limbs, no malformed paws; keep key subject inside central 80 percent because game pans and zooms; illustration only, not a sprite sheet or comic panel.
 Avoid: photorealism, smooth vector art, blurry pixels, collage, text signs, branded symbols.
 
+#### Generation 1
+
+Use case: precise-object-edit
+Asset type: full-screen in-game cinematic scene, cover-cropped to 16:9
+Input images: Image 1 is the edit target whose composition, rooftop, skyline, palette, rain, ready stance, camera angle, cyan debug stick, and unarmored Hoppy identity must be preserved. Image 2 is the authoritative in-game Code City Hoppy character reference.
+Primary request: Change only Hoppy's lower-body clothing in Image 1 so Hoppy exactly matches the unarmored Code City sprite in Image 2: he is an orange rabbit with a cream muzzle, two long orange ears, a plain black short-sleeve t-shirt, a small cream tail, completely bare orange legs, and completely bare orange rabbit feet. Remove all dark cargo pants, trousers, leg armor, knee pads, waistband, utility pockets, belt, buckle, holster, or any other lower-body clothing or accessory. The orange legs must visibly continue directly from the hem of the black t-shirt down to bare orange feet, like the sprite reference.
+Scene/backdrop: preserve the rainy Code City rooftop at night with the teal/cyan cyberpunk skyline and distant threatened district.
+Subject: the single unarmored Hoppy remains in the original center-lower ready stance with the short cyan debug baton in his paw.
+Style/medium: preserve the polished 16-bit painted pixel art, chunky pixels and crisp outlines of Image 1 while matching Image 2's unarmored rabbit identity.
+Composition/framing: preserve Image 1's cinematic 16:9 composition and Hoppy placement. Keep Hoppy's face, torso, baton and villains-free skyline inside the safe y approximately 12 to 78 percent of the frame and central 80 percent horizontally.
+Lighting/mood: preserve moonlit navy shadows, cyan rim light, orange fur edge light, teal/cyan skyline and pixel rain.
+Text (verbatim): ""
+Constraints: change only the character's pants and belt area; keep all other scene content and overall framing unchanged; no readable text, words, logos, watermark, UI, typography, letterforms, armor, cape, human character, additional Hoppy, extra limbs, malformed paws, pants, belt, belt buckle, cargo pockets, trousers or footwear.
+Avoid: photorealism, smooth vector art, blurry pixels, collage, text signs, branded symbols.
+
 ### Refinements
 
-Regenerations: 0. The first generated master was retained. Unarmored Hoppy reads clearly by his orange fur, cream muzzle, black shirt and cyan debug baton against the threatened skyline.
+Regenerations: 1. Generation zero dressed Hoppy in dark cargo pants and a belt, which did not match the in-game Code City sprite. Generation one keeps the rooftop, teal/cyan skyline, ready stance and cyan debug baton while replacing every lower-body garment with bare orange rabbit legs and feet under the black T-shirt.
 
 ## heroes: situation
 
