@@ -2,6 +2,9 @@
 extends RefCounted
 const BASE := "res://Assets/code-city-brawl-assets-only/code_city/"
 const ARMED := "res://Assets/hoppy-armed/code_city/"
+## The armed pack's cell and foot pivot (Assets/hoppy-armed/README.md).
+const ARMED_CELL := Vector2(192, 128)
+const ARMED_PIVOT := Vector2(72, 118)
 static var manifest: Dictionary = {}
 static var resources: Dictionary = {}
 static var armed_manifest: Dictionary = {}
@@ -35,9 +38,12 @@ static func armed(weapon: String) -> SpriteFrames:
 		armed_sheets[weapon] = load(path) as SpriteFrames if spec.has("anchors") and ResourceLoader.exists(path) else null
 	return armed_sheets[weapon]
 ## Foot-pivot offset of a facing-right armed sheet, so it stands where the unarmed body does.
+## A weapon with no manifest entry uses the pack's contract cell and pivot.
 static func armed_offset(weapon: String) -> Vector2:
 	var spec := armed_spec(weapon)
-	return Vector2(spec.cell[0] * 0.5 - spec.pivot[0], spec.cell[1] * 0.5 - spec.pivot[1])
+	var cell: Vector2 = Vector2(spec.cell[0], spec.cell[1]) if spec.has("cell") else ARMED_CELL
+	var pivot: Vector2 = Vector2(spec.pivot[0], spec.pivot[1]) if spec.has("pivot") else ARMED_PIVOT
+	return Vector2(cell.x * 0.5 - pivot.x, cell.y * 0.5 - pivot.y)
 ## The weapon cel downsampled to one texel per body texel, for poses with no armed frame.
 static func carry(weapon: String) -> Texture2D:
 	if not carry_icons.has(weapon): carry_icons[weapon] = load(ARMED + "carry/" + weapon + ".png")
