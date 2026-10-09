@@ -859,6 +859,11 @@ func check_preview() -> void:
 	check(chrome, tag("the menu, the toast and the stage banner stay off the preview"))
 	check(loose_sprites()==0, tag("no stray sprite is left in actors (%d)" % loose_sprites()))
 	var image: Image = root.get_texture().get_image()
+	# The rendered run refreshes the committed preview, as the smoke suites do.
+	var folder := "heroes-villains" if heroes else "code-city"
+	DirAccess.make_dir_recursive_absolute("res://../docs/previews/"+folder)
+	var saved = image.save_png("res://../docs/previews/"+folder+"/knockout.png")==OK
+	check(saved, tag("knockout preview saved"))
 	var stars = p.get_node_or_null("KnockoutStars")
 	var cluster: Vector2 = p.position
 	if stars: cluster = p.position+stars.position
