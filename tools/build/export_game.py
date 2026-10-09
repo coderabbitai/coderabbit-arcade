@@ -52,6 +52,7 @@ TARGETS = (
     Target("macOS", "macos", "HoppysAdventureArcade.zip", "Darwin"),
     Target("Windows Desktop", "windows", "HoppysAdventureArcade.exe", "Windows"),
     Target("Linux", "linux", "HoppysAdventureArcade.x86_64", "Linux"),
+    Target("Web", "web", "index.html", "Browser"),
 )
 
 
@@ -112,25 +113,44 @@ def export(godot: str, target: Target, stage: Path) -> Path:
     result = run([godot, "--headless", "--path", str(PROJECT), "--export-release", target.preset, str(output)],
                  timeout=EXPORT_TIMEOUT)
     log = ANSI.sub("", result.stdout + result.stderr)
-    if result.returncode != 0 or not output.exists() or re.search(r"^ERROR:", log, re.M):
+    if result.returncode != 0 or not output.exists() or re.search(r"^(ERROR:|SCRIPT ERROR|USER ERROR|Parse Error)", log, re.M):
         fail(f"export of preset {target.preset!r} failed (exit {result.returncode})", log)
     return output
 
 
 def package(target: Target, exported: Path, artifact: Path) -> None:
-    """macOS exports are already a zip of the .app; wrap the single-file desktop binaries."""
+    """Keep the macOS app archive intact and include every companion file elsewhere."""
     if target.platform == "macos":
         shutil.copyfile(exported, artifact)
         return
+    if target.platform == "web":
+        required = ("index.html", "index.js", "index.wasm", "index.pck")
+        missing = [name for name in required if not (exported.parent / name).is_file()]
+        if missing:
+            fail(f"incomplete Web export: missing {', '.join(missing)}")
+        (exported.parent / "README.txt").write_text(
+            "Extract this entire archive, then serve this folder over HTTP.\n"
+            "For local play: python3 -m http.server 8000 --bind 127.0.0.1\n"
+            "Open http://localhost:8000 in a WebGL 2 browser.\n"
+            "Do not open index.html directly with file://.\n"
+            "For remote hosting, use HTTPS. Click the game to enable audio.\n",
+            encoding="utf-8",
+        )
     with zipfile.ZipFile(artifact, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
-        info = zipfile.ZipInfo.from_file(exported, exported.name)
-        info.external_attr = (stat.S_IFREG | 0o755) << 16
-        info.compress_type = zipfile.ZIP_DEFLATED
-        with exported.open("rb") as source, bundle.open(info, "w") as out:
-            shutil.copyfileobj(source, out, 1 << 20)
+        for path in sorted(exported.parent.rglob("*")):
+            if not path.is_file():
+                continue
+            info = zipfile.ZipInfo.from_file(path, path.relative_to(exported.parent))
+            if path == exported and target.platform != "web":
+                info.external_attr = (stat.S_IFREG | 0o755) << 16
+            info.compress_type = zipfile.ZIP_DEFLATED
+            with path.open("rb") as source, bundle.open(info, "w") as out:
+                shutil.copyfileobj(source, out, 1 << 20)
 
 
 def smoke(target: Target, artifact: Path, scratch: Path) -> str:
+    if target.platform == "web":
+        return "not run: requires a browser"
     if platform.system() != target.host:
         return "not run on this host"
     shutil.rmtree(scratch, ignore_errors=True)
@@ -141,9 +161,9 @@ def smoke(target: Target, artifact: Path, scratch: Path) -> str:
             fail(f"could not unpack {artifact.name} for the smoke check")
         binary = next(scratch.glob("*.app/Contents/MacOS/*"))
     else:
-        # The Windows and Linux artifacts hold one binary; zipfile needs no host unzip tool.
+        # Include companion DLLs and PCKs in the smoke-test directory too.
         with zipfile.ZipFile(artifact) as bundle:
-            bundle.extract(target.export_name, scratch)
+            bundle.extractall(scratch)
         binary = scratch / target.export_name
         binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
     result = run([str(binary), "--headless", "--", "--smoke-routes"], timeout=SMOKE_TIMEOUT)
@@ -191,7 +211,7 @@ def main() -> int:
     (out / "dist").mkdir(parents=True)
 
     imported = run([godot, "--headless", "--path", str(PROJECT), "--import"], timeout=EXPORT_TIMEOUT)
-    if imported.returncode != 0:
+    if imported.returncode != 0 or SMOKE_FAILURE.search(ANSI.sub("", imported.stdout + imported.stderr)):
         fail("resource import failed", imported.stdout + imported.stderr)
 
     artifacts = []
