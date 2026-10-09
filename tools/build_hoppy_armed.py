@@ -226,6 +226,10 @@ MODES = (
                 motion="overhead / side / overhead slam",
                 per_frame_foot_pivot=True,
                 foot_plant_note="All attack frames, including human frames 7, 8, 14, and 15, use the rear planted foot.",
+                # The sheet carries the head forward; the cel puts it behind the paw. Mirror the
+                # carry and keep the cel's pommel grip, mirrored.
+                carry_orientation="flip_h",
+                carry_grip=(8, 38),
             ),
             Weapon(
                 weapon="firewall_shield",
@@ -796,7 +800,7 @@ def anchors(mode: Mode, weapon: Weapon, placements: list[FramePlacement]) -> dic
     return {"hand": hand, "tip": tip, "foot": foot}
 
 
-def write_tres(output: Path, sheet_name: str, mode: Mode) -> None:
+def tres_text(sheet_name: str, mode: Mode) -> str:
     lines = [
         "[gd_resource type=\"SpriteFrames\" load_steps=18 format=3]",
         "",
@@ -824,7 +828,7 @@ def write_tres(output: Path, sheet_name: str, mode: Mode) -> None:
             % (refs, str(loop).lower(), name, resolved_speed)
         )
     lines.extend(("", "[resource]", "animations = [\n" + ",\n".join(animations) + "\n]", ""))
-    output.write_text("\n".join(lines), encoding="utf-8")
+    return "\n".join(lines)
 
 
 def visible_bounds(image: Image.Image) -> tuple[int, int, int, int]:
@@ -860,11 +864,10 @@ def check_hold_bounds(frame: Image.Image, bounds: tuple[int, int, int, int], lab
         raise ValueError(f"{label}: hold_idle weapon bounds {bounds} contain no painted pixels")
 
 
-def write_carry_icons(pack: Path, mode: Mode, packed: dict[str, PackedWeapon]) -> dict[str, object]:
-    """Build carries from each baked hold_idle sheet when one is available."""
+def build_carry_icons(mode: Mode, packed: dict[str, PackedWeapon]) -> tuple[dict[str, Image.Image], dict[str, object]]:
+    """Build and validate every carry from its baked hold_idle sheet; nothing is written here."""
     source = Image.open(mode.weapon_source).convert("RGBA")
-    destination = pack / "carry"
-    destination.mkdir(parents=True, exist_ok=True)
+    icons: dict[str, Image.Image] = {}
 
     pilot = packed[mode.pilot]
     _, _, hold_width, hold_height = pilot.hold_idle_bounds
@@ -904,7 +907,7 @@ def write_carry_icons(pack: Path, mode: Mode, packed: dict[str, PackedWeapon]) -
             raise ValueError(f"pilot carry icon does not match baked weapon: {mode.directory}/{weapon}")
         if icon.getchannel("A").getbbox() is None:
             raise ValueError(f"empty carry icon: {mode.directory}/{weapon}")
-        icon.save(destination / f"{weapon}.png")
+        icons[weapon] = icon
         entry: dict[str, object] = {
             "source_visible_bounds": list(source_bounds),
             "source_length": source_length,
@@ -919,7 +922,7 @@ def write_carry_icons(pack: Path, mode: Mode, packed: dict[str, PackedWeapon]) -
             })
         entry.update(orientation)
         weapons[weapon] = entry
-    return {
+    return icons, {
         "rule": (
             "Each target length preserves its source cel's visible proportion at the pilot's "
             "baked weapon-to-unarmed-body ratio: carry_scale = "
@@ -947,7 +950,7 @@ def paste_with_checker(canvas: Image.Image, image: Image.Image, xy: tuple[int, i
     canvas.alpha_composite(image, xy)
 
 
-def make_preview(pack: Path, mode: Mode, sheet: Image.Image, weapon: str | None = None, output: str = "preview.png") -> None:
+def render_preview(mode: Mode, sheet: Image.Image, weapon: str | None = None) -> Image.Image:
     ref = Image.open(mode.reference).convert("RGBA")
     ref_rect = rect_for_grid(mode.reference_idle, ref.size)
     idle = ref.crop(ref_rect)
@@ -975,11 +978,11 @@ def make_preview(pack: Path, mode: Mode, sheet: Image.Image, weapon: str | None 
         paste_with_checker(preview, enlarged, (x, y))
         label = "unarmed idle" if index == 0 else f"{index:02d}"
         title.text((x + 4, y + 4), label, fill=(255, 202, 99, 255))
-    preview.save(pack / output)
+    return preview
 
 
-def make_clip_preview(pack: Path, mode: Mode, frames: list[Image.Image], output: str = "clips.png") -> None:
-    """Write a ground-lined frame strip for every runtime clip."""
+def render_clip_preview(mode: Mode, frames: list[Image.Image]) -> Image.Image:
+    """Draw a ground-lined frame strip for every runtime clip."""
     scale = 2
     max_frames = max(len(indices) for indices, _, _ in CLIPS.values())
     gutter = 92
@@ -1001,10 +1004,10 @@ def make_clip_preview(pack: Path, mode: Mode, frames: list[Image.Image], output:
             x = gutter + column * mode.cell[0] * scale
             paste_with_checker(preview, enlarged, (x, top))
             draw.line((x, ground_y, x + mode.cell[0] * scale - 1, ground_y), fill=(93, 238, 176, 255), width=2)
-    preview.save(pack / output)
+    return preview
 
 
-def write_prompts(pack: Path, mode: Mode) -> None:
+def prompts_text(pack: Path, mode: Mode) -> str:
     """Render data-owned generation and refinement history without guessing it."""
     source = pack / "refinements.json"
     if not source.exists():
@@ -1033,11 +1036,13 @@ def write_prompts(pack: Path, mode: Mode) -> None:
             "### Refinements\n\n",
             f"Regenerations: {regenerations}. {change}\n",
         ))
-    (pack / "PROMPTS.md").write_text("".join(sections), encoding="utf-8")
+    return "".join(sections)
 
 
 def pack_mode(mode: Mode) -> None:
+    """Validate and render every output in memory, then write them; a failure writes nothing."""
     pack = ASSETS / "hoppy-armed" / mode.directory
+    outputs: list[tuple[Path, Image.Image | str]] = []
     packed: dict[str, PackedWeapon] = {}
     sheets: dict[str, Image.Image] = {}
     entries: dict[str, dict[str, object]] = {}
@@ -1066,8 +1071,8 @@ def pack_mode(mode: Mode) -> None:
         sheet = Image.new("RGBA", (mode.cell[0] * 4, mode.cell[1] * 4))
         for index, frame in enumerate(frames):
             sheet.alpha_composite(frame, (index % 4 * mode.cell[0], index // 4 * mode.cell[1]))
-        sheet.save(pack / f"{weapon.weapon}.png")
-        write_tres(pack / f"{weapon.weapon}.tres", weapon.weapon, mode)
+        outputs.append((pack / f"{weapon.weapon}.png", sheet))
+        outputs.append((pack / f"{weapon.weapon}.tres", tres_text(weapon.weapon, mode)))
         idle_dx, idle_dy = placements[0].offset
         hold_left, hold_top, hold_width, hold_height = weapon.hold_idle_weapon_bounds
         registered_hold_bounds = (hold_left + idle_dx, hold_top + idle_dy, hold_width, hold_height)
@@ -1109,7 +1114,8 @@ def pack_mode(mode: Mode) -> None:
                     for index, target in enumerate(weapon.body_foot_targets)
                     if target is not None
                 }
-    carry_calibration = write_carry_icons(pack, mode, packed)
+    icons, carry_calibration = build_carry_icons(mode, packed)
+    outputs.extend((pack / "carry" / f"{weapon}.png", icon) for weapon, icon in icons.items())
     manifest = {
         "version": 1,
         "mode": mode.directory,
@@ -1118,16 +1124,23 @@ def pack_mode(mode: Mode) -> None:
         "carry_calibration": carry_calibration,
         "weapons": entries,
     }
-    (pack / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    write_prompts(pack, mode)
+    outputs.append((pack / "manifest.json", json.dumps(manifest, indent=2) + "\n"))
+    outputs.append((pack / "PROMPTS.md", prompts_text(pack, mode)))
     pilot = packed[mode.pilot]
-    make_preview(pack, mode, sheets[mode.pilot])
-    make_clip_preview(pack, mode, [placement.image for placement in pilot.frames])
+    outputs.append((pack / "preview.png", render_preview(mode, sheets[mode.pilot])))
+    outputs.append((pack / "clips.png", render_clip_preview(mode, [placement.image for placement in pilot.frames])))
     if mode.extra_weapons:
         for weapon in weapons_for_mode(mode):
             item = packed[weapon.weapon]
-            make_preview(pack, mode, sheets[weapon.weapon], weapon.weapon, f"{weapon.weapon}_preview.png")
-            make_clip_preview(pack, mode, [placement.image for placement in item.frames], f"{weapon.weapon}_clips.png")
+            outputs.append((pack / f"{weapon.weapon}_preview.png", render_preview(mode, sheets[weapon.weapon], weapon.weapon)))
+            outputs.append((pack / f"{weapon.weapon}_clips.png", render_clip_preview(mode, [placement.image for placement in item.frames])))
+    # Everything above validated; only now touch the pack.
+    (pack / "carry").mkdir(parents=True, exist_ok=True)
+    for path, payload in outputs:
+        if isinstance(payload, str):
+            path.write_text(payload, encoding="utf-8")
+        else:
+            payload.save(path)
     for weapon in weapons_for_mode(mode):
         entry = entries[weapon.weapon]
         print(f"packed {mode.directory}/{weapon.weapon}: scale={entry['source_scale']:.6f}, body_height={entry['body_height']}")

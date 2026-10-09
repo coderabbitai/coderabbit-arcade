@@ -126,7 +126,12 @@
           44,
           35
         ],
-        "baked_length": 44
+        "baked_length": 44,
+        "orientation": "flip_h",
+        "grip": [
+          8,
+          38
+        ]
       }
     }
   },
