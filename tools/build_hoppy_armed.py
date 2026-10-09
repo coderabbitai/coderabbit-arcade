@@ -59,6 +59,11 @@ class Weapon:
     # icon's texel the paw holds, written to the manifest for the runtime.
     carry_orientation: str = ""
     carry_grip: tuple[int, int] | None = None
+    # Opt-in run registration. "body" places each run frame so a weapon-free
+    # body reference (see body_reference_x) holds still over the cycle while the
+    # feet stay on the pivot row; "" keeps the foot-centre registration. Frames
+    # with a body_foot_target keep that target.
+    run_register: str = ""
 
 
 @dataclass(frozen=True)
@@ -82,6 +87,7 @@ class Mode:
     reference_idle: int
     reference_pivot: tuple[int, int]
     extra_weapons: tuple[Weapon, ...] = ()
+    pilot_run_register: str = ""
 
 
 @dataclass(frozen=True)
@@ -159,6 +165,7 @@ MODES = (
         reference_cell=96,
         reference_idle=15,
         reference_pivot=(48, 86),
+        pilot_run_register="body",
         extra_weapons=(
             Weapon(
                 weapon="linter_staff",
@@ -173,6 +180,7 @@ MODES = (
                 hold_idle_weapon_bounds=(61, 77, 63, 31),
                 motion="wide sweep / back sweep / spin",
                 per_frame_foot_pivot=True,
+                run_register="body",
             ),
             Weapon(
                 weapon="api_key_whip",
@@ -187,7 +195,8 @@ MODES = (
                 hold_idle_weapon_bounds=(97, 83, 33, 31),
                 motion="crack / extended lash / recoil",
                 per_frame_foot_pivot=True,
-                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot, including step3 contact and step3 follow (the reused step1 follow cel), so the foot stays planted through the recoil. Idle, run, and equip plant the body foot named by body_foot_targets; hurt uses the foot centre.",
+                run_register="body",
+                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot, including step3 contact and step3 follow (the reused step1 follow cel), so the foot stays planted through the recoil. Idle, run, and equip plant the body foot named by body_foot_targets, which already holds the run body steady; hurt uses the foot centre.",
                 body_foot_targets=(
                     (75, 95), (67, 93), (64, 94), (57, 87),
                     (74, 104), None, None, None,
@@ -213,6 +222,7 @@ MODES = (
                 hold_idle_weapon_bounds=(82, 76, 40, 30),
                 motion="thrust / sweep / heavy shove",
                 per_frame_foot_pivot=True,
+                run_register="body",
             ),
             Weapon(
                 weapon="refactor_hammer",
@@ -227,7 +237,8 @@ MODES = (
                 hold_idle_weapon_bounds=(82, 70, 44, 35),
                 motion="overhead / side / overhead slam",
                 per_frame_foot_pivot=True,
-                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot; idle, run, equip, and hurt use the foot centre.",
+                run_register="body",
+                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot; run frames hold the body steady; idle, equip, and hurt use the foot centre.",
                 # The sheet carries the head forward; the cel puts it behind the paw. Mirror the
                 # carry and keep the cel's pommel grip, mirrored.
                 carry_orientation="flip_h",
@@ -241,6 +252,7 @@ MODES = (
                 hold_idle_weapon_bounds=(88, 66, 32, 38),
                 motion="shield-up jab / guarded swing / guarded kick; slot 16 block recoil",
                 per_frame_foot_pivot=True,
+                run_register="body",
             ),
         ),
     ),
@@ -276,6 +288,7 @@ MODES = (
         reference_cell=128,
         reference_idle=0,
         reference_pivot=(64, 115),
+        pilot_run_register="body",
         extra_weapons=(
             Weapon(
                 weapon="triage_hammer",
@@ -290,8 +303,9 @@ MODES = (
                 hold_idle_weapon_bounds=(120, 80, 52, 36),
                 motion="overhead / side / heavy slam",
                 per_frame_foot_pivot=True,
+                run_register="body",
                 source_order=(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 11, 14, 15),
-                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot; step3 follow measures it on a lower row that excludes the hammer head. Idle, run, equip, and hurt use the foot centre.",
+                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot; step3 follow measures it on a lower row that excludes the hammer head. Run frames hold the body steady; idle, equip, and hurt use the foot centre.",
             ),
             Weapon(
                 weapon="change_stack_baton",
@@ -306,8 +320,9 @@ MODES = (
                 hold_idle_weapon_bounds=(62, 94, 105, 24),
                 motion="long thrust / sweep / thrust",
                 per_frame_foot_pivot=True,
+                run_register="body",
                 source_order=(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 11, 14, 15),
-                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot; equip is measured on its own lower foot row. Idle, run, equip, and hurt use the foot centre.",
+                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot; equip is measured on its own lower foot row. Run frames hold the body steady; idle, equip, and hurt use the foot centre.",
             ),
             Weapon(
                 weapon="security_scanner",
@@ -322,9 +337,10 @@ MODES = (
                 hold_idle_weapon_bounds=(126, 76, 33, 38),
                 motion="scan sweep / scan / pulse",
                 per_frame_foot_pivot=True,
+                run_register="body",
                 foot_plant_overrides={4: "rear"},
                 source_order=(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 11, 14, 15),
-                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot. The last run frame (run 4 of 4) uses its one visible planted rear foot; idle, the other run frames, equip, and hurt use the foot centre.",
+                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot. Run frames hold the body steady; the last run frame (run 4 of 4) finds its sole on its one visible planted rear foot. Idle, equip, and hurt use the foot centre.",
             ),
             Weapon(
                 weapon="pr_merger",
@@ -339,9 +355,10 @@ MODES = (
                 hold_idle_weapon_bounds=(120, 80, 52, 44),
                 motion="jab / hook / uppercut punches",
                 per_frame_foot_pivot=True,
+                run_register="body",
                 foot_plant_overrides={4: "rear"},
                 source_order=(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 11, 14, 15),
-                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot. The last run frame (run 4 of 4) uses its one visible planted rear foot; idle, the other run frames, equip, and hurt use the foot centre.",
+                foot_plant_note="Attack frames (step1-step3: windup, contact, follow) plant the rear foot. Run frames hold the body steady; the last run frame (run 4 of 4) finds its sole on its one visible planted rear foot. Idle, equip, and hurt use the foot centre.",
             ),
         ),
     ),
@@ -368,6 +385,7 @@ def pilot_weapon(mode: Mode) -> Weapon:
         foot_source_rows=mode.foot_source_rows,
         hold_idle_weapon_bounds=mode.pilot_weapon_bounds,
         motion="pilot",
+        run_register=mode.pilot_run_register,
     )
 
 
@@ -609,13 +627,33 @@ def lowest_sole_row(frame: Image.Image, foot_x: int) -> int:
     raise ValueError(f"no painted sole near foot x={foot_x}")
 
 
-def rear_foot_x(frame: Image.Image, sole_y: int) -> int:
-    """Measure one consistent physical foot after per-frame registration."""
+def planted_run_x(frame: Image.Image, sole_y: int, planted_x: int) -> int:
+    """Measure the registered planted foot: the painted run at the sole row that
+    contains, or lies nearest to, the frame's planted x."""
     runs = opaque_runs(frame, sole_y)
     if not runs:
         raise ValueError(f"no painted foot run at sole row y={sole_y}")
-    left, right = runs[0]
+
+    def distance(run: tuple[int, int]) -> int:
+        return 0 if run[0] <= planted_x <= run[1] else min(abs(run[0] - planted_x), abs(run[1] - planted_x))
+
+    left, right = min(runs, key=lambda run: (distance(run), run[0]))
     return round((left + right) / 2)
+
+
+def body_reference_x(frame: Image.Image, foot_y: int, hand_x: int, height: int) -> float:
+    """Weapon-free body position: the mean x of opaque pixels behind the weapon paw,
+    from the foot row up one body height. The weapon is held at or ahead of the paw."""
+    alpha = frame.getchannel("A").load()
+    xs = [
+        x
+        for y in range(max(0, foot_y - height), min(frame.height, foot_y + 1))
+        for x in range(min(frame.width, hand_x - 2))
+        if alpha[x, y] >= 128
+    ]
+    if not xs:
+        raise ValueError(f"no body pixels behind the paw (x < {hand_x - 2})")
+    return sum(xs) / len(xs)
 
 
 def planted_foot_row(frame: Image.Image, expected_y: int, mode: Mode) -> tuple[int, tuple[int, int]]:
@@ -663,6 +701,8 @@ def register_frames(
     foot_plant_overrides: dict[int, str] | None = None,
     body_foot_targets: tuple[tuple[int, int] | None, ...] = (),
     source_order: tuple[int, ...] = (),
+    hand_targets: tuple[tuple[int, int], ...] = (),
+    run_register: str = "",
 ) -> list[FramePlacement]:
     """Plant every pose at the gameplay pivot while preserving its art offsets."""
     rows = mode.foot_source_rows if foot_source_rows is None else foot_source_rows
@@ -688,7 +728,13 @@ def register_frames(
         left, right = target
         if left < 0 or right >= mode.cell[0] or left > right:
             raise ValueError(f"{mode.directory}: invalid body-foot target at frame {index + 1}: {target}")
-    placements: list[FramePlacement] = []
+    if run_register not in {"", "body"}:
+        raise ValueError(f"{mode.directory}: unknown run_register {run_register!r}")
+    if run_register and len(hand_targets) != 16:
+        raise ValueError(f"{mode.directory}: run_register needs 16 hand targets")
+    policies: list[str] = []
+    planted: list[int] = []
+    offsets_x: list[int] = []
     for index, ((frame, _), (foot_y, span)) in enumerate(zip(preliminary, measured_feet)):
         policy = overrides.get(index, "rear" if 5 <= index <= 13 else "center")
         target = targets[index]
@@ -702,20 +748,42 @@ def register_frames(
             planted_x = round((left + right) / 2)
         else:
             planted_x = planted_foot_x(frame, foot_y, span, policy) if per_frame_foot_pivot else round((span[0] + span[1]) / 2)
-        frame_offset_x = mode.pivot[0] - planted_x if per_frame_foot_pivot else horizontal_offset
+        policies.append(policy)
+        planted.append(planted_x)
+        offsets_x.append(mode.pivot[0] - planted_x if per_frame_foot_pivot else horizontal_offset)
+    # Body-registered run frames hold the body reference at the cycle's mean foot-centre
+    # position, so it stays still while the legs cycle and the feet still centre on the pivot
+    # on average. Body-foot targets already name the body foot, so they stay as they are.
+    body_run = [index for index in CLIPS["run"][0] if run_register == "body" and targets[index] is None]
+    if body_run:
+        bodies = {
+            index: body_reference_x(preliminary[index][0], measured_feet[index][0], hand_targets[index][0], mode.idle_height)
+            for index in body_run
+        }
+        held_x = round(sum(bodies[index] + offsets_x[index] for index in body_run) / len(body_run))
+        for index in body_run:
+            offsets_x[index] = round(held_x - bodies[index])
+    placements: list[FramePlacement] = []
+    for index, ((frame, _), (foot_y, _span)) in enumerate(zip(preliminary, measured_feet)):
+        target = targets[index]
+        planted_x = planted[index]
+        frame_offset_x = offsets_x[index]
         offset = (frame_offset_x, mode.pivot[1] - foot_y)
         registered = translate_frame(frame, offset, mode, index)
-        sole_y = lowest_sole_row(registered, planted_x + frame_offset_x)
+        registered_x = planted_x + frame_offset_x
+        sole_y = lowest_sole_row(registered, registered_x)
         if target is not None and abs(sole_y - mode.pivot[1]) > 1:
             raise ValueError(
                 f"{mode.directory}: body-foot sole misses the pivot at frame {index + 1}: {sole_y}"
             )
-        same_x = rear_foot_x(registered, sole_y) if policy != "center" else planted_x + frame_offset_x
+        # The pop guard follows the foot each frame actually planted: un-targeted centre frames
+        # keep their registered x; rear, front and targeted frames measure that foot's run.
+        same_x = registered_x if target is None and policies[index] == "center" else planted_run_x(registered, sole_y, registered_x)
         placements.append(
             FramePlacement(
                 registered,
                 offset,
-                (planted_x + frame_offset_x, mode.pivot[1]),
+                (registered_x, mode.pivot[1]),
                 (planted_x, foot_y),
                 sole_y,
                 same_x,
@@ -724,7 +792,9 @@ def register_frames(
     if per_frame_foot_pivot:
         for name, (indices, _, _) in CLIPS.items():
             planted = [placements[index].same_foot_x for index in indices]
-            if any(abs(right - left) > 3 for left, right in zip(planted, planted[1:])):
+            # A run alternates its feet by design, so no single foot stays planted; run clips
+            # are held to check_run_body's body-steadiness limit instead.
+            if name != "run" and any(abs(right - left) > 3 for left, right in zip(planted, planted[1:])):
                 source = [placements[index].selected_foot_before_registration[0] for index in indices]
                 raise ValueError(
                     f"{mode.directory}: same foot pops in {name}: packed={planted}, source={source}"
@@ -736,6 +806,31 @@ def register_frames(
                     f"{mode.directory}: soles miss the pivot in {name}: packed={soles}, source={source}"
                 )
     return placements
+
+
+RUN_BODY_LIMIT = 3.0
+
+
+def check_run_body(mode: Mode, weapon: Weapon, placements: list[FramePlacement]) -> list[float]:
+    """Fail when the body moves more than RUN_BODY_LIMIT px between consecutive run frames,
+    the loop seam (last frame back to the first) included. Returns the measured body x."""
+    indices = CLIPS["run"][0]
+    xs = [
+        body_reference_x(
+            placements[index].image,
+            mode.pivot[1],
+            weapon.hand_targets[index][0] + placements[index].offset[0],
+            mode.idle_height,
+        )
+        for index in indices
+    ]
+    steps = [abs(after - before) for before, after in zip(xs, xs[1:] + xs[:1])]
+    if max(steps) > RUN_BODY_LIMIT:
+        raise ValueError(
+            f"{mode.directory}/{weapon.weapon}: run body moves {max(steps):.1f} px between frames "
+            f"(limit {RUN_BODY_LIMIT:.0f}); body x = {[round(x, 1) for x in xs]}"
+        )
+    return xs
 
 
 def pilot_scale(master: Image.Image, components: dict[int, SourceComponent], mode: Mode) -> float:
@@ -1048,6 +1143,7 @@ def pack_mode(mode: Mode) -> None:
     packed: dict[str, PackedWeapon] = {}
     sheets: dict[str, Image.Image] = {}
     entries: dict[str, dict[str, object]] = {}
+    run_bodies: dict[str, list[float]] = {}
     for weapon in weapons_for_mode(mode):
         source_path = pack / "sources" / f"{weapon.weapon}.png"
         if not source_path.exists():
@@ -1068,7 +1164,11 @@ def pack_mode(mode: Mode) -> None:
             weapon.foot_plant_overrides,
             weapon.body_foot_targets,
             weapon.source_order,
+            weapon.hand_targets,
+            weapon.run_register,
         )
+        run_body = check_run_body(mode, weapon, placements)
+        run_bodies[weapon.weapon] = run_body
         frames = [placement.image for placement in placements]
         sheet = Image.new("RGBA", (mode.cell[0] * 4, mode.cell[1] * 4))
         for index, frame in enumerate(frames):
@@ -1098,15 +1198,26 @@ def pack_mode(mode: Mode) -> None:
                 "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden."
                 if weapon.per_frame_foot_pivot
                 else "Ground midpoint for registration validation; it can lie between painted feet and is not an effect anchor."
+            )
+            + (
+                " Body-registered run frames keep their feet on the pivot row, not on pivot x."
+                if weapon.run_register == "body"
+                else ""
             ),
             "clips": clip_metadata(mode),
             "anchors": anchors(mode, weapon, placements),
         }
+        if weapon.run_register:
+            entries[weapon.weapon]["run_registration"] = weapon.run_register
         if weapon.source_order:
             entries[weapon.weapon]["source_order"] = list(source_order)
         if weapon.per_frame_foot_pivot:
             entries[weapon.weapon]["foot_planting"] = {
-                "default": "idle, run, equip, and hurt use the foot centre; attack frames use the rear foot.",
+                "default": (
+                    "idle, equip, and hurt use the foot centre; run frames hold the body steady; attack frames use the rear foot."
+                    if weapon.run_register == "body"
+                    else "idle, run, equip, and hurt use the foot centre; attack frames use the rear foot."
+                ),
                 "overrides": {str(index): policy for index, policy in weapon.foot_plant_overrides.items()},
                 "note": weapon.foot_plant_note,
             }
@@ -1145,7 +1256,8 @@ def pack_mode(mode: Mode) -> None:
             payload.save(path)
     for weapon in weapons_for_mode(mode):
         entry = entries[weapon.weapon]
-        print(f"packed {mode.directory}/{weapon.weapon}: scale={entry['source_scale']:.6f}, body_height={entry['body_height']}")
+        run_body = ", ".join(f"{x:.1f}" for x in run_bodies[weapon.weapon])
+        print(f"packed {mode.directory}/{weapon.weapon}: scale={entry['source_scale']:.6f}, body_height={entry['body_height']}, run body x=[{run_body}]")
 
 
 def pack_pilot(mode: Mode) -> None:

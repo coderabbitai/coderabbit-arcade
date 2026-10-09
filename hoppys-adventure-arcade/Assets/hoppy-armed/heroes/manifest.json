@@ -226,7 +226,7 @@
         ]
       ],
       "fragment_attachments": [],
-      "foot_anchor_semantics": "Ground midpoint for registration validation; it can lie between painted feet and is not an effect anchor.",
+      "foot_anchor_semantics": "Ground midpoint for registration validation; it can lie between painted feet and is not an effect anchor. Body-registered run frames keep their feet on the pivot row, not on pivot x.",
       "clips": {
         "hold_idle": {
           "frames": [
@@ -294,19 +294,19 @@
             119
           ],
           "1": [
-            115,
-            117
-          ],
-          "2": [
             116,
             117
           ],
+          "2": [
+            117,
+            117
+          ],
           "3": [
-            119,
+            114,
             118
           ],
           "4": [
-            112,
+            116,
             120
           ],
           "5": [
@@ -374,19 +374,19 @@
             147
           ],
           "1": [
-            105,
+            106,
             147
           ],
           "2": [
-            89,
+            90,
             147
           ],
           "3": [
-            95,
+            90,
             147
           ],
           "4": [
-            93,
+            97,
             147
           ],
           "5": [
@@ -434,7 +434,8 @@
             147
           ]
         }
-      }
+      },
+      "run_registration": "body"
     },
     "triage_hammer": {
       "weapon": "triage_hammer",
@@ -555,7 +556,7 @@
         ]
       ],
       "fragment_attachments": [],
-      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden.",
+      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden. Body-registered run frames keep their feet on the pivot row, not on pivot x.",
       "clips": {
         "hold_idle": {
           "frames": [
@@ -623,19 +624,19 @@
             113
           ],
           "1": [
-            105,
+            102,
             110
           ],
           "2": [
-            101,
+            102,
             111
           ],
           "3": [
-            107,
+            106,
             110
           ],
           "4": [
-            96,
+            100,
             113
           ],
           "5": [
@@ -703,19 +704,19 @@
             147
           ],
           "1": [
-            96,
+            93,
             147
           ],
           "2": [
-            96,
+            97,
             147
           ],
           "3": [
-            96,
+            95,
             147
           ],
           "4": [
-            96,
+            100,
             147
           ],
           "5": [
@@ -764,6 +765,7 @@
           ]
         }
       },
+      "run_registration": "body",
       "source_order": [
         0,
         1,
@@ -783,9 +785,9 @@
         15
       ],
       "foot_planting": {
-        "default": "idle, run, equip, and hurt use the foot centre; attack frames use the rear foot.",
+        "default": "idle, equip, and hurt use the foot centre; run frames hold the body steady; attack frames use the rear foot.",
         "overrides": {},
-        "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot; step3 follow measures it on a lower row that excludes the hammer head. Idle, run, equip, and hurt use the foot centre."
+        "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot; step3 follow measures it on a lower row that excludes the hammer head. Run frames hold the body steady; idle, equip, and hurt use the foot centre."
       }
     },
     "change_stack_baton": {
@@ -907,7 +909,7 @@
         ]
       ],
       "fragment_attachments": [],
-      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden.",
+      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden. Body-registered run frames keep their feet on the pivot row, not on pivot x.",
       "clips": {
         "hold_idle": {
           "frames": [
@@ -975,19 +977,19 @@
             114
           ],
           "1": [
-            105,
+            109,
             109
           ],
           "2": [
-            107,
+            112,
             110
           ],
           "3": [
-            107,
+            109,
             114
           ],
           "4": [
-            120,
+            109,
             130
           ],
           "5": [
@@ -1055,19 +1057,19 @@
             147
           ],
           "1": [
-            96,
+            100,
             147
           ],
           "2": [
-            96,
+            101,
             147
           ],
           "3": [
-            96,
+            98,
             147
           ],
           "4": [
-            96,
+            85,
             147
           ],
           "5": [
@@ -1116,6 +1118,7 @@
           ]
         }
       },
+      "run_registration": "body",
       "source_order": [
         0,
         1,
@@ -1135,9 +1138,9 @@
         15
       ],
       "foot_planting": {
-        "default": "idle, run, equip, and hurt use the foot centre; attack frames use the rear foot.",
+        "default": "idle, equip, and hurt use the foot centre; run frames hold the body steady; attack frames use the rear foot.",
         "overrides": {},
-        "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot; equip is measured on its own lower foot row. Idle, run, equip, and hurt use the foot centre."
+        "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot; equip is measured on its own lower foot row. Run frames hold the body steady; idle, equip, and hurt use the foot centre."
       }
     },
     "security_scanner": {
@@ -1259,7 +1262,7 @@
         ]
       ],
       "fragment_attachments": [],
-      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden.",
+      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden. Body-registered run frames keep their feet on the pivot row, not on pivot x.",
       "clips": {
         "hold_idle": {
           "frames": [
@@ -1327,19 +1330,19 @@
             114
           ],
           "1": [
-            100,
+            116,
             111
           ],
           "2": [
-            100,
+            117,
             112
           ],
           "3": [
-            121,
+            113,
             113
           ],
           "4": [
-            140,
+            113,
             116
           ],
           "5": [
@@ -1407,19 +1410,19 @@
             147
           ],
           "1": [
-            96,
+            112,
             147
           ],
           "2": [
-            96,
+            113,
             147
           ],
           "3": [
-            96,
+            88,
             147
           ],
           "4": [
-            96,
+            69,
             147
           ],
           "5": [
@@ -1468,6 +1471,7 @@
           ]
         }
       },
+      "run_registration": "body",
       "source_order": [
         0,
         1,
@@ -1487,11 +1491,11 @@
         15
       ],
       "foot_planting": {
-        "default": "idle, run, equip, and hurt use the foot centre; attack frames use the rear foot.",
+        "default": "idle, equip, and hurt use the foot centre; run frames hold the body steady; attack frames use the rear foot.",
         "overrides": {
           "4": "rear"
         },
-        "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot. The last run frame (run 4 of 4) uses its one visible planted rear foot; idle, the other run frames, equip, and hurt use the foot centre."
+        "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot. Run frames hold the body steady; the last run frame (run 4 of 4) finds its sole on its one visible planted rear foot. Idle, equip, and hurt use the foot centre."
       }
     },
     "pr_merger": {
@@ -1613,7 +1617,7 @@
         ]
       ],
       "fragment_attachments": [],
-      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden.",
+      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden. Body-registered run frames keep their feet on the pivot row, not on pivot x.",
       "clips": {
         "hold_idle": {
           "frames": [
@@ -1681,19 +1685,19 @@
             115
           ],
           "1": [
-            101,
+            119,
             113
           ],
           "2": [
-            100,
+            118,
             114
           ],
           "3": [
-            125,
+            117,
             113
           ],
           "4": [
-            145,
+            116,
             127
           ],
           "5": [
@@ -1761,19 +1765,19 @@
             147
           ],
           "1": [
-            96,
+            114,
             147
           ],
           "2": [
-            96,
+            114,
             147
           ],
           "3": [
-            96,
+            88,
             147
           ],
           "4": [
-            96,
+            67,
             147
           ],
           "5": [
@@ -1822,6 +1826,7 @@
           ]
         }
       },
+      "run_registration": "body",
       "source_order": [
         0,
         1,
@@ -1841,11 +1846,11 @@
         15
       ],
       "foot_planting": {
-        "default": "idle, run, equip, and hurt use the foot centre; attack frames use the rear foot.",
+        "default": "idle, equip, and hurt use the foot centre; run frames hold the body steady; attack frames use the rear foot.",
         "overrides": {
           "4": "rear"
         },
-        "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot. The last run frame (run 4 of 4) uses its one visible planted rear foot; idle, the other run frames, equip, and hurt use the foot centre."
+        "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot. Run frames hold the body steady; the last run frame (run 4 of 4) finds its sole on its one visible planted rear foot. Idle, equip, and hurt use the foot centre."
       }
     }
   }

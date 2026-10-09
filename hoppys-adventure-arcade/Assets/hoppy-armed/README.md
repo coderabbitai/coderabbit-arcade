@@ -55,7 +55,8 @@ Leave out `--mode` to rebuild both. Run it from the repository root, then reimpo
 - a master doesn't have exactly sixteen major sprites, one per grid quarter, or a sprite touches the master's edge;
 - a small fragment (such as the thin end of a whip) lies more than 10 source pixels from every sprite;
 - a packed frame touches its cell edge;
-- with `per_frame_foot_pivot`, the planted foot moves more than about 3 px between frames of one clip, or a sole misses the pivot row;
+- with `per_frame_foot_pivot`, the planted foot (the painted run at each frame's registered planted x) moves more than about 3 px between frames of a clip, or a sole misses the pivot row. Run clips are exempt from the planted-foot check, since a run alternates its feet by design;
+- the body moves more than 3 px between consecutive run frames, the loop seam included. The body is measured weapon-free, from the opaque pixels behind the paw, and the builder prints each weapon's run body x;
 - a hand or tip anchor has no opaque pixel near its hand-picked target;
 - a weapon's `hold_idle_weapon_bounds` fall outside the `hold_idle` cell or cover no opaque pixels;
 - a carry icon drifts more than 10% from its calibrated length;
@@ -80,6 +81,7 @@ Opt-in fields. Leaving one out keeps the default behaviour, and turning one on f
 | `per_frame_foot_pivot` | Registers each frame horizontally on its planted foot instead of using one sheet-wide offset. Idle, run, equip and hurt use the centre of the feet; attack frames use the rear foot. The build fails if that foot moves more than about 3 px between frames of a clip, so Hoppy doesn't skate. |
 | `foot_plant_overrides`, `foot_plant_note` | Per-frame `center` / `rear` / `front` choice for the planted foot, and a note explaining it in the manifest. |
 | `body_foot_targets` | 16 optional `(left, right)` x spans, in packed-cell pixels before registration, that name the foot to plant for frames where a low weapon shares the foot row. |
+| `run_register` | `"body"` registers each run frame so the weapon-free body holds still over the cycle while the feet stay on the pivot row and the legs cycle. Frames with a `body_foot_target` keep it. All eleven weapons use it; without it, run frames are registered on the foot centre and the body can surge 25 px or more between frames. |
 | `source_order` | Maps each packed frame to a source cell, for masters whose poses came out in a different order, or to reuse a cell. Four Heroes vs. Villains sheets reorder their step-3 cells this way. `api_key_whip` reuses its step-1 follow-through (source cell 7) as the step-3 follow-through (frame 13). |
 | `carry_orientation`, `carry_grip` | Flips or rotates the carry icon (`flip_h`, `flip_v` or `rotate_180`) for a weapon whose sheet holds it by the other end from its cel. `carry_grip` is required with it: the oriented icon's texel held in the paw, which must be opaque. Both are written to `carry_calibration` in the manifest; Code City's weapon rig uses that grip in place of its cel grip. `api_key_whip` and `refactor_hammer` use `flip_h`, so their carries put the key or the hammer head at the far end, as on the sheet. (Heroes vs. Villains turns its scanner carry in the rig instead, so the screen stays clear of Hoppy's face.) |
 
