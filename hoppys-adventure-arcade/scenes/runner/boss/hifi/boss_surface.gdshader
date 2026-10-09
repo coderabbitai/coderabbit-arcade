@@ -13,7 +13,8 @@ uniform vec4 phase_tint : source_color = vec4(1.0);
 varying vec3 boss_position;
 
 void vertex() {
-	boss_position = VERTEX;
+	// Kit v2 glTF TEXCOORD_1/2 stay unskinned; VERTEX is already posed here.
+	boss_position = vec3(UV2, CUSTOM0.x);
 }
 float boss_hash(vec3 p) {
 	return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
@@ -31,9 +32,11 @@ float boss_noise(vec3 p) {
 void fragment() {
 	// Rest-space cells stay fixed while pause, hit-stop and skip drive the progress.
 	float outward = clamp(length(boss_position - dissolve_origin) / max(dissolve_radius, 0.01), 0.0, 1.0);
-	float noise = boss_noise(boss_position * dissolve_scale) * 0.3 + outward * 0.7;
-	if (dissolve >= 1.0 || (dissolve > 0.0 && noise < dissolve)) { discard; }
-	float edge = dissolve > 0.0 ? 1.0 - smoothstep(dissolve, dissolve + dissolve_edge, noise) : 0.0;
+	float noise = smoothstep(0.25, 0.75, boss_noise(boss_position * dissolve_scale)) * 0.8 + outward * 0.2;
+	// Retain recognizable islands into the final tenth, with an exact empty endpoint.
+	float threshold = dissolve * dissolve * dissolve;
+	if (dissolve >= 1.0 || (dissolve > 0.0 && noise < threshold)) { discard; }
+	float edge = dissolve > 0.0 ? 1.0 - smoothstep(threshold, threshold + dissolve_edge, noise) : 0.0;
 	vec3 base = texture(albedo_map, UV).rgb * albedo_color.rgb * phase_tint.rgb;
 	ALBEDO = mix(base, vec3(1.0), flash * 0.7);
 	vec3 orm = texture(orm_map, UV).rgb;

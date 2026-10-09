@@ -44,6 +44,8 @@ func check_build_report() -> Dictionary:
 		return {}
 	var report: Dictionary = parsed
 	check(report.get("quick", true) == false, "self-test uses the full bake")
+	check(int(report.get("kit_revision", 0)) >= 2, "self-test uses the rest-position kit revision")
+	check(report.get("rest_position_encoding", "") == "TEXCOORD_1.xy,TEXCOORD_2.x;TEXCOORD_2.y=1", "report declares the rest-position attribute ABI")
 	check(int(report.get("animation_sample_rate", -1)) == 120, "build report samples animations at 120 Hz")
 	check(int(report.get("triangles", -1)) >= 0 and int(report.get("triangles", MAX_TRIANGLES + 1)) <= MAX_TRIANGLES, "build report triangle budget <= 18000")
 	check(int(report.get("materials", -1)) >= 0 and int(report.get("materials", MAX_MATERIALS + 1)) <= MAX_MATERIALS, "build report material budget <= 4")
@@ -85,6 +87,114 @@ func check_mesh_skeleton_census(model: Node3D, report: Dictionary) -> void:
 	var census := mesh_skeleton_census(model)
 	for key in ["triangles", "materials", "bones", "surfaces"]:
 		check(int(report.get(key, -1)) == int(census[key]), "build report %s matches imported census (%d vs %d)" % [key, int(report.get(key, -1)), int(census[key])])
+
+
+func check_rest_positions(model: Node3D, model_script: Script) -> void:
+	for node: MeshInstance3D in model.find_children("*", "MeshInstance3D", true, false):
+		for surface in node.mesh.get_surface_count():
+			var arrays := node.mesh.surface_get_arrays(surface)
+			var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var restored: PackedVector3Array = model_script.call("rest_positions", node.mesh, surface)
+			check(restored.size() == vertices.size(), "every imported vertex preserves encoded rest xyz and version marker")
+			var error := 0.0
+			for index in mini(vertices.size(), restored.size()):
+				error = maxf(error, vertices[index].distance_to(restored[index]))
+			check(error <= 0.0001, "rest coordinates survive glTF import within 0.1 mm")
+	# An older mesh must use procedural fallback instead of silently burning from (0,0,0).
+	var old_mesh := ArrayMesh.new()
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3.ZERO, Vector3.RIGHT, Vector3.UP])
+	old_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	check(model_script.call("rest_positions", old_mesh, 0).is_empty(), "missing rest-position attributes are rejected")
+
+
+func dissolve_mask(viewport: SubViewport, instance: Node3D, amount: float, label: String) -> PackedByteArray:
+	instance.call("set_dissolve", amount)
+	for frame in 3:
+		await process_frame
+	await RenderingServer.frame_post_draw
+	var pixels := viewport.get_texture().get_image()
+	pixels.convert(Image.FORMAT_RGBA8)
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--capture-dir="):
+			var directory := argument.trim_prefix("--capture-dir=")
+			DirAccess.make_dir_recursive_absolute(directory)
+			pixels.save_png(directory.path_join("%s-%03d.png" % [label, roundi(amount * 100)]))
+	var bytes := pixels.get_data()
+	var mask := PackedByteArray()
+	mask.resize(pixels.get_width() * pixels.get_height())
+	for index in mask.size():
+		mask[index] = 1 if bytes[index * 4 + 3] > 127 else 0
+	return mask
+
+
+func check_dissolve_render(instance: Node3D) -> void:
+	if DisplayServer.get_name() == "headless":
+		check(not OS.get_cmdline_user_args().has("--require-gpu"), "--require-gpu requires a graphical renderer")
+		print("BOSS KIT GPU: SKIP (headless; rerun graphically with -- --require-gpu)")
+		return
+	# Transparent offscreen rendering measures actual shader discard, not a CPU approximation.
+	var viewport := SubViewport.new()
+	viewport.size = Vector2i(320, 320)
+	viewport.own_world_3d = true
+	viewport.transparent_bg = true
+	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	root.add_child(viewport)
+	instance.reparent(viewport)
+	instance.call("set_flash", 0.0)
+	instance.call("set_phase_tint", Color.WHITE)
+	var player := instance.get("animation_player") as AnimationPlayer
+	player.stop()
+	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+	var skeleton := instance.find_children("*", "Skeleton3D", true, false)[0] as Skeleton3D
+	skeleton.reset_bone_poses()
+	var camera := Camera3D.new()
+	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	camera.size = 2.2
+	camera.position = Vector3(0.3, 0.65, 4.0)
+	viewport.add_child(camera)
+	camera.current = true
+	var rest_camera := camera.transform
+	var masks := {}
+	for amount: float in [0.0, 0.5, 0.75, 0.9, 1.0]:
+		masks[amount] = await dissolve_mask(viewport, instance, amount, "rest")
+	var intact: int = masks[0.0].count(1)
+	check(intact > 10000, "GPU fixture has a measurable intact silhouette")
+	check(masks[0.5].count(1) < intact and masks[0.5].count(1) > 0, "dissolve begins before its midpoint")
+	check(masks[0.75].count(1) < masks[0.5].count(1), "dissolve progresses from midpoint to three quarters")
+	var rest_fraction := float(masks[0.9].count(1)) / maxi(intact, 1)
+	check(rest_fraction >= 0.15, "self-test retains at least 15% of pixels at dissolve 0.9 in rest pose")
+	check(masks[1.0].count(1) == 0, "dissolve 1 removes every pixel")
+	# This exported defeat is a uniform collapse into fx_core. Counter-transform the
+	# camera to hold projected geometry fixed, isolating the mask from silhouette changes.
+	player.play(&"defeat", 0.0)
+	player.seek(player.get_animation(&"defeat").length, true)
+	player.advance(0.0)
+	var bone := skeleton.find_bone("root")
+	var collapse := skeleton.get_bone_global_pose(bone) * skeleton.get_bone_global_rest(bone).affine_inverse()
+	check(collapse.basis.get_scale().is_equal_approx(Vector3.ONE * 0.25), "exported defeat collapses to one-quarter scale")
+	camera.position = collapse * rest_camera.origin
+	camera.basis = collapse.basis.orthonormalized() * rest_camera.basis
+	camera.size = 2.2 * collapse.basis.get_scale().x
+	var defeat_intact := 0
+	var max_changed := 0
+	var defeat_fraction := 0.0
+	for amount: float in [0.0, 0.5, 0.75, 0.9, 1.0]:
+		var actual := await dissolve_mask(viewport, instance, amount, "defeat")
+		var expected: PackedByteArray = masks[amount]
+		var changed := 0
+		for index in actual.size():
+			if actual[index] != expected[index]: changed += 1
+		max_changed = maxi(max_changed, changed)
+		check(float(changed) / maxi(intact, 1) <= 0.01, "dissolve mask stays pose-invariant at progress %.2f" % amount)
+		if amount == 0.0: defeat_intact = actual.count(1)
+		if amount == 0.9:
+			defeat_fraction = float(actual.count(1)) / maxi(defeat_intact, 1)
+			check(defeat_fraction >= 0.15, "self-test retains at least 15% of pixels at dissolve 0.9 in defeat pose")
+	print("BOSS KIT GPU: rest_0.9=%.4f defeat_0.9=%.4f max_mask_delta=%d/%d" % [rest_fraction, defeat_fraction, max_changed, intact])
+	instance.reparent(root)
+	viewport.free()
 
 
 func check_imported_orm(model: Node3D) -> void:
@@ -189,6 +299,7 @@ func run() -> void:
 	var imported_model := first.get("model") as Node3D
 	check_imported_orm(imported_model)
 	check_mesh_skeleton_census(imported_model, build_report)
+	check_rest_positions(imported_model, model_script)
 	var animation_player: Variant = first.get("animation_player")
 	check(animation_player is AnimationPlayer, "loaded instance exposes AnimationPlayer")
 	if animation_player is AnimationPlayer:
@@ -233,6 +344,7 @@ func run() -> void:
 			check(is_equal_approx(float(material.get_shader_parameter(&"dissolve")), 0.0), "peer dissolve remains unchanged")
 			check(is_equal_approx(float(material.get_shader_parameter(&"flash")), 0.0), "peer flash remains unchanged")
 			check(material.get_shader_parameter(&"phase_tint").is_equal_approx(Color.WHITE), "peer phase tint remains unchanged")
+	await check_dissolve_render(first)
 	first.free()
 	second.free()
 	finish()

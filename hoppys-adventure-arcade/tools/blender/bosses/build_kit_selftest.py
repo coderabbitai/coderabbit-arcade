@@ -12,7 +12,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from boss_kit import BossBuilder, Part, SOCKETS, xform
 
-RECIPE_REVISION = 1
+RECIPE_REVISION = 2
 
 
 def pose(kit, action, t):
@@ -31,8 +31,11 @@ def pose(kit, action, t):
     elif action == 'phase_change':
         kit.pose('core', rotation=(0, t * math.tau, 0), scale=(1 + pulse * 0.15,) * 3)
     elif action == 'defeat':
-        kit.pose('root', location=(0, -t * 0.45, 0), rotation=(t * 0.65, 0, t * 0.25))
-        kit.pose('arm', rotation=(0, 0, t * 1.2))
+        # Collapse into fx_core. A matching orthographic camera can undo only the
+        # projection change, proving the dissolve mask is invariant under skinning.
+        shrink = 1 - t * 0.75
+        kit.pose('root', location=(0, 0.78 * (1 - shrink), 0.4 * (1 - shrink)),
+                 scale=(shrink,) * 3)
     elif action == 'retreat':
         kit.pose('root', location=(0, t * 0.4, -t * 1.0), scale=(1 - t * 0.4,) * 3)
 

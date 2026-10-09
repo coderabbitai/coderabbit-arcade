@@ -8,6 +8,31 @@ var animation_player: AnimationPlayer
 var materials: Array[ShaderMaterial] = []
 var _sockets: Dictionary = {}
 
+static func rest_positions(mesh: Mesh, surface: int) -> PackedVector3Array:
+	# Kit v2 reserves UV2.xy for rest xy and CUSTOM0.xy for rest z / ABI version.
+	var flags: int = mesh.surface_get_format(surface)
+	if not flags & Mesh.ARRAY_FORMAT_TEX_UV2 or not flags & Mesh.ARRAY_FORMAT_CUSTOM0:
+		return PackedVector3Array()
+	var format: int = (flags >> Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) & Mesh.ARRAY_FORMAT_CUSTOM_MASK
+	var stride := 2 if format == Mesh.ARRAY_CUSTOM_RG_FLOAT else 4 if format == Mesh.ARRAY_CUSTOM_RGBA_FLOAT else 0
+	if stride == 0:
+		return PackedVector3Array()
+	var arrays := mesh.surface_get_arrays(surface)
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var xy: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV2]
+	var encoded: PackedFloat32Array = arrays[Mesh.ARRAY_CUSTOM0]
+	if xy.size() != vertices.size() or encoded.size() != vertices.size() * stride:
+		return PackedVector3Array()
+	var result := PackedVector3Array()
+	for index in vertices.size():
+		if not is_equal_approx(encoded[index * stride + 1], 1.0):
+			return PackedVector3Array()
+		var point := Vector3(xy[index].x, xy[index].y, encoded[index * stride])
+		if not point.is_finite() or point.distance_to(vertices[index]) > 0.0001:
+			return PackedVector3Array()
+		result.append(point)
+	return result
+
 func _bind_dissolve_origin() -> void:
 	# The kit exports identity mesh transforms. Burn outwards from the core in rest space.
 	var core := socket(&"fx_core")
@@ -84,6 +109,9 @@ func _bind() -> bool:
 			continue
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		for index in mesh.mesh.get_surface_count():
+			# Old/unencoded assets use the visual's procedural fallback until rebuilt.
+			if rest_positions(mesh.mesh, index).is_empty():
+				return false
 			var source := mesh.get_active_material(index) as BaseMaterial3D
 			if source == null or source.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
 				return false

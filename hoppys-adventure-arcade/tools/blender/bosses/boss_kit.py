@@ -25,7 +25,7 @@ from props_kit import Part, linear, xform, G2B, B2G
 from glb_atlas import consolidate_atlases
 
 SEED = 73019
-RECIPE_REVISION = 1
+RECIPE_REVISION = 2
 BUDGET = json.loads((HERE / 'bosses_budget.json').read_text())
 ACTIONS = tuple(BUDGET['actions'])
 SOCKETS = tuple(BUDGET['sockets'])
@@ -74,6 +74,51 @@ def write_glb(path, payload, chunks):
     chunks[0] = (0x4e4f534a, encoded)
     body = b''.join(struct.pack('<II', len(data), kind) + data for kind, data in chunks)
     Path(path).write_bytes(struct.pack('<III', 0x46546c67, 2, len(body) + 12) + body)
+
+
+def encode_rest_positions(payload, chunks):
+    """Kit v2 ABI: UV2.xy = rest xy; CUSTOM0.xy (UV3) = rest z, version 1.
+
+    Copy exported POSITION after all Blender geometry/UV work, so split vertices match
+    exactly. Extra UVs survive glTF/Godot without skinning or COLOR's 8-bit conversion.
+    These channels are reserved for the boss shader, not lightmap UVs.
+    """
+    binary_index = next(i for i, (kind, _) in enumerate(chunks) if kind == 0x004e4942)
+    binary = bytearray(chunks[binary_index][1])
+    cache = {}
+    for mesh in payload['meshes']:
+        for primitive in mesh['primitives']:
+            attributes = primitive['attributes']
+            require('TEXCOORD_1' not in attributes and 'TEXCOORD_2' not in attributes,
+                    'Boss rest-position channels are already occupied')
+            index = attributes['POSITION']
+            if index not in cache:
+                source = payload['accessors'][index]
+                require(source['componentType'] == 5126 and source['type'] == 'VEC3'
+                        and 'sparse' not in source, 'Expected dense float rest positions')
+                view = payload['bufferViews'][source['bufferView']]
+                require(view.get('buffer', 0) == 0, 'Expected one GLB buffer')
+                start = view.get('byteOffset', 0) + source.get('byteOffset', 0)
+                stride = view.get('byteStride', 12)
+                values = [struct.unpack_from('<3f', binary, start + i * stride)
+                          for i in range(source['count'])]
+                binary.extend(b'\0' * (-len(binary) % 4))
+                offset = len(binary)
+                for x, y, z in values:
+                    binary.extend(struct.pack('<4f', x, y, z, 1.0))
+                view_index = len(payload['bufferViews'])
+                payload['bufferViews'].append(dict(buffer=0, byteOffset=offset,
+                    byteLength=len(values) * 16, byteStride=16, target=34962))
+                accessors = []
+                for component_offset in (0, 8):
+                    accessors.append(len(payload['accessors']))
+                    payload['accessors'].append(dict(bufferView=view_index,
+                        byteOffset=component_offset, componentType=5126,
+                        count=len(values), type='VEC2'))
+                cache[index] = accessors
+            attributes['TEXCOORD_1'], attributes['TEXCOORD_2'] = cache[index]
+    payload['buffers'][0]['byteLength'] = len(binary)
+    chunks[binary_index] = (0x004e4942, bytes(binary))
 
 
 class BossBuilder:
@@ -293,6 +338,7 @@ class BossBuilder:
                 image['name'] = image['name'][len(prefix):]
         binary = next(data for kind, data in chunks if kind == 0x004e4942)
         images = consolidate_atlases(payload, binary)
+        encode_rest_positions(payload, chunks)
         animations = [a.get('name') for a in payload.get('animations', [])]
         require(len(animations) == len(ACTIONS) and set(animations) == set(ACTIONS),
                 'Exported actions differ: ' + str(animations))
@@ -320,7 +366,8 @@ class BossBuilder:
                    HERE.parent / 'glb_atlas.py', HERE.parent / 'props' / 'props_kit.py']
         hashes = {str(p.relative_to(HERE.parent.parent.parent)): sha(p) for p in sources}
         provenance = dict(seed=self.seed, recipe_revision=self.revision, kit_revision=RECIPE_REVISION,
-                          source_hashes=hashes, kind=self.kind)
+                          source_hashes=hashes, kind=self.kind,
+                          rest_position_encoding='TEXCOORD_1.xy,TEXCOORD_2.x;TEXCOORD_2.y=1')
         payload['asset']['extras'] = provenance
         write_glb(path, payload, chunks)
         report = dict(**provenance, **census, blender=bpy.app.version_string,
@@ -337,6 +384,14 @@ class BossBuilder:
                 'animation/import=true\nanimation/fps=120\nanimation/trimming=false\n'
                 'animation/remove_immutable_tracks=true\nanimation/import_rest_as_RESET=false\n'
                 'skins/use_named_skins=true\n_subresources={"nodes": {"PATH:AnimationPlayer": {"optimizer/enabled": false}}}\n')
+        # Float rest coordinates must not be quantized by Godot's mesh compression.
+        import_text = import_path.read_text()
+        setting = 'meshes/force_disable_compression=true'
+        if re.search(r'^meshes/force_disable_compression=.*$', import_text, flags=re.MULTILINE):
+            import_text = re.sub(r'^meshes/force_disable_compression=.*$', setting, import_text, flags=re.MULTILINE)
+        else:
+            import_text += setting + '\n'
+        import_path.write_text(import_text)
         for texture_path in textures.values():
             texture_import = Path(str(texture_path) + '.import')
             text = texture_import.read_text() if texture_import.exists() else (

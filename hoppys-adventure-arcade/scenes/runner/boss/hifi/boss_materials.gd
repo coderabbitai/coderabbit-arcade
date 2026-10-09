@@ -3,6 +3,8 @@ extends RefCounted
 const Surface = preload("res://scenes/runner/boss/hifi/boss_surface.gdshader")
 
 static func surface_from(source: BaseMaterial3D) -> ShaderMaterial:
+	# COLOR stays available for future art; rest positions use reserved UV2/CUSTOM0.
+	# BossModel validates those mesh channels before a shader material is installed.
 	assert(source != null, "Boss expects imported PBR materials")
 	assert(source.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED, "Boss surfaces must be opaque")
 	# Flat quick builds have no ORM; baked builds must preserve the glTF channels.
