@@ -35,7 +35,7 @@ The attack steps are SpriteFrames clips at 9 fps, but the game picks their frame
 |---|---|
 | `<weapon>.png`, `<weapon>.tres` | Packed atlas and its SpriteFrames resource |
 | `manifest.json` | Per weapon: cell, pivot, facing, body height, source scale, clips, source component bounds, fragment attachments, and per-frame `hand`, `foot` and contact-frame `tip` anchors. `carry_calibration` records how every carry icon was scaled. |
-| `carry/<weapon>.png` | The weapon cel, scaled to the weapon's length in the baked `hold_idle` so it has the sheet's pixel density. On poses with no armed frame, the runtime draws it at the paw, at the body's scale: walking toward or away from the camera, jumping and, in Heroes vs. Villains, defeat and victory. |
+| `carry/<weapon>.png` | The weapon cel, scaled to the weapon's length in the baked `hold_idle` so it has the sheet's pixel density. On poses with no armed frame, the runtime draws it at the paw, at the body's scale: walking toward or away from the camera, jumping and, in Heroes vs. Villains, defeat and victory. Each mode's weapon rig draws it behind the body wherever it would otherwise cover Hoppy's face (`carry_behind`). |
 | `<weapon>_preview.png` | Contact sheet of all sixteen cells next to the unarmed idle, at 2× |
 | `<weapon>_clips.png` | Each runtime clip on a ground line drawn at the foot pivot, for motion review |
 | `preview.png`, `clips.png` | The same views for the mode's first (pilot) weapon |
