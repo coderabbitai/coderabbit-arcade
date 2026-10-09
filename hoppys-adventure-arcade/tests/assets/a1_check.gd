@@ -297,17 +297,15 @@ func run() -> void:
 	check(report.generator == gltf.asset.generator and report.blender == "5.2.2 LTS", "generator provenance")
 	check(FileAccess.get_sha256("res://tools/blender/build_hoppy.py") == report.script_sha256, "build script hash matches asset")
 	check(report.get("contact_revision", 0) == 17, "120 Hz contact recipe (round 17: grounded one-shots) required")
-	check(report.get("joint_revision", 0) == 15, "round-15 rig required: articulated limbs plus face bones")
-	check(report.get("recipe_revision", 0) == 8, "round-8 bake required: full-size slide and softened face")
+	check(report.get("joint_revision", 0) == 17, "joint-17 rig required: action-figure proportions, face bones and the cape chain")
+	check(report.get("recipe_revision", 0) == 11, "recipe-11 bake required: the cyberpunk action-figure Hoppy")
 	var roll_bounds: Array = report.get("roll_bounds_y", [])
 	check(roll_bounds.size() == 2 and roll_bounds[0] >= -0.001 and roll_bounds[1] <= 0.885, "builder slide bounds under 0.885 m: %s" % [roll_bounds])
-	if report.get("recipe_revision", 0) == 8:
-		var rgb: Array = report.hoodie_linear
+	if report.get("recipe_revision", 0) == 11:
+		var rgb: Array = report.orange_linear
 		check(Vector3(rgb[0], rgb[1], rgb[2]).is_equal_approx(Vector3(0.930, 0.250, 0.067)), "baked recipe uses palette orange")
-		var profile: Array = report.brace_profile
-		check(profile[3][0] > profile[0][0] and profile[3][0] > profile[-1][0], "brace cusp outward, tips inward")
-		check(report.back_mark_z > 0.262, "back brace clears battery face")
-		check(Vector2(report.sole_radii[0], report.sole_radii[1]).is_equal_approx(Vector2(0.108, 0.162)), "sole follows sneaker plus 8 mm")
+		check(report.get("cape_bones", []) == ["cape", "cape_tip"], "sidecar cape chain")
+		check(Vector2(report.sole_radii[0], report.sole_radii[1]).is_equal_approx(Vector2(0.083, 0.138)), "sole follows the boot plus 8 mm")
 	for script in ["build_hoppy.py", "render_hoppy.py", "glb_atlas.py", "rebuild_hoppy.py"]:
 		check(FileAccess.file_exists("res://tools/blender/" + script), "pipeline script " + script)
 	var names: Array = []
@@ -358,18 +356,13 @@ func run() -> void:
 	check(shared.contains("MODEL_MATRIX * vec4(0.0, 0.0, -1.0, 0.0)") and shared.contains("clamp(dot(NORMAL, facing), 0.0, 1.0)"), "front fill is neutral, forward-facing only and never reaches the rear")
 	var rig: Skeleton3D = hoppy.skeleton
 	var eye_z := rig.get_bone_global_rest(rig.find_bone("eye_L")).origin.z
-	check(eye_z < -0.15, "face looks down -Z, the front fill axis")
+	check(eye_z < -0.08, "face looks down -Z, the front fill axis: eye_L z %.3f" % eye_z)
 	check(glass_shader.code.contains("blend_mix, depth_prepass_alpha, cull_back") and shared.contains("ALPHA = albedo_color.a * texel.a"), "glass preserves alpha with reviewed render modes")
 	check(surface_shader.code.contains("cull_back, depth_draw_opaque") and not surface_shader.code.contains("#define HOPPY_GLASS"), "body remains opaque and back culled")
 	var glass_count := 0
 	var mask_source := FileAccess.get_file_as_string("res://scenes/runner/player/hifi/palette_mask.gdshader")
 	check(mask_source.contains("texel.a * albedo_color.a < 0.5") and mask_source.contains("discard"), "guard excludes transparent glass")
 	check(mask_source.contains("> 1.12"), "fur mask excludes neutral whites")
-	var band := Image.create(1280, 720, false, Image.FORMAT_RGB8)
-	band.fill(Color("a9b48d"))
-	check(Capture.measure_goggle_band(band)["pass"], "studio guard accepts authored mint veil")
-	band.fill(Color("62a48c"))
-	check(not Capture.measure_goggle_band(band)["pass"], "studio guard rejects opaque lens regression")
 	# Review r1 capture meters: fur stats read only the fur class, peak luma catches one hot pixel,
 	# and the CPU chase projection puts the camera target on the screen centre.
 	var fur_image := Image.create(4, 1, false, Image.FORMAT_RGB8)
@@ -389,9 +382,7 @@ func run() -> void:
 			var source := mesh.mesh.surface_get_material(surface) as BaseMaterial3D
 			if source.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
 				glass_count += 1
-				check(material != null and material.shader == glass_shader, "goggles use transparent glass variant")
-				var tint: Color = material.get_shader_parameter("albedo_color")
-				check(is_equal_approx(tint.a, 0.22) and tint == source.albedo_color, "goggle alpha preserves authored 0.22")
+				check(material != null and material.shader == glass_shader, "transparent imports use the glass variant")
 			else:
 				check(material != null and material.shader == surface_shader, "body uses opaque hue-preserving shader")
 			check(material.get_shader_parameter("chroma_lock") >= 0.75, "chroma lock preserved")
@@ -406,7 +397,7 @@ func run() -> void:
 			check(mesh.global_basis.is_equal_approx(hoppy.global_basis), "mesh forward is Hoppy forward for the front fill " + mesh.name)
 			check(source.ao_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_RED and source.roughness_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_GREEN and source.metallic_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_BLUE, "glTF ORM channels RGB")
 			check(source.get_texture(BaseMaterial3D.TEXTURE_METALLIC) == source.get_texture(BaseMaterial3D.TEXTURE_ROUGHNESS) and source.get_texture(BaseMaterial3D.TEXTURE_AMBIENT_OCCLUSION) == material.get_shader_parameter("orm_map"), "one shared ORM image")
-	check(glass_count == 1, "exactly one goggle glass surface")
+	check(glass_count == 0, "armored Hoppy has no transparent surfaces")
 	var synthetic := Image.create(16, 2, false, Image.FORMAT_RGB8)
 	var mask := Image.create(16, 2, false, Image.FORMAT_RGB8)
 	for x in 16:
@@ -441,6 +432,15 @@ func run() -> void:
 	check(not Guard.measure(synthetic, mask)["pass"], "synthetic khaki rejected independently of mask")
 	synthetic.fill(Color.WHITE)
 	check(not Guard.measure(synthetic, mask)["pass"], "synthetic blown highlights rejected")
+	# Rear chase views gate only the orange class (the cape covers the cream tail).
+	var orange_only := Image.create(16, 2, false, Image.FORMAT_RGB8)
+	var orange_mask := Image.create(16, 2, false, Image.FORMAT_RGB8)
+	orange_only.fill(Capture.Palette.ORANGE)
+	orange_mask.fill(Color.RED)
+	check(not Guard.measure(orange_only, orange_mask)["pass"], "front guard requires the cream class")
+	check(Guard.measure(orange_only, orange_mask, false)["pass"], "rear guard accepts a hidden cream class")
+	orange_only.fill(Color(0.45, 0.55, 0.2))
+	check(not Guard.measure(orange_only, orange_mask, false)["pass"], "rear guard still rejects khaki orange")
 	check(hoppy._shield.visible, "shield request before ready")
 	check(player.get_animation_list().size() == STATES.size(), "exactly thirteen actions")
 	var import_settings := ConfigFile.new()
@@ -461,7 +461,7 @@ func run() -> void:
 		check(player.get_animation(state).loop_mode == loop, "loop flag " + state)
 	for bone: String in report.bones:
 		check(hoppy.skeleton.find_bone(bone) >= 0, "bone " + bone)
-	check(hoppy.skeleton.get_bone_count() == 31, "bone count: 27 body bones plus brows and mouth corners")
+	check(hoppy.skeleton.get_bone_count() == 33, "bone count: 27 body bones, brows, mouth corners and the cape chain")
 	for bone: String in FACE_BONES:
 		check(hoppy.skeleton.find_bone(bone) >= 0, "face bone " + bone)
 	for hook in ["set_anim_state", "set_run_speed", "set_lane_lean", "show_aura", "show_shield", "on_hit",
@@ -519,6 +519,8 @@ func run() -> void:
 	check(environment.environment.ambient_light_energy >= 0.8, "capture ambient lifted for gameplay")
 	light_stage.free()
 	player.playback_default_blend_time = 0.0
+	sample(hoppy, &"idle", 0.0)
+	var idle_top := skin_bounds(hoppy).end.y
 	var low := INF
 	var high := -INF
 	for frame in 12:
@@ -536,7 +538,7 @@ func run() -> void:
 	print("A1 ROLL: 12 sampled frames, y %.6f to %.6f" % [low, high])
 	sample(hoppy, &"idle", 0.0)
 	var restored := skin_bounds(hoppy)
-	check(absf(restored.end.y - 1.8) < 0.004, "roll exit restores upright skeleton")
+	check(absf(restored.end.y - idle_top) < 0.002 and idle_top > 1.75, "roll exit restores the upright idle: %.4f vs %.4f m" % [restored.end.y, idle_top])
 	check_joints(hoppy)
 	for speed in [-1.0, 0.0, 0.5, 1.0, 2.0]:
 		hoppy.set_anim_state(&"run")
@@ -699,7 +701,7 @@ func check_face(hoppy: Node3D) -> void:
 	hoppy.set_anim_state(&"victory")
 	hoppy._process(1.0)
 	face._process_modification()
-	check(sk.get_bone_pose_position(mouth).y - sk.get_bone_rest(mouth).origin.y > 0.012, "grin lifts the mouth corner")
+	check(sk.get_bone_pose_position(mouth).y - sk.get_bone_rest(mouth).origin.y > 0.012 * face.FACE_SCALE, "grin lifts the mouth corner")
 	check(sk.get_bone_pose_position(brow).y > sk.get_bone_rest(brow).origin.y, "grin lifts the brow")
 	hoppy.set_anim_state(&"hurt")
 	hoppy._process(1.0)

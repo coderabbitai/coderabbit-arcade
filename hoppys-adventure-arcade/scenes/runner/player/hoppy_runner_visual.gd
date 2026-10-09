@@ -24,11 +24,11 @@ const GROUNDED_BASE: Array[StringName] = [&"idle", &"run"]
 const AIRBORNE: Array[StringName] = [&"jump", &"fall"]
 const ONE_SHOT_BLEND := 0.08
 const LAND_BLEND := 0.05
-## Face weights per state: x focused, y wide-eyed, z wince, w grin. Hoppy is a friendly mascot:
-## locomotion reads as focused-but-smiling, never a scowl (face_rig.gd also caps the brow drop).
-const RUN_FACE := Vector4(0.3, 0.1, 0, 0.35)
+## Face weights per state: x focused, y wide-eyed, z wince, w grin. The armored hero runs focused with
+## a confident half-smile, never a scowl (face_rig.gd also caps the brow drop).
+const RUN_FACE := Vector4(0.38, 0.05, 0, 0.32)
 const EXPRESSIONS := {
-	&"idle": Vector4(0, 0, 0, 0.45), &"run": RUN_FACE, &"jump": Vector4(0, 1, 0, 0),
+	&"idle": Vector4(0.2, 0, 0, 0.32), &"run": RUN_FACE, &"jump": Vector4(0, 1, 0, 0),
 	&"fall": Vector4(0.2, 0.8, 0, 0), &"roll": Vector4(0.3, 0.4, 0, 0.3), &"hurt": Vector4(0, 0, 1, 0),
 	&"dead": Vector4(0, 0, 0.8, 0), &"lane_dash_left": RUN_FACE,
 	&"lane_dash_right": RUN_FACE, &"land": Vector4(0.4, 0, 0.3, 0.1),
@@ -42,7 +42,7 @@ const FRONT_FILL := 0.22
 ## ambient term); the lighter tint keeps the warm cast with a hue closer to each albedo.
 const AMBIENT_FILL := Color(1.0, 0.972549, 0.913725)
 const BLINK_PERIOD := 3.4
-## Power-up kinds that light the backpack LED strip (colours in _led_colors, same order).
+## Power-up kinds that light the cape's LED strip (colours in _led_colors, same order).
 const LED_KINDS: Array[StringName] = [&"nitro", &"lgtm", &"code_review", &"super_jump", &"auto_fix",
 	&"approve_shield"]
 const LED_FLASH_SECONDS := 0.5
@@ -452,9 +452,9 @@ func _update_face(delta: float) -> void:
 	var blink := clampf(1.0 - absf(phase - (BLINK_PERIOD - 0.09)) / 0.07, 0.0, 1.0)
 	_face.blink = 0.0 if anim_state == &"dead" else blink * (1.0 - _expression.z)
 
-## Backpack strip: the latest timed power-up shows its colour as a draining meter, a stored shield
+## Cape strip: the latest timed power-up shows its colour as a draining meter, a stored shield
 ## glows mint, and collections/blocks/celebrations sweep the strip for LED_FLASH_SECONDS.
-## With nothing active, led_level is 0 and the baked MATRIX glow shows unchanged.
+## With nothing active, led_level is 0 and the baked amber glow shows unchanged.
 func _update_leds(delta: float) -> void:
 	if _led_materials.is_empty() or _led_remaining.size() != LED_KINDS.size():
 		return

@@ -1,62 +1,62 @@
 {
-  "recipe_revision": 8,
-  "hoodie_linear": [
+  "recipe_revision": 11,
+  "orange_linear": [
     0.93,
     0.25,
     0.067
   ],
   "stance_revision": 17,
   "effect_triangles": 1394,
-  "joint_revision": 15,
+  "joint_revision": 17,
   "contact_revision": 17,
   "sole_sweeps": {
     "idle": {
       "hz": 120,
       "samples": 193,
-      "min_y": -1.0238727554678917e-07,
-      "max_y": 7.191556505858898e-08
+      "min_y": -4.182220436632633e-08,
+      "max_y": 4.404864739626646e-08
     },
     "run": {
       "hz": 120,
       "samples": 73,
-      "min_y": -4.5925844460725784e-08,
-      "max_y": 5.061156116425991e-08
+      "min_y": -5.1935785450041294e-08,
+      "max_y": 5.010224413126707e-08
     },
     "lane_dash_left": {
       "hz": 120,
       "samples": 33,
-      "min_y": -4.9985828809440136e-08,
-      "max_y": 3.272725734859705e-08
+      "min_y": -3.479362931102514e-08,
+      "max_y": 5.075708031654358e-08
     },
     "lane_dash_right": {
       "hz": 120,
       "samples": 33,
-      "min_y": -4.992762114852667e-08,
-      "max_y": 3.278546500951052e-08
+      "min_y": -3.479362931102514e-08,
+      "max_y": 5.075708031654358e-08
     },
     "land": {
       "hz": 120,
       "samples": 25,
-      "min_y": -3.91155481338501e-08,
-      "max_y": 4.842877388000488e-08
+      "min_y": -4.0978193283081055e-08,
+      "max_y": 3.5390257835388184e-08
     },
     "shield_brace": {
       "hz": 120,
       "samples": 49,
-      "min_y": -4.470348358154297e-08,
-      "max_y": 5.21540641784668e-08
+      "min_y": -5.4016709327697754e-08,
+      "max_y": 5.471520125865936e-08
     },
     "powerup_react": {
       "hz": 120,
       "samples": 61,
-      "min_y": -4.5925844460725784e-08,
-      "max_y": 5.061156116425991e-08
+      "min_y": -5.1935785450041294e-08,
+      "max_y": 5.010224413126707e-08
     },
     "victory": {
       "hz": 120,
       "samples": 145,
-      "min_y": -4.5925844460725784e-08,
-      "max_y": 5.061156116425991e-08
+      "min_y": -5.1935785450041294e-08,
+      "max_y": 5.010224413126707e-08
     }
   },
   "animation_sample_rate": 120,
@@ -64,78 +64,51 @@
     "forearm": 1,
     "shin": -1
   },
-  "brace_profile": [
-    [
-      0.02,
-      0.934
-    ],
-    [
-      0.043,
-      0.922
-    ],
-    [
-      0.044,
-      0.89
-    ],
-    [
-      0.061,
-      0.876
-    ],
-    [
-      0.044,
-      0.862
-    ],
-    [
-      0.043,
-      0.832
-    ],
-    [
-      0.02,
-      0.821
-    ]
-  ],
   "sole_radii": [
-    0.108,
-    0.162
+    0.083,
+    0.138
   ],
-  "back_mark_z": 0.268,
-  "script_sha256": "b464ab34d7e348db820fb51c7eeec72a93351781a82c20cd90c40f2725debde3",
+  "cape_bones": [
+    "cape",
+    "cape_tip"
+  ],
+  "script_sha256": "f3586c21f60e5a61d7710c84e560cec5315ee16983adf0af2bd75ff149c5ddf1",
   "atlas_helper_sha256": "6e9467f0befabed73b075a4184ab7cc5aa864649d008b7be24d313726920e35a",
   "blender": "5.2.2 LTS",
   "seed": 41027,
-  "triangles": 45776,
+  "triangles": 43998,
   "image_report": [
     {
       "index": 0,
       "name": "accessory_emissive",
       "width": 1024,
       "height": 1024,
-      "bytes": 158502,
-      "sha256": "75046142db7de3356c6ef7dd4b9dbaa864471b3feb2dd395aa6676d5025cbc6b"
+      "bytes": 119508,
+      "sha256": "09975c4faa9cc7af630cbf942496fcccfe38673f258c4599d7be27c127492cd5"
     },
     {
       "index": 1,
       "name": "accessory_normal",
       "width": 1024,
       "height": 1024,
-      "bytes": 722747,
-      "sha256": "f3596a24ef5e1dd486540b5580ae1827b938068b0f906c24a470f7cc2eba88bf"
+      "bytes": 774828,
+      "sha256": "7aa927ab9caf115bd482c75cc8a5ddf407ac4fc2947cd09fc7c1608da047b689"
     },
     {
       "index": 2,
       "name": "accessory_albedo",
       "width": 1024,
       "height": 1024,
-      "bytes": 868503,
-      "sha256": "1af425ecddda26bb39a5b72fdd7c8db372efb627b6300a5186e1ac4be3a11b1f"
+      "bytes": 856161,
+      "sha256": "94a9e024061d3261f535f71eaf7595a4bac6494ed91437e0085bc6e60054ec6d"
     },
     {
       "index": 3,
       "name": "accessory_orm",
       "width": 1024,
       "height": 1024,
-      "bytes": 396201,
-      "sha256": "bfce7e692c3eb3b2f24924d74b65b519676b800fd080832e32db41a38febc473"
+      "bytes": 392139,
+      "sha256": "b6eeb72355e332b90b31981ad38a6a6abd585d55f2bfe54db17d5c8e8a5a81f0"
     },
     {
       "index": 4,
@@ -150,24 +123,24 @@
       "name": "body_normal",
       "width": 2048,
       "height": 2048,
-      "bytes": 2948758,
-      "sha256": "1f3a16bacacce39ec8bac4df25a0575539eb446b8aaa5d2131bb56cebe780873"
+      "bytes": 2410191,
+      "sha256": "73b6fb596ac45aeea917b5ef31f6bb9a9b57a1ac3ab9a6a28067c6f035c8e2c7"
     },
     {
       "index": 6,
       "name": "body_albedo",
       "width": 2048,
       "height": 2048,
-      "bytes": 2989134,
-      "sha256": "edc8e1b7ad168ce0328af71162f2155b51d11217519476f8812de789d55e0e86"
+      "bytes": 2499347,
+      "sha256": "9ef917f0ca5bdc36279a3adda44f7c13f976af17bcbea9476bcf754386fe3b1d"
     },
     {
       "index": 7,
       "name": "body_orm",
       "width": 2048,
       "height": 2048,
-      "bytes": 398996,
-      "sha256": "ded3ea664bca3bd6b5f8342098539aaa8b0ea37d427e78d2a48c31a1b0b5c6c2"
+      "bytes": 460034,
+      "sha256": "de96ea758b52a1c6c9118e1b3444e7cfc857521598b09542b210d48a0e60ecde"
     }
   ],
   "textures": [
@@ -222,6 +195,8 @@
     "arm_R",
     "forearm_R",
     "hand_R",
+    "cape",
+    "cape_tip",
     "tail",
     "leg_L",
     "shin_L",
@@ -232,11 +207,11 @@
   ],
   "roll_bounds_y": [
     0.003999948501586914,
-    0.8593245148658752
+    0.5414742231369019
   ],
   "triangle_cap": 48000,
   "led_segments": 4,
-  "led_primitives": 2,
+  "led_primitives": 1,
   "face_bones": [
     "eye_L",
     "eye_R",
