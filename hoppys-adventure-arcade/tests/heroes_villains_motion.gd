@@ -346,6 +346,8 @@ func run() -> void:
 	p.set_physics_process(false)
 	p.controlled=false
 	check_carry_grips(p)
+	check_carry_faces(p)
+	check_toast_outside_combat()
 
 	if DisplayServer.get_name()!="headless":
 		clear_capture_state()
@@ -555,6 +557,165 @@ func check_carry_grips(actor) -> void:
 	actor.height=0
 	actor.rise=0
 	actor.show_pose("idle")
+
+## Face boxes measured on the unarmed 128px cel (eyes + muzzle). Pivot is the rig's unarmed foot.
+const FACE_BOX := {
+	"jump": Rect2(74,48,24,24),
+	"walk_down": Rect2(58,44,28,24),
+	"victory": Rect2(62,40,24,24),
+	"defeat": Rect2(78,84,22,20),
+}
+const FACE_PIVOT := Vector2(64,115)
+
+## The draw-order set the face check is not allowed to widen. Victory stays in front; walk_down
+## only for the two carries that reach the muzzle.
+func carry_should_behind(kind: String, pose: String) -> bool:
+	if pose=="jump" or pose=="defeat": return true
+	if pose=="walk_down": return kind=="review_stamp" or kind=="pr_merger"
+	return false
+
+## Opaque carry texels (alpha > .5, texel centre) mapped into the unarmed cel.
+func carry_face_hits(carry: Sprite2D, image: Image, box: Rect2, body_scale: float, pivot: Vector2) -> int:
+	if image.is_compressed(): image.decompress()
+	var size := Vector2(image.get_width(),image.get_height())
+	var shift := size*.5 if carry.centered else Vector2.ZERO
+	var xform := carry.get_transform()
+	var hits := 0
+	for y in image.get_height():
+		for x in image.get_width():
+			if image.get_pixel(x,y).a<=.5: continue
+			var cel: Vector2=xform*(Vector2(x+.5,y+.5)+carry.offset-shift)/body_scale+pivot
+			if box.has_point(cel): hits+=1
+	return hits
+
+## Every weapon on the four carry poses, both facings: the face is either uncovered or the carry
+## is strictly behind the body, and behind is only the runtime set above.
+func check_carry_faces(actor) -> void:
+	check(Catalog.WEAPONS.size()==5,"HvV face check covers all 5 weapons")
+	var covered: PackedStringArray=PackedStringArray()
+	for weapon in Catalog.WEAPONS:
+		actor.swing_left=0
+		actor.combo=0
+		actor.combo_window=0
+		actor.visual_weapon=""
+		actor.stagger=0
+		actor.height=0
+		actor.rise=0
+		actor.queued=false
+		actor.equip(weapon)
+		actor.pickup_time=0
+		var image: Image=Art.carry_texture(weapon).get_image()
+		for pose in ["walk_down","jump","victory","defeat"]:
+			for face in [1,-1]:
+				actor.facing=face
+				actor.pose_move=Vector2(0,1) if pose=="walk_down" else Vector2.ZERO
+				actor.swing_left=0
+				actor.visual_weapon=""
+				actor.pickup_time=0
+				actor.show_pose(pose)
+				# One box per pose, measured on frame 0. Re-grip with no bob after the pose sync.
+				actor.body.frame=0
+				actor.held.animate(weapon,1,0.0,false,Vector2.ZERO,0.0,pose)
+				var carry: Sprite2D=actor.held.carry
+				var expect: bool=carry_should_behind(weapon,pose)
+				var drawn: bool=actor.held.get_index()<actor.body.get_index()
+				var told: bool=actor.held.carry_behind(weapon,pose)
+				var hits := carry_face_hits(carry,image,FACE_BOX[pose],Art.BODY_SCALE,FACE_PIVOT)
+				if hits>0: covered.append("%s %s facing %d: %d"%[weapon,pose,face,hits])
+				var label := "%s %s facing %d"%[weapon,pose,face]
+				check(carry.visible and actor.body.animation==pose,label+" shows the carry")
+				check(drawn==expect and told==expect,label+(" draws behind the body" if expect else " draws in front of the body")+" (held %d, body %d)"%[actor.held.get_index(),actor.body.get_index()])
+				check(drawn or hits==0,label+" keeps the face clear (%d texels in the face box, behind %s)"%[hits,drawn])
+	print("HvV opaque carry texels inside the face box: "+("; ".join(covered) if covered.size() else "none"))
+	actor.swing_left=0
+	actor.visual_weapon=""
+	actor.weapon=""
+	actor.facing=1
+	actor.pose_move=Vector2.ZERO
+	actor.pickup_time=0
+	actor.height=0
+	actor.rise=0
+	actor.show_pose("idle")
+
+## Toasts count down in every unpaused state. A toast raised in combat must expire behind a card
+## and during the victory hop, and boss_defeated must clear one so the hop cannot show it again.
+func check_toast_outside_combat() -> void:
+	var saved_state: String=game.state
+	var saved_playing: bool=game.playing
+	var saved_score: int=game.score
+	var saved_rewarded: bool=game.boss_rewarded
+	var saved_victory: float=game.victory_clock
+	var saved_z: int=game.player.z_index
+	var saved_shield: bool=game.player.shield
+	var saved_pos: Vector2=game.player.position
+	var saved_body: Vector2=game.player.body.position
+	var saved_prompt: String=game.prompt.text
+	var saved_caps: Dictionary=game.capabilities.duplicate()
+	if paused: paused=false
+	if game.flow.active(): game.flow.cancel()
+	game.flow.banner("","",0)
+	game.state="combat"
+	game.playing=true
+	game.toast("probe",1.0)
+	var raised: bool=game.toast_label.visible and game.toast_label.text=="probe" and is_equal_approx(game.toast_left,1.0) and game.held_toast=="" and not game.flow.banner_active()
+	game.show_cards(["boss_ai_slop"],game.begin_play)
+	game._physics_process(DT)
+	var ticking: bool=game.state=="cards" and game.toast_label.visible and is_equal_approx(game.toast_left,1.0-DT)
+	for _i in 71:
+		if game.state!="cards": break
+		game._physics_process(DT)
+	var card_done: bool=game.state=="cards" and not game.card_queue.is_empty() and not game.toast_label.visible and game.toast_left<=0
+	check(raised and ticking and card_done,"HvV toast counts down behind a card (left %s, state %s)"%[game.toast_left,game.state])
+	if game.state=="cards": game.next_card()
+	if is_instance_valid(game.card_host): game.card_host.hide()
+	game.state="combat"
+	game.playing=true
+	game.toast("probe",1.0)
+	var hop_raised: bool=game.toast_label.visible and is_equal_approx(game.toast_left,1.0)
+	game.state="boss_victory"
+	game.victory_clock=0
+	game.playing=false
+	game._physics_process(DT)
+	var hop_ticking: bool=game.state=="boss_victory" and game.toast_label.visible and is_equal_approx(game.toast_left,1.0-DT)
+	# 70 frames expires a 1.0s toast and stays under the 1.2s victory hop, so no reward card starts.
+	for _i in 69:
+		game._physics_process(DT)
+	var hop_done: bool=game.state=="boss_victory" and game.victory_clock<game.VICTORY_DURATION and not game.toast_label.visible and game.toast_left<=0 and not game.card_host.visible
+	check(hop_raised and hop_ticking and hop_done,"HvV toast counts down during boss_victory (left %s, clock %s)"%[game.toast_left,game.victory_clock])
+	game.player.hop(0)
+	game.victory_clock=0
+	game.state="combat"
+	game.playing=true
+	game.boss_rewarded=false
+	game.toast("probe",3.0)
+	var kill_raised: bool=game.state=="combat" and game.toast_label.visible and game.toast_label.text=="probe" and is_equal_approx(game.toast_left,3.0)
+	var score_at: int=game.score
+	game.boss_defeated()
+	var cleared: bool=game.state=="boss_victory" and game.boss_rewarded and game.score==score_at+500 and not game.toast_label.visible and game.toast_left<=0 and game.held_toast==""
+	var stayed := true
+	for _i in 4:
+		game._physics_process(DT)
+		if game.toast_label.visible or game.toast_left>0 or game.state!="boss_victory": stayed=false
+	var no_reward: bool=stayed and game.victory_clock<game.VICTORY_DURATION and not game.card_host.visible and game.capabilities==saved_caps
+	check(kill_raised and cleared and no_reward,"boss_defeated clears a combat toast so the victory hop cannot show it (left %s, clock %s)"%[game.toast_left,game.victory_clock])
+	game.player.hop(0)
+	game.player.position=saved_pos
+	game.player.body.position=saved_body
+	game.player.show_pose("idle")
+	game.player.z_index=saved_z
+	game.player.shield=saved_shield
+	game.capabilities=saved_caps
+	game.flow.cancel()
+	game.score=saved_score
+	game.boss_rewarded=saved_rewarded
+	game.victory_clock=saved_victory
+	game.prompt.text=saved_prompt
+	game.toast_left=0
+	game.held_toast=""
+	game.toast_label.hide()
+	if is_instance_valid(game.card_host): game.card_host.hide()
+	game.state=saved_state
+	game.playing=saved_playing
 
 ## Clock-driven collapse for every villain, including a fused clone and the hacker's second vector.
 func check_defeat_visuals() -> void:

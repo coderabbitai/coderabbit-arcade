@@ -48,6 +48,112 @@ func swing_effect(actor, facing: float, landed: bool, distance := 60.0) -> void:
 	for item in game.pickups:
 		if is_instance_valid(item.node): item.node.queue_free()
 	game.pickups.clear()
+## Face boxes measured on the unarmed 96px cel (eyes + muzzle). Pivot is the rig's unarmed foot.
+const FACE_BOX := {
+	"walk_down": Rect2(36,40,24,22),
+	"jump": Rect2(44,46,22,20),
+}
+const FACE_PIVOT := Vector2(48,86)
+
+func carry_should_behind(kind: String, pose: String) -> bool:
+	if pose=="walk_up" or pose=="jump": return true
+	if pose=="walk_down": return kind=="firewall_shield"
+	return false
+
+func carry_face_hits(carry: Sprite2D, image: Image, box: Rect2, body_scale: float, pivot: Vector2) -> int:
+	if image.is_compressed(): image.decompress()
+	var size := Vector2(image.get_width(),image.get_height())
+	var shift := size*.5 if carry.centered else Vector2.ZERO
+	var xform := carry.get_transform()
+	var hits := 0
+	for y in image.get_height():
+		for x in image.get_width():
+			if image.get_pixel(x,y).a<=.5: continue
+			var cel: Vector2=xform*(Vector2(x+.5,y+.5)+carry.offset-shift)/body_scale+pivot
+			if box.has_point(cel): hits+=1
+	return hits
+
+## Every weapon, both facings. walk_up is behind for all and has no face box. Jump is behind for
+## all. walk_down is in front except the shield, so those carries must miss the face box.
+func check_carry_faces(players: Array) -> void:
+	check(players.size()==Catalog.WEAPONS.size() and players.size()==6,"Code City face check covers all 6 weapons")
+	var covered: PackedStringArray=PackedStringArray()
+	for actor in players:
+		var weapon: String=actor.weapon
+		for pose in ["walk_up","walk_down","jump"]:
+			for face in [1,-1]:
+				actor.facing=face
+				actor.show_pose(pose)
+				actor.body.frame=0
+				actor.held.scale=Vector2(face,1)
+				actor.held.animate(weapon,1,0.0,false,Vector2.ZERO,0.0,0.0)
+				var carry: Sprite2D=actor.held.carry
+				var expect: bool=carry_should_behind(weapon,pose)
+				var drawn: bool=actor.held.get_index()<actor.body.get_index()
+				var told: bool=actor.held.carry_behind(weapon,pose)
+				var label := "%s %s facing %d"%[weapon,pose,face]
+				var layer_ok: bool=carry.visible and not actor.held.sprite.visible and carry.scale==actor.body.scale and actor.body.animation==pose
+				check(layer_ok,label+" shows the carry")
+				check(drawn==expect and told==expect,label+(" draws behind the body" if expect else " draws in front of the body")+" (held %d, body %d)"%[actor.held.get_index(),actor.body.get_index()])
+				if not FACE_BOX.has(pose): continue
+				var image: Image=Art.carry(weapon).get_image()
+				var hits := carry_face_hits(carry,image,FACE_BOX[pose],actor.body.scale.y,FACE_PIVOT)
+				if hits>0: covered.append("%s %s facing %d: %d"%[weapon,pose,face,hits])
+				check(drawn or hits==0,label+" keeps the face clear (%d texels in the face box, behind %s)"%[hits,drawn])
+		actor.facing=1
+		actor.body.flip_h=false
+		actor.held.scale=Vector2.ONE
+	print("Code City opaque carry texels inside the face box: "+("; ".join(covered) if covered.size() else "none"))
+
+## tip_at must survive a manifest that lost its tip anchor, its clips, or a step's frame list,
+## without touching the armed-sheet cache. The original spec is put back before returning.
+func check_tip_fallback(actor) -> void:
+	var weapon := "debug_stick"
+	if Art.armed(weapon)==null:
+		for kind in Catalog.WEAPONS:
+			if Art.armed(kind)!=null:
+				weapon=kind
+				break
+	var sheet: SpriteFrames=Art.armed(weapon)
+	var weapons: Dictionary=Art.armed_manifest["weapons"]
+	var original: Dictionary=weapons[weapon]
+	var step := 1
+	var frames: Array=original["clips"]["step%d"%step]["frames"]
+	var contact := str(int(frames[1]))
+	var hands: Dictionary=original["anchors"]["hand"]
+	var tips: Dictionary=original["anchors"]["tip"]
+	var pivot := Vector2(original["pivot"][0],original["pivot"][1])
+	var scale_y: float=actor.body.scale.y
+	var hand: Array=hands[contact]
+	var hand_tip := (Vector2(hand[0],hand[1])-pivot)*scale_y
+	var tip_anchor: Array=tips[contact]
+	var tip_expected := (Vector2(tip_anchor[0],tip_anchor[1])-pivot)*scale_y
+	var sentinel := Vector2(12.5,-34.5)
+	check(sheet!=null and hands.has(contact) and tips.has(contact) and not hand_tip.is_equal_approx(tip_expected) and not hand_tip.is_equal_approx(sentinel),weapon+" contact tip and hand differ, so the tip_at fallback is observable")
+	var missing_tip: Dictionary=original.duplicate(true)
+	(missing_tip["anchors"] as Dictionary).erase("tip")
+	weapons[weapon]=missing_tip
+	actor.held.tip=sentinel
+	var got: Vector2=actor.held.tip_at(weapon,step)
+	weapons[weapon]=original
+	check(got.is_equal_approx(hand_tip) and is_same(weapons[weapon],original) and Art.armed(weapon)==sheet,weapon+" tip_at without anchors.tip uses the hand anchor (got %s, hand %s)"%[got,hand_tip])
+	var no_clips: Dictionary=original.duplicate(true)
+	no_clips.erase("clips")
+	weapons[weapon]=no_clips
+	actor.held.tip=sentinel
+	var kept: Vector2=actor.held.tip_at(weapon,step)
+	weapons[weapon]=original
+	check(kept.is_equal_approx(sentinel) and actor.held.tip.is_equal_approx(sentinel) and Art.armed(weapon)==sheet,weapon+" tip_at without clips returns the current tip")
+	var bad_frames: Dictionary=original.duplicate(true)
+	bad_frames["clips"]["step%d"%step]["frames"]=4
+	weapons[weapon]=bad_frames
+	actor.held.tip=sentinel
+	var malformed: Vector2=actor.held.tip_at(weapon,step)
+	weapons[weapon]=original
+	check(malformed.is_equal_approx(sentinel) and actor.held.tip.is_equal_approx(sentinel) and is_same(weapons[weapon],original) and Art.armed(weapon)==sheet,weapon+" tip_at with a numeric frame list returns the current tip")
+	var restored: Vector2=actor.held.tip_at(weapon,step)
+	check(restored.is_equal_approx(tip_expected),weapon+" tip_at uses the tip anchor again after the spec is restored (got %s, tip %s)"%[restored,tip_expected])
+
 ## Saves a rendered preview. Asserted at capture time (after the saved draw when rendering): only
 ## `toast_text` may show, and nothing may be held behind a banner, so no test text leaks in.
 func capture(name: String, toast_text := "") -> void:
@@ -156,7 +262,8 @@ func run() -> void:
 		for pose in ["walk_up","walk_down","jump"]:
 			carrier.show_pose(pose)
 			carrier.held.animate(carrier.weapon,1,0.0,false,Vector2.ZERO,0.0,0.0)
-			var behind: bool=pose=="walk_up"
+			# Jump draws behind with the back view. Toward the camera only the shield reaches the cheek.
+			var behind: bool=pose=="walk_up" or pose=="jump" or (pose=="walk_down" and carrier.weapon=="firewall_shield")
 			check(carrier.held.carry.visible and not carrier.held.sprite.visible and carrier.held.carry.scale==carrier.body.scale and (carrier.held.get_index()<carrier.body.get_index())==behind,carrier.weapon+" carry on "+pose+(" sits behind the body" if behind else " sits in front of the body"))
 	check(Art.carry_grip("api_key_whip")==Vector2(8,24),"Whip carry grip is the paw texel (8, 24)")
 	check(Art.carry_grip("refactor_hammer")==Vector2(8,38),"Hammer carry grip is the paw texel (8, 38)")
@@ -195,6 +302,8 @@ func run() -> void:
 				mass_sum+=x
 				mass_count+=1
 	check(mass_count>0 and mass_sum/maxf(mass_count,1)>8.0+15.0,"Hammer head sits to the right of the paw")
+	check_carry_faces(players)
+	check_tip_fallback(p)
 	p.invulnerable=0;p.swing_left=p.swing_duration*.56;p.swing_fired=true;p.tick(0)
 	if Art.armed(p.weapon)!=null and p.weapon!="firewall_shield":
 		check(not p.held.trail.points.is_empty(),p.weapon+" draws a contact trail before the hit")
