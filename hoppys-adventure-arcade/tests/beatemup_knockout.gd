@@ -861,13 +861,13 @@ func check_preview() -> void:
 	check(chrome, tag("the menu, the toast and the stage banner stay off the preview"))
 	check(loose_sprites()==0, tag("no stray sprite is left in actors (%d)" % loose_sprites()))
 	var image: Image = root.get_texture().get_image()
+	# Viewport pixels, read through each item's canvas transform (camera and layer included).
 	var stars = p.get_node_or_null("KnockoutStars")
-	var cluster: Vector2 = p.position
-	if stars: cluster = p.position+stars.position
-	var view := Vector2(image.get_width(), image.get_height())
-	var screen: Vector2 = (cluster-game.camera.position)*game.camera.zoom+view*0.5
+	var orbit: Node2D = stars if stars else p
+	var screen: Vector2 = orbit.get_global_transform_with_canvas().origin
 	var star_box := Rect2(screen-Vector2(64, 40), Vector2(128, 80))
-	var callout_rect: Rect2 = game.ko.callout.get_global_rect()
+	var callout_xform: Transform2D = game.ko.callout.get_global_transform_with_canvas()
+	var callout_rect := Rect2(callout_xform.origin, game.ko.callout.size*callout_xform.get_scale())
 	var star_color: Color = game.ko.tuning.star_color
 	var callout_color: Color = game.ko.tuning.callout_color
 	var star_hits := count_near(image, star_box, star_color, 0.28)
