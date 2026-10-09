@@ -112,6 +112,7 @@ func validate_manifest_entry(mode: String, weapon: String, entry: Dictionary, ex
 	var pivot: Variant = entry.get("pivot", [])
 	check(pivot is Array and pivot.size() == 2 and int(pivot[0]) == expected.pivot.x and int(pivot[1]) == expected.pivot.y, label + ": foot pivot")
 	check(entry.get("facing", "") == "right", label + ": facing must be right")
+	check(entry.get("run_registration") == "body", label + ": run_registration must be body (got %s)" % str(entry.get("run_registration")))
 	var clips: Variant = entry.get("clips", {})
 	check(clips is Dictionary, label + ": clips object")
 	if clips is Dictionary:
@@ -153,6 +154,72 @@ func validate_sheet(path: String, label: String, cell: Vector2i, entry: Dictiona
 		if frame == 0 and feet.has("row"):
 			var foot_center := (float(feet.min_x) + float(feet.max_x)) / 2.0
 			check(absf(foot_center - float(pivot.x)) <= 2.0, label + ": hold_idle foot centre differs from pivot.x by more than 2 pixels")
+	if not entry.is_empty():
+		validate_run_body(label, image, cell, entry)
+
+
+## Mean x of opaque pixels behind the weapon paw, from the foot row up one unarmed body.
+## The weapon sits at or ahead of the paw, so x < hand_x - 2 is the body.
+func body_reference_x(cell_image: Image, foot_y: int, hand_x: int, body_height: int) -> float:
+	var y0 := maxi(0, foot_y - body_height)
+	var y1 := mini(cell_image.get_height() - 1, foot_y)
+	var x_end := mini(cell_image.get_width(), hand_x - 2)
+	if y1 < y0 or x_end <= 0:
+		return NAN
+	var sum := 0.0
+	var count := 0
+	for y in range(y0, y1 + 1):
+		for x in range(x_end):
+			if cell_image.get_pixel(x, y).a >= 128.0 / 255.0:
+				sum += float(x)
+				count += 1
+	if count == 0:
+		return NAN
+	return sum / float(count)
+
+
+func validate_run_body(label: String, sheet: Image, cell: Vector2i, entry: Dictionary) -> void:
+	var pivot_data: Variant = entry.get("pivot", [])
+	var height := int(entry.get("unarmed_idle_height", -1))
+	var clips: Variant = entry.get("clips", {})
+	var run: Variant = clips.get("run", {}) if clips is Dictionary else {}
+	var frames: Variant = run.get("frames", []) if run is Dictionary else []
+	var anchors: Variant = entry.get("anchors", {})
+	var hands: Variant = anchors.get("hand", {}) if anchors is Dictionary else {}
+	var ready: bool = pivot_data is Array and pivot_data.size() == 2 and height >= 0 and frames is Array and frames.size() == 4 and hands is Dictionary
+	check(ready, label + ": run body registration needs pivot, unarmed_idle_height, 4 run frames and hand anchors")
+	if not ready:
+		return
+	var foot_y := int(pivot_data[1])
+	var refs := PackedFloat32Array()
+	var names := PackedInt32Array()
+	for frame_value in frames:
+		var frame := int(frame_value)
+		var hand: Variant = hands.get(str(frame), [])
+		var hand_ok: bool = hand is Array and hand.size() >= 2
+		check(hand_ok, label + ": run frame %d is missing a hand anchor" % frame)
+		if not hand_ok:
+			return
+		var region := sheet.get_region(Rect2i((frame % 4) * cell.x, int(frame / 4.0) * cell.y, cell.x, cell.y))
+		var measured := body_reference_x(region, foot_y, int(hand[0]), height)
+		check(not is_nan(measured), label + ": run frame %d has no body pixels behind the paw" % frame)
+		if is_nan(measured):
+			return
+		refs.append(measured)
+		names.append(frame)
+	var worst := 0.0
+	var worst_from := int(names[0])
+	var worst_to := int(names[0])
+	var listed := ""
+	for i in refs.size():
+		listed += (", " if i > 0 else "") + "%.2f" % refs[i]
+		var nxt := (i + 1) % refs.size()
+		var step := absf(refs[nxt] - refs[i])
+		if step > worst:
+			worst = step
+			worst_from = int(names[i])
+			worst_to = int(names[nxt])
+	check(worst <= 3.0, label + ": run body moves %.2f px between frames %d and %d (limit 3.0; body x %s)" % [worst, worst_from, worst_to, listed])
 
 
 func anchor_near_alpha(sheet: Image, cell: Vector2i, frame: int, point: Variant) -> bool:
