@@ -49,6 +49,26 @@ const FLOW := {
 	"enter_from_x":-60.0, "enter_to_x":180.0, "enter_max":1.6,
 	"stage_banner":2.8, "banner_slide":.3, "banner_fade":.6,
 	"exit_banner":2.0, "boss_dip":.6}
+## The opening cards (presentation/opening_*.tscn) are story scenes (story_scene.gd): each one
+## shows STORY[story_index]. image is the painted scene; until it is imported, the stage art in
+## fallback stands in. from/to frame the Ken Burns move as Vector3(focus x, focus y, zoom).
+const STORY_ROOT := "res://Assets/beatemup-story/heroes/"
+const STAGE_ART := "res://Assets/heroes-vs-villains-assets-only/heroes_villains/"
+const STORY_ACCENT := Color("ffab54")
+const STORY_SERIES := "HEROES vs. VILLAINS / re:Invent EDITION"
+const STORY := [
+	{"image":STORY_ROOT+"situation.png", "fallback":STAGE_ART+"generation_floor.png",
+		"kicker":"SITUATION",
+		"caption":"10,284 additions. 147 files. AI is shipping at machine speed.\nNobody knows what any of it does.",
+		"from":Vector3(.5,.4,1.25), "to":Vector3(.62,.3,1.45)},
+	{"image":STORY_ROOT+"complication.png", "fallback":STAGE_ART+"review_gauntlet.png",
+		"kicker":"COMPLICATION",
+		"caption":"Slop floods the floor. Agents multiply.\nThe attack surface grows.",
+		"from":Vector3(.34,.36,1.4), "to":Vector3(.66,.4,1.4)},
+	{"image":STORY_ROOT+"send_in_the_rabbit.png", "fallback":STAGE_ART+"agentic_core.png",
+		"kicker":"SEND IN THE RABBIT",
+		"caption":"NEW ERA. NEW VILLAINS.\nThe CodeRabbit answers the alert.",
+		"from":Vector3(.55,.32,1.6), "to":Vector3(.5,.44,1.25)}]
 const CARD_HOLD := {
 	"opening_situation":4.5, "opening_complication":4.5, "opening_resolution":4.5,
 	"boss_ai_slop":3.0, "boss_agent_army":3.0, "boss_ten_thousand_line_pr":3.0, "boss_ai_augmented_hacker":3.0,

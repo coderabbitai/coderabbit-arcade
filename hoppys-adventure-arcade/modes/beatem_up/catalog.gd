@@ -15,7 +15,27 @@ const FLOW := {
 	"enter_from_x":-60.0, "enter_to_x":180.0, "enter_max":1.6,
 	"stage_banner":2.8, "banner_slide":.3, "banner_fade":.6,
 	"exit_banner":2.0, "intro_hold":4.5, "enemy_grace":.8, "boss_dip":.6}
-const SOUND_ROOT := "res://Assets/Audio/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/"
+## The opening: three story scenes (story_scene.gd), each held for FLOW.intro_hold. image is the
+## painted scene; until it is imported, the district art in fallback stands in. from/to frame the
+## Ken Burns move as Vector3(focus x, focus y, zoom).
+const STORY_ROOT := "res://Assets/beatemup-story/code_city/"
+const STAGE_ART := "res://Assets/code-city-brawl-assets-only/code_city/"
+const STORY_ACCENT := Color("79e0c4")
+const STORY_SERIES := ""
+const STORY := [
+	{"image":STORY_ROOT+"under_siege.png", "fallback":STAGE_ART+"district_background.png",
+		"kicker":"CODE CITY: UNDER SIEGE",
+		"caption":"Rogue Code and Slop Code have escaped the review pipeline.\nThe terminals go dark.",
+		"from":Vector3(.5,.42,1.25), "to":Vector3(.6,.34,1.45)},
+	{"image":STORY_ROOT+"pipeline_breached.png", "fallback":STAGE_ART+"security_background.png",
+		"kicker":"REVIEW PIPELINE: BREACHED",
+		"caption":"The firewall is failing. Conflicting branches have taken over Git HQ.",
+		"from":Vector3(.66,.4,1.35), "to":Vector3(.38,.44,1.42)},
+	{"image":STORY_ROOT+"hoppy_clocks_in.png", "fallback":STAGE_ART+"hq_background.png",
+		"kicker":"HOPPY CLOCKS IN",
+		"caption":"The codebase needs a review. And Hoppy delivers.\nClear three districts and force the final merge.",
+		"from":Vector3(.5,.36,1.55), "to":Vector3(.5,.46,1.25)}]
+const SOUND_ROOT :="res://Assets/Audio/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/"
 const SOUNDS := {
 	"jab": preload(SOUND_ROOT + "Weapons/Melee/sfx_wpn_punch1.wav"),
 	"swing": preload(SOUND_ROOT + "Weapons/Melee/sfx_wpn_punch2.wav"),

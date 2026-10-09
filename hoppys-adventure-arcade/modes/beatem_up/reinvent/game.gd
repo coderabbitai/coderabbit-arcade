@@ -8,6 +8,7 @@ const StageFlow = preload("res://modes/beatem_up/stage_flow.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
 const PAUSABLE := ["combat","cards","boss_victory","stage_enter","stage_exit"]
 const TERMINAL_OVERLAY_ARM := .5
+const CARD_HINT := "Enter / View · Skip     Esc / Start · Pause"
 var rng := RandomNumberGenerator.new()
 var stage_index := 0
 var room := 0
@@ -408,7 +409,9 @@ func _physics_process(dt: float) -> void:
 	if state=="cards":
 		card_clock+=dt
 		if is_instance_valid(card):
-			card.position.x=(1.0-clampf(card_clock/.3,0,1))*1280
+			# Story scenes play in place on the card clock; the other cards slide in from the right.
+			if card.has_method("advance"): card.advance(card_clock,card_hold())
+			else: card.position.x=(1.0-clampf(card_clock/.3,0,1))*1280
 		if is_instance_valid(card_progress): card_progress.value=maxf(0,1.0-card_clock/card_hold())
 		if card_clock>=card_hold(): next_card()
 		return
@@ -905,8 +908,23 @@ func _load_card() -> void:
 	card=load(Art.PRESENTATION+card_queue[0]+".tscn").instantiate()
 	card.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	card_host.add_child(card)
-	card_clock=0;card.position.x=1280
-	var hint := Style.label("Enter / View · Skip     Esc / Start · Pause",16)
+	card_clock=0
+	if card.has_method("advance"):
+		# A story scene carries the hint and the drain bar in its lower letterbox bar.
+		card.position.x=0
+		card.hint.text=CARD_HINT
+		card_progress=card.drain
+		card.advance(0,card_hold())
+	else: _dress_card()
+	var name := card_queue[0]
+	if name.begins_with("boss_"): sound("reveal_"+name.trim_prefix("boss_"),player.position)
+	elif name.begins_with("unlock_"): sound("unlock",player.position)
+	_layout_card()
+
+## Slide-in cards get the hint and the drain bar along their bottom edge.
+func _dress_card() -> void:
+	card.position.x=1280
+	var hint := Style.label(CARD_HINT,16)
 	hint.position=Vector2(360,670)
 	card.add_child(hint)
 	card_progress=ProgressBar.new()
@@ -923,10 +941,6 @@ func _load_card() -> void:
 	card_progress.add_theme_stylebox_override("background",progress_background)
 	card_progress.add_theme_stylebox_override("fill",progress_fill)
 	card.add_child(card_progress)
-	var name := card_queue[0]
-	if name.begins_with("boss_"): sound("reveal_"+name.trim_prefix("boss_"),player.position)
-	elif name.begins_with("unlock_"): sound("unlock",player.position)
-	_layout_card()
 
 func card_hold() -> float:
 	if card_queue.is_empty(): return 0.0
