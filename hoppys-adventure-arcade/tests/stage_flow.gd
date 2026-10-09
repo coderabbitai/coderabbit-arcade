@@ -98,6 +98,9 @@ func cross_intro(page: int) -> void:
 	else: check(extra<=2 and game.state=="stage_enter" and game.stage_index==0 and not game.playing, "Third page leads into the stage entrance by 4.5s + ε")
 func check_intro() -> void:
 	check(game.state=="intro" and game.intro_page==0 and not game.playing, "Opening sequence precedes combat")
+	check(not game.toast_label.visible and game.held_toast=="", "Intro page 0 hides the encounter toast")
+	tick(60)
+	check(game.state=="intro" and game.intro_page==0 and not game.toast_label.visible and game.held_toast=="", "Intro page 0 still hides the encounter toast after ~1s")
 	cross_intro(0)
 	tick(30)
 	var page: int = game.intro_page

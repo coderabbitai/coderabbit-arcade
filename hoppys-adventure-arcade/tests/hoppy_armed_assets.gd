@@ -237,7 +237,8 @@ func validate_frames(path: String, label: String, cell: Vector2i, run_fps: int, 
 		for clip_name: String in CLIPS:
 			var clip: Variant = entry.clips.get(clip_name)
 			if clip is Dictionary:
-				check(clip.get("frames", []).size() == CLIPS[clip_name].frames, label + ": manifest frame list " + clip_name)
+				var listed: Variant = clip.get("frames")
+				check(listed is Array and listed.size() == CLIPS[clip_name].frames, label + ": manifest frame list " + clip_name)
 
 
 func has_contact_tip(anchors: Dictionary, step_name: String) -> bool:

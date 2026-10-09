@@ -1,6 +1,7 @@
 extends SceneTree
 const Catalog = preload("res://modes/beatem_up/reinvent/catalog.gd")
 const Art = preload("res://modes/beatem_up/reinvent/art.gd")
+const WeaponRig = preload("res://modes/beatem_up/reinvent/weapon_rig.gd")
 var game
 var failures := 0
 func _initialize() -> void: call_deferred("run")
@@ -344,6 +345,7 @@ func run() -> void:
 	p=game.player
 	p.set_physics_process(false)
 	p.controlled=false
+	check_carry_grips(p)
 
 	if DisplayServer.get_name()!="headless":
 		clear_capture_state()
@@ -479,6 +481,80 @@ func release_boss(boss) -> void:
 	game.bosses.clear()
 	game.boss=null
 	free_fx()
+
+## Paw texel under a centered carry, using the sprite's full transform (rotation included).
+func carry_texel(carry: Sprite2D, paw: Vector2, size: Vector2) -> Vector2:
+	return carry.get_transform().affine_inverse()*paw-carry.offset+size*.5
+
+func texel_opaque(image: Image, texel: Vector2) -> bool:
+	var center := Vector2i(roundi(texel.x),roundi(texel.y))
+	for y in range(center.y-1,center.y+2):
+		for x in range(center.x-1,center.x+2):
+			if x<0 or y<0 or x>=image.get_width() or y>=image.get_height(): continue
+			if image.get_pixel(x,y).a>.5: return true
+	return false
+
+## Highest opaque texel above the paw, in rig pixels. 0 when the icon stays at or below the paw.
+func carry_above_paw(carry: Sprite2D, image: Image, paw: Vector2) -> float:
+	var size := Vector2(image.get_width(),image.get_height())
+	var xform := carry.get_transform()
+	var above := 0.0
+	for y in image.get_height():
+		for x in image.get_width():
+			if image.get_pixel(x,y).a<=.5: continue
+			var local := carry.offset-size*.5+Vector2(x,y)
+			var rig: Vector2=xform*local
+			above=maxf(above,paw.y-rig.y)
+	return above
+
+## Every HvV carry, on the poses that draw the icon, keeps an opaque texel on the paw.
+## The scanner's quarter turn must also keep that icon from climbing into the face.
+func check_carry_grips(actor) -> void:
+	# Turned scanner tops out ~34 rig px above the paw; the untilted icon reaches ~56.
+	var face_limit := 40.0
+	actor.swing_left=0
+	actor.combo=0
+	actor.combo_window=0
+	actor.visual_weapon=""
+	actor.stagger=0
+	actor.height=0
+	actor.rise=0
+	actor.queued=false
+	for weapon in Catalog.WEAPONS:
+		actor.equip(weapon)
+		actor.pickup_time=0
+		var image: Image=Art.carry_texture(weapon).get_image()
+		var size := Vector2(image.get_width(),image.get_height())
+		for pose in ["walk_down","jump","victory"]:
+			for face in [1,-1]:
+				actor.facing=face
+				actor.pose_move=Vector2(0,1) if pose=="walk_down" else Vector2.ZERO
+				actor.swing_left=0
+				actor.visual_weapon=""
+				actor.pickup_time=0
+				actor.show_pose(pose)
+				actor.held.animate(weapon,1,0.0,false,Vector2.ZERO,0.0,pose)
+				var label := "%s %s facing %d"%[weapon,pose,face]
+				var carry: Sprite2D=actor.held.carry
+				var paw: Vector2=(WeaponRig.HANDS[pose]-WeaponRig.UNARMED_PIVOT)*Art.BODY_SCALE
+				var turned: float=float(WeaponRig.CARRY_TURN.get(weapon,0.0))
+				var texel: Vector2=carry_texel(carry,paw,size)
+				check(carry.visible and actor.body.animation==pose,label+" shows the carry")
+				check(is_equal_approx(carry.rotation,turned),label+" rotation is %s (got %s)"%[turned,carry.rotation])
+				check(carry.position.distance_to(paw)<2.0,label+" grip is on the paw (off by %s)"%carry.position.distance_to(paw))
+				check(texel_opaque(image,texel),label+" has an opaque texel under the paw (texel %s)"%texel)
+				if weapon=="security_scanner" and pose in ["walk_down","jump"]:
+					var rise := carry_above_paw(carry,image,paw)
+					check(rise<=face_limit,label+" stays under the face (rises %s rig px, limit %s)"%[rise,face_limit])
+	actor.swing_left=0
+	actor.visual_weapon=""
+	actor.weapon=""
+	actor.facing=1
+	actor.pose_move=Vector2.ZERO
+	actor.pickup_time=0
+	actor.height=0
+	actor.rise=0
+	actor.show_pose("idle")
 
 ## Clock-driven collapse for every villain, including a fused clone and the hacker's second vector.
 func check_defeat_visuals() -> void:

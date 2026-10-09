@@ -332,6 +332,28 @@ func run() -> void:
 	check(game.state=="stage_enter" and not game.overlay.visible,"Resume returns to stage_enter")
 	steps(1200,func(): return game.state=="combat")
 	check(game.state=="combat" and game.playing and not game.flow.active(),"stage_enter completes into combat after resume")
+	# M1: stage_enter clears the pickup line without hiding the label, so combat can show it again.
+	var weapon_drop: Dictionary={}
+	for item in game.pickups:
+		if Catalog.WEAPONS.has(item.kind): weapon_drop=item
+	check(not weapon_drop.is_empty(),"Stage change leaves a weapon on the floor")
+	if not weapon_drop.is_empty():
+		game.hazard_clock=30
+		game.ally_clock=30
+		game.player.set_physics_process(false)
+		game.player.controlled=false
+		game.player.height=0
+		game.player.position=weapon_drop.node.position+Vector2(20,0)
+		game._physics_process(1.0/60.0)
+		check(game.prompt.is_visible_in_tree() and game.prompt.text.begins_with("E / Y · PICK UP"),"Pickup prompt shows within 85 px after a stage change (got '%s')" % game.prompt.text)
+	var score_kept: int=game.score
+	game.boss_defeated()
+	check(game.prompt.visible,"boss_defeated clears the pickup line without hiding it (text '%s')" % game.prompt.text)
+	game.exit_stage()
+	check(game.prompt.visible,"exit_stage clears the pickup line without hiding it (text '%s')" % game.prompt.text)
+	game.flow.cancel()
+	game.score=score_kept
+	game.boss_rewarded=false
 	await stage(2)
 	# Retry restores stage-entry score/capabilities and clears transient state.
 	game.checkpoint_score=123;game.checkpoint_capabilities={"review":true,"triage":true,"change_stack":true,"security":false}
