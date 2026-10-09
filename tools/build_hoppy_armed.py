@@ -25,6 +25,11 @@ ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "hoppys-adventure-arcade" / "Assets"
 SMALL_FRAGMENT_PIXELS = 200
 SMALL_FRAGMENT_MAX_DISTANCE = 10
+CARRY_ORIENTATIONS = {
+    "flip_h": Image.Transpose.FLIP_LEFT_RIGHT,
+    "flip_v": Image.Transpose.FLIP_TOP_BOTTOM,
+    "rotate_180": Image.Transpose.ROTATE_180,
+}
 
 
 @dataclass(frozen=True)
@@ -46,6 +51,11 @@ class Weapon:
     # Optional packed-frame -> generated-source-cell mapping. An empty tuple
     # retains the source's row-major order exactly.
     source_order: tuple[int, ...] = ()
+    # Optional carry-icon transpose (a CARRY_ORIENTATIONS key) for a weapon the
+    # baked sheet holds by the other end. It needs carry_grip: the oriented
+    # icon's texel the paw holds, written to the manifest for the runtime.
+    carry_orientation: str = ""
+    carry_grip: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -182,6 +192,10 @@ MODES = (
                     None, None, (64, 89), None,
                 ),
                 source_order=(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 7, 14, 15),
+                # The sheet grips the cord with the key at the striking end; the
+                # cel holds the key. Mirror the carry and hold the coil's left side.
+                carry_orientation="flip_h",
+                carry_grip=(8, 24),
             ),
             Weapon(
                 weapon="git_branch",
@@ -817,6 +831,23 @@ def visible_bounds(image: Image.Image) -> tuple[int, int, int, int]:
     return alpha_bbox(image)
 
 
+def orient_carry(icon: Image.Image, spec: Weapon | None, label: str) -> tuple[Image.Image, dict[str, object]]:
+    """Apply a weapon's opt-in carry transpose and validate the paw texel it declares."""
+    if spec is None or not spec.carry_orientation:
+        if spec is not None and spec.carry_grip is not None:
+            raise ValueError(f"{label}: carry_grip needs a carry_orientation")
+        return icon, {}
+    if spec.carry_orientation not in CARRY_ORIENTATIONS:
+        raise ValueError(f"{label}: unknown carry_orientation {spec.carry_orientation!r}")
+    if spec.carry_grip is None:
+        raise ValueError(f"{label}: carry_orientation needs a carry_grip")
+    icon = icon.transpose(CARRY_ORIENTATIONS[spec.carry_orientation])
+    x, y = spec.carry_grip
+    if not (0 <= x < icon.width and 0 <= y < icon.height) or icon.getpixel((x, y))[3] < 128:
+        raise ValueError(f"{label}: carry_grip {spec.carry_grip} is not an opaque texel of the oriented icon")
+    return icon, {"orientation": spec.carry_orientation, "grip": [x, y]}
+
+
 def write_carry_icons(pack: Path, mode: Mode, packed: dict[str, PackedWeapon]) -> dict[str, object]:
     """Build carries from each baked hold_idle sheet when one is available."""
     source = Image.open(mode.weapon_source).convert("RGBA")
@@ -857,6 +888,7 @@ def write_carry_icons(pack: Path, mode: Mode, packed: dict[str, PackedWeapon]) -
             weapon_scale = weapon_baked_length / source_length
         target_length = max(1, round(source_length * weapon_scale))
         icon = icon.resize(nearest_size(icon.width, icon.height, weapon_scale), Image.Resampling.NEAREST)
+        icon, orientation = orient_carry(icon, baked.spec if baked is not None else None, f"{mode.directory}/{weapon}")
         icon_bounds = visible_bounds(icon)
         actual_length = max(icon_bounds[2] - icon_bounds[0], icon_bounds[3] - icon_bounds[1])
         if abs(actual_length - target_length) > max(1, round(target_length * 0.1)):
@@ -878,6 +910,7 @@ def write_carry_icons(pack: Path, mode: Mode, packed: dict[str, PackedWeapon]) -
                 "hold_idle_bounds": list(baked_bounds),
                 "baked_length": weapon_baked_length,
             })
+        entry.update(orientation)
         weapons[weapon] = entry
     return {
         "rule": (

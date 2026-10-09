@@ -64,7 +64,12 @@
           33,
           31
         ],
-        "baked_length": 33
+        "baked_length": 33,
+        "orientation": "flip_h",
+        "grip": [
+          8,
+          24
+        ]
       },
       "git_branch": {
         "source_visible_bounds": [

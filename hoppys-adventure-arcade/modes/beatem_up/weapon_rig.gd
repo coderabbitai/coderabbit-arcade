@@ -4,7 +4,8 @@ extends Node2D
 ## legacy hand-animated cel for weapons that have no armed sheet yet. Driven by combat
 ## time, so pause, hit interruption and facing changes cannot desynchronize a tween.
 const Art = preload("res://modes/beatem_up/art.gd")
-## Grip texel in each 128 px weapon cel. The carry icon is that cel downsampled.
+## Grip texel in each 128 px weapon cel. The carry icon is that cel downsampled, unless
+## the manifest gives a reoriented carry its own grip (Art.carry_grip).
 const GRIPS := {
 	"debug_stick": Vector2(33,86), "linter_staff": Vector2(24,91),
 	"api_key_whip": Vector2(28,91), "git_branch": Vector2(25,90),
@@ -98,7 +99,8 @@ func _carry(kind: String) -> void:
 	var icon := Art.carry(kind)
 	carry.texture = icon
 	carry.scale = body.scale
-	carry.offset = -(GRIPS[kind]*float(icon.get_width())/128.0).round()
+	var grip: Variant = Art.carry_grip(kind)
+	carry.offset = -(GRIPS[kind]*float(icon.get_width())/128.0).round() if grip == null else -Vector2(grip)
 	carry.position = (hand-UNARMED_PIVOT)*body.scale.y
 	carry.show()
 

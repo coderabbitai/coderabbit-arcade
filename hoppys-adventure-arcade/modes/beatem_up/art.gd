@@ -42,6 +42,11 @@ static func armed_offset(weapon: String) -> Vector2:
 static func carry(weapon: String) -> Texture2D:
 	if not carry_icons.has(weapon): carry_icons[weapon] = load(ARMED + "carry/" + weapon + ".png")
 	return carry_icons[weapon]
+## Icon texel the paw holds when the builder reoriented the carry; null keeps the cel grip.
+static func carry_grip(weapon: String) -> Variant:
+	armed_spec(weapon)
+	var grip: Variant = armed_manifest.get("carry_calibration", {}).get("weapons", {}).get(weapon, {}).get("grip")
+	return Vector2(grip[0], grip[1]) if grip is Array and grip.size() == 2 else null
 static func shadow(radius := 27.0) -> Polygon2D:
 	var p := Polygon2D.new()
 	var points := PackedVector2Array()
