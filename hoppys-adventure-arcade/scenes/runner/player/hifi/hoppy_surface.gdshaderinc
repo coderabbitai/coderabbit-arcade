@@ -22,6 +22,7 @@ uniform float light_gain : hint_range(0.0, 1.0) = 0.5;
 uniform float front_fill : hint_range(0.0, 1.0) = 0.0;
 // Cape LED strip: the accessory GLB surface carries COLOR_0 (R = LED, G = segment 0..1).
 // Only surfaces the visual flags with has_led_mask read it; missing COLOR defaults to white.
+#ifndef BOSS_SURFACE
 uniform bool has_led_mask = false;
 uniform vec4 led_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
 uniform float led_level = 0.0;
@@ -66,6 +67,7 @@ void fragment() {
 	float front = clamp(dot(NORMAL, facing), 0.0, 1.0);
 	EMISSION = base * (ambient_fill.rgb * ambient_energy + vec3(front_fill * front)) * orm.r + baked + vec3(flash * 0.35);
 }
+#endif
 void light() {
 	float luma = dot(LIGHT_COLOR, vec3(0.2126, 0.7152, 0.0722));
 	vec3 lc = mix(LIGHT_COLOR, vec3(luma), chroma_lock) * light_gain;

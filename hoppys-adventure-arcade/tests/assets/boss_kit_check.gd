@@ -1,0 +1,247 @@
+extends SceneTree
+
+const MODEL_SCRIPT_PATH := "res://scenes/runner/boss/hifi/boss_model.gd"
+const SELFTEST_PATH := "res://Assets/runner/bosses/kit_selftest/kit_selftest.glb"
+const BUILD_PATH := "res://Assets/runner/bosses/kit_selftest/kit_selftest.build.json"
+const ACTIONS: Array[StringName] = [&"intro", &"idle", &"telegraph", &"attack", &"hurt", &"phase_change", &"defeat", &"retreat"]
+const SOCKETS: Array[StringName] = [&"fx_core", &"fx_0", &"fx_1", &"fx_2", &"fx_3", &"fx_4", &"fx_5", &"muzzle_0", &"muzzle_1", &"muzzle_2"]
+const MAX_TRIANGLES := 18000
+const MAX_MATERIALS := 4
+const MAX_BONES := 40
+const MAX_SURFACES := 6
+
+var checks := 0
+var failures := 0
+
+
+func _initialize() -> void:
+	call_deferred("run")
+
+
+func check(ok: bool, message: String) -> void:
+	checks += 1
+	if not ok:
+		failures += 1
+		push_error("BOSS KIT: " + message)
+
+
+func has_shader_param(material: ShaderMaterial, name: StringName) -> bool:
+	if material == null or material.shader == null:
+		return false
+	for uniform: Dictionary in material.shader.get_shader_uniform_list():
+		if StringName(uniform.get("name", "")) == name:
+			return true
+	return false
+
+
+func check_build_report() -> Dictionary:
+	check(FileAccess.file_exists(BUILD_PATH), "host-generated kit self-test build report exists")
+	if not FileAccess.file_exists(BUILD_PATH):
+		return {}
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(BUILD_PATH))
+	check(parsed is Dictionary, "build report parses as an object")
+	if not parsed is Dictionary:
+		return {}
+	var report: Dictionary = parsed
+	check(report.get("quick", true) == false, "self-test uses the full bake")
+	check(int(report.get("animation_sample_rate", -1)) == 120, "build report samples animations at 120 Hz")
+	check(int(report.get("triangles", -1)) >= 0 and int(report.get("triangles", MAX_TRIANGLES + 1)) <= MAX_TRIANGLES, "build report triangle budget <= 18000")
+	check(int(report.get("materials", -1)) >= 0 and int(report.get("materials", MAX_MATERIALS + 1)) <= MAX_MATERIALS, "build report material budget <= 4")
+	check(int(report.get("bones", -1)) >= 0 and int(report.get("bones", MAX_BONES + 1)) <= MAX_BONES, "build report bone budget <= 40")
+	check(int(report.get("surfaces", -1)) >= 0 and int(report.get("surfaces", MAX_SURFACES + 1)) <= MAX_SURFACES, "build report surface budget <= 6")
+	var actions: Array = report.get("actions", [])
+	for action in ACTIONS:
+		check(actions.has(String(action)) or actions.has(action), "build report includes action " + String(action))
+	var sockets: Array = report.get("sockets", [])
+	for socket_name in SOCKETS:
+		check(sockets.has(String(socket_name)) or sockets.has(socket_name), "build report includes socket " + String(socket_name))
+	return report
+
+
+func mesh_skeleton_census(model: Node3D) -> Dictionary:
+	var triangle_count := 0
+	var surface_count := 0
+	var materials: Dictionary = {}
+	var bone_count := 0
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		if mesh_instance.mesh == null:
+			continue
+		for surface in mesh_instance.mesh.get_surface_count():
+			surface_count += 1
+			var arrays := mesh_instance.mesh.surface_get_arrays(surface)
+			var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+			var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			triangle_count += (indices.size() if not indices.is_empty() else vertices.size()) / 3
+			var source := mesh_instance.mesh.surface_get_material(surface)
+			if source != null:
+				materials[source.get_instance_id()] = true
+	for node in model.find_children("*", "Skeleton3D", true, false):
+		bone_count += (node as Skeleton3D).get_bone_count()
+	return {"triangles": triangle_count, "materials": materials.size(), "bones": bone_count, "surfaces": surface_count}
+
+
+func check_mesh_skeleton_census(model: Node3D, report: Dictionary) -> void:
+	var census := mesh_skeleton_census(model)
+	for key in ["triangles", "materials", "bones", "surfaces"]:
+		check(int(report.get(key, -1)) == int(census[key]), "build report %s matches imported census (%d vs %d)" % [key, int(report.get(key, -1)), int(census[key])])
+
+
+func check_imported_orm(model: Node3D) -> void:
+	var packed_orm_count := 0
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		if mesh_instance.mesh == null:
+			continue
+		for surface in mesh_instance.mesh.get_surface_count():
+			var source := mesh_instance.mesh.surface_get_material(surface) as BaseMaterial3D
+			if source == null or source.get_texture(BaseMaterial3D.TEXTURE_METALLIC) == null:
+				continue
+			packed_orm_count += 1
+			check(source.get_texture(BaseMaterial3D.TEXTURE_AMBIENT_OCCLUSION) == source.get_texture(BaseMaterial3D.TEXTURE_METALLIC), "imported occlusion and metallic slots use packed ORM")
+			check(source.get_texture(BaseMaterial3D.TEXTURE_ROUGHNESS) == source.get_texture(BaseMaterial3D.TEXTURE_METALLIC), "imported roughness and metallic slots use packed ORM")
+			check(source.ao_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_RED, "imported ORM red channel is occlusion")
+			check(source.roughness_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_GREEN, "imported ORM green channel is roughness")
+			check(source.metallic_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_BLUE, "imported ORM blue channel is metallic")
+	check(packed_orm_count > 0, "imported GLB contains at least one packed ORM surface")
+
+
+func check_instance_isolation(first: Node3D, second: Node3D) -> void:
+	var first_materials: Array = first.get("materials")
+	var second_materials: Array = second.get("materials")
+	check(first_materials.size() > 0, "loaded model exposes shader materials")
+	check(first_materials.size() == second_materials.size(), "instances expose matching material sets")
+	for index in mini(first_materials.size(), second_materials.size()):
+		var first_material: Variant = first_materials[index]
+		var second_material: Variant = second_materials[index]
+		check(first_material is ShaderMaterial and second_material is ShaderMaterial, "runtime material is a ShaderMaterial")
+		if not first_material is ShaderMaterial or not second_material is ShaderMaterial:
+			continue
+		check(first_material != second_material, "mutable shader materials are per-instance")
+		for parameter in [&"dissolve", &"flash", &"phase_tint"]:
+			check(has_shader_param(first_material, parameter), "shader declares " + String(parameter))
+			check(has_shader_param(second_material, parameter), "peer shader declares " + String(parameter))
+			check(first_material.get_shader_parameter(parameter) == second_material.get_shader_parameter(parameter), "instances begin with equal " + String(parameter))
+		first_material.set_shader_parameter(&"flash", 0.37)
+		check(not is_equal_approx(float(second_material.get_shader_parameter(&"flash")), 0.37), "mutating one instance does not change peer flash")
+		first_material.set_shader_parameter(&"flash", 0.0)
+
+
+func check_socket_animation(instance: Node3D, animation_player: AnimationPlayer) -> void:
+	var socket := instance.call("socket", &"muzzle_0") as Node3D
+	check(socket != null, "arm-attached muzzle socket exists")
+	if socket == null or not animation_player.has_animation(&"attack"):
+		return
+	var model := instance.get("model") as Node3D
+	var skeletons: Array = model.find_children("*", "Skeleton3D", true, false)
+	animation_player.stop()
+	animation_player.play(&"attack", 0.0)
+	animation_player.speed_scale = 0.0
+	var attack_clip: Animation = animation_player.get_animation(&"attack")
+	animation_player.seek(0.0, true)
+	await process_frame
+	for skeleton_node in skeletons:
+		(skeleton_node as Skeleton3D).force_update_all_bone_transforms()
+	var start := socket.global_position
+	var arm_index := (skeletons[0] as Skeleton3D).find_bone("arm")
+	var arm_rotation_start := (skeletons[0] as Skeleton3D).get_bone_pose_rotation(arm_index)
+	animation_player.seek(attack_clip.length * 0.5, true)
+	await process_frame
+	for skeleton_node in skeletons:
+		(skeleton_node as Skeleton3D).force_update_all_bone_transforms()
+	var arm_rotation_middle := (skeletons[0] as Skeleton3D).get_bone_pose_rotation(arm_index)
+	check(not arm_rotation_middle.is_equal_approx(arm_rotation_start), "arm bone rotates during attack")
+	check(socket.global_position.distance_to(start) > 0.01, "muzzle socket follows its animated arm bone during attack")
+	animation_player.speed_scale = 1.0
+
+
+func run() -> void:
+	await process_frame
+	check(FileAccess.file_exists(SELFTEST_PATH), "host-generated kit self-test GLB exists")
+	var build_report := check_build_report()
+	check(FileAccess.file_exists(MODEL_SCRIPT_PATH), "BossModel loader script exists")
+	if not FileAccess.file_exists(MODEL_SCRIPT_PATH):
+		finish()
+		return
+	var model_script: Script = load(MODEL_SCRIPT_PATH)
+	check(model_script != null, "BossModel script loads")
+	if model_script == null:
+		finish()
+		return
+	var fallback: Variant = model_script.call("load_model", "res://Assets/runner/bosses/kit_selftest/missing.glb")
+	check(fallback == null, "missing model path returns null for procedural fallback")
+	if not FileAccess.file_exists(SELFTEST_PATH):
+		finish()
+		return
+	var first: Variant = model_script.call("load_model", SELFTEST_PATH)
+	check(first is Node3D, "self-test GLB loads through BossModel")
+	if not first is Node3D:
+		finish()
+		return
+	root.add_child(first)
+	var second: Variant = model_script.call("load_model", SELFTEST_PATH)
+	check(second is Node3D, "second self-test instance loads")
+	if not second is Node3D:
+		first.free()
+		finish()
+		return
+	root.add_child(second)
+	var imported_model := first.get("model") as Node3D
+	check_imported_orm(imported_model)
+	check_mesh_skeleton_census(imported_model, build_report)
+	var animation_player: Variant = first.get("animation_player")
+	check(animation_player is AnimationPlayer, "loaded instance exposes AnimationPlayer")
+	if animation_player is AnimationPlayer:
+		for action in ACTIONS:
+			check(animation_player.has_animation(action), "runtime animation exists: " + String(action))
+		var idle: Animation = animation_player.get_animation(&"idle") if animation_player.has_animation(&"idle") else null
+		check(idle != null and idle.loop_mode != Animation.LOOP_NONE, "idle animation loops")
+		first.call("play", &"idle")
+		check(animation_player.current_animation == &"idle", "play(idle) selects idle")
+		first.call("set_time_factor", 0.25)
+		check(is_equal_approx(animation_player.speed_scale, 0.25), "time factor scales animation playback")
+		first.call("set_time_factor", 1.0)
+		await check_socket_animation(first, animation_player)
+	else:
+		for action in ACTIONS:
+			check(false, "runtime animation cannot be checked without AnimationPlayer: " + String(action))
+	for socket_name in SOCKETS:
+		var socket: Variant = first.call("socket", socket_name)
+		check(socket is Node3D, "socket resolves to Node3D: " + String(socket_name))
+	var materials: Variant = first.get("materials")
+	check(materials is Array, "loaded instance exposes materials array")
+	if materials is Array:
+		check(materials.size() > 0, "GLB surfaces have rebuilt materials")
+		for material: Variant in materials:
+			check(material is ShaderMaterial, "rebuilt material uses boss shader")
+			if material is ShaderMaterial:
+				check(has_shader_param(material, &"dissolve"), "boss shader exposes dissolve")
+				check(has_shader_param(material, &"flash"), "boss shader exposes flash")
+				check(has_shader_param(material, &"phase_tint"), "boss shader exposes phase_tint")
+	check_instance_isolation(first, second)
+	if materials is Array:
+		first.call("set_dissolve", 0.23)
+		first.call("set_flash", 0.61)
+		first.call("set_phase_tint", Color(0.2, 0.6, 0.9, 1.0))
+		for material: Variant in materials:
+			if material is ShaderMaterial:
+				check(is_equal_approx(float(material.get_shader_parameter(&"dissolve")), 0.23), "set_dissolve updates rebuilt surfaces")
+				check(is_equal_approx(float(material.get_shader_parameter(&"flash")), 0.61), "set_flash updates rebuilt surfaces")
+				check(material.get_shader_parameter(&"phase_tint").is_equal_approx(Color(0.2, 0.6, 0.9, 1.0)), "set_phase_tint updates rebuilt surfaces")
+	for material: Variant in second.get("materials"):
+		if material is ShaderMaterial:
+			check(is_equal_approx(float(material.get_shader_parameter(&"dissolve")), 0.0), "peer dissolve remains unchanged")
+			check(is_equal_approx(float(material.get_shader_parameter(&"flash")), 0.0), "peer flash remains unchanged")
+			check(material.get_shader_parameter(&"phase_tint").is_equal_approx(Color.WHITE), "peer phase tint remains unchanged")
+	first.free()
+	second.free()
+	finish()
+
+
+func finish() -> void:
+	call_deferred("finish_after_cleanup")
+
+
+func finish_after_cleanup() -> void:
+	print("BOSS KIT CHECK: %s (%d checks)" % ["PASS" if failures == 0 else "FAIL", checks])
+	quit(0 if failures == 0 else 1)
