@@ -64,6 +64,17 @@ def checked_relative_path(value: object, label: str) -> Path:
     return path
 
 
+def checked_source_path(value: object, label: str, mode: str) -> Path:
+    """Accept only a generated master below this scene mode's sources directory."""
+    path = checked_relative_path(value, label)
+    source_dir = Path(mode) / "sources"
+    if path.parts[: len(source_dir.parts)] != source_dir.parts or len(path.parts) == len(
+        source_dir.parts
+    ):
+        raise ValueError(f"{label}: path must name a file inside {source_dir.as_posix()}/")
+    return path
+
+
 def read_records() -> dict[tuple[str, str], dict[str, object]]:
     """Read one complete, data-owned provenance record for every scene."""
     source = STORY / "refinements.json"
@@ -97,14 +108,16 @@ def read_records() -> dict[tuple[str, str], dict[str, object]]:
         )
 
     for scene_id in expected:
-        validate_record(records[scene_id], f"{source}: {scene_id[0]}/{scene_id[1]}")
+        validate_record(records[scene_id], f"{source}: {scene_id[0]}/{scene_id[1]}", scene_id[0])
     return records
 
 
-def validate_record(record: dict[str, object], label: str) -> None:
+def validate_record(record: dict[str, object], label: str, mode: str) -> None:
     """Validate enough provenance to keep source choice and prompt history auditable."""
-    for key in ("master", "original_master"):
-        checked_relative_path(record.get(key), f"{label} {key}")
+    selected_paths = {
+        key: checked_source_path(record.get(key), f"{label} {key}", mode)
+        for key in ("master", "original_master")
+    }
     for key in ("change", "prompt"):
         if not isinstance(record.get(key), str) or not record[key]:
             raise ValueError(f"{label}: {key} must be a non-empty string")
@@ -114,12 +127,14 @@ def validate_record(record: dict[str, object], label: str) -> None:
     masters = record.get("retained_masters")
     if not isinstance(masters, list) or not masters:
         raise ValueError(f"{label}: retained_masters must be a non-empty list")
-    master_names = [checked_relative_path(value, f"{label} retained_masters") for value in masters]
+    master_names = [
+        checked_source_path(value, f"{label} retained_masters", mode) for value in masters
+    ]
     if len(set(master_names)) != len(master_names):
         raise ValueError(f"{label}: retained_masters must not repeat paths")
-    if checked_relative_path(record["master"], f"{label} master") not in master_names:
+    if selected_paths["master"] not in master_names:
         raise ValueError(f"{label}: selected master must be retained")
-    if checked_relative_path(record["original_master"], f"{label} original_master") not in master_names:
+    if selected_paths["original_master"] not in master_names:
         raise ValueError(f"{label}: original master must be retained")
 
     history = record.get("prompt_history")
