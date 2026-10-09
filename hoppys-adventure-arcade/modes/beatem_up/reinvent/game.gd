@@ -419,8 +419,10 @@ func _physics_process(dt: float) -> void:
 		return
 	if not playing: return
 	elapsed+=dt;reveal_time=maxf(0,reveal_time-dt);surge_cooldown=maxf(0,surge_cooldown-dt)
-	_tick_items(dt);_tick_threats(dt);_tick_allies(dt);_tick_capabilities(dt)
+	_tick_items(dt);_tick_threats(dt)
+	# A fatal hit starts the knockout here, so no ally, toast or zone acts on that frame.
 	if not playing: return
+	_tick_allies(dt);_tick_capabilities(dt)
 	check_boss_state()
 	if not playing: return
 	if room<2 and not gate_open and living_enemies()==0:
@@ -561,7 +563,8 @@ func game_over() -> void:
 	show_overlay("REVIEW FAILED", "Retry %s with 3 HP and fresh equipment." % Catalog.TITLES[stage_index],"Retry current stage",retry_stage)
 
 func boss_defeated() -> void:
-	if boss_rewarded: return
+	# A knocked-out Hoppy can't win: the knockout ends in game over.
+	if boss_rewarded or state=="knockout": return
 	if flow.active(): flow.cancel()
 	boss_rewarded=true
 	playing=false;clear_threats()

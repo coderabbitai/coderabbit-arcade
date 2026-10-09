@@ -382,8 +382,9 @@ func _physics_process(dt: float) -> void:
 	camera.zoom = Vector2.ONE*minf(view.x/1280.0,view.y/720.0)
 	_tick_items(dt)
 	_tick_threats(dt)
-	_tick_allies(dt)
+	# A fatal hit starts the knockout here, so no ally arrives or speaks on that frame.
 	if not playing: return
+	_tick_allies(dt)
 	if not gate_open and living_enemies()==0 and not is_instance_valid(boss):
 		gate_open = true
 		gate.hide()
@@ -539,7 +540,8 @@ func game_over() -> void:
 	show_overlay("REVIEW FAILED", "Retry %s with 3 HP and fresh equipment." % Catalog.TITLES[stage_index],"Retry current stage",retry_stage)
 
 func boss_defeated() -> void:
-	if state=="finisher" or state=="won": return
+	# A knocked-out Hoppy can't win: the knockout ends in game over.
+	if state in ["finisher","won","knockout"]: return
 	# No stage sequence may outlive the boss; a boss-music swap still finishes (it isn't one).
 	if flow.active(): flow.cancel()
 	playing = false
