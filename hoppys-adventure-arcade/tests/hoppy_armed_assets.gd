@@ -1,6 +1,8 @@
 extends SceneTree
-## Checks any armed Hoppy assets that have been packed so far. Missing sheets
-## are reported as pending until the pipeline is made strict in T7.
+## Strict pack contract for every armed Hoppy sheet.
+## All 11 sheets (6 Code City, 5 Heroes vs. Villains) are required. A missing
+## sheet, SpriteFrames resource, manifest entry, source master, carry icon,
+## PROMPTS.md, preview.png, sources/ directory, or carry/ directory fails.
 
 const ROOT := "res://Assets/hoppy-armed/"
 const EXPECTED := {
@@ -30,7 +32,6 @@ const CLIPS := {
 }
 
 var failures := 0
-var missing: Array[String] = []
 
 
 func _initialize() -> void:
@@ -44,12 +45,15 @@ func check(ok: bool, context: String) -> void:
 
 
 func run() -> void:
+	var required := 0
+	for mode: String in EXPECTED:
+		var expected: Dictionary = EXPECTED[mode]
+		required += expected.weapons.size()
+	check(required == 11, "armed pack lists 11 sheets")
 	for mode: String in EXPECTED:
 		validate_mode(mode, EXPECTED[mode])
-	if not missing.is_empty():
-		print("PENDING (non-strict): missing armed sheets: ", ", ".join(missing))
 	if failures == 0:
-		print("PASS: armed Hoppy assets present so far satisfy the pilot pack contract.")
+		print("PASS: all 11 armed Hoppy sheets satisfy the pack contract.")
 	else:
 		printerr(failures, " armed asset checks failed")
 	quit(0 if failures == 0 else 1)
@@ -59,30 +63,19 @@ func validate_mode(mode: String, expected: Dictionary) -> void:
 	var folder := ROOT + mode + "/"
 	var manifest_path := folder + "manifest.json"
 	var manifest: Dictionary = {}
-	var mode_has_assets := false
-	for weapon: String in expected.weapons:
-		mode_has_assets = mode_has_assets or FileAccess.file_exists(folder + weapon + ".png") or FileAccess.file_exists(folder + weapon + ".tres")
 	if FileAccess.file_exists(manifest_path):
 		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(manifest_path))
 		check(parsed is Dictionary, mode + ": manifest.json must contain an object")
 		if parsed is Dictionary:
 			manifest = parsed
 	else:
-		if mode_has_assets:
-			check(false, mode + ": manifest.json missing")
-	if mode_has_assets:
-		check(FileAccess.file_exists(folder + "PROMPTS.md"), mode + ": PROMPTS.md missing")
-		check(FileAccess.file_exists(folder + "preview.png"), mode + ": preview.png missing")
-		check(DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(folder + "sources/")), mode + ": sources/ missing")
+		check(false, mode + ": manifest.json missing")
 
 	for weapon: String in expected.weapons:
 		var png_path := folder + weapon + ".png"
 		var tres_path := folder + weapon + ".tres"
 		var has_png := FileAccess.file_exists(png_path)
 		var has_tres := FileAccess.file_exists(tres_path)
-		if not has_png and not has_tres:
-			missing.append(mode + "/" + weapon)
-			continue
 		check(has_png, mode + "/" + weapon + ": PNG sheet missing")
 		check(has_tres, mode + "/" + weapon + ": SpriteFrames resource missing")
 		var entry := manifest_entry(manifest, weapon)
@@ -92,14 +85,14 @@ func validate_mode(mode: String, expected: Dictionary) -> void:
 			check(false, mode + "/" + weapon + ": absent from manifest")
 		if has_png:
 			validate_sheet(png_path, mode + "/" + weapon, expected.cell, entry)
-			check(FileAccess.file_exists(folder + "sources/" + weapon + ".png"), mode + "/" + weapon + ": untouched source master missing")
-			check(FileAccess.file_exists(folder + "carry/" + weapon + ".png"), mode + "/" + weapon + ": carry icon missing")
+		check(FileAccess.file_exists(folder + "sources/" + weapon + ".png"), mode + "/" + weapon + ": untouched source master missing")
+		check(FileAccess.file_exists(folder + "carry/" + weapon + ".png"), mode + "/" + weapon + ": carry icon missing")
 		if has_tres:
 			validate_frames(tres_path, mode + "/" + weapon, expected.cell, expected.run_fps, entry)
 
-	validate_optional_pack_file(folder + "PROMPTS.md", mode + ": PROMPTS.md")
-	validate_optional_pack_file(folder + "preview.png", mode + ": preview.png")
-	validate_optional_pack_file(folder + "sources/", mode + ": sources/")
+	validate_pack_file(folder + "PROMPTS.md", mode + ": PROMPTS.md")
+	validate_pack_file(folder + "preview.png", mode + ": preview.png")
+	validate_pack_file(folder + "sources/", mode + ": sources/")
 	validate_carry(folder, mode, expected, manifest)
 
 
@@ -265,11 +258,14 @@ func has_contact_tip(anchors: Dictionary, step_name: String) -> bool:
 	return false
 
 
-func validate_optional_pack_file(path: String, label: String) -> void:
+func validate_pack_file(path: String, label: String) -> void:
 	if path.ends_with("/"):
-		if DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(path)):
+		var absolute := ProjectSettings.globalize_path(path)
+		check(DirAccess.dir_exists_absolute(absolute), label + " missing")
+		if DirAccess.dir_exists_absolute(absolute):
 			check(not DirAccess.get_files_at(path).is_empty(), label + " must not be empty")
 		return
+	check(FileAccess.file_exists(path), label + " missing")
 	if FileAccess.file_exists(path) and path.ends_with(".png"):
 		var image := Image.new()
 		check(image.load(path) == OK and image.get_used_rect().has_area(), label + " must be a readable nonempty PNG")
@@ -278,7 +274,7 @@ func validate_optional_pack_file(path: String, label: String) -> void:
 func validate_carry(folder: String, mode: String, expected: Dictionary, manifest: Dictionary) -> void:
 	var carry_folder := folder + "carry/"
 	if not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(carry_folder)):
-		return
+		check(false, mode + ": carry/ missing")
 	var calibration: Variant = manifest.get("carry_calibration", {})
 	check(calibration is Dictionary, mode + ": carry_calibration object missing")
 	if not calibration is Dictionary:
@@ -331,7 +327,6 @@ func validate_carry(folder: String, mode: String, expected: Dictionary, manifest
 				check(absi(target_length - roundi(source_length * carry_scale)) <= 1, mode + "/carry/" + weapon + ": target_length does not follow documented carry_scale")
 		var path := carry_folder + weapon + ".png"
 		if not FileAccess.file_exists(path):
-			missing.append(mode + "/carry/" + weapon)
 			continue
 		var image := Image.new()
 		var error := image.load(path)

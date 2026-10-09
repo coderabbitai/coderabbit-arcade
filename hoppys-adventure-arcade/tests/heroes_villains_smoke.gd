@@ -25,7 +25,9 @@ func run() -> void:
 	await capture("mode_select")
 	check(current_scene.selected_mode==1 and current_scene.description.text.contains("FOUR VILLAINS"),"Mode select previews Heroes vs. Villains")
 	root.get_node("AppRouter").go("heroes_vs_villains")
-	for i in 100:
+	# The router fades on a clock; rendered frames can be far shorter than 1/60 s.
+	var deadline: int=Time.get_ticks_msec()+5000
+	while Time.get_ticks_msec()<deadline:
 		await process_frame
 		if is_instance_valid(current_scene) and current_scene.scene_file_path.ends_with("heroes_vs_villains.tscn") and not root.get_node("AppRouter").busy: break
 	game=current_scene
@@ -141,7 +143,8 @@ func run() -> void:
 	check(game.capabilities.review and game.capabilities.triage and game.capabilities.change_stack and game.capabilities.security,"All capabilities persist through the run")
 	await capture("victory_result")
 	game.leave()
-	for i in 100:
+	deadline=Time.get_ticks_msec()+5000
+	while Time.get_ticks_msec()<deadline:
 		await process_frame
 		if is_instance_valid(current_scene) and current_scene.scene_file_path.ends_with("beatem_menu.tscn") and not root.get_node("AppRouter").busy: break
 	check(current_scene.scene_file_path.ends_with("beatem_menu.tscn") and not paused,"Victory returns to an unpaused mode menu")

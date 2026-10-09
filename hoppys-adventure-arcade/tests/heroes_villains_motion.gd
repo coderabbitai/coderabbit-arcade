@@ -1,5 +1,6 @@
 extends SceneTree
 const Catalog = preload("res://modes/beatem_up/reinvent/catalog.gd")
+const Art = preload("res://modes/beatem_up/reinvent/art.gd")
 var game
 var failures := 0
 func _initialize() -> void: call_deferred("run")
@@ -238,12 +239,22 @@ func run() -> void:
 			p.show_pose("idle")
 			check(p.held.get_index()>p.body.get_index(),"Rig returns in front of the body after a side pose")
 	p.pose_move=Vector2.ZERO;p.facing=1
-	p.equip("triage_hammer");p.pickup_time=0;p.tick(0)
-	check(p.body.animation=="idle" and p.body.sprite_frames==p.COMBAT_FRAMES,"Sheetless hammer idles on combat frames")
-	check(p.held.sprite.visible and not p.held.carry.visible,"Sheetless hammer uses the legacy sprite")
-	var grip: Vector2=Vector2(96,96)-p.held.sprite.offset
+	# Forced cache miss: the legacy rig still has to play after the hammer gained a sheet.
+	# Physics turns back on when the node enters the tree, so disable it after add_child.
+	var fallback=game.Player.new()
+	fallback.arena=game
+	game.actors.add_child(fallback)
+	fallback.set_physics_process(false)
+	fallback.controlled=false
+	fallback.position=Vector2(-500,565)
+	Art.armed_sheets["triage_hammer"]=null
+	fallback.equip("triage_hammer");fallback.pickup_time=0;fallback.facing=1;fallback.tick(0)
+	check(Art.armed_frames("triage_hammer")==null,"Forced-fallback hammer sees a cached sheet miss")
+	check(fallback.body.animation=="idle" and fallback.body.sprite_frames==fallback.COMBAT_FRAMES,"Forced-fallback hammer idles on combat frames")
+	check(fallback.held.sprite.visible and not fallback.held.carry.visible,"Forced-fallback hammer uses the legacy sprite")
+	var grip: Vector2=Vector2(96,96)-fallback.held.sprite.offset
 	var sheet_image: Image=(load("res://Assets/heroes-vs-villains-assets-only/heroes_villains/items_allies.png") as Texture2D).get_image().get_region(Rect2i(192,0,192,192))
-	check(sheet_image.get_pixelv(Vector2i(grip)).a>.5,"Hammer grip pixel is opaque")
+	check(sheet_image.get_pixelv(Vector2i(grip)).a>.5,"Forced-fallback hammer grip pixel is opaque")
 	var sum := Vector2.ZERO
 	var count := 0
 	for y in 192:
@@ -251,11 +262,35 @@ func run() -> void:
 			if sheet_image.get_pixel(x,y).a>.5:
 				sum+=Vector2(x,y);count+=1
 	var centroid: Vector2=sum/maxf(count,1)
-	check(centroid.x>grip.x+20 and centroid.y<grip.y-15,"Hammer grip is the handle, head sits up-right")
-	p.swing_left=0;p.combo=0;p.combo_window=0;p.start_attack()
-	p.swing_fired=true;p.swing_left=p.swing_duration*.5;p.tick(0)
-	check(not p.body.animation.begins_with("step"),"Sheetless hammer never uses armed step clips")
-	p.swing_left=0;p.visual_weapon="";p.weapon="";p.tick(0)
+	check(centroid.x>grip.x+20 and centroid.y<grip.y-15,"Forced-fallback hammer grip is the handle, head sits up-right")
+	var guard_position: Vector2=fallback.held.sprite.position
+	fallback.swing_left=0;fallback.combo=0;fallback.combo_window=0;fallback.start_attack()
+	fallback.swing_fired=true;fallback.swing_left=fallback.swing_duration*.5;fallback.tick(0)
+	check(fallback.held.sprite.visible and not fallback.held.carry.visible and fallback.held.sprite.position.distance_to(guard_position)>8,"Forced-fallback hammer animates the legacy sprite from guard to contact")
+	check(fallback.body.sprite_frames==fallback.COMBAT_FRAMES and not fallback.body.animation.begins_with("step"),"Forced-fallback hammer never uses armed step clips")
+	Art.armed_sheets.erase("triage_hammer")
+	fallback.queue_free()
+	for weapon_id in Catalog.WEAPONS:
+		p.swing_left=0;p.combo=0;p.combo_window=0;p.visual_weapon="";p.stagger=0;p.height=0;p.rise=0;p.facing=1
+		p.equip(weapon_id);p.pickup_time=0;p.tick(0)
+		var sheet: SpriteFrames=Art.armed_frames(weapon_id)
+		var right_offset: Vector2=Art.armed_offset(weapon_id,false)
+		check(sheet!=null and p.body.sprite_frames==sheet and p.body.animation=="hold_idle",weapon_id+" holds idle on its armed sheet")
+		check(not p.held.sprite.visible and not p.held.carry.visible,weapon_id+" hides the legacy sprite while armed")
+		check(not p.body.flip_h and is_equal_approx(p.body.offset.x,right_offset.x) and is_equal_approx(p.body.offset.y,right_offset.y),weapon_id+" uses the armed pivot when facing right")
+		p.facing=-1;p.tick(0)
+		var left_offset: Vector2=Art.armed_offset(weapon_id,true)
+		check(p.body.flip_h and p.body.animation=="hold_idle" and is_equal_approx(p.body.offset.x,left_offset.x) and is_equal_approx(p.body.offset.y,left_offset.y),weapon_id+" flips the armed pivot when facing left")
+		p.facing=1;p.tick(0)
+		for sample in [[.15,0],[.5,1],[.85,2]]:
+			p.swing_left=0;p.combo=0;p.combo_window=0;p.start_attack()
+			p.swing_fired=true;p.swing_left=p.swing_duration*(1.0-sample[0]);p.tick(0)
+			check(p.body.sprite_frames==sheet and p.body.animation=="step1" and p.body.frame==sample[1],weapon_id+" attack progress %.2f shows step1 frame %d"%[sample[0],sample[1]])
+			check(not p.held.sprite.visible,weapon_id+" keeps the legacy sprite hidden at progress %.2f"%sample[0])
+		for step in [2,3]:
+			p.swing_left=0;p.combo_window=.4;p.start_attack()
+			check(p.combo==step and p.body.sprite_frames==sheet and p.body.animation=="step%d"%step,weapon_id+" chains step "+str(step))
+	p.swing_left=0;p.visual_weapon="";p.weapon="";p.facing=1;p.tick(0)
 	# Hit sparkle placement versus swing tip.
 	game.playing=true
 	for e in game.enemies:

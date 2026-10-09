@@ -64,6 +64,7 @@ jobs:
             heroes_villains_logic
             heroes_villains_motion
             heroes_villains_smoke
+            hoppy_armed_assets
             enchanted_assets
             enchanted_boundaries
             enchanted_repo_smoke

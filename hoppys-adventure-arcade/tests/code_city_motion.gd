@@ -150,6 +150,28 @@ func run() -> void:
 			carrier.held.animate(carrier.weapon,1,0.0,false,Vector2.ZERO,0.0,0.0)
 			var behind: bool=pose=="walk_up"
 			check(carrier.held.carry.visible and not carrier.held.sprite.visible and carrier.held.carry.scale==carrier.body.scale and (carrier.held.get_index()<carrier.body.get_index())==behind,carrier.weapon+" carry on "+pose+(" sits behind the body" if behind else " sits in front of the body"))
+	check(Art.carry_grip("api_key_whip")==Vector2(8,24),"Whip carry grip is the paw texel (8, 24)")
+	check(Art.carry_grip("debug_stick")==null,"Debug stick keeps the cel grip")
+	for weapon in Catalog.WEAPONS:
+		if weapon=="api_key_whip" or weapon=="debug_stick": continue
+		check(Art.carry_grip(weapon)==null,weapon+" keeps the cel grip")
+	var whip_actor=players.filter(func(a): return a.weapon=="api_key_whip")[0]
+	for pose in ["walk_up","walk_down","jump"]:
+		whip_actor.show_pose(pose)
+		whip_actor.held.animate(whip_actor.weapon,1,0.0,false,Vector2.ZERO,0.0,0.0)
+		check(whip_actor.held.carry.visible and whip_actor.held.carry.offset==-Vector2(8,24),"Whip carry on "+pose+" is gripped at texel (8, 24)")
+	var whip_icon: Image=Art.carry("api_key_whip").get_image()
+	check(whip_icon.get_pixel(8,24).a>.5,"Whip carry grip texel is opaque")
+	var gold_sum := Vector2.ZERO
+	var gold_count := 0
+	for y in whip_icon.get_height():
+		for x in whip_icon.get_width():
+			var px := whip_icon.get_pixel(x,y)
+			if px.a>.5 and px.r>.55 and px.g>.3 and px.b<.35:
+				gold_sum+=Vector2(x,y)
+				gold_count+=1
+	var gold_mean_x := gold_sum.x/maxf(gold_count,1)
+	check(gold_count>0 and gold_mean_x>8.0+15.0,"Whip key sits to the right of the paw")
 	p.invulnerable=0;p.swing_left=p.swing_duration*.56;p.swing_fired=true;p.tick(0)
 	if Art.armed(p.weapon)!=null and p.weapon!="firewall_shield":
 		check(not p.held.trail.points.is_empty(),p.weapon+" draws a contact trail before the hit")
