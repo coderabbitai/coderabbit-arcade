@@ -16,6 +16,7 @@ func press(action: String) -> void:
 func spec_hold(name: String) -> float:
 	if name.begins_with("boss_"): return 3.0
 	if name=="victory": return 6.0
+	if name.begins_with("ending_"): return 5.0
 	return 4.5
 func advance_key(echo := false) -> InputEventKey:
 	var key := InputEventKey.new()
@@ -32,10 +33,11 @@ func run() -> void:
 	var p=game.player
 	p.set_physics_process(false)
 	# Every card auto-advances after its hold; the dedicated press skips exactly one card.
-	var names := ["opening_situation","opening_complication","opening_resolution","boss_ai_slop","boss_agent_army","boss_ten_thousand_line_pr","boss_ai_augmented_hacker","unlock_review","unlock_triage","unlock_change_stack","unlock_security","victory"]
+	var names := ["opening_situation","opening_complication","opening_resolution","boss_ai_slop","boss_agent_army","boss_ten_thousand_line_pr","boss_ai_augmented_hacker","unlock_review","unlock_triage","unlock_change_stack","unlock_security","victory","ending_hacker_falls","ending_trust_restored","ending_rabbit_stands"]
 	var eps := .05
-	check(names.size()==12 and Catalog.CARD_HOLD.size()==12,"Catalog holds exist for all 12 cards")
-	for name in names: check(is_equal_approx(Catalog.CARD_HOLD[name],spec_hold(name)),name+" catalog hold matches the literal spec (opening 4.5, boss 3.0, unlock 4.5, victory 6.0)")
+	check(names.size()==15 and Catalog.CARD_HOLD.size()==15,"Catalog holds exist for all 15 cards")
+	for ending in Catalog.ENDING_CARDS: check(ending in names and Catalog.CARD_HOLD.has(ending),ending+" has a catalog hold")
+	for name in names: check(is_equal_approx(Catalog.CARD_HOLD[name],spec_hold(name)),name+" catalog hold matches the literal spec (opening 4.5, boss 3.0, unlock 4.5, victory 6.0, ending 5.0)")
 	# Pass 1: timer only, no input at all.
 	game.show_cards(names.duplicate(),game.begin_play)
 	for name in names:

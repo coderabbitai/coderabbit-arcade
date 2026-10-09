@@ -3,7 +3,7 @@
 
 The builder never alters a generated master. It cover-crops each selected master
 from ``Assets/beatemup-story/*/sources`` to the runtime's 1600 by 900 canvas,
-then emits the six scene images, one text-free contact sheet, and provenance
+then emits the twelve scene images, one text-free contact sheet, and provenance
 documents rendered from ``refinements.json``.
 
 Run with:
@@ -44,9 +44,15 @@ SCENES = (
     Scene("code_city", "under_siege"),
     Scene("code_city", "pipeline_breached"),
     Scene("code_city", "hoppy_clocks_in"),
+    Scene("code_city", "merge_resolved"),
+    Scene("code_city", "city_back_online"),
+    Scene("code_city", "hoppy_ships_it"),
     Scene("heroes", "situation"),
     Scene("heroes", "complication"),
     Scene("heroes", "send_in_the_rabbit"),
+    Scene("heroes", "hacker_falls"),
+    Scene("heroes", "trust_restored"),
+    Scene("heroes", "rabbit_stands"),
 )
 
 
@@ -173,8 +179,8 @@ def cover_crop(master: Image.Image) -> Image.Image:
 
 
 def render_preview(packed: dict[tuple[str, str], Image.Image]) -> Image.Image:
-    """Render a text-free 3 by 2 review contact sheet in the story order."""
-    columns, rows = 3, 2
+    """Render a text-free 3 by 4 review contact sheet in the story order."""
+    columns, rows = 3, 4
     width = columns * PREVIEW_CELL[0] + (columns + 1) * PREVIEW_GUTTER
     height = rows * PREVIEW_CELL[1] + (rows + 1) * PREVIEW_GUTTER
     preview = Image.new("RGBA", (width, height), (10, 16, 26, 255))
@@ -221,12 +227,14 @@ def readme_text() -> str:
     """Document the isolated runtime package and its reproducible build contract."""
     return """# Beat'em-up story illustrations
 
-Six painted 16-bit cinematic scenes used by the Code City Brawl and Heroes versus Villains intros. The runtime uses the packed 1600 × 900 PNGs for a slow pan and zoom; key action is intentionally composed in the central 80 percent of each frame.
+Twelve painted 16-bit cinematic scenes used by the Code City Brawl and Heroes versus Villains intros and endings. The runtime uses the packed 1600 × 900 PNGs for a slow pan and zoom; key action is intentionally composed in the central 80 percent of each frame.
 
 | Mode | Scenes |
 |---|---|
-| Code City Brawl | `code_city/under_siege.png`, `code_city/pipeline_breached.png`, `code_city/hoppy_clocks_in.png` |
-| Heroes versus Villains | `heroes/situation.png`, `heroes/complication.png`, `heroes/send_in_the_rabbit.png` |
+| Code City Brawl, intro | `code_city/under_siege.png`, `code_city/pipeline_breached.png`, `code_city/hoppy_clocks_in.png` |
+| Code City Brawl, ending | `code_city/merge_resolved.png`, `code_city/city_back_online.png`, `code_city/hoppy_ships_it.png` |
+| Heroes versus Villains, intro | `heroes/situation.png`, `heroes/complication.png`, `heroes/send_in_the_rabbit.png` |
+| Heroes versus Villains, ending | `heroes/hacker_falls.png`, `heroes/trust_restored.png`, `heroes/rabbit_stands.png` |
 
 ## Provenance
 
@@ -240,9 +248,9 @@ The scenes were made with built-in image generation and need brand sign-off plus
 uvx --with pillow python tools/build_story_scenes.py
 ```
 
-The builder validates all six provenance records before writing anything. It center cover-crops and scales only the selected masters, then atomically replaces the six runtime PNGs, `preview.png`, `PROMPTS.md`, and this README. Re-running it from the same sources produces byte-identical output.
+The builder validates all twelve provenance records before writing anything. It center cover-crops and scales only the selected masters, then atomically replaces the twelve runtime PNGs, `preview.png`, `PROMPTS.md`, and this README. Re-running it from the same sources produces byte-identical output.
 
-`preview.png` is the text-free contact sheet, in story order: Code City on the top row, Heroes versus Villains on the bottom row.
+`preview.png` is the text-free 3-column by 4-row contact sheet, in story order: Code City intro, Code City ending, Heroes versus Villains intro, Heroes versus Villains ending.
 """
 
 

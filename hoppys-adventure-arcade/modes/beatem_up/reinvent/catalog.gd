@@ -69,11 +69,30 @@ const STORY := [
 		"kicker":"SEND IN THE RABBIT",
 		"caption":"NEW ERA. NEW VILLAINS.\nThe CodeRabbit answers the alert.",
 		"from":Vector3(.52,.38,1.25), "to":Vector3(.5,.47,1.0)}]
+## The victory epilogue after the AI-Augmented Hacker: three ending cards
+## (presentation/ending_*.tscn), story scenes showing ENDING[story_index], then the results screen
+## (victory_screen.gd). ENDING_CARDS names them in order; CARD_HOLD sets each hold.
+const ENDING_CARDS := ["ending_hacker_falls", "ending_trust_restored", "ending_rabbit_stands"]
+const ENDING := [
+	{"image":STORY_ROOT+"hacker_falls.png", "fallback":STAGE_ART+"agentic_core.png",
+		"kicker":"THE HACKER FALLS",
+		"caption":"The AI-Augmented Hacker's rig shatters.\nEvery exploit, caught in review.",
+		"from":Vector3(.5,.42,1.22), "to":Vector3(.5,.5,1.0)},
+	{"image":STORY_ROOT+"trust_restored.png", "fallback":STAGE_ART+"review_gauntlet.png",
+		"kicker":"TRUST RESTORED",
+		"caption":"Review. Triage. Change Stack. Security.\nThe agentic core runs clean.",
+		"from":Vector3(.4,.46,1.16), "to":Vector3(.6,.42,1.06)},
+	{"image":STORY_ROOT+"rabbit_stands.png", "fallback":STAGE_ART+"generation_floor.png",
+		"kicker":"THE CODERABBIT",
+		"caption":"Ship fast. Ship safe.\nThe CodeRabbit has your back.",
+		"from":Vector3(.5,.5,1.0), "to":Vector3(.5,.4,1.25)}]
+## The results screen after the epilogue.
+const VICTORY := {"title":"THE CODEBASE IS TRUSTED", "line":"All four capabilities deployed."}
 const CARD_HOLD := {
 	"opening_situation":4.5, "opening_complication":4.5, "opening_resolution":4.5,
 	"boss_ai_slop":3.0, "boss_agent_army":3.0, "boss_ten_thousand_line_pr":3.0, "boss_ai_augmented_hacker":3.0,
 	"unlock_review":4.5, "unlock_triage":4.5, "unlock_change_stack":4.5, "unlock_security":4.5,
-	"victory":6.0}
+	"victory":6.0, "ending_hacker_falls":5.0, "ending_trust_restored":5.0, "ending_rabbit_stands":5.0}
 const FX_ROOT := "res://Assets/heroes-vs-villains-assets-only/heroes_villains/"
 ## Last-life knockout (knockout.gd DEFAULTS keys; seconds since the hit, world px, radians, dB).
 ## The single hurt frame recoils facing the hit and tips over backwards in the air; on touchdown
