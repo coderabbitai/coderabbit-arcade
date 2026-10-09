@@ -859,24 +859,32 @@ func check_preview() -> void:
 	check(chrome, tag("the menu, the toast and the stage banner stay off the preview"))
 	check(loose_sprites()==0, tag("no stray sprite is left in actors (%d)" % loose_sprites()))
 	var image: Image = root.get_texture().get_image()
-	var folder := "code-city"
-	if heroes: folder = "heroes-villains"
-	var path := "res://../docs/previews/"+folder+"/knockout.png"
-	DirAccess.make_dir_recursive_absolute("res://../docs/previews/"+folder)
-	var saved = image.save_png(path)==OK
-	check(saved, tag("knockout preview saved"))
 	var stars = p.get_node_or_null("KnockoutStars")
 	var cluster: Vector2 = p.position
 	if stars: cluster = p.position+stars.position
 	var view := Vector2(image.get_width(), image.get_height())
 	var screen: Vector2 = (cluster-game.camera.position)*game.camera.zoom+view*0.5
 	var star_box := Rect2(screen-Vector2(64, 40), Vector2(128, 80))
+	var callout_rect: Rect2 = game.ko.callout.get_global_rect()
 	var star_color: Color = game.ko.tuning.star_color
 	var callout_color: Color = game.ko.tuning.callout_color
 	var star_hits := count_near(image, star_box, star_color, 0.28)
-	var callout_hits := count_near(image, game.ko.callout.get_global_rect(), callout_color, 0.28)
-	check(star_hits>=40, tag("star-colored pixels around the head: %d" % star_hits))
-	check(callout_hits>=200, tag("callout-colored pixels in the K.O. rect: %d" % callout_hits))
+	var callout_hits := count_near(image, callout_rect, callout_color, 0.28)
+	# The stage itself is close to these colors. Count again with the drawings hidden.
+	game.ko.callout.hide()
+	if is_instance_valid(game.ko.stars): game.ko.stars.hide()
+	game.reset_physics_interpolation()
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	var bare: Image = root.get_texture().get_image()
+	var star_bare := count_near(bare, star_box, star_color, 0.28)
+	var callout_bare := count_near(bare, callout_rect, callout_color, 0.28)
+	var star_delta := star_hits-star_bare
+	var callout_delta := callout_hits-callout_bare
+	check(star_delta>=40, tag("star pixels %d drawn, %d hidden, difference %d" % [star_hits, star_bare, star_delta]))
+	check(callout_delta>=200, tag("callout pixels %d drawn, %d hidden, difference %d" % [callout_hits, callout_bare, callout_delta]))
+	game.ko.callout.show()
+	if is_instance_valid(game.ko.stars): game.ko.stars.show()
 	guard = 0
 	while game.state=="knockout" and guard<400:
 		step()
