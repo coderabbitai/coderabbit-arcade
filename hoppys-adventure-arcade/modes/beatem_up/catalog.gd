@@ -26,15 +26,15 @@ const STORY := [
 	{"image":STORY_ROOT+"under_siege.png", "fallback":STAGE_ART+"district_background.png",
 		"kicker":"CODE CITY: UNDER SIEGE",
 		"caption":"Rogue Code and Slop Code have escaped the review pipeline.\nThe terminals go dark.",
-		"from":Vector3(.5,.42,1.25), "to":Vector3(.6,.34,1.45)},
+		"from":Vector3(.5,.45,1.0), "to":Vector3(.6,.36,1.22)},
 	{"image":STORY_ROOT+"pipeline_breached.png", "fallback":STAGE_ART+"security_background.png",
 		"kicker":"REVIEW PIPELINE: BREACHED",
 		"caption":"The firewall is failing. Conflicting branches have taken over Git HQ.",
-		"from":Vector3(.66,.4,1.35), "to":Vector3(.38,.44,1.42)},
+		"from":Vector3(.64,.44,1.14), "to":Vector3(.36,.46,1.2)},
 	{"image":STORY_ROOT+"hoppy_clocks_in.png", "fallback":STAGE_ART+"hq_background.png",
 		"kicker":"HOPPY CLOCKS IN",
 		"caption":"The codebase needs a review. And Hoppy delivers.\nClear three districts and force the final merge.",
-		"from":Vector3(.5,.36,1.55), "to":Vector3(.5,.46,1.25)}]
+		"from":Vector3(.5,.38,1.25), "to":Vector3(.5,.48,1.0)}]
 const SOUND_ROOT :="res://Assets/Audio/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/"
 const SOUNDS := {
 	"jab": preload(SOUND_ROOT + "Weapons/Melee/sfx_wpn_punch1.wav"),

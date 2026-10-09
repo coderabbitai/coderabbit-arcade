@@ -60,15 +60,15 @@ const STORY := [
 	{"image":STORY_ROOT+"situation.png", "fallback":STAGE_ART+"generation_floor.png",
 		"kicker":"SITUATION",
 		"caption":"10,284 additions. 147 files. AI is shipping at machine speed.\nNobody knows what any of it does.",
-		"from":Vector3(.5,.4,1.25), "to":Vector3(.62,.3,1.45)},
+		"from":Vector3(.5,.45,1.0), "to":Vector3(.6,.36,1.22)},
 	{"image":STORY_ROOT+"complication.png", "fallback":STAGE_ART+"review_gauntlet.png",
 		"kicker":"COMPLICATION",
 		"caption":"Slop floods the floor. Agents multiply.\nThe attack surface grows.",
-		"from":Vector3(.34,.36,1.4), "to":Vector3(.66,.4,1.4)},
+		"from":Vector3(.36,.42,1.14), "to":Vector3(.64,.45,1.2)},
 	{"image":STORY_ROOT+"send_in_the_rabbit.png", "fallback":STAGE_ART+"agentic_core.png",
 		"kicker":"SEND IN THE RABBIT",
 		"caption":"NEW ERA. NEW VILLAINS.\nThe CodeRabbit answers the alert.",
-		"from":Vector3(.55,.32,1.6), "to":Vector3(.5,.44,1.25)}]
+		"from":Vector3(.52,.38,1.25), "to":Vector3(.5,.47,1.0)}]
 const CARD_HOLD := {
 	"opening_situation":4.5, "opening_complication":4.5, "opening_resolution":4.5,
 	"boss_ai_slop":3.0, "boss_agent_army":3.0, "boss_ten_thousand_line_pr":3.0, "boss_ai_augmented_hacker":3.0,

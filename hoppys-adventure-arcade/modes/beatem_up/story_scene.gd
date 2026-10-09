@@ -17,11 +17,12 @@ extends Control
 ## stage art in fallback stands in, so dropping the paintings in needs no code change. from/to
 ## frame the move as Vector3(focus x, focus y, zoom). The focus is in 0..1 image space and is held
 ## at the middle of the picture between the bars where the image allows. Zoom is over a cover fit
-## of the viewport: 1.25 shows 1600x900 art at 1:1 on a 1280x720 view.
+## of the viewport and stays within 1..1.25, which the paintings are composed for: 1.0 shows the
+## whole frame, 1.25 shows 1600x900 art at 1:1 on a 1280x720 view.
 
 const Style = preload("res://scenes/main_menu/menu_style.gd")
-const TOP_BAR := 84.0
-const BOTTOM_BAR := 150.0
+const TOP_BAR := 72.0
+const BOTTOM_BAR := 136.0
 ## The bars slide in over this at the first scene; later scenes open with them in place.
 const BAR_SLIDE := .45
 ## Dip in from black over the first DIP seconds and out to black over the last DIP seconds.
@@ -171,7 +172,7 @@ func dip_alpha() -> float:
 
 ## The Ken Burns framing now: from → to over the whole hold, eased in and out.
 func framing() -> Vector3:
-	var from: Vector3 = scene.get("from",Vector3(.5,.5,1.25))
+	var from: Vector3 = scene.get("from",Vector3(.5,.5,1.0))
 	var to: Vector3 = scene.get("to",from)
 	var t := clampf(seconds/hold,0,1)
 	return from.lerp(to,.5-.5*cos(PI*t))
@@ -182,7 +183,7 @@ func view_rect() -> Rect2:
 	return get_global_transform_with_canvas().affine_inverse()*Rect2(Vector2.ZERO,get_viewport_rect().size)
 
 func _process(_delta: float) -> void:
-	if not visible: return
+	if not is_visible_in_tree(): return
 	if get_global_transform_with_canvas()!=_laid_out or get_viewport_rect().size!=_laid_view: _render()
 
 func _render() -> void:
@@ -205,18 +206,18 @@ func _render() -> void:
 	var left := view.position.x+(view.size.x-width)*.5
 	# Text rides on the bars: it slides in with them and sits at the same place once they are in.
 	var top_edge := view.position.y+top-TOP_BAR
-	kicker.position = Vector2(left,top_edge+24)
+	kicker.position = Vector2(left,top_edge+18)
 	kicker.size = Vector2(width,36)
-	series.position = Vector2(left,top_edge+34)
+	series.position = Vector2(left,top_edge+28)
 	series.size = Vector2(width,20)
 	var bottom_edge := view.end.y-bottom
-	drain.position = Vector2(left,bottom_edge+14)
+	drain.position = Vector2(left,bottom_edge+12)
 	drain.size = Vector2(width,4)
-	caption.position = Vector2(left,bottom_edge+30)
-	caption.size = Vector2(width,64)
-	hint.position = Vector2(left,bottom_edge+BOTTOM_BAR-46)
+	caption.position = Vector2(left,bottom_edge+24)
+	caption.size = Vector2(width,62)
+	hint.position = Vector2(left,bottom_edge+BOTTOM_BAR-42)
 	hint.size = Vector2(width*.5,32)
-	actions.position = Vector2(left,bottom_edge+BOTTOM_BAR-46)
+	actions.position = Vector2(left,bottom_edge+BOTTOM_BAR-42)
 	actions.size = Vector2(width,32)
 	# Picture and words dip together; the bars, hint, timer and actions stay put.
 	var text_alpha := 1.0-dip_alpha()

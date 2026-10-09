@@ -33,7 +33,6 @@ func run() -> void:
 	game=current_scene
 	game.test_mode=true
 	freeze()
-	await capture("intro")
 	# Verify event mappings against the live controller, including gamepad buttons.
 	# The run itself never confirms: no begin_play, advance_stage, or button press.
 	var key := InputEventKey.new()
@@ -111,6 +110,8 @@ func run() -> void:
 			if is_instance_valid(game.boss): game.boss.tick(1.0/60.0)
 		var prev: String = game.state
 		game._physics_process(1.0/60.0)
+		# The intro preview is the first story scene once its caption is typed (it opens on black).
+		if game.state=="intro" and game.intro_page==0 and game.intro_clock>=3.0: await capture("intro")
 		if game.state=="stage_exit" and prev!="stage_exit": stage_exits += 1
 		if game.state=="stage_enter" and prev!="stage_enter":
 			stage_enters += 1
