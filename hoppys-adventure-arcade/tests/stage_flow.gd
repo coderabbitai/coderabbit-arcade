@@ -126,6 +126,11 @@ func check_retry() -> void:
 	p.weapon = ""
 	p.height = 0
 	p.take_hit(p.position+Vector2(-40, 0))
+	check(game.state=="knockout", "A last hit starts the knockout")
+	var ko_guard := 0
+	while game.state=="knockout" and ko_guard<200:
+		game._physics_process(DT)
+		ko_guard += 1
 	check(game.state=="game_over", "A last hit opens the retry overlay")
 	game.retry_stage()
 	freeze()
@@ -547,6 +552,7 @@ func check_armed_overlays() -> void:
 	space.physical_keycode = KEY_SPACE
 	space.pressed = true
 	check(InputMap.event_is_action(space, "ui_accept") and InputMap.event_is_action(space, "brawl_jump"), "Space is both jump and ui_accept")
+	var waited := 0
 	for activate in ["space", "touch"]:
 		to_combat(0)
 		var p = game.player
@@ -555,6 +561,11 @@ func check_armed_overlays() -> void:
 		p.shield = false
 		p.weapon = ""
 		p.take_hit(p.position+Vector2(-40, 0))
+		check(game.state=="knockout", "A last hit starts the knockout before the menu")
+		waited = 0
+		while game.state=="knockout" and waited<200:
+			game._physics_process(DT)
+			waited += 1
 		check(game.state=="game_over" and game.primary.has_focus(), "Game over focuses Retry")
 		await guarded("Game over", activate)
 		check(game.state=="stage_enter", "A %s after 0.5 s presses Retry" % activate)
