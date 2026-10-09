@@ -122,7 +122,8 @@ func tick(dt: float) -> void:
 		cancel()
 		return
 	clock += dt
-	if clock >= float(tuning.length):
+	# Summed 1/60 s ticks fall a hair short of 2.2 s; without the slack the end slips a tick.
+	if clock >= float(tuning.length)-1e-6:
 		var done := _done
 		cancel()
 		if done.is_valid(): done.call()
