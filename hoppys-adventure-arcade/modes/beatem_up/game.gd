@@ -6,6 +6,7 @@ const Enemy = preload("res://modes/beatem_up/enemy.gd")
 const Boss = preload("res://modes/beatem_up/boss.gd")
 const StageFlow = preload("res://modes/beatem_up/stage_flow.gd")
 const Knockout = preload("res://modes/beatem_up/knockout.gd")
+const StoryScene = preload("res://modes/beatem_up/story_scene.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
 const PAUSABLE := ["combat","intro","stage_enter","stage_exit","knockout"]
 ## Results and game-over menus arm this long after appearing (see _input).
@@ -22,7 +23,9 @@ var state := "intro"
 var pause_return_state := "combat"
 var intro_page := 0
 var intro_clock := 0.0
-var intro_bar: ProgressBar
+## The opening's story scenes, with Next / Skip intro / Return in the lower bar.
+var story: StoryScene
+var intro_next: Button
 var overlay_clock := 0.0
 var flow: StageFlow
 ## The last-life knockout between the fatal hit and game_over().
@@ -158,6 +161,7 @@ func start_stage(index: int, cinematic := false) -> void:
 ## stage_enter: Hoppy runs in under the title banner, then begin_play() (see _on_flow_phase).
 func enter_stage() -> void:
 	overlay.hide()
+	story.hide()
 	playing = false
 	state = "stage_enter"
 	hide_toast() # The banner owns the screen; begin_play() re-announces the encounter.
@@ -659,6 +663,15 @@ func _build_ui() -> void:
 	controls.offset_top = -27
 	controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ui.add_child(controls)
+	# Over the HUD (the scenes are full-bleed), under the pause overlay.
+	story = StoryScene.new()
+	story.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	story.hint.text = "Esc · Pause"
+	story.hide()
+	ui.add_child(story)
+	intro_next = _intro_button("Next →",next_intro)
+	_intro_button("Skip intro",enter_stage)
+	_intro_button("Return to Beat'em Up menu",leave)
 	overlay = ColorRect.new()
 	overlay.color = Color(.025,.04,.065,.91)
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -710,38 +723,39 @@ func show_overlay(title: String, detail: String, action: String, callback: Calla
 	overlay.show()
 	primary.grab_focus()
 
+## Page intro_page of the opening as a story scene (Catalog.STORY). It turns by itself after
+## FLOW.intro_hold while its bar drains; resume calls this again to restore the page.
 func show_intro() -> void:
-	var titles := ["CODE CITY: UNDER SIEGE", "REVIEW PIPELINE: BREACHED", "HOPPY CLOCKS IN"]
-	var lines := ["Rogue Code and Slop Code have escaped the review pipeline.\nThe terminals go dark.","The firewall is failing. Conflicting branches have taken over Git HQ.","The codebase needs a review. And Hoppy delivers.\nClear three districts and force the final merge."]
-	show_overlay(titles[intro_page],lines[intro_page],"Start the review →" if intro_page==2 else "Next →",next_intro)
-	var skip := Style.button("Skip intro",46)
-	panel.add_child(skip)
-	skip.pressed.connect(enter_stage)
-	# Drains while the page holds; the page turns by itself when it empties.
-	intro_bar = ProgressBar.new()
-	intro_bar.show_percentage = false
-	intro_bar.custom_minimum_size = Vector2(720,6)
-	intro_bar.max_value = 1.0
-	intro_bar.step = 0.0
-	intro_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for part in ["background","fill"]:
-		var box := StyleBoxFlat.new()
-		box.bg_color = Color("142735") if part=="background" else Style.MINT
-		intro_bar.add_theme_stylebox_override(part,box)
-	panel.add_child(intro_bar)
-	panel.move_child(intro_bar,2)
+	overlay.hide()
+	story.show_scene(Catalog,intro_page)
+	intro_next.text = "Start the review →" if intro_page==Catalog.STORY.size()-1 else "Next →"
+	story.show()
+	intro_next.grab_focus()
 	_tick_intro(0)
 
 func _tick_intro(dt: float) -> void:
 	intro_clock += dt
-	if is_instance_valid(intro_bar): intro_bar.value = 1.0-intro_clock/Catalog.FLOW.intro_hold
+	story.advance(intro_clock,Catalog.FLOW.intro_hold)
 	if intro_clock >= Catalog.FLOW.intro_hold: next_intro()
 
 func next_intro() -> void:
 	intro_page += 1
 	intro_clock = 0
-	if intro_page>=3: enter_stage()
+	if intro_page>=Catalog.STORY.size(): enter_stage()
 	else: show_intro()
+
+## A small focusable action in the story scene's lower bar. It only acts while the intro runs,
+## so a press that reaches it under the pause overlay or during the leave fade does nothing.
+func _intro_button(text: String, action: Callable) -> Button:
+	var button := Style.button(text,32)
+	button.custom_minimum_size = Vector2(0,32)
+	button.add_theme_font_size_override("font_size",14)
+	button.pressed.connect(_intro_action.bind(action))
+	story.actions.add_child(button)
+	return button
+
+func _intro_action(action: Callable) -> void:
+	if state=="intro": action.call()
 
 func pause(detail: String) -> void:
 	pause_return_state = state
