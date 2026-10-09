@@ -67,6 +67,9 @@ func run() -> void:
 	await process_frame
 	game = current_scene
 	game.test_mode = true
+	# A window that starts unfocused can focus-pause the game before test_mode is set.
+	paused = false
+	if game.state=="paused": game.resume()
 	freeze()
 	check(is_equal_approx(game.flow.base_db, -13.0), "Music envelope is relative to the -13 dB base")
 	check_intro()
@@ -415,6 +418,8 @@ func reload() -> void:
 	await process_frame
 	game = current_scene
 	game.test_mode = true
+	paused = false
+	if game.state=="paused": game.resume()
 	freeze()
 func check_terminal_paths() -> void:
 	for phase in ["fade_out", "enter_run"]:

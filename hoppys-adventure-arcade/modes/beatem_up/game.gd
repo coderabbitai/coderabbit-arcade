@@ -495,6 +495,7 @@ func begin_play() -> void:
 	var entering := state in ["intro","stage_enter"]
 	if flow.active(): flow.cancel()
 	overlay.hide()
+	story.hide()
 	state = "combat"
 	playing = true
 	player.input_lock = .2
@@ -724,8 +725,12 @@ func show_overlay(title: String, detail: String, action: String, callback: Calla
 	primary.grab_focus()
 
 ## Page intro_page of the opening as a story scene (Catalog.STORY). It turns by itself after
-## FLOW.intro_hold while its bar drains; resume calls this again to restore the page.
+## FLOW.intro_hold while its bar drains; resume calls this again to restore the page. Past the
+## last page the intro is over, so it hands off to the stage entrance as next_intro() does.
 func show_intro() -> void:
+	if intro_page>=Catalog.STORY.size():
+		enter_stage()
+		return
 	overlay.hide()
 	story.show_scene(Catalog,intro_page)
 	intro_next.text = "Start the review →" if intro_page==Catalog.STORY.size()-1 else "Next →"
@@ -782,12 +787,16 @@ func _unhandled_input(event: InputEvent) -> void:
 func resume() -> void:
 	if state!="paused": return
 	get_tree().paused = false
-	match pause_return_state:
+	# The return state only means something while paused; consume it so a stale one can't steer
+	# a later resume (pause() always sets it first).
+	var back := pause_return_state
+	pause_return_state = "combat"
+	match back:
 		"intro":
 			state = "intro"
 			show_intro()
 		"stage_enter", "stage_exit":
-			state = pause_return_state
+			state = back
 			overlay.hide()
 		"knockout":
 			state = "knockout"
