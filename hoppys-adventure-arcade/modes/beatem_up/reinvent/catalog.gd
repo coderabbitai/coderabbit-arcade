@@ -63,8 +63,10 @@ const KNOCKOUT := {
 	"hit_stop":.12, "launch_end":.75, "land_end":1.0, "length":2.2,
 	"distance":140.0, "height":70.0, "bounce":12.0, "tip":1.0, "pivot":60.0, "turn":.75, "edge":105.0,
 	"hit_pose":"hurt", "air_pose":"hurt", "land_pose":"defeat", "stow_airborne":true,
-	"hit_fx":{"frames":FX_ROOT+"capabilities_fx.tres","pose":"unlock_sparkle","scale":.55,"rise":72.0,"front":true},
-	"dust_fx":{"frames":FX_ROOT+"capabilities_fx.tres","pose":"spawn_burst","scale":.75,"squash":.8,"rise":32.0,"front":false},
+	"hit_fx":{"frames":FX_ROOT+"capabilities_fx.tres",
+		"pose":"unlock_sparkle","scale":.55,"rise":72.0,"front":true},
+	"dust_fx":{"frames":FX_ROOT+"capabilities_fx.tres",
+		"pose":"spawn_burst","scale":.75,"squash":.8,"rise":32.0,"front":false},
 	"land_sound":"collapse", "head":Vector2(58,-55), "star_orbit":Vector2(30,8), "star_size":9.0,
 	"callout_color":Color("ffab54")}
 

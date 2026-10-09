@@ -40,7 +40,8 @@ const DEFAULTS := {
 	# Stars circle `head` (lying pose, facing right, feet-relative) on an orbit of these radii.
 	"head":Vector2(30,-40), "stars":3, "star_orbit":Vector2(24,7), "star_size":7.0, "star_spin":1.4,
 	"star_color":Color("ffe36e"),
-	"callout":"K.O.", "callout_size":96, "callout_color":Color("ffd36b"), "callout_top":215.0, "callout_pop":.18}
+	"callout":"K.O.", "callout_size":96, "callout_color":Color("ffd36b"), "callout_top":215.0,
+	"callout_pop":.18}
 var tuning: Dictionary = DEFAULTS.duplicate()
 var phase := ""                  # "", "hit_stop", "launch", "land", "out_cold"
 var clock := 0.0                 # seconds since the hit
@@ -133,7 +134,10 @@ func tick(dt: float) -> void:
 func _apply() -> void:
 	var hit_stop := float(tuning.hit_stop)
 	var launch_end := float(tuning.launch_end)
-	phase = "hit_stop" if clock < hit_stop else "launch" if clock < launch_end else "land" if clock < float(tuning.land_end) else "out_cold"
+	if clock < hit_stop: phase = "hit_stop"
+	elif clock < launch_end: phase = "launch"
+	elif clock < float(tuning.land_end): phase = "land"
+	else: phase = "out_cold"
 	var airborne := clock < launch_end
 	var u := clampf((clock-hit_stop)/maxf(launch_end-hit_stop,.001),0,1)
 	var height := 0.0
@@ -181,7 +185,9 @@ func _touchdown() -> void:
 ## The hit pose through the hit-stop, then the airborne and landed poses, or the clip's frame.
 func _show_pose(airborne: bool) -> void:
 	var clip := str(tuning.clip)
-	var pose: String = str(tuning.hit_pose) if phase == "hit_stop" else clip if clip != "" else str(tuning.air_pose) if airborne else str(tuning.land_pose)
+	var pose := clip
+	if phase == "hit_stop": pose = str(tuning.hit_pose)
+	elif clip == "": pose = str(tuning.air_pose) if airborne else str(tuning.land_pose)
 	var body: AnimatedSprite2D = player.body
 	if pose != _pose:
 		_pose = pose
