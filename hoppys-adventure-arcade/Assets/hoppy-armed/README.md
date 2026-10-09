@@ -1,0 +1,92 @@
+# Armed Hoppy supplement
+
+Baked sprite sheets of Hoppy holding each beat'em up weapon. The weapon is drawn into Hoppy's frames, so the grip, pixel density and layering match the body in every pose. There are eleven sheets: six for Code City Brawl (`code_city/`) and five for Heroes vs. Villains (`heroes/`).
+
+The masters come from built-in image generation. `tools/build_hoppy_armed.py` never paints or edits a master. It only finds the sixteen sprites, scales them with nearest-neighbour sampling, plants their feet on the pivot and packs the outputs, so the same masters always rebuild the same files.
+
+## Cells and pivots
+
+| Mode | Directory | Cell | Foot pivot | Unarmed idle height | `run` speed | Weapons |
+|---|---|---|---|---:|---:|---|
+| Code City Brawl | `code_city/` | 192 × 128 | (72, 118) | 59 px | 12 fps | `debug_stick`, `linter_staff`, `api_key_whip`, `git_branch`, `refactor_hammer`, `firewall_shield` |
+| Heroes vs. Villains | `heroes/` | 256 × 160 | (96, 147) | 86 px | 7 fps | `review_stamp`, `triage_hammer`, `change_stack_baton`, `security_scanner`, `pr_merger` |
+
+Every sheet faces right and is mirrored at runtime. The cells are wider than the body so a whip lash or an overhead hammer fits; the pivot sits left of centre to leave forward room. Each sheet uses one uniform scale, chosen so that the body in `hold_idle` matches the mode's unarmed idle height to within 2 px. The scale shrinks only if the tallest pose wouldn't otherwise fit above the pivot.
+
+## Sheet layout
+
+Each `<weapon>.png` is a 4 × 4 atlas, read row-major:
+
+| Frames | Clip | Content |
+|---|---|---|
+| 0 | `hold_idle` | Ready stance, weapon at carry height (1 frame, loops) |
+| 1–4 | `run` | Sideways run cycle carrying the weapon (loops) |
+| 5–7 | `step1` | Combo step 1: windup, contact, follow-through |
+| 8–10 | `step2` | Combo step 2: windup, contact, follow-through |
+| 11–13 | `step3` | Combo step 3: windup, contact, follow-through |
+| 14 | `equip` | Lifting the weapon after a pickup |
+| 15 | `hurt` | Stagger while holding it (the Firewall Shield's block recoil) |
+
+The attack steps are SpriteFrames clips at 9 fps, but the game picks their frame from attack progress: windup before 30%, contact until 64%, follow-through after that. Damage still lands at 44%, inside the contact frame.
+
+## Files in each mode directory
+
+| File | Purpose |
+|---|---|
+| `<weapon>.png`, `<weapon>.tres` | Packed atlas and its SpriteFrames resource |
+| `manifest.json` | Per weapon: cell, pivot, facing, body height, source scale, clips, source component bounds, fragment attachments, and per-frame `hand`, `foot` and contact-frame `tip` anchors. `carry_calibration` records how every carry icon was scaled. |
+| `carry/<weapon>.png` | The weapon cel, scaled to the weapon's length in the baked `hold_idle` so it has the sheet's pixel density. On poses with no armed frame, the runtime draws it at the paw, at the body's scale: walking toward or away from the camera, jumping and, in Heroes vs. Villains, defeat and victory. |
+| `<weapon>_preview.png` | Contact sheet of all sixteen cells next to the unarmed idle, at 2× |
+| `<weapon>_clips.png` | Each runtime clip on a ground line drawn at the foot pivot, for motion review |
+| `preview.png`, `clips.png` | The same views for the mode's first (pilot) weapon |
+| `sources/<weapon>.png` | The retained generated master, untouched. Earlier generations kept for the record are named `sources/<weapon>-generation<N>.png`; the builder only reads `sources/<weapon>.png`. |
+| `refinements.json` | Per weapon: the exact generation prompt, the number of regenerations and what changed |
+| `PROMPTS.md` | Rendered from `refinements.json` by the builder; don't edit it by hand |
+
+## Rebuilding
+
+```sh
+uvx --with pillow python tools/build_hoppy_armed.py --mode code_city
+uvx --with pillow python tools/build_hoppy_armed.py --mode heroes
+```
+
+Leave out `--mode` to rebuild both. Run it from the repository root, then reimport the project (`godot --headless --path hoppys-adventure-arcade --import`). The build stops with an error rather than writing a suspect sheet when, for example:
+
+- a master doesn't have exactly sixteen major sprites, one per grid quarter, or a sprite touches the master's edge;
+- a small fragment (such as the thin end of a whip) lies more than 10 source pixels from every sprite;
+- a packed frame touches its cell edge;
+- with `per_frame_foot_pivot`, the planted foot moves more than about 3 px between frames of one clip, or a sole misses the pivot row;
+- a hand or tip anchor has no opaque pixel near its hand-picked target;
+- a carry icon drifts more than 10% from its calibrated length.
+
+`tests/hoppy_armed_assets.gd` checks the packed result: all eleven sheets must be present with their resources, manifest entries, masters and carry icons, and each one's frames, clips, pivot, anchors, body height and carry calibration must match the contract.
+
+## Per-weapon configuration
+
+Each weapon is a `Weapon` entry in the mode's `extra_weapons` in `tools/build_hoppy_armed.py`. The pilot weapon uses the mode-level fields instead. Required fields:
+
+- `hand_targets`: 16 hand-picked paw points in unregistered frame space. Each is snapped to the nearest opaque pixel and recorded as the `hand` anchor.
+- `tip_targets`: weapon tips for the contact frames 6, 9 and 12, recorded as the `tip` anchor. Swing and miss effects and the contact trail start there.
+- `foot_source_rows`: 16 hand-inspected rows, in master pixels from the top of each sprite's grid cell, where the planted foot meets the ground.
+- `hold_idle_weapon_bounds`: the visible weapon's box in the `hold_idle` cell, used to size the carry icon.
+- `motion`: a short note on the three combo steps.
+
+Opt-in fields. Leaving one out keeps the default behaviour, and turning one on for a weapon changes no other weapon's output:
+
+| Field | Effect |
+|---|---|
+| `per_frame_foot_pivot` | Registers each frame horizontally on its planted foot instead of using one sheet-wide offset. Idle, run, equip and hurt use the centre of the feet; attack frames use the rear foot. The build fails if that foot moves more than about 3 px between frames of a clip, so Hoppy doesn't skate. |
+| `foot_plant_overrides`, `foot_plant_note` | Per-frame `center` / `rear` / `front` choice for the planted foot, and a note explaining it in the manifest. |
+| `body_foot_targets` | 16 optional `(left, right)` spans that name the foot to plant for frames where a low weapon shares the foot row. |
+| `source_order` | Maps each packed frame to a source cell, for masters whose poses came out in a different order, or to reuse a cell. Four Heroes vs. Villains sheets reorder their step-3 cells this way. `api_key_whip` reuses its step-1 follow-through (source cell 7) as the step-3 follow-through (frame 13). |
+| `carry_orientation`, `carry_grip` | Flips or rotates the carry icon (`flip_h`, `flip_v` or `rotate_180`) for a weapon whose sheet holds it by the other end from its cel. `carry_grip` is required with it: the oriented icon's texel held in the paw, which must be opaque. Both are written to `carry_calibration` in the manifest; Code City's weapon rig uses that grip in place of its cel grip. `api_key_whip` uses `flip_h`, so the carry shows the key at the far end, as on the sheet. |
+
+## Adding a weapon
+
+1. Generate a 4 × 4 master with transparent alpha, following the prompt pattern in the mode's `refinements.json`. Use the mode's Hoppy combat sheet and the weapon cel as references. Keep large empty gutters and the 16-pose order above.
+2. Save the retained master as `<mode>/sources/<weapon>.png` and add a `refinements.json` record with its exact prompt, the regeneration count and a description of what changed.
+3. Add the weapon to the mode's `carry_frames` (its cel index in the weapon atlas) and add a `Weapon(...)` entry to `extra_weapons`. Pick the hand, tip and foot rows from the unregistered frames, and turn on an opt-in field only where a frame needs it.
+4. Rebuild the mode, check `git status` to confirm the other weapons' files didn't change, and review `<weapon>_preview.png` and `<weapon>_clips.png`.
+5. Add the weapon id to `EXPECTED` in `tests/hoppy_armed_assets.gd`. Then run that suite and the mode's motion suite, both headless and rendered with `--always-on-top`.
+
+Licensing and brand status are recorded in [`ASSETS_LICENSES.md`](../../../ASSETS_LICENSES.md).

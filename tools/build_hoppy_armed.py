@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Pack generated armed-Hoppy masters into deterministic Godot sprite assets.
 
-This tool deliberately never paints or mutates masters.  It takes the two
-generated 4x4 masters stored in ``Assets/hoppy-armed/*/sources`` and uses
-nearest-neighbour sampling to make complete 4x4 atlases, SpriteFrames
-resources, carry icons, manifests, and compact visual previews.
+This tool deliberately never paints or mutates masters.  It takes the
+generated 4x4 master of each weapon stored in ``Assets/hoppy-armed/*/sources``
+and uses nearest-neighbour sampling to make complete 4x4 atlases, SpriteFrames
+resources, carry icons, manifests, and compact visual previews.  See
+``Assets/hoppy-armed/README.md`` for the layout and the per-weapon options.
 
 Run with:
-    uvx --with pillow python tools/build_hoppy_armed.py
+    uvx --with pillow python tools/build_hoppy_armed.py [--mode code_city|heroes]
 """
 
 from __future__ import annotations
