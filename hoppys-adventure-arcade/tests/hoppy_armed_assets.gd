@@ -4,6 +4,8 @@ extends SceneTree
 ## sheet, SpriteFrames resource, manifest entry, source master, carry icon,
 ## PROMPTS.md, preview.png, sources/ directory, or carry/ directory fails.
 
+const ArmedMeasure = preload("res://tests/support/armed_measure.gd")
+
 const ROOT := "res://Assets/hoppy-armed/"
 const EXPECTED := {
 	"code_city": {
@@ -158,26 +160,6 @@ func validate_sheet(path: String, label: String, cell: Vector2i, entry: Dictiona
 		validate_run_body(label, image, cell, entry)
 
 
-## Mean x of opaque pixels behind the weapon paw, from the foot row up one unarmed body.
-## The weapon sits at or ahead of the paw, so x < hand_x - 2 is the body.
-func body_reference_x(cell_image: Image, foot_y: int, hand_x: int, body_height: int) -> float:
-	var y0 := maxi(0, foot_y - body_height)
-	var y1 := mini(cell_image.get_height() - 1, foot_y)
-	var x_end := mini(cell_image.get_width(), hand_x - 2)
-	if y1 < y0 or x_end <= 0:
-		return NAN
-	var sum := 0.0
-	var count := 0
-	for y in range(y0, y1 + 1):
-		for x in range(x_end):
-			if cell_image.get_pixel(x, y).a >= 128.0 / 255.0:
-				sum += float(x)
-				count += 1
-	if count == 0:
-		return NAN
-	return sum / float(count)
-
-
 func validate_run_body(label: String, sheet: Image, cell: Vector2i, entry: Dictionary) -> void:
 	var pivot_data: Variant = entry.get("pivot", [])
 	var height := int(entry.get("unarmed_idle_height", -1))
@@ -201,7 +183,7 @@ func validate_run_body(label: String, sheet: Image, cell: Vector2i, entry: Dicti
 		if not hand_ok:
 			return
 		var region := sheet.get_region(Rect2i((frame % 4) * cell.x, int(frame / 4.0) * cell.y, cell.x, cell.y))
-		var measured := body_reference_x(region, foot_y, int(hand[0]), height)
+		var measured := ArmedMeasure.body_reference_x(region, foot_y, int(hand[0]), height)
 		check(not is_nan(measured), label + ": run frame %d has no body pixels behind the paw" % frame)
 		if is_nan(measured):
 			return

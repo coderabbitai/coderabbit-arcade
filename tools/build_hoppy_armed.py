@@ -1114,6 +1114,18 @@ def prompts_text(pack: Path, mode: Mode) -> str:
     records = json.loads(source.read_text(encoding="utf-8"))
     if not isinstance(records, list):
         raise ValueError(f"{source}: expected a list")
+    # Exactly one generation record per packed weapon, so PROMPTS.md can't silently drop or
+    # double one. Field validation follows in the loop below.
+    expected = [weapon.weapon for weapon in weapons_for_mode(mode)]
+    named = [record.get("weapon") for record in records if isinstance(record, dict)]
+    missing = [weapon for weapon in expected if weapon not in named]
+    duplicates = sorted({weapon for weapon in named if named.count(weapon) > 1}, key=str)
+    unknown = sorted({str(weapon) for weapon in named if weapon not in expected})
+    if missing or duplicates or unknown:
+        raise ValueError(
+            f"{source}: needs exactly one record per weapon {expected}; "
+            f"missing {missing}, duplicate {duplicates}, unknown {unknown}"
+        )
     sections = [
         f"# {mode.directory} armed Hoppy generation prompts\n\n",
         "Built-in image generation, October 8, 2026. Source masters preserve generated alpha unchanged. "
