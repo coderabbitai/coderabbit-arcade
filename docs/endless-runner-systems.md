@@ -570,10 +570,16 @@ plus the optional `boss/boss_fx.tscn` frontend mount (contract §11.3, §11.8) t
 phase) scaled by the cycle escalation (contract §11.10), with `boss_hp_scale` multiplying the base HP before that
 growth so a test config can shorten a fight without bending the curve; `hp = max_hp`; `phase = 1`; mount the visual
 (`ResourceLoader.exists` → `load as PackedScene` → set base vars → `add_child` → `on_spawned()`; graybox fallback: a
-DANGER box 4×2.4×1.5 with a Label3D name); position `Boss` at `(0, 2.6, boss_z)`; `_intro = boss_intro_seconds`;
-emit `boss_intro(kind, name, _intro)` **first** (the entrance card, contract §11.4), then `boss_spawned(kind, hp)`
-and `boss_health_changed(hp, max_hp)`; `_attack_timer = attack_interval(phase)`;
-`_tool_timer = tool_interval × 0.5`.
+DANGER box 4×2.4×1.5 with a Label3D name); position `Boss` at `(0, 2.6, boss_z)`; `_intro = boss_intro_seconds` on
+the run's first meeting with this kind, `min(boss_intro_short_seconds, boss_intro_seconds)` on a repeat (contract 2.6
+§11.14; the per-run `_met` set, restored by `mark_met()` on a checkpoint retry, as `_defeated_kinds` is by `mark_defeated()`);
+emit `boss_intro(kind, name, _intro)` **first** (the entrance card, contract §11.4), then
+`boss_cinematic(kind, intro_full|intro_short, _intro)` (§11.14, skipped for a zero-length intro), then
+`boss_spawned(kind, hp)` and `boss_health_changed(hp, max_hp)`; `_attack_timer = attack_interval(phase)`;
+`_tool_timer = tool_interval × 0.5`. A cinematic rides the countdown it holds (`_intro`, or `_outro` for a defeat),
+so `cinematic_progress()`, `can_skip_cinematic()`, `skip_cinematic()` (intros only: jump to the last `boss_cinematic_skip_tail`
+seconds) and `time_factor()` all read the same clock; it closes with `boss_cinematic_ended` when that countdown
+reaches 0, and `abort()` closes it early.
 
 `tick(delta)`: intro countdown (no attacks) → ACTIVE: `_attack_timer -= delta`; when ≤ 0 pick the next beat of the
 current pattern (patterns cycle a fixed beat list; lanes from `stage_rng` where the pattern says "random", never
@@ -605,10 +611,19 @@ Damage: `apply_tool(kind)` (called by `tool_pickup.collect`): `damage = ToolDefs
 `visual.set_phase(phase)`, `_attack_timer = min(_attack_timer, 0.6)`; `hp == 0` → `_defeat()`. `_defeat()`: bonus
 `= boss_kill_bonus_base + boss_kill_bonus_per_stage × (stage_index − 1)` added to score, emit
 `boss_defeated(kind, bonus)`, `visual.play_defeat()`, clear queued telegraphs, `clear()` live projectiles (no dodge
-credit), free live tools, `_outro = boss_outro_seconds`; `_retreat()`: bonus `= kill_bonus × boss_retreat_bonus_ratio ×
-(1 − hp / max_hp)`, emit `boss_retreated`, `visual.play_retreat()`, same cleanup. After the outro `finished` is
-set (a plain bool the StageManager polls), the boss node is freed. `abort()` (on caught) frees everything without
-signals or bonuses.
+credit), free live tools, `_outro` = the defeat cinematic (`boss_defeat_seconds` on the run's first defeat of the kind,
+`min(boss_defeat_short_seconds, boss_defeat_seconds)` after), then `boss_cinematic(kind, defeat_full|defeat_short,
+_outro)` on the same tick (contract 2.6 §11.14); `_retreat()`: bonus `= kill_bonus × boss_retreat_bonus_ratio ×
+(1 − hp / max_hp)`, emit `boss_retreated`, `visual.play_retreat()`, same cleanup, `_outro = boss_outro_seconds` and no
+cinematic. After the outro `finished` is set (a plain bool the StageManager polls), the boss node is freed. `abort()`
+(on caught) frees everything without fight signals or bonuses; a live cinematic still closes with
+`boss_cinematic_ended`.
+
+StageManager side (§11.14): `boss_cinematic` sets `cinematic_hold` (player controls off through
+`RunnerGame.refresh_player_controls()`, `speed_controller.set_cinematic_scale(boss_cinematic_speed_scale)`), and
+`boss_cinematic_skipped` / `boss_cinematic_ended`, a catch, a reset and the stage clear release it. Every boss tick
+drives `camera_rig.set_boss_cinematic(progress, mode, boss_global_position)` and publishes the facade mirrors
+`boss_cinematic_mode`, `boss_cinematic_progress`, `boss_time_factor`. `_snapshot()` adds `bosses_met` and `bosses_defeated_kinds`.
 
 Both endings can be reached from inside a physics callback — the killing blow is a tool auto-firing in
 `area_entered`, and a catch aborts the fight the same way — so the arena **never** takes a projectile or a tool out
@@ -769,7 +784,8 @@ boss timeout → `boss_retreated` with the partial bonus and never `boss_defeate
 camera back at zero, no spawn during the bend) plus `turn_incoming` once per seam ahead of `turn_started`, on the
 same direction and with `seconds ∈ [0, turn_warning_seconds + 0.5]`; the camera swing profile (0 at p = 0 and
 p = 1, at the peak across the hold window, monotone through each ramp); `boss_intro` exactly once per fight,
-before `boss_spawned`, carrying `boss_intro_seconds`, with no telegraph and no tool inside that window;
+before `boss_cinematic` and `boss_spawned`, carrying `boss_intro_seconds`, with no telegraph and no tool inside that
+window (contract 2.6: the cinematic timings themselves are covered by `tests/runner_boss_cinematic.gd`);
 `pursuit_alert` ordering and the epsilon gate; caught mid-boss aborts
 to `idle` with `run_finished` once and boss stats in the result; speed with stage bonus and difficulty floor.
 `runner_smoke.gd`: duplicated config `stage_base_distance 260`, `time_to_max_speed 20`, `boss_hp_scale 0.4` (so the

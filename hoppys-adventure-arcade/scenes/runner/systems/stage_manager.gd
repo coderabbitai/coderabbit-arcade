@@ -14,6 +14,9 @@ extends Node
 const RunnerGame = preload("res://scenes/runner/runner_game.gd")
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
 const StageDefs = preload("res://scenes/runner/data/stage_defs.gd")
+## Only for the kind of the boss a checkpoint is taken in front of (contract §11.13 bosses_met);
+## boss_defs.gd preloads no scene script, so there is no cycle.
+const BossDefs = preload("res://scenes/runner/boss/boss_defs.gd")
 
 ## Contract §11.1 phases.
 const PHASE_IDLE: StringName = &"idle"
@@ -35,6 +38,10 @@ const DEFAULT_STAGE_CLEAR_SECONDS := 3.0
 const DEFAULT_STAGE_CLEAR_BONUS_BASE := 400
 const DEFAULT_STAGE_CLEAR_BONUS_PER_STAGE := 150
 const DEFAULT_STAGE_BANNER_CLEAR_SECONDS := 3.5
+const DEFAULT_BOSS_CINEMATIC_SPEED_SCALE := 0.25
+const DEFAULT_BOSS_Z := -14.0
+## Contract §11.5: the Boss node's hover height, the camera's fallback target with no boss node.
+const BOSS_CENTER_Y := 2.6
 
 var game: RunnerGame
 var config: RunConfig
@@ -53,6 +60,10 @@ var run_clock := 0.0
 ## drain window opens and held through the bend, so the direction turn_incoming announced, the one
 ## turn_started repeats and the one the rigs sweep are always the same (contract §11.4).
 var next_turn_direction := 0
+## True from boss_cinematic until that cinematic is skipped, ends, is aborted or the run is caught
+## (contract 2.6 §11.14): manual controls are off and the corridor eases to
+## boss_cinematic_speed_scale for exactly as long as this holds.
+var cinematic_hold := false
 
 # Result counters (contract §11.4). They are tallied from the facade signals, so they survive the
 # boss encounter being freed and are correct whether or not an encounter is mounted at all.
@@ -97,6 +108,14 @@ func _connect(runner: RunnerGame) -> void:
 		runner.boss_retreated.connect(_on_boss_retreated)
 	if not runner.tool_collected.is_connected(_on_tool_collected):
 		runner.tool_collected.connect(_on_tool_collected)
+	# Connected before any frontend binds, so the hold and the facade mirrors are already right by the
+	# time a HUD or a visual hears the same signal (contract §11.14).
+	if not runner.boss_cinematic.is_connected(_on_boss_cinematic):
+		runner.boss_cinematic.connect(_on_boss_cinematic)
+	if not runner.boss_cinematic_skipped.is_connected(_on_boss_cinematic_released):
+		runner.boss_cinematic_skipped.connect(_on_boss_cinematic_released)
+	if not runner.boss_cinematic_ended.is_connected(_on_boss_cinematic_released):
+		runner.boss_cinematic_ended.connect(_on_boss_cinematic_released)
 
 ## Called from RunnerGame.start_run() alongside the other system resets; begin() follows once every
 ## system is back at zero.
@@ -118,8 +137,12 @@ func reset(run_seed: int) -> void:
 	_last_turn_direction = 0
 	_draining = false
 	_turn_announced = false
-	_abort_boss()
+	# A fresh run also forgets which bosses the last one met (contract §11.14), which abort() alone
+	# would leave in place until stage 1's fight.
+	_reset_boss()
+	_set_cinematic_hold(false)
 	_apply_turn_reset()
+	_apply_boss_camera_reset()
 	_set_boss_arena(false)
 	_set_phase(PHASE_IDLE)
 	_publish()
@@ -150,6 +173,15 @@ func begin_at_boss(checkpoint: Dictionary) -> void:
 	bosses_escaped = int(checkpoint.get("bosses_escaped", 0))
 	tools_used = int(checkpoint.get("tools_used", 0))
 	boss_damage_dealt = int(checkpoint.get("boss_damage_dealt", 0))
+	# Contract §11.14: the bosses the run had met, the retried one included, so its intro is short,
+	# and the ones it had beaten, so killing one of those again plays the short defeat.
+	var arena := _boss_encounter()
+	if arena != null and arena.has_method("mark_met"):
+		var met: Variant = checkpoint.get("bosses_met", [])
+		arena.mark_met(met if met is Array else [])
+	if arena != null and arena.has_method("mark_defeated"):
+		var beaten: Variant = checkpoint.get("bosses_defeated_kinds", [])
+		arena.mark_defeated(beaten if beaten is Array else [])
 	var controller := game.speed_controller
 	if controller != null and is_instance_valid(controller):
 		if controller.has_method("set_stage_bonus"):
@@ -197,6 +229,8 @@ func _snapshot() -> Dictionary:
 		"tools_used": tools_used,
 		"boss_damage_dealt": boss_damage_dealt,
 		"next_turn_direction": _last_turn_direction,
+		"bosses_met": _bosses_met(),
+		"bosses_defeated_kinds": _bosses_defeated_kinds(),
 		# The Game Over stats the systems own, so a retry reports the whole run, not just its tail.
 		"power_ups": int(_system_stat(game.get(&"effect_manager"), &"power_ups_collected", 0)),
 		"hits_taken": int(_system_stat(game.get(&"hit_manager"), &"hits_taken", 0)),
@@ -205,6 +239,26 @@ func _snapshot() -> Dictionary:
 		"max_speed_reached": float(_system_stat(game.get(&"speed_controller"), &"max_speed_reached", float(game.speed))),
 		"chunks_spawned": int(_system_stat(game.get(&"spawner"), &"chunks_spawned", 0))
 	}
+
+## Contract §11.13/§11.14 `bosses_met`: every boss this run has met, plus the one the snapshot is
+## taken in front of, so a retry of this fight counts as a repeat meeting.
+func _bosses_met() -> Array[StringName]:
+	var kinds: Array[StringName] = []
+	var arena := _boss_encounter()
+	if arena != null and arena.has_method("met_kinds"):
+		kinds.assign(arena.met_kinds())
+	var upcoming := BossDefs.boss_kind(stage_index)
+	if upcoming != &"" and not kinds.has(upcoming):
+		kinds.append(upcoming)
+	return kinds
+
+## Contract §11.13/§11.14 `bosses_defeated_kinds`: every boss this run has beaten before this fight.
+func _bosses_defeated_kinds() -> Array[StringName]:
+	var kinds: Array[StringName] = []
+	var arena := _boss_encounter()
+	if arena != null and arena.has_method("defeated_kinds"):
+		kinds.assign(arena.defeated_kinds())
+	return kinds
 
 ## A numeric property off one of the facade's systems, or `fallback` when the system (or the
 ## property) is not there.
@@ -296,6 +350,7 @@ func _tick_boss(delta: float) -> void:
 		return
 	if arena.has_method("tick"):
 		arena.tick(delta)
+	_apply_boss_camera()
 	if _boss_finished(arena):
 		_enter_stage_clear()
 
@@ -362,12 +417,18 @@ func _enter_boss() -> void:
 	if arena != null and arena.has_method("start"):
 		arena.start(stage_index)
 		_boss_active = not _boss_finished(arena)
+	# The intro's first frame is framed on the tick it opens, not one tick late.
+	_apply_boss_camera()
 	if not _boss_active:
 		_enter_stage_clear()
 
 func _enter_stage_clear() -> void:
 	_phase_timer = 0.0
 	_boss_active = false
+	# The encounter always closes its cinematic before it finishes; this only makes the hand-back
+	# unconditional, like _apply_turn_reset() does for the bend.
+	_set_cinematic_hold(false)
+	_apply_boss_camera_reset()
 	_set_boss_arena(false)
 	# The fight is over, so there is nothing left to retry (contract §11.13).
 	if game != null and &"boss_checkpoint" in game:
@@ -389,7 +450,9 @@ func _on_caught() -> void:
 	_phase_timer = 0.0
 	_draining = false
 	_abort_boss()
+	_set_cinematic_hold(false)
 	_apply_turn_reset()
+	_apply_boss_camera_reset()
 	_set_boss_arena(false)
 	_set_phase(PHASE_IDLE)
 	_publish()
@@ -422,6 +485,17 @@ func _on_boss_retreated(_kind: StringName, _bonus: int) -> void:
 func _on_tool_collected(_kind: StringName, damage: int) -> void:
 	tools_used += 1
 	boss_damage_dealt += maxi(damage, 0)
+
+## A boss cinematic opened (contract 2.6 §11.14): hold the player and mirror its clock at once.
+func _on_boss_cinematic(_kind: StringName, _mode: StringName, _seconds: float) -> void:
+	_set_cinematic_hold(true)
+	_publish()
+
+## Skipped or ended: the player gets control back on the spot. A skip still has its tail to play,
+## so the camera keeps following the encounter's clock until boss_cinematic_ended.
+func _on_boss_cinematic_released(_mode: StringName) -> void:
+	_set_cinematic_hold(false)
+	_publish()
 
 # --- collaborators ---
 
@@ -517,6 +591,64 @@ func _abort_boss() -> void:
 	if arena != null and arena.has_method("abort"):
 		arena.abort()
 
+## abort() plus the encounter's run tallies and meetings, for a fresh run (reset()).
+func _reset_boss() -> void:
+	_boss_active = false
+	var arena := _boss_encounter()
+	if arena != null and arena.has_method("reset"):
+		arena.reset()
+	elif arena != null and arena.has_method("abort"):
+		arena.abort()
+
+## Contract 2.6 §11.14: while a cinematic holds the player, manual controls are off (the facade owns
+## that rule, autopilot included) and the corridor eases to boss_cinematic_speed_scale; letting go
+## gives both back. Idempotent, so every exit path can call it.
+func _set_cinematic_hold(on: bool) -> void:
+	if cinematic_hold == on:
+		return
+	cinematic_hold = on
+	if game == null:
+		return
+	if game.has_method("refresh_player_controls"):
+		game.refresh_player_controls()
+	var controller: Node = game.speed_controller
+	if controller != null and is_instance_valid(controller) and controller.has_method("set_cinematic_scale"):
+		controller.set_cinematic_scale(_cinematic_speed_scale() if on else 1.0)
+
+## The camera follows the encounter's cinematic clock on every boss tick, the way _apply_turn drives
+## the swing; outside a cinematic it is handed (0, &""), which the shot curve never blends.
+func _apply_boss_camera() -> void:
+	if game == null:
+		return
+	var camera: Node = game.camera_rig
+	if camera == null or not is_instance_valid(camera) or not camera.has_method("set_boss_cinematic"):
+		return
+	var arena := _boss_encounter()
+	var mode: StringName = _cinematic_mode(arena)
+	var progress := float(arena.cinematic_progress()) if mode != &"" and arena.has_method("cinematic_progress") else 0.0
+	camera.set_boss_cinematic(progress, mode, _boss_position(arena))
+
+func _apply_boss_camera_reset() -> void:
+	if game == null:
+		return
+	var camera: Node = game.camera_rig
+	if camera != null and is_instance_valid(camera) and camera.has_method("set_boss_cinematic"):
+		camera.set_boss_cinematic(0.0, &"", Vector3.ZERO)
+
+## The cinematic the encounter is playing, &"" with no encounter or none playing.
+func _cinematic_mode(arena: Node) -> StringName:
+	if arena == null or not is_instance_valid(arena) or not (&"cinematic_mode" in arena):
+		return &""
+	return StringName(arena.get(&"cinematic_mode"))
+
+## The Boss node's global position, or where contract §11.5 hovers it when there is none.
+func _boss_position(arena: Node) -> Vector3:
+	if arena != null and is_instance_valid(arena) and &"boss" in arena:
+		var node := arena.get(&"boss") as Node3D
+		if node != null and is_instance_valid(node) and node.is_inside_tree():
+			return node.global_position
+	return Vector3(0.0, BOSS_CENTER_Y, _float_config(&"boss_z", DEFAULT_BOSS_Z))
+
 # --- drain ---
 
 ## A blocking hazard still short of the clear line holds the stage open.
@@ -565,6 +697,14 @@ func _publish() -> void:
 	game.stage_distance_target = stage_distance_target
 	game.run_clock = run_clock
 	game.next_turn_direction = next_turn_direction
+	# Contract 2.6 §11.14 read-only mirrors, straight off the encounter's clock.
+	var arena := _boss_encounter()
+	var mode := _cinematic_mode(arena)
+	game.boss_cinematic_mode = mode
+	game.boss_cinematic_progress = float(arena.cinematic_progress()) \
+		if mode != &"" and arena.has_method("cinematic_progress") else 0.0
+	game.boss_time_factor = float(arena.time_factor()) \
+		if mode != &"" and arena.has_method("time_factor") else 1.0
 
 ## The stage's base speed, as stage_started reports it (systems spec §10.1).
 func _stage_base_speed() -> float:
@@ -599,6 +739,9 @@ func _stage_clear_seconds() -> float:
 
 func _banner_clear_seconds() -> float:
 	return maxf(_float_config(&"stage_banner_clear_seconds", DEFAULT_STAGE_BANNER_CLEAR_SECONDS), 0.0)
+
+func _cinematic_speed_scale() -> float:
+	return clampf(_float_config(&"boss_cinematic_speed_scale", DEFAULT_BOSS_CINEMATIC_SPEED_SCALE), 0.0, 1.0)
 
 func _float_config(property: StringName, fallback: float) -> float:
 	if config == null or not (property in config):

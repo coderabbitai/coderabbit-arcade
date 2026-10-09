@@ -15,6 +15,61 @@ const DEFAULT_TURN_CAMERA_YAW := 55.0
 const DEFAULT_TURN_CAMERA_BANK := 12.0
 const DEFAULT_TURN_SWING_IN_FRACTION := 0.3
 const DEFAULT_TURN_SWING_OUT_FRACTION := 0.3
+## Contract 2.6 §11.14 boss shots, one per cinematic mode. A pose is placed off the Boss node:
+## `distance` metres back toward the player, `height` metres off the boss centre (below it is a low
+## angle looking up), `orbit` degrees of yaw around the boss, and the lens aims `look_y` metres above
+## the centre. Keys are [p, distance, height, orbit, fov, look_y], smoothstepped between. The blend
+## ramps in over [0, cut] and back out over [ret, 1]; `ret` is where a skip lands at the default
+## lengths (the last boss_cinematic_skip_tail 0.3 s), so a skip never pops the camera.
+const BOSS_SHOTS := {
+	&"intro_full": {
+		"cut": 0.03,
+		"ret": 0.94,
+		"keys": [
+			# Cut in low and wide, push up at the boss (FOV 70 -> 48), freeze under the title card,
+			# then widen behind Hoppy for the hint row.
+			[0.0, 9.0, -1.5, 0.0, 70.0, 0.4],
+			[0.4, 5.4, -1.0, 0.0, 48.0, 0.5],
+			[0.66, 5.2, -0.9, 0.0, 48.0, 0.5],
+			[0.84, 16.0, 1.0, 0.0, 62.0, 0.0],
+			[1.0, 16.0, 1.0, 0.0, 62.0, 0.0]
+		]
+	},
+	&"intro_short": {
+		"cut": 0.05,
+		"ret": 0.88,
+		"keys": [
+			[0.0, 8.0, -1.3, 0.0, 64.0, 0.4],
+			[0.45, 5.6, -0.9, 0.0, 50.0, 0.5],
+			[0.88, 7.0, -0.5, 0.0, 54.0, 0.4],
+			[1.0, 7.0, -0.5, 0.0, 54.0, 0.4]
+		]
+	},
+	&"defeat_full": {
+		"cut": 0.04,
+		"ret": 0.917,
+		"keys": [
+			# Punch in through the hit-stop, orbit the close-up -12 -> +12 deg, then pull back wide
+			# over Hoppy's shoulder for the triumphant beat.
+			[0.0, 7.0, -0.4, -12.0, 56.0, 0.3],
+			[0.06, 4.4, -0.3, -12.0, 44.0, 0.3],
+			[0.5, 4.2, -0.2, 12.0, 44.0, 0.3],
+			[0.8, 19.0, 2.4, 6.0, 58.0, 0.0],
+			[1.0, 19.0, 2.4, 6.0, 58.0, 0.0]
+		]
+	},
+	&"defeat_short": {
+		"cut": 0.06,
+		"ret": 0.85,
+		"keys": [
+			[0.0, 7.0, -0.4, -12.0, 56.0, 0.3],
+			[0.08, 4.6, -0.3, -12.0, 46.0, 0.3],
+			[0.45, 4.4, -0.2, 12.0, 46.0, 0.3],
+			[0.75, 18.0, 2.2, 6.0, 58.0, 0.0],
+			[1.0, 18.0, 2.2, 6.0, 58.0, 0.0]
+		]
+	}
+}
 
 @onready var camera: Camera3D = $Camera
 
@@ -39,6 +94,11 @@ var rng := RandomNumberGenerator.new()
 var turn_progress := 0.0
 ## -1 left, +1 right, 0 outside a turn.
 var turn_direction := 0
+## 0..1 through the boss cinematic and its mode, &"" outside one (contract 2.6 §11.14).
+var boss_progress := 0.0
+var boss_mode: StringName = &""
+## The Boss node, in this rig's space, that the shot is framed on.
+var boss_target := Vector3.ZERO
 
 ## Where the rig wants the camera before shake, refreshed in _physics_process.
 var _rest_position := Vector3(0, 4, 8)
@@ -67,6 +127,9 @@ func reset() -> void:
 	fov_punch_decay = 0.0
 	turn_progress = 0.0
 	turn_direction = 0
+	boss_progress = 0.0
+	boss_mode = &""
+	boss_target = Vector3.ZERO
 	_rest_position = base_position
 	if camera != null:
 		camera.position = base_position
@@ -137,6 +200,61 @@ func turn_swing_out_fraction() -> float:
 		return DEFAULT_TURN_SWING_OUT_FRACTION
 	return float(config.turn_swing_out_fraction)
 
+## The boss cinematic shot (contract 2.6 §11.14). The StageManager calls this every physics tick of
+## the `boss` phase, the way it drives set_turn(), and with (0, &"") once the cinematic is over;
+## `boss_position` is the Boss node's global position. boss_shot() blends to 0 at p = 0 and p = 1,
+## so the camera hands back to the follow exactly where it left it.
+func set_boss_cinematic(progress: float, mode: StringName, boss_position: Vector3) -> void:
+	boss_progress = clampf(progress, 0.0, 1.0)
+	boss_mode = mode
+	boss_target = to_local(boss_position) if is_inside_tree() else boss_position
+
+## Pure shot curve for `mode` at progress `p`: {blend, distance, height, orbit, fov, look_y} (see
+## BOSS_SHOTS). Like turn_swing_profile, `blend` is exactly 0 at p = 0 and p = 1 — the endpoints are
+## answered before the ramps — and an unknown or empty mode never blends at all.
+static func boss_shot(p: float, mode: StringName) -> Dictionary:
+	var progress := clampf(p, 0.0, 1.0)
+	var table: Dictionary = BOSS_SHOTS.get(mode, {})
+	var keys: Array = table.get("keys", [])
+	var shot := {"blend": 0.0, "distance": 0.0, "height": 0.0, "orbit": 0.0, "fov": 0.0, "look_y": 0.0}
+	if keys.is_empty():
+		return shot
+	var pose: Array = _shot_pose(keys, progress)
+	shot["distance"] = float(pose[1])
+	shot["height"] = float(pose[2])
+	shot["orbit"] = float(pose[3])
+	shot["fov"] = float(pose[4])
+	shot["look_y"] = float(pose[5])
+	if progress <= 0.0 or progress >= 1.0:
+		return shot
+	var cut := clampf(float(table.get("cut", 0.0)), 0.0, 1.0)
+	var ret := clampf(float(table.get("ret", 1.0)), cut, 1.0)
+	var blend := 1.0
+	if cut > 0.0 and progress < cut:
+		blend = smoothstep(0.0, 1.0, progress / cut)
+	elif ret < 1.0 and progress > ret:
+		blend = smoothstep(0.0, 1.0, (1.0 - progress) / (1.0 - ret))
+	shot["blend"] = blend
+	return shot
+
+## The key pose at `progress`, smoothstepped between the two keys around it.
+static func _shot_pose(keys: Array, progress: float) -> Array:
+	var first: Array = keys[0]
+	if progress <= float(first[0]):
+		return first
+	for index in range(1, keys.size()):
+		var to: Array = keys[index]
+		if progress > float(to[0]):
+			continue
+		var from: Array = keys[index - 1]
+		var span := float(to[0]) - float(from[0])
+		var t := smoothstep(0.0, 1.0, (progress - float(from[0])) / span) if span > 0.0 else 1.0
+		var pose := [progress]
+		for column in range(1, from.size()):
+			pose.append(lerpf(float(from[column]), float(to[column]), t))
+		return pose
+	return keys[keys.size() - 1]
+
 func shake(strength: float, duration := 0.35) -> void:
 	if duration <= 0.0 or strength <= 0.0:
 		return
@@ -172,12 +290,17 @@ func _physics_process(delta: float) -> void:
 		offset = Vector3(rng.randf_range(-amount, amount), rng.randf_range(-amount, amount), 0.0)
 	camera.position = _rest_position + offset
 	_apply_turn_swing()
+	var shot := boss_shot(boss_progress, boss_mode)
+	var blend := float(shot["blend"])
+	_apply_boss_shot(shot, blend, offset)
 	if fov_punch > 0.0:
 		fov_punch = maxf(fov_punch - fov_punch_decay * delta, 0.0)
 	var speed_boost := 0.0
 	if game != null:
 		speed_boost = speed_fov_boost * clampf(float(game.normalized_speed), 0.0, 1.2)
-	camera.fov = base_fov + fov_punch + speed_boost
+	var fov := base_fov + fov_punch + speed_boost
+	# The punch rides the shot too, so a defeat explosion still kicks the close-up.
+	camera.fov = lerpf(fov, float(shot["fov"]) + fov_punch, blend) if blend > 0.0 else fov
 
 ## Swing the camera around the player and bank it, on top of the follow and shake result. Both
 ## angles ride turn_swing_profile(progress), so the bend starts and ends at the resting pose exactly
@@ -194,3 +317,20 @@ func _apply_turn_swing() -> void:
 		pivot = game.player.position
 	camera.position = pivot + (camera.position - pivot).rotated(Vector3.UP, yaw)
 	camera.rotation = _base_rotation + Vector3(0.0, yaw, bank)
+
+## Blend the follow pose toward the boss shot (contract 2.6 §11.14): the camera sits off the Boss
+## node where the shot says and aims at it, the shake offset rides along, and position and rotation
+## both mix by `blend`, which is 0 outside a cinematic and at both of its ends.
+func _apply_boss_shot(shot: Dictionary, blend: float, offset: Vector3) -> void:
+	if blend <= 0.0:
+		return
+	var orbit := deg_to_rad(float(shot["orbit"]))
+	var lens := boss_target + Vector3(0.0, float(shot["height"]), float(shot["distance"])).rotated(Vector3.UP, orbit)
+	var aim := boss_target + Vector3(0.0, float(shot["look_y"]), 0.0)
+	var follow_rotation := camera.quaternion
+	camera.position = camera.position.lerp(lens + offset, blend)
+	var look := aim - lens
+	if look.is_zero_approx():
+		return
+	var shot_rotation := Basis.looking_at(look, Vector3.UP).get_rotation_quaternion()
+	camera.quaternion = follow_rotation.slerp(shot_rotation, blend)

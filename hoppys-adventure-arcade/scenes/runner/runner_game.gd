@@ -36,6 +36,9 @@ const FRONTEND_MOUNTS := {
 		"res://scenes/runner/ui/boss_hud.tscn",
 		"res://scenes/runner/ui/stage_banner.tscn",
 		"res://scenes/runner/ui/stage_clear.tscn",
+		## Contract 2.6 §11.14: the boss cinematic title card / chyron / skip prompt, driven only off
+		## boss_cinematic_progress and boss_time_factor.
+		"res://scenes/runner/ui/boss_cinematic.tscn",
 		## Full-screen post-processing pass (colour grade, grain, vignette, letterbox, speed
 		## streaks) on its own layer below the panels; optional like the rest (contract §11.8).
 		"res://scenes/runner/ui/post_fx.tscn"
@@ -101,6 +104,15 @@ signal boss_attack_planned(attack: Dictionary)
 signal boss_attack_committed(lane_mask: int, kind: StringName, seconds: float)
 signal boss_defeated(kind: StringName, bonus: int)
 signal boss_retreated(kind: StringName, bonus: int)
+## Contract 2.6 §11.14: a boss cinematic of `seconds` opens. `mode` is intro_full / intro_short
+## (right after boss_intro, before boss_spawned) or defeat_full / defeat_short (right after
+## boss_defeated, on the same tick).
+signal boss_cinematic(kind: StringName, mode: StringName, seconds: float)
+## The player skipped an intro (a defeat is never skippable): it jumps to its last
+## boss_cinematic_skip_tail seconds.
+signal boss_cinematic_skipped(mode: StringName)
+## It is over (played out, skipped tail done, or aborted by a catch / a new run).
+signal boss_cinematic_ended(mode: StringName)
 signal tool_collected(kind: StringName, damage: int)
 signal pursuit_alert(kind: StringName, seconds_to_catch: float)
 signal pursuer_distance_changed(normalized: float)
@@ -158,6 +170,12 @@ var boss_hp := 0
 var boss_max_hp := 0
 ## 1-based; 0 outside a fight.
 var boss_phase := 0
+## Contract 2.6 §11.14, mirrored by the StageManager off the encounter's clock: the cinematic
+## playing (&"" when none), 0..1 through it, and the factor visuals, effects and HUD multiply into
+## their own delta (1 outside a defeat; the engine time scale is never touched).
+var boss_cinematic_mode: StringName = &""
+var boss_cinematic_progress := 0.0
+var boss_time_factor := 1.0
 
 ## Boss checkpoint (contract §11.13). The StageManager snapshots the run here on every boss entry
 ## and empties it when the stage clears, so it is non-empty only while a fight is live, or after a
@@ -525,13 +543,46 @@ func on_tool_hit() -> void:
 	if camera_rig != null and is_instance_valid(camera_rig) and camera_rig.has_method("shake"):
 		camera_rig.shake(SHAKE_ON_TOOL_HIT)
 
+## Contract 2.6 §11.14: skip the boss intro playing now. It only takes once the intro has run
+## boss_cinematic_skip_after seconds, while running and unpaused, and never during a defeat; returns
+## true when it did. Jump and ui_accept reach it through _unhandled_input; the autopilot never calls
+## it.
+func skip_boss_cinematic() -> bool:
+	if not _can_skip_boss_cinematic():
+		return false
+	return bool(boss_encounter.skip_cinematic())
+
+func _can_skip_boss_cinematic() -> bool:
+	if state != &"running" or paused:
+		return false
+	if boss_encounter == null or not is_instance_valid(boss_encounter):
+		return false
+	if not boss_encounter.has_method("can_skip_cinematic") or not boss_encounter.has_method("skip_cinematic"):
+		return false
+	return bool(boss_encounter.can_skip_cinematic())
+
 ## Tests and the F7 debug key drive the bot through here. The bot owns the player while it is on,
-## so manual input is disabled for as long as it runs and comes back when it is switched off.
+## so manual input is disabled for as long as it runs and comes back when it is switched off —
+## unless a boss cinematic is holding the player (contract §11.14), which hands it back itself.
 func set_autopilot(enabled: bool) -> void:
 	if autopilot != null and autopilot.has_method("set_enabled"):
 		autopilot.set_enabled(enabled)
-	if player != null and player.has_method("set_controls_enabled"):
-		player.set_controls_enabled(not enabled and state == &"running")
+	_apply_player_controls(not enabled)
+
+## Manual controls are live while the run is, the bot is off and no boss cinematic holds the player
+## (contract 2.6 §11.14). The StageManager calls this whenever a cinematic takes or gives back
+## control, so the one rule decides every hand-back.
+func refresh_player_controls() -> void:
+	var bot_on := autopilot != null and is_instance_valid(autopilot) and &"enabled" in autopilot \
+		and bool(autopilot.get(&"enabled"))
+	_apply_player_controls(not bot_on)
+
+func _apply_player_controls(manual: bool) -> void:
+	if player == null or not is_instance_valid(player) or not player.has_method("set_controls_enabled"):
+		return
+	var held := stage_manager != null and is_instance_valid(stage_manager) \
+		and &"cinematic_hold" in stage_manager and bool(stage_manager.get(&"cinematic_hold"))
+	player.set_controls_enabled(manual and state == &"running" and not held)
 
 # --- run loop ---
 
@@ -680,6 +731,9 @@ func _clear_boss_state() -> void:
 	boss_hp = 0
 	boss_max_hp = 0
 	boss_phase = 0
+	boss_cinematic_mode = &""
+	boss_cinematic_progress = 0.0
+	boss_time_factor = 1.0
 
 ## The encounter may expose the boss as a property or as a child named Boss; either is accepted and
 ## a missing one just leaves `boss` null.
@@ -852,6 +906,13 @@ func _instantiate_frontend(path: String) -> Node:
 	return instance
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Contract 2.6 §11.14: jump or confirm skips a boss intro once it may be skipped. The press is
+	# consumed here, and the controls the skip hands back re-sync held input, so it never also lands
+	# as a jump.
+	if (event.is_action_pressed("jump") or event.is_action_pressed("ui_accept")) and _can_skip_boss_cinematic():
+		skip_boss_cinematic()
+		get_viewport().set_input_as_handled()
+		return
 	# The backend owns `pause`; it toggles only while running, so Space on a focused Game Over
 	# button can never jump and Esc never double-fires with the overlays.
 	if not event.is_action_pressed("pause") or state != &"running":

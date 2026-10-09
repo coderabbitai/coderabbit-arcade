@@ -33,9 +33,10 @@ const STAGE_DISTANCE := 260.0
 const BOSS_HP_SCALE := 0.4
 const SMOKE_BOSS_HP := 40
 ## Wall-clock ceilings for the two v2 phases. The stage seam is the long one: a 260 m run, the
-## drain, the bend, the 3 s boss entrance, the fight and the card. Every wait below carries its own
-## copy of this budget, and at TIME_SCALE 6 it buys 240 game seconds each — so the v2.1 entrance
-## (boss_intro_seconds 1.2 -> 3.0, half a wall-clock second) needs no more room here.
+## drain, the bend, the 5 s boss intro, the fight, the 3.6 s defeat and the card. Every wait below
+## carries its own copy of this budget, and at TIME_SCALE 6 it buys 240 game seconds each — so the
+## contract 2.6 cinematics (8.6 game seconds, under a wall-clock second and a half) need no more
+## room here.
 const STAGE_WALL_TIMEOUT := 40.0
 const BOSS_WALL_TIMEOUT := 20.0
 
@@ -187,6 +188,15 @@ func _stage_phase() -> void:
 	check(game.boss_max_hp == SMOKE_BOSS_HP,
 		"the smoke fight opened on %d hp, expected the scaled %d" % [game.boss_max_hp, SMOKE_BOSS_HP])
 	check(game.boss != null, "the fight has no boss node")
+	# Contract 2.6 §11.14: the run's first meeting plays the full intro, and it holds the player.
+	check(not events["boss_cinematic"].is_empty() and StringName(events["boss_cinematic"][0][0]) == &"intro_full"
+		and is_equal_approx(float(events["boss_cinematic"][0][1]), float(game.config.boss_intro_seconds)),
+		"stage 1 did not open on a %.1f s intro_full, got %s"
+			% [float(game.config.boss_intro_seconds), events["boss_cinematic"]])
+	check(game.boss_cinematic_mode == &"intro_full" and bool(game.stage_manager.cinematic_hold)
+		and not bool(game.player.controls_enabled),
+		"the intro does not hold the player (mode %s, hold %s, controls %s)"
+			% [game.boss_cinematic_mode, game.stage_manager.cinematic_hold, game.player.controls_enabled])
 
 	check(await _wait_until(func() -> bool: return _damaging_tools() > 0, STAGE_WALL_TIMEOUT),
 		"the greedy bot never landed a tool on the boss (hp %d/%d)" % [game.boss_hp, game.boss_max_hp])
@@ -215,6 +225,7 @@ func _stage_phase() -> void:
 	# wait above can time out, and an empty array here would fault instead of failing the check.
 	check(not events["stage_cleared"].is_empty() and int(events["stage_cleared"][0][1]) > 0,
 		"the stage clear paid no bonus across %d stage_cleared event(s)" % events["stage_cleared"].size())
+	_check_seam_cinematics()
 
 	# The whole point of the fair bot: the shots are telegraphed and it answers every one of them.
 	check(events["damage_taken"].is_empty(),
@@ -803,6 +814,13 @@ func _watch() -> void:
 		"boss_spawned": [],
 		"boss_defeated": [],
 		"boss_retreated": [],
+		## Contract 2.6 §11.14: [mode, seconds, elapsed at the signal] per cinematic, and the elapsed of
+		## each ending, so the seam can prove the defeat really held the stage clear.
+		"boss_cinematic": [],
+		"boss_cinematic_skipped": [],
+		"boss_cinematic_ended": [],
+		"boss_defeated_at": [],
+		"stage_cleared_at": [],
 		"tool_collected": [],
 		"caught": 0,
 		"run_finished": 0,
@@ -812,7 +830,8 @@ func _watch() -> void:
 		events["stage_started"].append([index, name, speed])
 		_open_banner_window(index))
 	game.stage_cleared.connect(func(index: int, bonus: int) -> void:
-		events["stage_cleared"].append([index, bonus]))
+		events["stage_cleared"].append([index, bonus])
+		events["stage_cleared_at"].append(float(game.elapsed)))
 	game.turn_incoming.connect(func(direction: int, seconds: float) -> void:
 		events["turn_incoming"].append([direction, seconds])
 		events["turn_log"].append(&"incoming"))
@@ -824,7 +843,14 @@ func _watch() -> void:
 	game.boss_spawned.connect(func(kind: StringName, hp: int) -> void:
 		events["boss_spawned"].append([kind, hp]))
 	game.boss_defeated.connect(func(kind: StringName, bonus: int) -> void:
-		events["boss_defeated"].append([kind, bonus]))
+		events["boss_defeated"].append([kind, bonus])
+		events["boss_defeated_at"].append(float(game.elapsed)))
+	game.boss_cinematic.connect(func(_kind: StringName, mode: StringName, seconds: float) -> void:
+		events["boss_cinematic"].append([mode, seconds, float(game.elapsed)]))
+	game.boss_cinematic_skipped.connect(func(mode: StringName) -> void:
+		events["boss_cinematic_skipped"].append(mode))
+	game.boss_cinematic_ended.connect(func(mode: StringName) -> void:
+		events["boss_cinematic_ended"].append([mode, float(game.elapsed)]))
 	game.boss_retreated.connect(func(kind: StringName, bonus: int) -> void:
 		events["boss_retreated"].append([kind, bonus]))
 	game.tool_collected.connect(func(kind: StringName, damage: int) -> void:
@@ -857,6 +883,45 @@ func _watch() -> void:
 		events["run_finished"] += 1)
 	game.leaderboard_saved.connect(func(_entries: Array, _rank: int) -> void:
 		events["leaderboard_saved"] += 1)
+
+## Contract 2.6 §11.14 across the stage-1 seam: the intro played its full length, the kill opened a
+## defeat_full on the same tick, the stage clear waited that cinematic out, the bot never skipped,
+## and the hold let go of the corridor speed. Times are game seconds off `elapsed`, so a slow frame
+## cannot stretch them; two physics ticks of slack cover the tick boundary and the float countdown.
+func _check_seam_cinematics() -> void:
+	var slack := 2.0 / 60.0 + 0.001
+	var cinematics: Array = events["boss_cinematic"]
+	var ended: Array = events["boss_cinematic_ended"]
+	check(cinematics.size() >= 2 and ended.size() >= 2,
+		"the seam played %d cinematic(s) and ended %d, expected the intro and the defeat"
+			% [cinematics.size(), ended.size()])
+	if cinematics.size() < 2 or ended.size() < 2:
+		return
+	var intro: Array = cinematics[0]
+	var intro_end: Array = ended[0]
+	check(StringName(intro_end[0]) == &"intro_full"
+		and absf(float(intro_end[1]) - float(intro[2]) - float(intro[1])) <= slack,
+		"the intro ran %.3f s, expected %.1f" % [float(intro_end[1]) - float(intro[2]), float(intro[1])])
+	var defeat: Array = cinematics[1]
+	var defeat_seconds := float(game.config.boss_defeat_seconds)
+	check(StringName(defeat[0]) == &"defeat_full" and is_equal_approx(float(defeat[1]), defeat_seconds),
+		"the kill opened %s for %.2f s, expected defeat_full for %.2f" % [defeat[0], float(defeat[1]), defeat_seconds])
+	var killed_at: Array = events["boss_defeated_at"]
+	var cleared_at: Array = events["stage_cleared_at"]
+	if killed_at.is_empty() or cleared_at.is_empty():
+		return
+	check(is_equal_approx(float(defeat[2]), float(killed_at[0])),
+		"the defeat cinematic opened %.3f s after boss_defeated, expected the same tick"
+			% (float(defeat[2]) - float(killed_at[0])))
+	var held := float(cleared_at[0]) - float(killed_at[0])
+	check(held >= defeat_seconds - slack and held <= defeat_seconds + slack,
+		"the stage cleared %.3f s after the kill, expected the %.2f s defeat hold" % [held, defeat_seconds])
+	check(events["boss_cinematic_skipped"].is_empty(),
+		"the autopilot skipped %s; nothing but a player press may skip" % [events["boss_cinematic_skipped"]])
+	check(game.boss_cinematic_mode == &"" and not bool(game.stage_manager.cinematic_hold)
+		and is_equal_approx(float(game.speed_controller.cinematic_scale), 1.0),
+		"the hold outlived the fight (mode %s, hold %s, scale %.2f)"
+			% [game.boss_cinematic_mode, game.stage_manager.cinematic_hold, float(game.speed_controller.cinematic_scale)])
 
 ## Tools whose damage actually landed on the boss (a resisting phase reports 0).
 func _damaging_tools() -> int:

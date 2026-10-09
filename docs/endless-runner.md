@@ -984,3 +984,35 @@ The standard backend smoke reported `RUNNER SMOKE: FAIL (3 failures / 127 checks
 ### Performance: W1 world motion clock
 
 One scroll clock: the spawner keeps `scroll_travel` / `scroll_travel_previous` (metres scrolled at the latest and the previous physics tick). A bound corridor (`corridor.gd` `bind()`) draws its floor, walls, racks and the starship world at `lerp(previous, latest, Engine.get_physics_interpolation_fraction())`, which is exactly where the interpolated chunk, hazard and pickup transforms are drawn, so floor markers no longer swim against the grid. Unbound corridors (runner menu, fixtures) keep their render-delta clock. The turn bend is interpolated the same way: `set_turn()` calls made inside a physics tick keep the previous tick's signed wave and progress, and `_apply_turn()` draws between them like the interpolated camera swing; calls from outside physics snap. SpeedLines emission has one writer (`_apply_turn()`, changed-only, never on a hidden emitter), and the rain/streak process materials are rewritten only when the speed moves by 0.05 m/s. Each placed chunk calls `reset_physics_interpolation()` after its gap and pickup placement, so it never slides in from `frontier_z` for a frame. Interpolation opt-outs on cosmetic children are consistent with this: a measured `PHYSICS_INTERPOLATION_MODE_OFF` child renders at its interpolated parent's pose (the chunk scroll stays interpolated); OFF only stops interpolation of the child's own local transform. Cameras (game and menu) use near 0.15 / far 200 for 3x the depth precision of the 0.05 default; the farthest geometry (deck plane, fog end at 96 m, boss entrance at -69 m) stays well inside. The pursuer light is written only on a 0.01 energy change, and a retreat requested while the threat is still gliding down is ignored (the next tick cancelled it anyway, after a one-frame light-off flash). Measured and left alone: chunk despawn (remove + free of the largest chunk, 229 nodes, is 0.3 ms rendered) and the per-tick `runner_hazards` group scans (about 0.1 µs each). The starship corridor now leaves the legacy `KeyLight` at its palette tuning and switched off, and lights the deck with an identical `StarshipKeyLight` in the same place; every StarshipWorld part is PAUSABLE, like the rest of the corridor. Measured in a rendered turn, corridor yaw now matches the interpolated camera swing to 0.000° (the latest-tick yaw it used before was up to 3.6° ahead).
+
+## Contract 2.6: boss cinematics (backend hand-off)
+
+This section mirrors contract §11.14 for the frontend; the contract is authoritative. The backend owns the clock, the
+camera, the player hold and the skip, and the frontend draws from that clock.
+
+- **What the backend sends.** Intro: `boss_intro(kind, name, s)`, `boss_cinematic(kind, mode, s)`, `boss_spawned`,
+  `boss_health_changed`. The `mode` is `intro_full` (5.0 s, the run's first meeting with this boss) or `intro_short`
+  (2.5 s, every repeat meeting and every checkpoint retry). Defeat: `boss_defeated(kind, bonus)`, then
+  `boss_cinematic(kind, defeat_full | defeat_short, s)` on the same tick (3.6 s first defeat, 2.0 s repeat), and
+  `stage_cleared` only once it is over. Each one ends with exactly one `boss_cinematic_ended(mode)`. Skipping an intro sends
+  `boss_cinematic_skipped(mode)` first and still plays the last 0.3 s. A defeat is never skippable. A retreat has no cinematic and keeps its
+  1.0 s outro.
+- **What to draw from.** `game.boss_cinematic_mode`, `game.boss_cinematic_progress` (0..1) and `game.boss_time_factor`.
+  All three freeze on pause and jump on a skip, so `ui/boss_cinematic.tscn` should hold no Tweens or timers of its
+  own. The backend mounts `res://scenes/runner/ui/boss_cinematic.tscn` under `HUD` once it exists, like the other
+  optional panels (PAUSABLE, idempotent `has_signal`-guarded `bind(game)`).
+- **Time factor.** It is 0.05 through the defeat's 0.12 s hit-stop, then eases from 0.4 back to 1 over 0.8 s, and is
+  1 everywhere else. Multiply it into your own delta. `Engine.time_scale` is never touched.
+- **Boss visual hooks** (optional, `has_method`-guarded): `play_cinematic(mode, seconds)` once, right after
+  `on_spawned()` / `play_defeat()`, as the set-up cue. Then `set_cinematic_progress(mode, progress)` with 0, on every
+  physics tick of the cinematic, once after a skip with the jumped progress, and with 1.0 at the end. Pose, dissolve,
+  flash and strobe come from that `progress`: seek the action to progress-mapped time, never an accumulated clock.
+  `set_time_factor(factor)` arrives with it and scales only ambient motion (idle sway, particles) during the slow-mo
+  tail. `play_intro(seconds)` still arrives through `boss_fx` on `boss_intro`. After a kill the visual is freed when
+  the defeat cinematic ends.
+- **Camera.** The camera is backend-owned (`camera_rig.boss_shot(p, mode)`): a low-angle push with a freeze-hold and a
+  wide hint shot for the intro, and a punch-in, ±12° orbit and wide pull-back for the defeat. Frontend code does not
+  move the camera. It may still call `shake()` and `punch_fov()`, which ride on top of the shot.
+- **Skip.** Intros only. Jump or `ui_accept` skips once 0.5 s have played (`skip_boss_cinematic()`). The press is
+  consumed and never jumps. Show the skip prompt on intros when `boss_cinematic_progress × seconds ≥ 0.5`, and never
+  on a defeat.

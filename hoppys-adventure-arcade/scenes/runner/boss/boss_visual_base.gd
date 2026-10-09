@@ -1,7 +1,8 @@
 extends Node3D
 ## Base for boss/visuals/<kind>_visual.tscn (contract §11.5). The backend sets every var below
 ## before calling on_spawned(), mounts the visual under BossArena/Boss at (0, 2.6, hover_z) and
-## frees it after boss_outro_seconds; the visual never frees itself and never moves the Boss node.
+## frees it once the fight's outro is over (the defeat cinematic, or boss_outro_seconds after a
+## retreat); the visual never frees itself and never moves the Boss node.
 ## The boss has no hitbox: nothing here can damage the player, so the envelope is a drawing budget,
 ## not a collision one — <= 7 m wide x 4.5 m tall x 3 m deep, bottom edge never below y 1.6,
 ## <= 40 draw calls at peak. The hover sway is the visual's own job, in _process (PAUSABLE).
@@ -49,12 +50,33 @@ func play_hit(tool_kind: StringName, damage: int) -> void:
 func play_resist(tool_kind: StringName) -> void:
 	pass
 
-## HP reached 0; the backend frees this node after boss_outro_seconds.
+## HP reached 0. Contract 2.6 §11.14: the backend frees this node once the defeat cinematic that
+## follows is over (boss_outro_seconds when that cinematic has zero length).
 func play_defeat() -> void:
 	pass
 
-## The fight timed out; same lifetime as play_defeat().
+## The fight timed out; the backend frees this node after boss_outro_seconds.
 func play_retreat() -> void:
+	pass
+
+## Optional (contract 2.6 §11.14): a cinematic of `seconds` opens — the cue to set up. `mode` is
+## intro_full / intro_short (straight after on_spawned, alongside boss_intro) or defeat_full /
+## defeat_short (straight after play_defeat). The poses themselves follow set_cinematic_progress().
+func play_cinematic(mode: StringName, seconds: float) -> void:
+	pass
+
+## Optional (contract 2.6 §11.14): where the cinematic is, 0..1. Called with 0 right after
+## play_cinematic(), on every physics tick while it runs, once straight after a skip with the jumped
+## progress, and once with 1.0 when it ends. Poses, dissolve, flash and strobe are functions of
+## `progress`, never of an accumulated clock, so a pause, a skip and the 6x smokes stay in step.
+func set_cinematic_progress(mode: StringName, progress: float) -> void:
+	pass
+
+## Optional (contract 2.6 §11.14): the defeat's time factor, every tick of a cinematic and 1.0 when it
+## ends — 0.05 through the hit-stop, then slow-mo easing back to 1. It scales only this visual's
+## ambient motion (idle sway, particles), never the cinematic pose, which set_cinematic_progress()
+## owns. The engine time scale is never touched.
+func set_time_factor(factor: float) -> void:
 	pass
 
 @warning_ignore_restore("unused_parameter")
