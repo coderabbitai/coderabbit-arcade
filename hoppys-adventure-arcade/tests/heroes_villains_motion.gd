@@ -346,6 +346,7 @@ func run() -> void:
 	p.controlled=false
 
 	if DisplayServer.get_name()!="headless":
+		clear_capture_state()
 		game.world.hide()
 		var layer := CanvasLayer.new()
 		layer.layer=100;root.add_child(layer)
@@ -370,9 +371,11 @@ func run() -> void:
 		await create_timer(.12).timeout
 		check(p.body.frame!=old_frame,"Rendered sprite advances naturally between physics ticks")
 		await RenderingServer.frame_post_draw
+		check_capture_clean("movement_cycles")
 		root.get_texture().get_image().save_png("res://../docs/previews/heroes-villains/movement_cycles.png")
 		layer.queue_free()
 	if DisplayServer.get_name()!="headless":
+		clear_capture_state()
 		game.world.show()
 		for c in game.actors.get_children():
 			if c is AnimatedSprite2D: c.queue_free()
@@ -401,6 +404,7 @@ func run() -> void:
 			for idx in [0,5]:
 				check(actors[idx].body.animation=="step1" and actors[idx].body.frame==shot[2],"Baked stamp %d holds step1 frame %d after the draw"%[idx,shot[2]])
 			check(actors[5].body.flip_h,"Left-facing stamp stays mirrored in the capture")
+			check_capture_clean("weapons_%s"%shot[1])
 			root.get_texture().get_image().save_png("res://../docs/previews/heroes-villains/weapons_%s.png"%shot[1])
 		for q in actors: q.queue_free()
 	print("Heroes vs. Villains motion failures: ",failures)
@@ -412,6 +416,25 @@ func run() -> void:
 	quit(1 if failures else 0)
 
 const ENCOUNTER := "ENCOUNTER 1 / 3 — clear the blockers"
+
+## The headless checks leave toasts (a test probe included), banners and fx behind, and with game
+## physics off nothing clears them. None of that may reach a saved preview.
+func clear_capture_state() -> void:
+	game.toast_left=0;game.held_toast="";game.toast_label.text="";game.toast_label.hide()
+	game.prompt.hide()
+	game.flow.cancel();game.flow.banner("","",0)
+	# The boss-defeat checks score points; the previews show a fresh run.
+	game.score=0;game._update_hud()
+	for c in game.actors.get_children():
+		if c is AnimatedSprite2D: c.queue_free()
+
+## Asserted after the draw that is saved, so it describes the PNG.
+func check_capture_clean(name: String) -> void:
+	var stray_fx := 0
+	for c in game.actors.get_children():
+		if c is AnimatedSprite2D and not c.is_queued_for_deletion(): stray_fx+=1
+	var quiet_toast: bool=not game.toast_label.visible or game.toast_label.text==""
+	check(quiet_toast and game.held_toast=="" and not game.flow.banner_panel.visible and stray_fx==0,name+" capture has no leftover toast, banner or fx (toast '%s', fx %d)"%[game.toast_label.text if game.toast_label.visible else "",stray_fx])
 const TRAIL_STYLE := {
 	"review_stamp": ["streak","arc","streak"],
 	"triage_hammer": ["arc","arc","arc"],

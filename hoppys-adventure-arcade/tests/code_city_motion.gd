@@ -3,6 +3,8 @@ const Catalog = preload("res://modes/beatem_up/catalog.gd")
 const Art = preload("res://modes/beatem_up/art.gd")
 const COMBAT_FRAMES = preload("res://Assets/code-city-brawl-player/combat.tres")
 const PLATFORMER_FRAMES = preload("res://Assets/bay-area-blitz-assets-only/bay_area/hoppy/platformer.tres")
+## The weapon captures' deliberate on-screen caption.
+const CAPTION := "EQUIPPED WEAPON ANIMATION · windup / contact / recovery"
 var game
 var failures := 0
 func _initialize() -> void: call_deferred("run")
@@ -46,13 +48,19 @@ func swing_effect(actor, facing: float, landed: bool, distance := 60.0) -> void:
 	for item in game.pickups:
 		if is_instance_valid(item.node): item.node.queue_free()
 	game.pickups.clear()
-func capture(name: String) -> void:
-	if DisplayServer.get_name()=="headless": return
-	game.world.reset_physics_interpolation()
-	game.camera.reset_physics_interpolation()
-	game.camera.force_update_scroll()
-	await process_frame
-	await RenderingServer.frame_post_draw
+## Saves a rendered preview. Asserted at capture time (after the saved draw when rendering): only
+## `toast_text` may show, and nothing may be held behind a banner, so no test text leaks in.
+func capture(name: String, toast_text := "") -> void:
+	var rendered := DisplayServer.get_name()!="headless"
+	if rendered:
+		game.world.reset_physics_interpolation()
+		game.camera.reset_physics_interpolation()
+		game.camera.force_update_scroll()
+		await process_frame
+		await RenderingServer.frame_post_draw
+	var shown: String = game.toast_label.text if game.toast_label.visible else ""
+	check(game.held_toast=="" and shown==toast_text,name+" shows only its expected toast (got '%s')" % shown)
+	if not rendered: return
 	DirAccess.make_dir_recursive_absolute("res://../docs/previews/code-city-motion")
 	root.get_texture().get_image().save_png("res://../docs/previews/code-city-motion/"+name+".png")
 func run() -> void:
@@ -112,7 +120,7 @@ func run() -> void:
 		actor.add_child(label)
 		i+=1
 	# Capture real character/weapon rigs at synchronized contact, windup and recovery.
-	game.toast("EQUIPPED WEAPON ANIMATION · windup / contact / recovery",99)
+	game.toast(CAPTION,99)
 	for phase in [0.25,0.44,0.7]:
 		for actor in players:
 			actor.swing_left=actor.swing_duration*(1-phase)
@@ -125,7 +133,7 @@ func run() -> void:
 			check(actor.body.position.x==0 and not actor.held.sprite.visible,actor.weapon+" stays planted with the legacy cel hidden at "+str(phase))
 			var contact: bool = phase >= .3 and phase < .64 and actor.weapon != "firewall_shield"
 			check((not actor.held.trail.points.is_empty())==contact,actor.weapon+" trail at "+str(phase))
-		await capture("weapons_%02d" % int(phase*100))
+		await capture("weapons_%02d" % int(phase*100),CAPTION)
 	# Forced cache miss: still the legacy rig after every weapon has a sheet.
 	var fallback=game.Player.new()
 	fallback.arena=game;game.actors.add_child(fallback)
@@ -244,7 +252,7 @@ func run() -> void:
 	check(boss.position.distance_to(original)>100 and boss.body.position.y < -70,"Slam travels across the ground with visible airborne height")
 	check(boss.destination==committed,"Leap does not retarget after its warning")
 	game._update_hud()
-	await capture("boss_leap")
+	await capture("boss_leap","THE GRAND MERGE CONFLICT")
 	boss.tick(.36)
 	check(boss.state=="recover" and boss.vulnerable and boss.position.is_equal_approx(committed),"Landing exposes the core at the committed destination")
 	var landing: Vector2=boss.position
@@ -281,7 +289,7 @@ func run() -> void:
 			boss.set_physics_process(false)
 			paused=false
 			game._update_hud()
-			await capture("boss_phase3_exposed")
+			await capture("boss_phase3_exposed","CORE EXPOSED — land a finisher!")
 		boss.tick(1.85)
 		check(boss.vulnerable and boss.core_cue.visible and boss.body.animation=="hurt","Exposure cue persists to the end of recovery")
 		boss.tick(.06)
