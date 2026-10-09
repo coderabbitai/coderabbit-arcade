@@ -1,6 +1,7 @@
 extends SceneTree
 ## Last-life knockout in Code City and Heroes vs Villains. Both games are frozen and
-## stepped with _physics_process, the same way as stage_flow.gd.
+## stepped with _physics_process, the same way as stage_flow.gd. The live-path checks
+## kill Hoppy through a bullet, a ground warning, an enemy and the boss.
 const DT := 1.0/60.0
 const LENGTH := 2.2
 const DISTANCE := 140.0
@@ -186,6 +187,7 @@ func run_mode(path: String, is_heroes: bool) -> void:
 	check_pause()
 	check_double()
 	check_flow()
+	check_live()
 	await check_menu()
 	await check_cancel()
 func check_timeline() -> void:
@@ -575,3 +577,241 @@ func reload_scene() -> void:
 	paused = false
 	if game.state=="paused": game.resume()
 	freeze()
+## One hp, no shield, no i-frames, on the ground, with the incidental clocks held back.
+func prepare() -> void:
+	ready_combat()
+	game.hazard_clock = 30.0
+	game.ally_clock = 30.0
+	arm()
+func arm() -> void:
+	var p = game.player
+	p.hp = 1
+	p.invulnerable = 0.0
+	p.shield = false
+	p.height = 0.0
+	p.rise = 0.0
+	p.knock = Vector2.ZERO
+	p.weapon = ""
+	p.position = Vector2(game.room_start()+640.0, 580.0)
+	game.playing = true
+	game.gate_open = false
+	game.toast_left = 0.0
+	game.held_toast = ""
+	game.toast_label.hide()
+	game.prompt.text = ""
+func toast_hidden() -> bool:
+	return not game.toast_label.visible and game.held_toast==""
+func check_live() -> void:
+	check_bullet()
+	check_warning()
+	check_enemy()
+	check_boss()
+	check_fatal_frame()
+## A shot aimed at Hoppy, plus one aimed away. Bullets advance only while playing.
+func check_bullet() -> void:
+	prepare()
+	var p = game.player
+	game.projectile(p.position+Vector2(-40, 0), Vector2(1500, 0))
+	game.projectile(p.position+Vector2(240, 0), Vector2(300, 0))
+	if game.bullets.size()!=2:
+		check(false, tag("a hitting bullet and a bullet aimed away are both live"))
+		return
+	var shot = game.bullets[0].node
+	var away = game.bullets[1].node
+	var spawned = away.position
+	var guard := 0
+	while game.state=="combat" and guard<12:
+		step()
+		guard += 1
+	if game.state!="knockout":
+		check(false, tag("the bullet knocks Hoppy out"))
+		return
+	var gone = shot.is_queued_for_deletion()
+	for b in game.bullets:
+		if b.node==shot: gone = false
+	var kept := false
+	for b in game.bullets:
+		if b.node==away: kept = true
+	check(not game.playing and gone and kept and game.bullets.size()==1, tag("the hitting bullet is gone and the other one remains"))
+	var advanced = away.position.distance_to(spawned)>1.0
+	check(advanced, tag("the other bullet advanced on the frame play was still running"))
+	var parked = away.position
+	var drifted := false
+	for _i in 8:
+		step()
+		if not is_instance_valid(away) or not away.position.is_equal_approx(parked): drifted = true
+	check(not drifted, tag("the bullet aimed away does not move once play has stopped"))
+## Code City bomb, HvV code dump. After it fires, its clock stops with play.
+func check_warning() -> void:
+	prepare()
+	var p = game.player
+	# An empty room opens the gate and clears threats. One frozen enemy keeps the warning up.
+	var keeper = game.spawn_enemy("slop_sprite" if heroes else "cli_gremlin", Vector2(game.room_start()+180.0, 500.0))
+	if keeper==null:
+		check(false, tag("the ground warning has a room to fire in"))
+		return
+	keeper.set_physics_process(false)
+	var kind := "bomb"
+	var radius := Vector2(80, 38)
+	if heroes:
+		kind = "code_dump"
+		radius = Vector2(90, 42)
+	game.ground_warning(p.position, radius, DT*2, 0.5, kind)
+	if game.warnings.size()!=1:
+		check(false, tag("the ground warning is live"))
+		return
+	var guard := 0
+	while game.state=="combat" and guard<12:
+		step()
+		guard += 1
+	if game.state!="knockout" or game.warnings.is_empty():
+		check(false, tag("the ground warning knocks Hoppy out"))
+		return
+	var fired: bool = game.warnings[0].fired
+	var left = game.warnings[0].left
+	var stopped := true
+	for _i in 8:
+		step()
+		if game.warnings.is_empty() or not is_equal_approx(float(game.warnings[0].left), float(left)):
+			stopped = false
+	check(not game.playing and fired and stopped, tag("the warning fires, then its clock stops"))
+## The enemy's own tick lands the hit. Its _physics_process is gated on playing,
+## so later arena steps leave the attack where it was.
+func check_enemy() -> void:
+	prepare()
+	var p = game.player
+	var kind := "cli_gremlin"
+	if heroes: kind = "slop_sprite"
+	var enemy = game.spawn_enemy(kind, p.position+Vector2(40, 0))
+	if enemy==null:
+		check(false, tag("an enemy spawns for the contact hit"))
+		return
+	enemy.set_physics_process(false)
+	enemy.position = p.position+Vector2(40, 0)
+	enemy.state = "attack"
+	enemy.timer = 0.5
+	enemy.facing = -1.0
+	enemy.cooldown = 10.0
+	var guard := 0
+	while game.state=="combat" and guard<8:
+		enemy.tick(DT)
+		guard += 1
+	if game.state!="knockout" or guard>4:
+		check(false, tag("the enemy's tick knocks Hoppy out within a few ticks (%d)" % guard))
+		return
+	var at = enemy.position
+	var timer = enemy.timer
+	var moved := false
+	for _i in 8:
+		step()
+		enemy._physics_process(DT)
+		if not enemy.position.is_equal_approx(at) or not is_equal_approx(float(enemy.timer), float(timer)):
+			moved = true
+	check(not game.playing and not moved, tag("the enemy stays put once play has stopped"))
+func check_boss() -> void:
+	if heroes: check_boss_heroes()
+	else: check_boss_city()
+## Room 3 of stage 3. The boss has no body hit; telegraph() plants the slam that
+## reaches Hoppy, and real ticks run it out. Cycle 2 is that first slam.
+func check_boss_city() -> void:
+	prepare()
+	game.stage_index = 2
+	game.enter_room(2)
+	arm()
+	game.hazard_clock = 30.0
+	game.ally_clock = 30.0
+	if game.stage_index!=2 or game.room!=2 or not is_instance_valid(game.boss):
+		check(false, tag("the boss is in room 3 of stage 3"))
+		return
+	var p = game.player
+	var boss = game.boss
+	boss.set_physics_process(false)
+	boss.phase = 1
+	boss.cycle = 1
+	boss.state = "idle"
+	boss.timer = 0.0
+	boss.tick(DT)
+	var planted = game.warnings.size()==1 and game.warnings[0].owner==boss and game.warnings[0].kind=="slam"
+	if planted: planted = game.warnings[0].pos.distance_to(p.position)<1.0
+	if not planted:
+		check(false, tag("the boss plants its slam on Hoppy"))
+		return
+	var guard := 0
+	while game.state=="combat" and guard<150:
+		step()
+		guard += 1
+	if game.state!="knockout":
+		check(false, tag("the boss slam knocks Hoppy out"))
+		return
+	check(not game.playing, tag("the boss slam stops play"))
+	defy_victory()
+## A dash already committed, closing on Hoppy over a few of the boss's own ticks.
+func check_boss_heroes() -> void:
+	prepare()
+	var p = game.player
+	var boss = game.spawn_boss("ai_augmented_hacker", p.position+Vector2(-100, 0))
+	if boss==null:
+		check(false, tag("a boss spawns for the dash"))
+		return
+	boss.set_physics_process(false)
+	boss.phase = 1
+	boss.state = "attack"
+	boss.action = "dash"
+	boss.timer = 0.5
+	boss.dash_direction = Vector2(1, 0)
+	boss.aim = p.position
+	var guard := 0
+	while game.state=="combat" and guard<12:
+		boss.tick(DT)
+		guard += 1
+	if game.state!="knockout" or guard>6:
+		check(false, tag("the hacker's dash knocks Hoppy out within a few ticks (%d)" % guard))
+		return
+	check(not game.playing, tag("the hacker's dash stops play"))
+	defy_victory()
+## boss_defeated() during the knockout must not start a win, and the knockout still ends.
+func defy_victory() -> void:
+	game.boss_defeated()
+	var ignored = game.state=="knockout" and toast_hidden()
+	if heroes: ignored = ignored and not game.boss_rewarded
+	else: ignored = ignored and not is_instance_valid(game.merge_button)
+	check(ignored, tag("boss_defeated during the knockout does not start a finisher or a victory"))
+	var guard := 0
+	var won := false
+	while game.state=="knockout" and guard<400:
+		step()
+		if game.state=="finisher" or game.state=="boss_victory" or game.state=="won": won = true
+		guard += 1
+	var ended: float = game.ko.clock
+	var over = game.state=="game_over" and not won and ended>=LENGTH-0.001 and ended<=LENGTH+DT+0.001
+	check(over, tag("the knockout still ends in game over (state %s, clock %.4f)" % [game.state, ended]))
+## The bullet connects on the step an ally is due. Threats run first, so no ally and no toast.
+func check_fatal_frame() -> void:
+	prepare()
+	var p = game.player
+	game.allies.clear()
+	game.gate_open = false
+	game.ally_clock = DT
+	game.hazard_clock = 30.0
+	game.projectile(p.position+Vector2(-40, 0), Vector2(1500, 0))
+	if not (game.ally_clock<=DT and game.allies.is_empty() and not game.gate_open and game.bullets.size()==1):
+		check(false, tag("an ally is due on the bullet's frame"))
+		return
+	step()
+	var quiet = game.state=="knockout" and not game.playing and game.allies.is_empty() and toast_hidden()
+	quiet = quiet and game.ally_clock<=DT
+	if not quiet:
+		check(false, tag("the fatal bullet knocks Hoppy out with no ally and no toast"))
+		return
+	check(true, tag("the fatal bullet knocks Hoppy out with no ally and no toast"))
+	var leaked := false
+	var guard := 0
+	while game.state=="knockout" and guard<400:
+		step()
+		if not toast_hidden() or not game.allies.is_empty(): leaked = true
+		guard += 1
+	if not toast_hidden() or not game.allies.is_empty(): leaked = true
+	check(not leaked, tag("the toast stays hidden, and no ally appears, until game over"))
+	var ended: float = game.ko.clock
+	var over = game.state=="game_over" and ended>=LENGTH-0.001 and ended<=LENGTH+DT+0.001
+	check(over, tag("that knockout still ends in game over (clock %.4f)" % ended))
