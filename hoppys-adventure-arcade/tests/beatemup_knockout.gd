@@ -190,6 +190,7 @@ func run_mode(path: String, is_heroes: bool) -> void:
 	check_live()
 	await check_menu()
 	await check_cancel()
+	await check_preview()
 func check_timeline() -> void:
 	ready_combat()
 	var tune: Dictionary = game.ko.tuning
@@ -815,3 +816,84 @@ func check_fatal_frame() -> void:
 	var ended: float = game.ko.clock
 	var over = game.state=="game_over" and ended>=LENGTH-0.001 and ended<=LENGTH+DT+0.001
 	check(over, tag("that knockout still ends in game over (clock %.4f)" % ended))
+## Rendered only: one out-cold frame per mode. Headless returns before any check.
+func check_preview() -> void:
+	if DisplayServer.get_name()=="headless": return
+	ready_combat()
+	sweep()
+	var p = game.player
+	game.toast_left = 0.0
+	game.held_toast = ""
+	game.toast_label.hide()
+	game.prompt.text = ""
+	game.flow.banner("", "", 0)
+	if heroes:
+		p.equip("review_stamp")
+		p.pickup_time = 0.0
+		p.tick(0.0)
+	else:
+		p.weapon = ""
+		p.held.hide()
+	p.position = Vector2(game.room_start()+560.0, 580.0)
+	if not strike(false):
+		check(false, tag("a hit from the right is accepted for the preview"))
+		return
+	var guard := 0
+	while game.state=="knockout" and game.ko.clock<1.6 and guard<400:
+		step()
+		guard += 1
+	# Hand steps land between engine ticks. Reset interpolation or the shot draws the previous pose.
+	game.camera.position = Vector2(game.room_start()+640.0, 360.0)
+	game.camera.offset = Vector2.ZERO
+	game.camera.zoom = Vector2.ONE
+	game.shake = 0.0
+	game.reset_physics_interpolation()
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	var frame = game.state=="knockout" and game.ko.phase=="out_cold" and game.ko.clock+0.001>=1.6
+	check(frame, tag("the preview is out cold at %.3f s" % game.ko.clock))
+	var popped = game.ko.callout.visible and is_equal_approx(float(game.ko.callout.modulate.a), 1.0)
+	check(popped, tag("the K.O. callout is fully popped"))
+	check(stars_visible(), tag("the dizzy stars are visible"))
+	var chrome = not game.overlay.visible and toast_hidden() and not game.flow.banner_panel.visible
+	check(chrome, tag("the menu, the toast and the stage banner stay off the preview"))
+	check(loose_sprites()==0, tag("no stray sprite is left in actors (%d)" % loose_sprites()))
+	var image: Image = root.get_texture().get_image()
+	var folder := "code-city"
+	if heroes: folder = "heroes-villains"
+	var path := "res://../docs/previews/"+folder+"/knockout.png"
+	DirAccess.make_dir_recursive_absolute("res://../docs/previews/"+folder)
+	var saved = image.save_png(path)==OK
+	check(saved, tag("knockout preview saved"))
+	var stars = p.get_node_or_null("KnockoutStars")
+	var cluster: Vector2 = p.position
+	if stars: cluster = p.position+stars.position
+	var view := Vector2(image.get_width(), image.get_height())
+	var screen: Vector2 = (cluster-game.camera.position)*game.camera.zoom+view*0.5
+	var star_box := Rect2(screen-Vector2(64, 40), Vector2(128, 80))
+	var star_color: Color = game.ko.tuning.star_color
+	var callout_color: Color = game.ko.tuning.callout_color
+	var star_hits := count_near(image, star_box, star_color, 0.28)
+	var callout_hits := count_near(image, game.ko.callout.get_global_rect(), callout_color, 0.28)
+	check(star_hits>=40, tag("star-colored pixels around the head: %d" % star_hits))
+	check(callout_hits>=200, tag("callout-colored pixels in the K.O. rect: %d" % callout_hits))
+	guard = 0
+	while game.state=="knockout" and guard<400:
+		step()
+		guard += 1
+	check(game.state=="game_over", tag("the preview knockout still ends in game over"))
+func count_near(image: Image, rect: Rect2, target: Color, tol: float) -> int:
+	var hits := 0
+	var x0 := maxi(0, int(floor(rect.position.x)))
+	var y0 := maxi(0, int(floor(rect.position.y)))
+	var x1 := mini(image.get_width(), int(ceil(rect.end.x)))
+	var y1 := mini(image.get_height(), int(ceil(rect.end.y)))
+	var tol2 := tol*tol
+	for y in range(y0, y1):
+		for x in range(x0, x1):
+			var px := image.get_pixel(x, y)
+			var dr := px.r-target.r
+			var dg := px.g-target.g
+			var db := px.b-target.b
+			if dr*dr+dg*dg+db*db<=tol2: hits += 1
+	return hits
