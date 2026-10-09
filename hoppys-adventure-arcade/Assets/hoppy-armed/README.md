@@ -41,7 +41,7 @@ The attack steps are SpriteFrames clips at 9 fps, but the game picks their frame
 | `preview.png`, `clips.png` | The same views for the mode's first (pilot) weapon |
 | `sources/<weapon>.png` | The retained generated master, untouched. Earlier generations kept for the record are named `sources/<weapon>-generation<N>.png`; the builder only reads `sources/<weapon>.png`. |
 | `refinements.json` | Per weapon: the exact generation prompt, the number of regenerations and what changed |
-| `PROMPTS.md` | Rendered from `refinements.json` by the builder; don't edit it by hand |
+| `PROMPTS.md` | Rendered by the builder from `refinements.json`, plus the pilot's generation-zero prompt (`Mode.prompt`) when no record already holds it; don't edit it by hand |
 
 ## Rebuilding
 

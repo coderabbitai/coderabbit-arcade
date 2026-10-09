@@ -81,6 +81,8 @@ class Mode:
     foot_source_rows: tuple[int, ...]
     pilot_weapon_bounds: tuple[int, int, int, int]
     pilot: str
+    # The pilot's generation-zero prompt, whose template the other weapons' prompts follow. PROMPTS.md
+    # carries it unless a refinement record already holds it verbatim.
     prompt: str
     reference: Path
     reference_cell: int
@@ -1117,6 +1119,7 @@ def prompts_text(pack: Path, mode: Mode) -> str:
         "Built-in image generation, October 8, 2026. Source masters preserve generated alpha unchanged. "
         "`tools/build_hoppy_armed.py` only crops, nearest-neighbour scales, registers, and packs artwork.\n",
     ]
+    pilot_base_written = False
     for record in records:
         if not isinstance(record, dict):
             raise ValueError(f"{source}: each refinement record must be an object")
@@ -1126,6 +1129,16 @@ def prompts_text(pack: Path, mode: Mode) -> str:
         regenerations = record.get("regenerations")
         if not isinstance(weapon, str) or not isinstance(prompt, str) or not isinstance(change, str) or not isinstance(regenerations, int):
             raise ValueError(f"{source}: records require weapon, regenerations, change, and prompt")
+        if weapon == mode.pilot and prompt != mode.prompt and not pilot_base_written:
+            # The pilot record holds a later refinement prompt; keep the generation-zero prompt too.
+            generation0 = pack / "sources" / f"{mode.pilot}-generation0.png"
+            master = f"`sources/{generation0.name}`" if generation0.exists() else f"`sources/{mode.pilot}.png`"
+            sections.extend((
+                f"\n## {weapon}: base generation prompt\n\n",
+                f"Generation zero of the {weapon} pilot, kept as {master}. The other weapons' prompts follow its template.\n\n",
+                f"{mode.prompt}\n",
+            ))
+            pilot_base_written = True
         sections.extend((
             f"\n## {weapon}\n\n",
             "### Exact generation prompt\n\n",

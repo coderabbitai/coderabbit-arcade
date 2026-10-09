@@ -153,6 +153,20 @@ func check_tip_fallback(actor) -> void:
 	check(malformed.is_equal_approx(sentinel) and actor.held.tip.is_equal_approx(sentinel) and is_same(weapons[weapon],original) and Art.armed(weapon)==sheet,weapon+" tip_at with a numeric frame list returns the current tip")
 	var restored: Vector2=actor.held.tip_at(weapon,step)
 	check(restored.is_equal_approx(tip_expected),weapon+" tip_at uses the tip anchor again after the spec is restored (got %s, tip %s)"%[restored,tip_expected])
+	# The contact trail reads the windup and contact paw anchors; without them it collapses onto the tip.
+	var no_hands: Dictionary=original.duplicate(true)
+	(no_hands["anchors"] as Dictionary).erase("hand")
+	weapons[weapon]=no_hands
+	actor.held.trail.clear_points()
+	actor.held._armed_trail(weapon,step,.5,true)
+	var points: PackedVector2Array=actor.held.trail.points
+	weapons[weapon]=original
+	check(points.size()>0 and points[points.size()-1].is_equal_approx(tip_expected) and actor.held.tip.is_equal_approx(tip_expected) and Art.armed(weapon)==sheet,weapon+" contact trail without anchors.hand ends at the tip (%d points, last %s, tip %s)"%[points.size(),points[points.size()-1] if points.size() else Vector2.ZERO,tip_expected])
+	actor.held.trail.clear_points()
+	actor.held._armed_trail(weapon,step,.5,true)
+	var full: PackedVector2Array=actor.held.trail.points
+	check(full.size()==9 and full[0].distance_to(tip_expected)<=.5 and full[full.size()-1].distance_to(tip_expected)>4,weapon+" contact trail with every anchor still sweeps back from the tip")
+	actor.held.trail.clear_points()
 
 ## Saves a rendered preview. Asserted at capture time (after the saved draw when rendering): only
 ## `toast_text` may show, and nothing may be held behind a banner, so no test text leaks in.

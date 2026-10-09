@@ -68,23 +68,26 @@ func clear() -> void:
 ## Rig-local tip of the weapon at contact, where the swing effect is anchored.
 func tip_at(kind: String, step: int) -> Vector2:
 	if kind == "": return Vector2(65,-50)
+	if Art.armed(kind) == null: return tip
+	# Contact-frame tip, else the contact paw, else the rig's current tip.
 	var spec := Art.armed_spec(kind)
+	for kind_of in ["tip", "hand"]:
+		var anchor: Variant = _step_anchor(spec, kind_of, step, 1)
+		if anchor != null: return _texel(spec, anchor)
+	return tip
+
+## The `kind_of` anchor ("hand" or "tip") of a step's windup (phase 0) or contact (phase 1)
+## frame, or null when the manifest lacks the clip, its frame list or that anchor. Frame
+## indices are manifest keys; JSON parses them as floats.
+func _step_anchor(spec: Dictionary, kind_of: String, step: int, phase: int) -> Variant:
 	var clips: Variant = spec.get("clips", {})
 	var clip: Variant = clips.get("step%d" % step) if clips is Dictionary else null
 	var frames: Variant = clip.get("frames") if clip is Dictionary else null
-	if Art.armed(kind) == null or not frames is Array or frames.size() < 2: return tip
-	# Contact-frame tip, else the contact paw, else the rig's current tip.
-	var contact := str(int(frames[1]))
+	if not frames is Array or frames.size() <= phase: return null
 	var anchors: Variant = spec.get("anchors", {})
-	for kind_of in ["tip", "hand"]:
-		var table: Variant = anchors.get(kind_of, {}) if anchors is Dictionary else {}
-		var anchor: Variant = table.get(contact) if table is Dictionary else null
-		if anchor is Array and anchor.size() >= 2: return _texel(spec, anchor)
-	return tip
-
-## Manifest anchors are keyed by sheet frame index; JSON parses that index as a float.
-func _anchor_key(spec: Dictionary, step: int, phase: int) -> String:
-	return str(int(spec.clips["step%d" % step].frames[phase]))
+	var table: Variant = anchors.get(kind_of, {}) if anchors is Dictionary else {}
+	var anchor: Variant = table.get(str(int(frames[phase]))) if table is Dictionary else null
+	return anchor if anchor is Array and anchor.size() >= 2 else null
 
 func _texel(spec: Dictionary, anchor: Array) -> Vector2:
 	return (Vector2(anchor[0], anchor[1]) - Vector2(spec.pivot[0], spec.pivot[1])) * body.scale.y
@@ -96,8 +99,11 @@ func _armed_trail(kind: String, step: int, progress: float, active: bool) -> voi
 	tip = tip_at(kind, step)
 	if not active or kind == "firewall_shield" or progress < .3 or progress >= .64: return
 	var spec := Art.armed_spec(kind)
-	var windup := _texel(spec, spec.anchors.hand[_anchor_key(spec, step, 0)])
-	var grip := _texel(spec, spec.anchors.hand[_anchor_key(spec, step, 1)])
+	# Without a windup or contact paw anchor, both collapse onto the tip and the trail ends there.
+	var windup_anchor: Variant = _step_anchor(spec, "hand", step, 0)
+	var grip_anchor: Variant = _step_anchor(spec, "hand", step, 1)
+	var windup: Vector2 = tip if windup_anchor == null else _texel(spec, windup_anchor)
+	var grip: Vector2 = tip if grip_anchor == null else _texel(spec, grip_anchor)
 	var reach := tip-grip
 	var back := windup-grip
 	var side := reach.cross(back)
