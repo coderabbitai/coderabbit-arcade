@@ -72,6 +72,12 @@ def checked_source_path(value: object, label: str, mode: str) -> Path:
         source_dir.parts
     ):
         raise ValueError(f"{label}: path must name a file inside {source_dir.as_posix()}/")
+    resolved_source_dir = (STORY / source_dir).resolve()
+    resolved_path = (STORY / path).resolve()
+    try:
+        resolved_path.relative_to(resolved_source_dir)
+    except ValueError as error:
+        raise ValueError(f"{label}: path resolves outside {source_dir.as_posix()}/") from error
     return path
 
 
@@ -269,11 +275,15 @@ def build() -> None:
     outputs: list[tuple[Path, bytes]] = []
     for scene in SCENES:
         record = records[(scene.mode, scene.scene)]
-        master = STORY / checked_relative_path(record["master"], f"{scene.mode}/{scene.scene} master")
+        master = STORY / checked_source_path(
+            record["master"], f"{scene.mode}/{scene.scene} master", scene.mode
+        )
         if not master.exists():
             raise FileNotFoundError(f"missing selected generated master: {master}")
         for retained in record["retained_masters"]:
-            retained_path = STORY / checked_relative_path(retained, f"{scene.mode}/{scene.scene} retained master")
+            retained_path = STORY / checked_source_path(
+                retained, f"{scene.mode}/{scene.scene} retained master", scene.mode
+            )
             if not retained_path.exists():
                 raise FileNotFoundError(f"missing retained generated master: {retained_path}")
         with Image.open(master) as source:
