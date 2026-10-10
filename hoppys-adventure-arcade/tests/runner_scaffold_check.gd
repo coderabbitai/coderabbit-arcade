@@ -57,7 +57,8 @@ const SIGNALS := [
 const METHODS := [
 	"pause", "resume", "toggle_pause", "retry", "go_to_menu", "hit_stop", "submit_name",
 	"get_leaderboard", "get_result", "get_active_effects", "start_run", "set_autopilot",
-	"get_stage_info", "get_boss_info", "track_z", "track_aabb", "on_tool_hit", "skip_boss_cinematic"
+	"get_stage_info", "get_boss_info", "track_z", "track_aabb", "on_tool_hit", "skip_boss_cinematic",
+	"can_skip_boss_cinematic"
 ]
 
 ## Contract §4.2 and the §11.4 additions.

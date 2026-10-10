@@ -44,7 +44,7 @@ class Facade extends Node:
 	func get_boss_info() -> Dictionary:
 		return boss_info
 
-	func _can_skip_boss_cinematic() -> bool:
+	func can_skip_boss_cinematic() -> bool:
 		return can_skip and not paused
 
 class RecordingRunnerAudio extends "res://scenes/runner/audio/runner_audio.gd":

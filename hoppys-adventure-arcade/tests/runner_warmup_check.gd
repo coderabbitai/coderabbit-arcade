@@ -125,6 +125,9 @@ func check_boss_scenes_retained(GpuWarmup: Script, context: String) -> void:
 		var kind: StringName = slot.get("kind", &"")
 		var visual_path := "res://scenes/runner/boss/visuals/%s_visual.tscn" % String(kind)
 		var visual_scene := load(visual_path) as PackedScene
+		check(visual_scene != null, "%s loads boss visual scene: %s" % [context, visual_path])
+		if visual_scene == null:
+			continue
 		var visual := visual_scene.instantiate()
 		var model_path: String = visual.get_script().get_script_constant_map().get("MODEL_PATH", "")
 		visual.free()

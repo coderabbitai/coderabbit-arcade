@@ -452,7 +452,8 @@ window picks the seam's direction — so already set when `turn_incoming` fires 
 0 whenever no turn is pending), `boss: Node3D` (null outside a fight), `boss_kind`, `boss_hp`,
 `boss_max_hp`, `boss_phase: int`; v2.6 (§11.14) `boss_cinematic_mode: StringName` (`&""` outside a cinematic),
 `boss_cinematic_progress: float` (0..1), `boss_time_factor: float` (1 outside a defeat). Methods: v2.6
-`skip_boss_cinematic() -> bool` (§11.14), `get_stage_info() -> Dictionary`
+`skip_boss_cinematic() -> bool` and `can_skip_boss_cinematic() -> bool` (read-only: true while a skip would take, for
+a skip prompt; §11.14), `get_stage_info() -> Dictionary`
 (`index, name, phase, distance, target, speed_bonus, difficulty_floor`), `get_boss_info() -> Dictionary`
 (`kind, name, hp, max_hp, phase, phase_count, accepted_tools, pending_attacks`; `phase_count` is the fight's own
 phase count, 3 today, and 0 in the empty block; each `pending_attacks` row is `{lane_mask, kind, remaining}` plus,

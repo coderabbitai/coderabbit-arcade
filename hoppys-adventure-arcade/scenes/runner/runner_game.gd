@@ -552,6 +552,11 @@ func skip_boss_cinematic() -> bool:
 		return false
 	return bool(boss_encounter.skip_cinematic())
 
+## Contract 2.6 §11.14: true while skip_boss_cinematic() would take — running, unpaused, and an intro
+## past boss_cinematic_skip_after but not yet inside its tail. Read-only, for a skip prompt.
+func can_skip_boss_cinematic() -> bool:
+	return _can_skip_boss_cinematic()
+
 func _can_skip_boss_cinematic() -> bool:
 	if state != &"running" or paused:
 		return false
