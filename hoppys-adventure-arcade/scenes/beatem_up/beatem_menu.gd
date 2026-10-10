@@ -4,6 +4,7 @@ const Catalog = preload("res://modes/beatem_up/catalog.gd")
 const Heroes = preload("res://modes/beatem_up/reinvent/catalog.gd")
 const Art = preload("res://modes/beatem_up/art.gd")
 const HeroArt = preload("res://modes/beatem_up/reinvent/art.gd")
+const Prompts := preload("res://app/controller_prompts.gd")
 var backdrop: TextureRect
 var caption: Label
 var description: Label
@@ -57,7 +58,12 @@ func _ready() -> void:
 	var quit := Style.button("Quit Game",48)
 	column.add_child(quit)
 	quit.pressed.connect(func(): AppRouter.quit_game())
-	column.add_child(Style.label("WASD / stick: move · Space / A: jump · J or X / X: combo\nE / Y: pick up weapon · Esc / Start: pause\nHeroes: hold Q / LB to charge REVIEW after unlocking it",14))
+	var controls := Style.label("",14)
+	Prompts.track(controls, func() -> String:
+		return "%s: move · %s: jump · %s: combo\n%s: pick up weapon · %s: pause\nHeroes: hold %s to charge REVIEW after unlocking it" % [
+			Prompts.keys_or_pad("WASD", Prompts.if_pad("stick")), Prompts.either("Space", &"brawl_jump"), Prompts.either("J or X", &"brawl_attack"),
+			Prompts.either("E", &"brawl_pickup"), Prompts.either("Esc", &"pause"), Prompts.either("Q", &"review_burst")])
+	column.add_child(controls)
 	caption=Style.label("",16,Color("ffb366"))
 	column.add_child(caption)
 	local_music=AudioStreamPlayer.new()

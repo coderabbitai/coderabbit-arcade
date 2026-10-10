@@ -101,14 +101,12 @@ const WAVES := [
 	[["merge_conflict_soldier","force_push_bandit"], ["stale_branch_zombie","force_push_bandit","merge_conflict_soldier"], []]]
 ## InputMap's "any device" id. A new InputEventJoypadButton defaults to device 0, so a code-made
 ## binding would answer only the first pad; booths and reconnected controllers use other ids.
-const ANY_DEVICE := -1
+const Bindings := preload("res://addons/cr_kit/input.gd").Bindings
+const ANY_DEVICE := Bindings.ANY_DEVICE
 const PAD_BUTTONS := {
 	"brawl_jump":JOY_BUTTON_A,"brawl_pickup":JOY_BUTTON_Y,"brawl_attack":JOY_BUTTON_X}
 static func joy_button(button: JoyButton) -> InputEventJoypadButton:
-	var event := InputEventJoypadButton.new()
-	event.device = ANY_DEVICE
-	event.button_index = button
-	return event
+	return Bindings.joy_button(button)
 static func install_input() -> void:
 	for action in ["brawl_jump","brawl_pickup","brawl_attack"]:
 		if InputMap.has_action(action): continue

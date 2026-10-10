@@ -16,6 +16,7 @@ const MINIMAP_STATES := ["stage_enter","combat","stage_exit","finisher","knockou
 ## Results and game-over menus arm this long after appearing (see _input).
 const OVERLAY_ARM := .5
 const ARMED_OVERLAYS := ["won","game_over"]
+const Prompts := preload("res://app/controller_prompts.gd")
 var rng := RandomNumberGenerator.new()
 var stage_index := 0
 var room := 0
@@ -432,7 +433,7 @@ func _tick_items(dt: float) -> void:
 		item.sprite.position.y = -22+sin(item.age*4)*4
 		var distance: float = item.node.position.distance_to(player.position)
 		if Catalog.WEAPONS.has(item.kind):
-			if distance<85: prompt.text = "E / Y · PICK UP "+item.kind.replace("_"," ").to_upper()
+			if distance<85: prompt.text = Prompts.either("E", &"brawl_pickup", true)+" · PICK UP "+item.kind.replace("_"," ").to_upper()
 		elif distance < 45 and player.height < 20 and player.hp>0:
 			player.apply_effect(item.kind)
 			sound("pickup",player.position)
@@ -694,7 +695,14 @@ func _build_ui() -> void:
 	prompt.offset_bottom = -54
 	prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ui.add_child(prompt)
-	var controls := Style.label("WASD / stick · Move    Space / A · Jump    J, X / X · Combo    E / Y · Pickup    Esc · Pause",13)
+	var controls := Style.label("",13)
+	Prompts.track(controls, func() -> String:
+		return "%s · Move    %s · Jump    %s · Combo    %s · Pickup    %s · Pause" % [
+			Prompts.keys_or_pad("WASD", Prompts.if_pad("stick")),
+			Prompts.either("Space", &"brawl_jump"),
+			Prompts.either("J, X", &"brawl_attack"),
+			Prompts.either("E", &"brawl_pickup"),
+			Prompts.either("Esc", &"pause")])
 	controls.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	controls.offset_top = -27
 	controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -851,7 +859,7 @@ func _input(event: InputEvent) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause") and not event.is_echo():
-		if state in PAUSABLE: pause("Chain three attacks for a knockback finisher. Jump or change lanes to dodge.\nApproach a weapon and press E / Y to equip it.")
+		if state in PAUSABLE: pause("Chain three attacks for a knockback finisher. Jump or change lanes to dodge.\nApproach a weapon and press %s to equip it." % Prompts.either("E", &"brawl_pickup"))
 		elif state=="paused": resume()
 		get_viewport().set_input_as_handled()
 

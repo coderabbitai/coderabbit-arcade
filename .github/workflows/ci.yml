@@ -59,6 +59,7 @@ jobs:
             code_city_logic
             code_city_motion
             code_city_smoke
+            controller_service
             stage_flow
             beatemup_knockout
             beatemup_story
