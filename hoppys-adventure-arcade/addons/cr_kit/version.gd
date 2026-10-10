@@ -2,7 +2,7 @@ extends RefCounted
 ## The add-on's release identity. tools/check_release.py keeps these equal to plugin.cfg and the
 ## newest CHANGELOG.md entry, and a release tag must match VERSION.
 
-const VERSION := "0.1.0"
+const VERSION := "0.1.1"
 ## The oldest Godot release the add-on supports and CI tests.
 const MIN_GODOT := "4.5"
 

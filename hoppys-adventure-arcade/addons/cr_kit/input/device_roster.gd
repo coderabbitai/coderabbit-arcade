@@ -6,8 +6,9 @@ extends RefCounted
 ## model and transport rather than one physical unit, so a returning pad gets its role back
 ## automatically only when exactly one reserved role waits for its GUID and name and exactly one
 ## newly connected pad matches. Anything ambiguous waits for claim(), for example when the
-## player presses Start. New pads fill roles nobody has used yet, in order, unless auto_assign is
-## off; they never take a reserved role.
+## player presses Start. Each newly connected pad fills the first vacant, unreserved role (one
+## freed by release() included) unless auto_assign is off; it never takes a reserved role. A pad that is already connected but owns no
+## role (for example after release() or assign() displaced it) waits for claim() or assign().
 ##
 ## The roster reads hardware only through `hardware`, so tests can pass a fake with the same
 ## four methods as Hardware. Call refresh() once at start and whenever Input reports a
@@ -21,7 +22,8 @@ signal device_connected(device: int)
 signal device_disconnected(device: int)
 ## A pad took a role through auto-assignment, claim() or assign().
 signal role_assigned(role: StringName, device: int)
-## A role's pad disconnected. The role stays reserved for that pad.
+## A role's pad disconnected. The role stays reserved for that pad. Not emitted when a
+## device_disconnected listener already gave the role to another pad or released it.
 signal role_lost(role: StringName, device: int)
 ## A reserved role's pad came back and took the role again automatically.
 signal role_restored(role: StringName, device: int)
@@ -47,7 +49,8 @@ class Hardware extends RefCounted:
 
 
 var hardware: RefCounted
-## New pads fill never-used roles in order. Turn off to assign every role with claim().
+## Newly connected pads fill vacant, unreserved roles in order. Turn off to assign every role
+## with claim() or assign().
 var auto_assign := true
 
 var _roles: Array[StringName] = []
@@ -135,7 +138,7 @@ func device_name(device: int) -> String:
 
 
 ## Gives a connected, unowned pad a vacant role: `role` if given, else the first waiting role,
-## else the first role nobody has used. Never displaces a connected owner. Returns success.
+## else the first vacant, unreserved role. Never displaces a connected owner. Returns success.
 func claim(device: int, role: StringName = &"") -> bool:
 	if not _connected.has(device) or not role_of(device).is_empty():
 		return false
@@ -210,7 +213,8 @@ func _reconcile(listed: Array[int]) -> void:
 		_names.erase(device)
 		_families.erase(device)
 		device_disconnected.emit(device)
-		if not role.is_empty():
+		# A device_disconnected listener may already have filled or released the role.
+		if not role.is_empty() and is_waiting(role):
 			role_lost.emit(role, device)
 	for device: int in arrivals:
 		var device_name_text: String = hardware.name(device)
@@ -220,7 +224,7 @@ func _reconcile(listed: Array[int]) -> void:
 		device_connected.emit(device)
 	_restore(arrivals)
 	if auto_assign:
-		for device: int in now:
+		for device: int in arrivals:
 			if not role_of(device).is_empty():
 				continue
 			var role := _first_unused_role()

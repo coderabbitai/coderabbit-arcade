@@ -69,8 +69,8 @@ roster.device_for(&"p1")             # -1 while vacant
 roster.family(roster.device_for(&"p1"))
 ```
 
-- New pads fill roles nobody has used, in order (`auto_assign`, on by default).
-- A disconnected pad leaves its role vacant but reserved (`is_waiting()`); `role_lost` fires.
+- Each newly connected pad fills the first vacant, unreserved role (`auto_assign`, on by default); that includes a role freed by `release()`, never one waiting for its pad. A pad that is already connected but owns no role, for example after `release()` or after `assign()` displaced it, waits for `claim()` or `assign()`.
+- A disconnected pad leaves its role vacant but reserved (`is_waiting()`); `role_lost` fires, unless a `device_disconnected` listener already handed the role to another pad or called `release()` on it.
 - The same pad (GUID and name) reconnecting takes the role back and fires `role_restored`, even under a new device id. If several waiting roles or new pads match, nothing is guessed.
 - `claim(device)` gives an unowned pad the first waiting role (for "press Start to continue"), `assign(role, device)` moves a pad into a role (for "the pad you last used is player one"), and `release(role)` forgets a reservation. `swap()` exchanges two roles and emits `roles_swapped`.
 - A disconnect reported through `on_joy_connection_changed()` stays in effect even if the device list still names the pad, until the list drops it or a connection callback reports it back.
