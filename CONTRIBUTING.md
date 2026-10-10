@@ -45,7 +45,7 @@ Per-mode notes and test details live in [`docs/`](docs/).
 - GDScript: follow the [Godot style guide](https://docs.godotengine.org/en/stable/tutorials/scripting/gdscript/gdscript_styleguide.html), with typed variables and tabs. `.editorconfig` covers the basics.
 - Python tools (`tools/`): keep them dependency-light and reproducible.
 - Keep runtime state per instance. Never mutate shared `Resource` definitions at runtime.
-- Add-ons under `hoppys-adventure-arcade/addons/` are vendored, unchanged copies of a tagged upstream release, recorded in `tools/vendor/vendor.lock.json`. CI and the pre-commit hook fail if a copy differs from its lock. Change an add-on upstream, then refresh it with `python3 tools/vendor/vendor_lock.py --update <name> --tag <tag> --source <upstream checkout>`.
+- Add-ons under `hoppys-adventure-arcade/addons/` are vendored, unchanged copies of a tagged upstream release, recorded in `tools/vendor/vendor.lock.json`. CI and the pre-commit hook fail if a staged copy differs from its lock entry. That check cannot prove the entry itself describes a real upstream release, so review lock changes and confirm them with `python3 tools/vendor/vendor_lock.py --verify-source <name> --source <upstream checkout>`. Change an add-on upstream, then refresh it with `python3 tools/vendor/vendor_lock.py --update <name> --tag <tag> --source <upstream checkout>`.
 
 ## Assets
 
