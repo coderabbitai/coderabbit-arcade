@@ -10,8 +10,6 @@ runner_perf_probe = "Measures runner frame times on a GPU. Run it locally."
 runner_pickup_hitch = "Measures GPU hitches during pickups. Run it locally."
 menu_smoke = "Drives the menu with pointer hover, which a headless run never produces."
 menu_hoppy_smoke = "Drives the menu with pointer hover, which a headless run never produces."
-"assets/a6_check" = "Fails on main since #61's new pursuer catch; fix or update tracked in #65."
-"assets/a8_check" = "Fails on main since #61 (game_over SFX no longer exercised); tracked in #65."
 
 # Suites with wall-clock budgets run alone, after the parallel batch, so CPU contention
 # from other suites can't fail them.
