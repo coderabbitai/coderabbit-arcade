@@ -1,6 +1,8 @@
 extends SceneTree
 
 const MODEL_SCRIPT_PATH := "res://scenes/runner/boss/hifi/boss_model.gd"
+const BossVisualBase = preload("res://scenes/runner/boss/boss_visual_base.gd")
+const RunConfigScript = preload("res://scenes/runner/data/run_config.gd")
 const VISUAL_SCRIPT_PATH := "res://scenes/runner/boss/visuals/merge_conflict_hydra_visual.gd"
 const VISUAL_SCENE_PATH := "res://scenes/runner/boss/visuals/merge_conflict_hydra_visual.tscn"
 const GLB_PATH := "res://Assets/runner/bosses/merge_conflict_hydra/merge_conflict_hydra.glb"
@@ -10,9 +12,19 @@ const SOCKETS: Array[StringName] = [&"fx_core", &"fx_0", &"fx_1", &"fx_2", &"fx_
 const MAX_TRIANGLES := 18000
 const MAX_BONES := 40
 const PROCEDURAL_SIZE := Vector3(6.431928, 3.8582, 1.893)
+const BOUNDS_HZ := 120
+const MOUNT_Y := 2.6
+const MOUNT_Z := -14.0
+const HOVER_X_LIMIT := 0.12
+const WORLD_MIN := Vector3(-3.5, 1.6, MOUNT_Z - 3.0)
+const WORLD_MAX := Vector3(3.5, 6.1, MOUNT_Z + 3.0)
 
 var checks := 0
 var failures := 0
+var _skinned_points_by_mesh: Dictionary = {}
+var _invalid_skin_meshes: Dictionary = {}
+var _validated_skin_meshes: Dictionary = {}
+var _pose_bounds_summaries: Array[Dictionary] = []
 
 
 func _initialize() -> void:
@@ -141,6 +153,500 @@ func rest_mesh_bounds(model: Node3D) -> AABB:
 	return result
 
 
+func skinned_point_groups(mesh: Mesh) -> Array[Dictionary]:
+	if _skinned_points_by_mesh.has(mesh):
+		return _skinned_points_by_mesh[mesh]
+	var grouped: Dictionary = {}
+	for surface in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(surface)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var bones: PackedInt32Array = arrays[Mesh.ARRAY_BONES]
+		var weights: PackedFloat32Array = arrays[Mesh.ARRAY_WEIGHTS]
+		if vertices.is_empty() or bones.is_empty() or weights.is_empty():
+			continue
+		var stride := bones.size() / vertices.size()
+		for vertex_index in vertices.size():
+			var ids := PackedInt32Array()
+			var gains := PackedFloat32Array()
+			for influence in stride:
+				var weight := weights[vertex_index * stride + influence]
+				if weight <= 0.0:
+					continue
+				ids.append(bones[vertex_index * stride + influence])
+				gains.append(weight)
+			var key := var_to_str([ids, gains])
+			if not grouped.has(key):
+				grouped[key] = {"ids": ids, "gains": gains, "points": {}}
+			grouped[key]["points"][vertices[vertex_index]] = true
+	var compact: Array[Dictionary] = []
+	for group: Dictionary in grouped.values():
+		var points := PackedVector3Array(group["points"].keys())
+		compact.append({"ids": group["ids"], "gains": group["gains"], "points": points})
+	_skinned_points_by_mesh[mesh] = compact
+	return compact
+
+
+func cpu_skinned_mesh_bounds(mesh_instance: MeshInstance3D) -> AABB:
+	if mesh_instance.mesh == null:
+		return AABB()
+	if mesh_instance.skin == null:
+		return mesh_instance.global_transform * mesh_instance.get_aabb()
+	var skeleton := mesh_instance.get_node_or_null(mesh_instance.skeleton) as Skeleton3D
+	if skeleton == null:
+		return invalid_skin_bounds(mesh_instance, "skinned mesh has no resolved Skeleton3D")
+	var mesh_id := mesh_instance.get_instance_id()
+	if not _validated_skin_meshes.has(mesh_id):
+		_validated_skin_meshes[mesh_id] = true
+		var mesh_from_skeleton := skeleton.global_transform.affine_inverse() * mesh_instance.global_transform
+		if not mesh_from_skeleton.is_equal_approx(Transform3D.IDENTITY):
+			return invalid_skin_bounds(mesh_instance, "skinned mesh transform relative to Skeleton3D is not identity")
+	skeleton.force_update_all_bone_transforms()
+	var transforms: Array[Transform3D] = []
+	for bind in mesh_instance.skin.get_bind_count():
+		var bone := skeleton.find_bone(mesh_instance.skin.get_bind_name(bind))
+		if bone < 0:
+			bone = mesh_instance.skin.get_bind_bone(bind)
+		if bone < 0:
+			return invalid_skin_bounds(mesh_instance, "skin bind %d (%s) has no skeleton bone" % [bind, mesh_instance.skin.get_bind_name(bind)])
+		transforms.append(skeleton.global_transform * skeleton.get_bone_global_pose(bone) * mesh_instance.skin.get_bind_pose(bind))
+	var result := AABB()
+	var first := true
+	for group: Dictionary in skinned_point_groups(mesh_instance.mesh):
+		var pose := Transform3D(Basis(Vector3.ZERO, Vector3.ZERO, Vector3.ZERO), Vector3.ZERO)
+		var ids: PackedInt32Array = group["ids"]
+		var gains: PackedFloat32Array = group["gains"]
+		for influence in ids.size():
+			var bone_index := ids[influence]
+			if bone_index < 0 or bone_index >= transforms.size():
+				return invalid_skin_bounds(mesh_instance, "vertex influence references invalid skin bind %d" % bone_index)
+			var part: Transform3D = transforms[bone_index]
+			var gain := gains[influence]
+			pose.origin += part.origin * gain
+			pose.basis.x += part.basis.x * gain
+			pose.basis.y += part.basis.y * gain
+			pose.basis.z += part.basis.z * gain
+		for point: Vector3 in group["points"]:
+			var world := pose * point
+			result = AABB(world, Vector3.ZERO) if first else result.expand(world)
+			first = false
+	return result
+
+
+func invalid_skin_bounds(mesh_instance: MeshInstance3D, reason: String) -> AABB:
+	var mesh_id := mesh_instance.get_instance_id()
+	if not _invalid_skin_meshes.has(mesh_id):
+		_invalid_skin_meshes[mesh_id] = true
+		check(false, "CPU skin bounds reject invalid %s: %s" % [mesh_instance.get_path(), reason])
+	return AABB()
+
+
+func cpu_skinned_visual_bounds(visual: Node3D) -> AABB:
+	var adapter := visual.get("_model") as Node3D
+	if adapter == null:
+		return AABB()
+	var result := AABB()
+	var first := true
+	for node in adapter.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		if mesh_instance.mesh == null:
+			continue
+		var mesh_bounds := cpu_skinned_mesh_bounds(mesh_instance)
+		for corner in 8:
+			var point := mesh_bounds.get_endpoint(corner)
+			result = AABB(point, Vector3.ZERO) if first else result.expand(point)
+			first = false
+	return result
+
+
+func new_pose_bounds_summary(label: String) -> Dictionary:
+	return {
+		"label": label,
+		"samples": 0,
+		"minimum": Vector3(INF, INF, INF),
+		"maximum": Vector3(-INF, -INF, -INF),
+		"violations": 0,
+		"failing_frames": []
+	}
+
+
+func include_pose_bounds_sample(summary: Dictionary, visual: Node3D, frame: int, far_z_exception: bool) -> void:
+	var original_position := visual.position
+	var hover_x := minf(float(visual.get("sway_amplitude")), HOVER_X_LIMIT)
+	var label_parts: Array[String] = []
+	var pose_bounds := cpu_skinned_visual_bounds(visual)
+	for offset_x in [-hover_x, hover_x]:
+		for offset_y in [0.0, 0.08]:
+			var translation := Vector3(offset_x - original_position.x, offset_y - original_position.y, 0.0)
+			var bounds := AABB(pose_bounds.position + translation, pose_bounds.size)
+			summary["samples"] = int(summary["samples"]) + 1
+			var minimum: Vector3 = summary["minimum"]
+			var maximum: Vector3 = summary["maximum"]
+			minimum.x = minf(minimum.x, bounds.position.x)
+			minimum.y = minf(minimum.y, bounds.position.y)
+			minimum.z = minf(minimum.z, bounds.position.z)
+			maximum.x = maxf(maximum.x, bounds.end.x)
+			maximum.y = maxf(maximum.y, bounds.end.y)
+			maximum.z = maxf(maximum.z, bounds.end.z)
+			summary["minimum"] = minimum
+			summary["maximum"] = maximum
+			var hover_z := float(visual.get("hover_z"))
+			var problems: Array[String] = []
+			if bounds.position.x < WORLD_MIN.x or bounds.end.x > WORLD_MAX.x:
+				problems.append("x[%.3f,%.3f]" % [bounds.position.x, bounds.end.x])
+			if bounds.position.y < WORLD_MIN.y or bounds.end.y > WORLD_MAX.y:
+				problems.append("y[%.3f,%.3f]" % [bounds.position.y, bounds.end.y])
+			if not far_z_exception and bounds.size.z > 3.0:
+				problems.append("depth %.3f > 3.000" % bounds.size.z)
+			if bounds.end.z > hover_z + 3.0:
+				problems.append("zmax %.3f > %.3f" % [bounds.end.z, hover_z + 3.0])
+			if not far_z_exception and bounds.position.z < hover_z - 3.0:
+				problems.append("zmin %.3f < %.3f" % [bounds.position.z, hover_z - 3.0])
+			if not problems.is_empty():
+				summary["violations"] = int(summary["violations"]) + 1
+				if label_parts.size() < 8:
+					label_parts.append("f%d x=%.2f y=%.2f %s" % [frame, offset_x, offset_y, ",".join(problems)])
+	if not label_parts.is_empty():
+		var failing_frames: Array[String] = summary["failing_frames"]
+		if failing_frames.size() < 12:
+			failing_frames.append_array(label_parts)
+			summary["failing_frames"] = failing_frames
+
+
+func finish_pose_bounds_summary(summary: Dictionary) -> void:
+	var label := String(summary["label"])
+	var minimum: Vector3 = summary["minimum"]
+	var maximum: Vector3 = summary["maximum"]
+	var violation_count := int(summary["violations"])
+	var failures_text := ""
+	if violation_count > 0:
+		failures_text = " failing=" + str(summary["failing_frames"])
+	check(violation_count == 0,
+		"%s stays inside world envelope, violations=%d%s" % [label, violation_count, failures_text])
+	print("HYDRA POSE BOUNDS: %s samples=%d world_min=%s world_max=%s violations=%d%s" % [
+		label, int(summary["samples"]), str(minimum), str(maximum), violation_count, failures_text
+	])
+	_pose_bounds_summaries.append(summary)
+
+
+func sample_pose_sequence(visual: Node3D, label: String, frame_count: int, far_z_exception: bool = false) -> void:
+	var summary := new_pose_bounds_summary(label)
+	for frame in frame_count + 1:
+		include_pose_bounds_sample(summary, visual, frame, far_z_exception)
+		if frame < frame_count:
+			visual.call("_process", 1.0 / float(BOUNDS_HZ))
+	finish_pose_bounds_summary(summary)
+
+
+func sample_cinematic_pose_sequence(visual: Node3D, mode: StringName, seconds: float, label: String) -> void:
+	visual.call("play_cinematic", mode, seconds)
+	var frames := maxi(1, roundi(seconds * BOUNDS_HZ))
+	var summary := new_pose_bounds_summary(label)
+	for frame in frames + 1:
+		var progress := float(frame) / float(frames)
+		visual.call("set_cinematic_progress", mode, progress)
+		include_pose_bounds_sample(summary, visual, frame, mode == &"intro_full" or mode == &"intro_short")
+	finish_pose_bounds_summary(summary)
+
+
+func cinematic_default_seconds(mode: StringName) -> float:
+	var config: Resource = RunConfigScript.new()
+	match mode:
+		&"intro_full": return float(config.get("boss_intro_seconds"))
+		&"intro_short": return minf(float(config.get("boss_intro_short_seconds")), float(config.get("boss_intro_seconds")))
+		&"defeat_full": return float(config.get("boss_defeat_seconds"))
+		&"defeat_short": return minf(float(config.get("boss_defeat_short_seconds")), float(config.get("boss_defeat_seconds")))
+	return 0.0
+
+
+func reset_bounds_fixture(visual: Node3D, phase: int) -> void:
+	visual.call("on_spawned")
+	if phase >= 2:
+		visual.call("set_phase", 2)
+		visual.set("_sprout_age", 1.3)
+		visual.call("_process", 0.0)
+	if phase >= 3:
+		visual.call("set_phase", 3)
+		visual.call("_process", 0.0)
+	visual.call("_action", &"idle")
+	visual.set("_clock", 0.0)
+	visual.set("_age", 0.0)
+	visual.call("_process", 0.0)
+
+
+func sample_bounds_action_suite(visual: Node3D, phase: int) -> void:
+	var prefix := "phase%d" % phase
+	var adapter := visual.get("_model") as Node3D
+	var animation_player := adapter.get("animation_player") as AnimationPlayer if adapter != null else null
+	if animation_player == null:
+		check(false, prefix + " bounds suite has an AnimationPlayer")
+		return
+	var intro_length := animation_player.get_animation(&"intro").length
+	reset_bounds_fixture(visual, phase)
+	visual.call("play_intro", intro_length)
+	sample_pose_sequence(visual, prefix + "/intro", roundi(intro_length * BOUNDS_HZ), true)
+	reset_bounds_fixture(visual, phase)
+	var idle_length := animation_player.get_animation(&"idle").length
+	sample_pose_sequence(visual, prefix + "/idle-full-period", roundi(idle_length * BOUNDS_HZ))
+	reset_bounds_fixture(visual, phase)
+	visual.call("play_telegraph", 0b111, &"default", 0.8)
+	visual.call("_process", 0.0)
+	sample_pose_sequence(visual, prefix + "/telegraph", roundi(0.8 * BOUNDS_HZ))
+	reset_bounds_fixture(visual, phase)
+	visual.call("play_telegraph", 0b111, &"default", 0.05)
+	visual.call("_process", 0.0)
+	visual.call("play_attack", &"default")
+	visual.call("_process", 0.0)
+	sample_pose_sequence(visual, prefix + "/attack-and-delayed-recoil-tail", roundi(0.64 * BOUNDS_HZ))
+	reset_bounds_fixture(visual, phase)
+	if phase >= 2:
+		visual.call("play_telegraph", 0b110, &"force_push", 0.8)
+	else:
+		visual.call("play_telegraph", 0b010, &"default", 0.8)
+	visual.call("_process", 0.0)
+	visual.call("play_attack", &"force_push" if phase >= 2 else &"default")
+	visual.call("_process", 0.0)
+	visual.call("play_hit", &"test_tool", 1)
+	visual.call("_process", 0.0)
+	sample_pose_sequence(visual, prefix + "/hurt", roundi(0.35 * BOUNDS_HZ))
+	reset_bounds_fixture(visual, phase)
+	visual.call("play_telegraph", 0b111, &"default", 0.8)
+	visual.call("_process", 0.0)
+	sample_pose_sequence(visual, prefix + "/mid-telegraph-hit/telegraph", roundi(0.4 * BOUNDS_HZ))
+	visual.call("play_hit", &"test_tool", 1)
+	visual.call("_process", 0.0)
+	sample_pose_sequence(visual, prefix + "/mid-telegraph-hit/hurt", roundi(0.35 * BOUNDS_HZ))
+	for lane in [0, 2]:
+		reset_bounds_fixture(visual, phase)
+		visual.call("play_telegraph", 1 << lane, &"default", 0.05)
+		visual.call("_process", 0.0)
+		visual.call("play_attack", &"default")
+		visual.call("_process", 0.0)
+		visual.call("play_hit", &"test_tool", 1)
+		visual.call("_process", 0.0)
+		sample_pose_sequence(visual, prefix + "/outer-lane-%d-hurt" % lane, roundi(0.35 * BOUNDS_HZ))
+	reset_bounds_fixture(visual, phase)
+	visual.call("play_defeat")
+	sample_pose_sequence(visual, prefix + "/defeat", roundi(float(visual.get("_duration")) * BOUNDS_HZ))
+	reset_bounds_fixture(visual, phase)
+	visual.call("play_retreat")
+	sample_pose_sequence(visual, prefix + "/retreat", roundi(float(visual.get("_duration")) * BOUNDS_HZ))
+	for mode in [&"intro_full", &"intro_short", &"defeat_full", &"defeat_short"]:
+		reset_bounds_fixture(visual, phase)
+		var seconds := cinematic_default_seconds(mode)
+		sample_cinematic_pose_sequence(visual, mode, seconds, prefix + "/" + String(mode))
+	if phase >= 2:
+		for pair in [{"mask": 0b011, "name": "left-centre"}, {"mask": 0b110, "name": "centre-right"}]:
+			reset_bounds_fixture(visual, phase)
+			visual.call("play_telegraph", int(pair["mask"]), &"force_push", 0.8)
+			visual.call("_process", 0.0)
+			sample_pose_sequence(visual, prefix + "/force_push_" + String(pair["name"]) + "_telegraph", roundi(0.8 * BOUNDS_HZ))
+			visual.call("play_attack", &"force_push")
+			visual.call("_process", 0.0)
+			sample_pose_sequence(visual, prefix + "/force_push_" + String(pair["name"]) + "_attack", roundi(0.5 * BOUNDS_HZ))
+
+
+func check_phase_one_identity_and_lane_reset(visual: Node3D) -> void:
+	reset_bounds_fixture(visual, 1)
+	visual.call("set_phase", 2)
+	visual.call("_process", 1.3)
+	visual.call("set_phase", 3)
+	visual.call("_process", 1.2)
+	visual.call("_action", &"idle")
+	visual.call("_process", 0.0)
+	var model := visual.get("_model") as Node3D
+	var skeleton := visual.get("_skeleton") as Skeleton3D
+	var fourth_bone := int(visual.get("_fourth_bone"))
+	var phase3_composed := (
+		model != null
+		and is_equal_approx(model.position.y, -0.30)
+		and is_equal_approx(model.scale.y, 0.95)
+	)
+	check(phase3_composed, "respawn fixture starts with the phase-three model drop and compression")
+	check(skeleton != null and fourth_bone >= 0 and skeleton.get_bone_pose_scale(fourth_bone).is_equal_approx(Vector3.ONE),
+		"respawn fixture starts with the grown crown")
+	visual.call("play_telegraph", 0b110, &"force_push", 0.8)
+	visual.call("_process", 0.1)
+	visual.call("play_telegraph", 0b011, &"force_push", 0.8)
+	visual.call("_process", 0.1)
+	visual.call("play_attack", &"force_push")
+	visual.call("_process", 0.1)
+	var active_heads: Array = visual.get("_head_state")
+	var pending_queue: PackedInt32Array = visual.get("_queue_mask")
+	var active_overlay := false
+	for state: StringName in active_heads:
+		active_overlay = active_overlay or not state.is_empty()
+	var queued_attack := false
+	for mask in pending_queue:
+		queued_attack = queued_attack or mask != 0
+	check(active_overlay and queued_attack, "respawn fixture has an active force-push overlay and pending queued lanes")
+	visual.call("on_spawned")
+	var head_state: Array = visual.get("_head_state")
+	var head_recoil: PackedFloat32Array = visual.get("_head_recoil")
+	var queue_mask: PackedInt32Array = visual.get("_queue_mask")
+	var lanes_clear := head_state.size() == 4 and head_recoil.size() == 4 and queue_mask.size() == 6
+	for lane in mini(head_state.size(), 4):
+		lanes_clear = lanes_clear and StringName(head_state[lane]).is_empty() and is_equal_approx(head_recoil[lane], 9.0)
+	for slot in queue_mask.size():
+		lanes_clear = lanes_clear and queue_mask[slot] == 0
+	check(lanes_clear and int(visual.get("_phase")) == 1,
+		"phase-three spawn reset clears every overlay, recoil timer and queued action")
+	visual.call("_process", 0.0)
+	model = visual.get("_model") as Node3D
+	skeleton = visual.get("_skeleton") as Skeleton3D
+	fourth_bone = int(visual.get("_fourth_bone"))
+	check(model != null and is_zero_approx(model.position.y) and model.scale.is_equal_approx(Vector3.ONE),
+		"respawn after phase three restores model position and scale to identity")
+	check(skeleton != null and fourth_bone >= 0 and skeleton.get_bone_pose_scale(fourth_bone).is_equal_approx(Vector3.ONE * 0.001),
+		"respawn after phase three restores the crown gate to 0.001")
+
+
+func snapshot_skeleton_pose(skeleton: Skeleton3D) -> Array[Transform3D]:
+	var result: Array[Transform3D] = []
+	for bone in skeleton.get_bone_count():
+		result.append(skeleton.get_bone_pose(bone))
+	return result
+
+
+func skeleton_pose_matches(skeleton: Skeleton3D, snapshot: Array[Transform3D]) -> bool:
+	if skeleton.get_bone_count() != snapshot.size():
+		return false
+	for bone in snapshot.size():
+		if not skeleton.get_bone_pose(bone).is_equal_approx(snapshot[bone]):
+			return false
+	return true
+
+
+func check_sprout_interrupt_hitstop(visual: Node3D) -> void:
+	reset_bounds_fixture(visual, 1)
+	visual.call("set_phase", 2)
+	visual.call("_process", 0.4)
+	var adapter := visual.get("_model") as Node3D
+	var skeleton := visual.get("_skeleton") as Skeleton3D
+	check(adapter != null and skeleton != null and float(visual.get("_sprout_age")) < 0.94,
+		"hit-stop fixture interrupts crown sprout before growth completes")
+	visual.call("play_cinematic", &"defeat_full", 2.4)
+	visual.call("set_time_factor", 0.05)
+	var adapter_pose: Transform3D = adapter.transform if adapter != null else Transform3D.IDENTITY
+	var bones := snapshot_skeleton_pose(skeleton) if skeleton != null else []
+	var summary := new_pose_bounds_summary("phase2/sprout-interrupted-defeat-hitstop")
+	for frame in 4:
+		var progress := float(frame) * 0.01
+		visual.call("_process", 1.0 / float(BOUNDS_HZ))
+		visual.call("set_cinematic_progress", &"defeat_full", progress)
+		include_pose_bounds_sample(summary, visual, frame, false)
+		var held := adapter != null and adapter.transform.is_equal_approx(adapter_pose)
+		if skeleton != null:
+			held = held and skeleton_pose_matches(skeleton, bones)
+		check(held, "whole model holds its sprout pose during defeat hit-stop at progress %.2f" % progress)
+	finish_pose_bounds_summary(summary)
+
+
+func install_pristine_authored_adapter(visual: Node3D, model_script: Script) -> bool:
+	var previous := visual.get("_model") as Node3D
+	if previous != null:
+		visual.remove_child(previous)
+		previous.free()
+	var adapter: Variant = model_script.call("load_model", GLB_PATH)
+	if not adapter is Node3D:
+		check(false, "pristine authored-animation adapter loads from GLB")
+		return false
+	visual.add_child(adapter)
+	visual.set("_model", adapter)
+	var skeletons: Array = adapter.model.find_children("*", "Skeleton3D", true, false)
+	check(skeletons.size() == 1, "pristine authored adapter contains exactly one skeleton")
+	if skeletons.size() != 1:
+		return false
+	visual.set("_skeleton", skeletons[0])
+	visual.set("_fourth_bone", (skeletons[0] as Skeleton3D).find_bone("branch_3"))
+	return true
+
+
+func check_pristine_authored_clip_bounds(visual: Node3D) -> void:
+	var model_script := load(MODEL_SCRIPT_PATH) as Script
+	check(model_script != null, "authored-animation scan loads BossModel script")
+	if model_script == null:
+		return
+	for phase in [1, 2, 3]:
+		if not install_pristine_authored_adapter(visual, model_script):
+			return
+		visual.set("_phase", phase)
+		visual.set("_sprout_age", 1.3 if phase >= 2 else 9.0)
+		visual.set("_cinematic_mode", &"")
+		visual.set("_state", &"idle")
+		var adapter := visual.get("_model") as Node3D
+		var skeleton := visual.get("_skeleton") as Skeleton3D
+		var player := adapter.get("animation_player") as AnimationPlayer
+		player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+		player.playback_default_blend_time = 0.0
+		for action in ACTIONS:
+			var clip := player.get_animation(action)
+			var frames := maxi(1, ceili(clip.length * BOUNDS_HZ))
+			var summary := new_pose_bounds_summary("authored-phase%d/%s" % [phase, String(action)])
+			skeleton.reset_bone_poses()
+			adapter.position = Vector3.ZERO
+			adapter.scale = Vector3.ONE
+			player.play(action, 0.0)
+			for frame in frames + 1:
+				var time := minf(float(frame) / float(BOUNDS_HZ), clip.length)
+				player.seek(time, true)
+				visual.call("_apply_fourth")
+				include_pose_bounds_sample(summary, visual, frame, action == &"intro")
+			finish_pose_bounds_summary(summary)
+
+
+func check_every_frame_pose_bounds() -> void:
+	_pose_bounds_summaries.clear()
+	var packed := load(VISUAL_SCENE_PATH) as PackedScene
+	check(packed != null, "every-frame bounds fixture loads Hydra visual scene")
+	if packed == null:
+		return
+	var mount := Node3D.new()
+	mount.name = "HydraBoundsMount"
+	mount.position = Vector3(0.0, MOUNT_Y, MOUNT_Z)
+	root.add_child(mount)
+	var visual := packed.instantiate() as Node3D
+	check(visual != null, "every-frame bounds fixture instantiates visual")
+	if visual == null:
+		mount.free()
+		return
+	visual.set("hover_z", MOUNT_Z)
+	visual.set("sway_amplitude", 2.4)
+	visual.set("sway_period", 3.2)
+	mount.add_child(visual)
+	visual.call("on_spawned")
+	check(int(visual.get("phase_count")) == 3, "bounds fixture exercises the Hydra three-phase contract")
+	check_phase_one_identity_and_lane_reset(visual)
+	for phase in [1, 2, 3]:
+		if phase == 2:
+			reset_bounds_fixture(visual, 1)
+			visual.call("set_phase", 2)
+			sample_pose_sequence(visual, "phase1-to-2/phase_change", roundi(1.2 * BOUNDS_HZ))
+		elif phase == 3:
+			reset_bounds_fixture(visual, 2)
+			visual.call("set_phase", 3)
+			sample_pose_sequence(visual, "phase2-to-3/phase_change", roundi(1.2 * BOUNDS_HZ))
+		sample_bounds_action_suite(visual, phase)
+	check_sprout_interrupt_hitstop(visual)
+	check_pristine_authored_clip_bounds(visual)
+	var overall_minimum := Vector3(INF, INF, INF)
+	var overall_maximum := Vector3(-INF, -INF, -INF)
+	var aggregate_violations := 0
+	for summary: Dictionary in _pose_bounds_summaries:
+		var minimum: Vector3 = summary["minimum"]
+		var maximum: Vector3 = summary["maximum"]
+		overall_minimum.x = minf(overall_minimum.x, minimum.x)
+		overall_minimum.y = minf(overall_minimum.y, minimum.y)
+		overall_minimum.z = minf(overall_minimum.z, minimum.z)
+		overall_maximum.x = maxf(overall_maximum.x, maximum.x)
+		overall_maximum.y = maxf(overall_maximum.y, maximum.y)
+		overall_maximum.z = maxf(overall_maximum.z, maximum.z)
+		aggregate_violations += int(summary["violations"])
+	print("HYDRA POSE ENVELOPE: phases=1,2,3 hz=%d aggregate_world_min=%s aggregate_world_max=%s sequences=%d violations=%d" % [
+		BOUNDS_HZ, str(overall_minimum), str(overall_maximum), _pose_bounds_summaries.size(), aggregate_violations
+	])
+	mount.free()
+
+
 func check_model_adapter(model_script: Script, report: Dictionary) -> Node3D:
 	check(FileAccess.file_exists(GLB_PATH), "Hydra GLB exists")
 	check(FileAccess.file_exists(MODEL_SCRIPT_PATH), "BossModel adapter script exists")
@@ -239,6 +745,7 @@ func run() -> void:
 			adapter.free()
 	if FileAccess.file_exists(VISUAL_SCENE_PATH):
 		await check_visual_runtime()
+		check_every_frame_pose_bounds()
 		check_head_overlay_isolation()
 		check_crown_lane_targeting()
 		check_missing_model_fallback()
@@ -299,6 +806,65 @@ func check_lane_queues(visual: Node3D) -> void:
 	recoil = visual.get("_head_recoil")
 	check(recoil[1] != 9.0, "center lane attack selects the center head")
 	check(recoil[0] != 9.0 and recoil[2] != 9.0, "independent prior lane recoils remain active")
+
+
+func intro_glb_pose_matches(visual: Node3D, bones: Array[Transform3D], model_pose: Transform3D, visual_pose: Transform3D, animation_position: float) -> bool:
+	var skeleton := visual.get("_skeleton") as Skeleton3D
+	var model := visual.get("_model") as Node3D
+	var player := model.get("animation_player") as AnimationPlayer if model != null else null
+	return (
+		skeleton != null
+		and model != null
+		and player != null
+		and skeleton_pose_matches(skeleton, bones)
+		and model.transform.is_equal_approx(model_pose)
+		and visual.transform.is_equal_approx(visual_pose)
+		and is_equal_approx(player.current_animation_position, animation_position)
+	)
+
+
+func check_intro_pose_hold_glb(visual: Node3D, mode: StringName, seconds: float, held_progress: float) -> void:
+	visual.call("on_spawned")
+	visual.call("set_time_factor", 1.0)
+	visual.call("play_cinematic", mode, seconds)
+	var intro_pose_at := float(BossVisualBase.INTRO_POSE_AT[mode])
+	var seconds_per_frame := 1.0 / (seconds * float(BOUNDS_HZ))
+	var pose_frame := roundi(intro_pose_at / seconds_per_frame)
+	var before_pose_progress := float(pose_frame - 1) * seconds_per_frame
+	visual.call("set_cinematic_progress", mode, before_pose_progress)
+	var model := visual.get("_model") as Node3D
+	var player := model.get("animation_player") as AnimationPlayer if model != null else null
+	var clip := player.get_animation(&"intro") as Animation if player != null else null
+	check(player != null and clip != null and player.current_animation_position < clip.length - 0.0001,
+		"%s intro has not landed one 120Hz frame before INTRO_POSE_AT" % mode)
+	visual.call("set_cinematic_progress", mode, intro_pose_at)
+	var skeleton := visual.get("_skeleton") as Skeleton3D
+	model = visual.get("_model") as Node3D
+	player = model.get("animation_player") as AnimationPlayer if model != null else null
+	check(skeleton != null and model != null and player != null and clip != null,
+		"%s intro hold fixture exposes GLB skeleton, adapter and player" % mode)
+	if skeleton == null or model == null or player == null or clip == null:
+		return
+	var bones := snapshot_skeleton_pose(skeleton)
+	var model_pose := model.transform
+	var visual_pose := visual.transform
+	var animation_position := player.current_animation_position
+	var was_paused := paused
+	paused = true
+	await process_frame
+	check(intro_glb_pose_matches(visual, bones, model_pose, visual_pose, animation_position),
+		"%s intro pose holds at INTRO_POSE_AT during pause without new progress" % mode)
+	paused = was_paused
+	var hold_frame_count := roundi((held_progress - intro_pose_at) / seconds_per_frame)
+	var held_through_interval := true
+	for frame in hold_frame_count:
+		visual.call("_process", 1.0 / float(BOUNDS_HZ))
+		var progress := intro_pose_at + float(frame + 1) * seconds_per_frame
+		visual.call("set_cinematic_progress", mode, minf(progress, held_progress))
+		if not intro_glb_pose_matches(visual, bones, model_pose, visual_pose, animation_position):
+			held_through_interval = false
+	check(held_through_interval,
+		"%s intro keeps every bone and model transform unchanged at time_factor 1 from INTRO_POSE_AT %.2f through %.2f" % [mode, intro_pose_at, held_progress])
 
 
 func check_cinematics_and_time(visual: Node3D) -> void:
@@ -393,6 +959,8 @@ func check_cinematics_and_time(visual: Node3D) -> void:
 	visual.call("_process", 2.0)
 	check(bool(visual.get("_terminal")) and StringName(visual.get("_state")) == &"defeat",
 		"additional coarse frames preserve the terminal defeated state")
+	for mode in [&"intro_full", &"intro_short"]:
+		await check_intro_pose_hold_glb(visual, mode, cinematic_default_seconds(mode), float(BossVisualBase.INTRO_HOLD_UNTIL[mode]))
 
 
 func check_head_overlay_isolation() -> void:
@@ -515,6 +1083,34 @@ func check_crown_pair(lane_mask: int, expected_x: float, unselected_lane: int, l
 	return crown_rotation
 
 
+func snapshot_fallback_intro_pose(fallback: Node3D, art: Node3D) -> Array[Transform3D]:
+	var result: Array[Transform3D] = [fallback.transform, art.transform]
+	var heads: Array = art.get("heads")
+	for head: Node3D in heads:
+		result.append(head.transform)
+		var jaw := head.get_node_or_null("Jaw") as Node3D
+		if jaw != null:
+			result.append(jaw.transform)
+	var batches: Array = art.get("batches")
+	for batch: Dictionary in batches:
+		var node := batch.get("node") as MultiMeshInstance3D
+		if node == null or node.multimesh == null:
+			continue
+		for instance in node.multimesh.instance_count:
+			result.append(node.multimesh.get_instance_transform(instance))
+	return result
+
+
+func fallback_intro_pose_matches(fallback: Node3D, art: Node3D, snapshot: Array[Transform3D]) -> bool:
+	var current := snapshot_fallback_intro_pose(fallback, art)
+	if current.size() != snapshot.size():
+		return false
+	for index in snapshot.size():
+		if not current[index].is_equal_approx(snapshot[index]):
+			return false
+	return true
+
+
 func check_missing_model_fallback() -> void:
 	var visual_source := FileAccess.get_file_as_string(VISUAL_SCRIPT_PATH)
 	check(not visual_source.is_empty(), "fallback probe reads the Hydra visual source")
@@ -550,6 +1146,19 @@ func check_missing_model_fallback() -> void:
 	fallback.call("set_phase", 2)
 	fallback.call("_process", 0.1)
 	check(int(fallback.get("_phase")) == 2 and int(art.get("phase")) == 2, "fallback phase two reaction reaches BossArt")
+	for mode in [&"intro_full", &"intro_short"]:
+		fallback.call("on_spawned")
+		fallback.call("set_time_factor", 0.0)
+		var seconds := cinematic_default_seconds(mode)
+		var held_progress := float(BossVisualBase.INTRO_HOLD_UNTIL[mode])
+		fallback.call("play_cinematic", mode, seconds)
+		var pose_at := float(BossVisualBase.INTRO_POSE_AT[mode])
+		fallback.call("set_cinematic_progress", mode, pose_at)
+		var intro_snapshot := snapshot_fallback_intro_pose(fallback, art)
+		fallback.call("_process", 0.5)
+		fallback.call("set_cinematic_progress", mode, held_progress)
+		check(fallback_intro_pose_matches(fallback, art, intro_snapshot),
+			"fallback %s intro holds head and MultiMesh transforms from INTRO_POSE_AT %.2f through %.2f" % [mode, pose_at, held_progress])
 	fallback.call("play_cinematic", &"defeat_full", 2.0)
 	fallback.call("set_time_factor", 0.0)
 	fallback.call("set_cinematic_progress", &"defeat_full", 0.5)
