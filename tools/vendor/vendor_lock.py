@@ -100,7 +100,8 @@ def resolve(source: Path, tag: str, upstream_path: str) -> tuple[str, str]:
 
 
 def verify_source(name: str, source: Path, root: Path = ROOT, lock: Path = LOCK) -> list[str]:
-    entry = load(lock, root).get("addons", {}).get(name)
+    # The staged lock is what a commit will contain, as in check().
+    entry = load(lock, root, staged=True).get("addons", {}).get(name)
     if entry is None:
         return [f"{name} has no entry in {lock.name}"]
     commit, tree = resolve(source, entry["tag"], entry["upstream_path"])

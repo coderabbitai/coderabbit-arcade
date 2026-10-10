@@ -125,6 +125,12 @@ class VendorLock(unittest.TestCase):
         self.assertEqual(self.check(), [], "the offline check only proves the copy matches its entry")
         problems = vendor_lock.verify_source("demo", self.upstream, self.game, self.lock)
         self.assertTrue(any("is tree" in problem for problem in problems), problems)
+        # Restoring an honest lock in the working tree does not hide the staged one.
+        honest = json.loads(self.lock.read_text())
+        honest["addons"]["demo"]["tree"] = vendor_lock.resolve(self.upstream, "v0.1.0", "addons/demo")[1]
+        self.lock.write_text(json.dumps(honest))
+        self.assertTrue(vendor_lock.verify_source("demo", self.upstream, self.game, self.lock),
+                        "verify_source reads the staged lock")
 
     def test_export_attributes_upstream_do_not_change_the_copy(self):
         (self.upstream / ".gitattributes").write_text("addons/demo/LICENSE export-ignore\n")
