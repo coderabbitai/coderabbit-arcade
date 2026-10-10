@@ -32,5 +32,5 @@ static func hint_rows(def: Dictionary) -> Array[Dictionary]:
 		var hint := String(COPY.get(StringName(def.get("kind", &"")), {}).get("hint", ""))
 		var text := (hint + " · " if not hint.is_empty() else "") + "EVERY TOOL LANDS" if all_tools else " + ".join(names)
 		rows.append({"phase": phase, "accepted_tools": accepted.duplicate(), "tools": tools,
-			"all_tools": all_tools, "text": text})
+			"all_tools": all_tools, "hint": hint, "text": text})
 	return rows

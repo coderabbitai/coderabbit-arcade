@@ -34,6 +34,7 @@ var lower_third: TextureRect
 var _viewport_size := Vector2.ZERO
 var _gameplay_hud: CanvasLayer
 var _gameplay_was_visible := true
+var _hint_row_count := 0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -214,11 +215,13 @@ func _build_hints(def: Dictionary) -> void:
 	for row: Dictionary in rows:
 		if restricted and row.all_tools: continue
 		if not restricted and int(row.phase) != 1: continue
+		if not restricted and not String(row.hint).is_empty():
+			_label(phase_rows, row.hint, 22, Palette.CREAM)
 		var line := HBoxContainer.new()
 		line.alignment = BoxContainer.ALIGNMENT_CENTER
 		line.add_theme_constant_override("separation", 18)
 		phase_rows.add_child(line)
-		_label(line, "PHASE %d" % row.phase if restricted else "ALL PHASES", 20, Palette.CREAM)
+		_label(line, "PHASE %d" % row.phase if restricted else "EVERY TOOL LANDS", 20, Palette.CREAM)
 		for tool: StringName in row.tools:
 			var tool_pair := HBoxContainer.new()
 			tool_pair.add_theme_constant_override("separation", 5)
@@ -229,8 +232,8 @@ func _build_hints(def: Dictionary) -> void:
 			glyph.custom_minimum_size = Vector2(36, 36)
 			glyph.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			tool_pair.add_child(glyph)
-			_label(tool_pair, ToolDefs.label(tool).to_upper(), 20, Palette.CREAM)
-		if not restricted: _label(phase_rows, row.text, 18, Palette.CREAM)
+			if restricted: _label(tool_pair, ToolDefs.label(tool).to_upper(), 20, Palette.CREAM)
+	_hint_row_count = phase_rows.get_child_count()
 
 func _process(_delta: float) -> void:
 	if not is_instance_valid(game) or mode == &"" or game.get("paused") == true: return
@@ -255,8 +258,9 @@ func _process(_delta: float) -> void:
 	threat.visible = intro and not short and p >= TITLE_AT and not skipped
 	threat.visible_characters = maxi(0, int((title_age - 0.18) * 40.0))
 	threat.modulate.a = out
-	hints.visible = intro and not short and p >= 0.70 and not skipped
-	hints.modulate.a = smoothstep(0.70, 0.72, p) * out
+	var hint_advance := 0.25 / seconds if _hint_row_count > 1 else 0.0
+	hints.visible = intro and not short and p >= 0.70 - hint_advance and not skipped
+	hints.modulate.a = smoothstep(0.70 - hint_advance, 0.72 - hint_advance, p) * out
 	# Only query the facade guard, which includes running, pause, skip arm and skip tail.
 	skip_prompt.visible = intro and not short and not skipped and game.has_method("_can_skip_boss_cinematic") and bool(game.call("_can_skip_boss_cinematic"))
 	resolved.visible = not intro and p >= RESOLVED_AT

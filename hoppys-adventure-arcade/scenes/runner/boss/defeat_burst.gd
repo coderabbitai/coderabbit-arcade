@@ -49,9 +49,8 @@ func sample(progress: float) -> void:
 			var size := lerpf(0.42, 0.04, t) if shard > 0 else lerpf(1.6, 0.0, t)
 			var point := origins[burst] + direction * radius if shard > 0 else origins[burst]
 			multimesh.set_instance_transform(count, Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * size), point))
-			# The core stays white-hot while the rim turns orange, then drops out sharply.
-			var rim := accent.lerp(Color("ff693e"), 0.60)
-			var color := Color.WHITE.lerp(rim, smoothstep(0.18 if shard == 0 else 0.0, 0.80, t))
+			# White-hot ignition gives way to the boss accent within the first fifth.
+			var color := Color.WHITE.lerp(accent, smoothstep(0.05 if shard == 0 else 0.0, 0.20, t))
 			color.a = 1.0 - smoothstep(0.30, 1.0, t)
 			multimesh.set_instance_color(count, color)
 			count += 1
