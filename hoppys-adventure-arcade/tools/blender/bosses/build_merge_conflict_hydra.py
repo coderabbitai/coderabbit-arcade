@@ -2,11 +2,10 @@
 import argparse
 import bpy
 import hashlib
-import json
 import math
 from pathlib import Path
 import sys
-from mathutils import Matrix, Vector
+from mathutils import Vector
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from boss_kit import DEFAULT_ASSET_DIR, BossBuilder, Part, xform, B2G
 
