@@ -86,7 +86,8 @@ func _ready() -> void:
 	controls.add_child(Style.teaching_legend(true))
 	controls.add_child(Style.label("Two hits without recovery\nand the backlog catches you.", 18))
 	Prompts.track(_label("", 12, Vector2(76, 670), Color("9baebc")), func() -> String:
-		return "↑ ↓ / D-PAD  SELECT    %s  CONFIRM    %s  BACK" % [
+		return "%s  SELECT    %s  CONFIRM    %s  BACK" % [
+			Prompts.keys_or_pad("↑ ↓", Prompts.if_pad("D-PAD")),
 			Prompts.either("ENTER", &"ui_accept", true),
 			Prompts.either("ESC", &"ui_cancel", true)])
 	buttons[0].grab_focus()

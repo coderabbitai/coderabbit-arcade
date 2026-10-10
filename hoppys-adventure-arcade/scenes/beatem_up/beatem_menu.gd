@@ -60,8 +60,8 @@ func _ready() -> void:
 	quit.pressed.connect(func(): AppRouter.quit_game())
 	var controls := Style.label("",14)
 	Prompts.track(controls, func() -> String:
-		return "WASD / stick: move · %s: jump · %s: combo\n%s: pick up weapon · %s: pause\nHeroes: hold %s to charge REVIEW after unlocking it" % [
-			Prompts.either("Space", &"brawl_jump"), Prompts.either("J or X", &"brawl_attack"),
+		return "%s: move · %s: jump · %s: combo\n%s: pick up weapon · %s: pause\nHeroes: hold %s to charge REVIEW after unlocking it" % [
+			Prompts.keys_or_pad("WASD", Prompts.if_pad("stick")), Prompts.either("Space", &"brawl_jump"), Prompts.either("J or X", &"brawl_attack"),
 			Prompts.either("E", &"brawl_pickup"), Prompts.either("Esc", &"pause"), Prompts.either("Q", &"review_burst")])
 	column.add_child(controls)
 	caption=Style.label("",16,Color("ffb366"))

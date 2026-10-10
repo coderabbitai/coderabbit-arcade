@@ -20,6 +20,12 @@ static func keys_or_pad(keys: String, pad_label: String) -> String:
 	return keys if pad_label.is_empty() else "%s / %s" % [keys, pad_label]
 
 
+## `text` while a controller is connected, "" otherwise: `keys_or_pad("WASD", if_pad("stick"))`.
+static func if_pad(text: String) -> String:
+	var controllers := service()
+	return text if controllers and not controllers.family.is_empty() else ""
+
+
 ## keys_or_pad() for an action: `either("Space", &"jump")`.
 static func either(keys: String, action: StringName, upper: bool = false) -> String:
 	var label := pad(action)

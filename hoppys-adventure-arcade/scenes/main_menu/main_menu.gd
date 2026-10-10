@@ -260,7 +260,8 @@ func _open_settings(invoker: Control) -> void:
 		SaveService.apply_display())
 	var hint := Style.label("", 13, Color("afbdc9"))
 	Prompts.track(hint, func() -> String:
-		return "Arrows / D-pad / stick: select\n%s: confirm   •   %s: back" % [
+		return "%s: select\n%s: confirm   •   %s: back" % [
+			Prompts.keys_or_pad("Arrows", Prompts.if_pad("D-pad / stick")),
 			Prompts.either("Enter", &"ui_accept"),
 			Prompts.either("Esc", &"ui_cancel")])
 	column.add_child(hint)

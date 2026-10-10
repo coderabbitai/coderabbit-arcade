@@ -697,7 +697,8 @@ func _build_ui() -> void:
 	ui.add_child(prompt)
 	var controls := Style.label("",13)
 	Prompts.track(controls, func() -> String:
-		return "WASD / stick · Move    %s · Jump    %s · Combo    %s · Pickup    %s · Pause" % [
+		return "%s · Move    %s · Jump    %s · Combo    %s · Pickup    %s · Pause" % [
+			Prompts.keys_or_pad("WASD", Prompts.if_pad("stick")),
 			Prompts.either("Space", &"brawl_jump"),
 			Prompts.either("J, X", &"brawl_attack"),
 			Prompts.either("E", &"brawl_pickup"),

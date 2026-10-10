@@ -9,6 +9,7 @@ const XBOX := ["Xbox Series X Controller", "xbox-guid", 0x045e]
 const DUALSENSE := ["DualSense Wireless Controller", "sony-guid", 0x054c]
 const SWITCH_PRO := ["Nintendo Switch Pro Controller", "nintendo-guid", 0x057e]
 var failures := 0
+var leaderboard_path := "user://controller_service_leaderboard_%d.cfg" % (randi() % 1000000)
 var service: Node
 var pads: RefCounted
 
@@ -67,6 +68,9 @@ func run() -> void:
 	await runner_pauses_and_resumes()
 	await menu_disconnect_frees_player_one()
 	print("CONTROLLER SERVICE: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
+	for suffix in ["", ".tmp", ".bak"]:
+		if FileAccess.file_exists(leaderboard_path + suffix):
+			DirAccess.remove_absolute(leaderboard_path + suffix)
 	current_scene.queue_free()
 	await frames(5)
 	var audio := root.get_node("AudioService")
@@ -118,6 +122,7 @@ func prompts_follow_the_pad_in_use() -> void:
 	service.track(label, func() -> String: return Prompts.either("Space", &"jump"))
 	await plug(0, XBOX)
 	check(service.family == "xbox" and label.text == "Space / A", "Xbox prompt, got %s" % label.text)
+	check(Prompts.keys_or_pad("WASD", Prompts.if_pad("stick")) == "WASD / stick", "Stick wording with a pad")
 	await plug(1, DUALSENSE)
 	check(service.family == "xbox", "Connecting a second pad does not switch the prompts")
 	press(1, JOY_BUTTON_X)
@@ -132,6 +137,7 @@ func prompts_follow_the_pad_in_use() -> void:
 	await unplug(1)
 	await unplug(0)
 	check(service.family == "" and label.text == "Space", "Prompts drop pad labels with no pad left")
+	check(Prompts.keys_or_pad("WASD", Prompts.if_pad("stick")) == "WASD", "No stick wording without a pad")
 	label.free()
 	check(service.family_changed.get_connections().is_empty(), "A freed label stops tracking")
 
@@ -191,9 +197,14 @@ func brawler_hands_over_to_another_pad() -> void:
 
 
 func runner_pauses_and_resumes() -> void:
-	change_scene_to_file("res://scenes/runner/runner_game.tscn")
+	# Point the run at a throwaway leaderboard before it enters the tree; run() deletes it.
+	var game := (load("res://scenes/runner/runner_game.tscn") as PackedScene).instantiate()
+	game.leaderboard_path = leaderboard_path
+	var previous := current_scene
+	root.add_child(game)
+	current_scene = game
+	previous.queue_free()
 	await frames(5)
-	var game := current_scene
 	game.start_run(7)
 	await frames(5)
 	fresh_pads()
