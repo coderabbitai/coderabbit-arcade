@@ -60,17 +60,25 @@ func check_knockout(hoppy: Node3D, player: AnimationPlayer) -> void:
 	hoppy.set_anim_state(&"dead")
 	check(hoppy.anim_state == &"dead" and player.current_animation == &"run" and is_zero_approx(hoppy.knockout_time()), "knockout trips on the run stride")
 	var tripped := false
-	while hoppy.knockout_time() < float(rig.CLAMP_AT) + 0.2:
+	var target := float(rig.CLAMP_AT) + 0.2
+	# Bounded by ticks, not by the clock it waits on, so a stalled clock fails instead of hanging.
+	for _tick in int(ceil(target * 60.0)) + 10:
+		if hoppy.knockout_time() >= target: break
 		hoppy._process(1.0 / 60.0)
 		player.advance(1.0 / 60.0)
 		if hoppy.knockout_time() >= trip and player.current_animation == &"dead": tripped = true
+	check(hoppy.knockout_time() >= target, "the knockout clock reaches the pin (%.2f s)" % hoppy.knockout_time())
 	check(tripped and is_equal_approx(rig.time, hoppy.knockout_time()), "the dead clip topples him after the trip")
 	check(rig.face().z >= 1.0, "pinned Hoppy winces")
 	hoppy.set_anim_state(&"run")
 	check(hoppy.knockout_time() < 0.0 and rig.time < 0.0, "the next run clears the knockout")
 	hoppy.set_anim_state(&"jump")
 	hoppy.set_anim_state(&"dead")
-	check(player.current_animation == &"dead" and is_equal_approx(hoppy.knockout_time(), trip), "a mid-air knockout skips the trip")
+	check(player.current_animation == &"dead" and is_zero_approx(hoppy.knockout_time()) and not rig.trips, "a mid-air knockout skips the trip, its clock in step with the catch")
+	for _tick in int(ceil((trip + 0.1) * 60.0)):
+		hoppy._process(1.0 / 60.0)
+		player.advance(1.0 / 60.0)
+	check(player.current_animation == &"dead" and player.current_animation_position > trip, "the trip threshold does not restart a mid-air dead clip (%.2f s)" % player.current_animation_position)
 	hoppy.set_anim_state(&"run")
 
 ## The catch holds Hoppy for the whole caught sequence while the backend keeps the threat at 1:
@@ -81,11 +89,14 @@ func check_catch_hold(pursuer: Node3D) -> void:
 	check(not field.visible, "quarantine field waits for the claws (%.2f s)" % pursuer._reaction_time)
 	var flash := 0.0
 	var clamp_at: float = pursuer.CLAMP_AT
-	while pursuer._reaction_time < 3.0:
+	# Bounded by ticks, not by the clock it waits on, so a stalled clock fails instead of hanging.
+	for _tick in int(ceil(3.0 * 60.0)) + 10:
+		if pursuer._reaction_time >= 3.0: break
 		pursuer.set_threat(1.0)
 		pursuer._process(1.0 / 60.0)
 		if pursuer._reaction_time >= clamp_at and pursuer._reaction_time < clamp_at + 0.1:
 			flash = maxf(flash, pursuer.get_node("RedLight").light_energy)
+	check(pursuer._reaction_time >= 3.0, "the catch clock reaches 3 s (%.2f s)" % pursuer._reaction_time)
 	var hunter: Node3D = pursuer.get_node("Hunter")
 	var victim: Vector3 = pursuer._victim()
 	check(pursuer._reaction == &"catch", "catch holds while the threat stays at 1")

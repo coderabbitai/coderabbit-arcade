@@ -88,6 +88,8 @@ var _face: SkeletonModifier3D
 ## began (< 0 when not knocked out).
 var _knockout: SkeletonModifier3D
 var _knockout_time := -1.0
+## The knockout opened with a trip on the run stride (the dead clip waits for TRIP).
+var _knockout_trips := false
 ## Smoothed face weights (focused, wide, wince, grin).
 var _expression := Vector4.ZERO
 ## A victory requested mid-air or mid-roll plays on the next grounded return.
@@ -286,10 +288,11 @@ func _play(state: StringName) -> void:
 	if state == &"dead":
 		_victory_pending = false
 		# The knockout trips on the run stride, then the dead clip topples him at TRIP. Caught
-		# mid-air or mid-roll, there is no stride to trip on, so he goes straight down.
-		var tripping := anim_state not in AIRBORNE and anim_state != &"roll"
-		_knockout_time = 0.0 if tripping else KnockoutRig.TRIP
-		if tripping:
+		# mid-air or mid-roll, there is no stride to trip on, so the dead clip starts at once. The
+		# clock starts at 0 either way, in step with the pursuer's catch (CLAMP_AT).
+		_knockout_trips = anim_state not in AIRBORNE and anim_state != &"roll"
+		_knockout_time = 0.0
+		if _knockout_trips:
 			clip = &"run"
 	else:
 		_knockout_time = -1.0
@@ -464,9 +467,10 @@ func _update_knockout(delta: float) -> void:
 	if _knockout_time >= 0.0 and anim_state == &"dead":
 		var before := _knockout_time
 		_knockout_time += delta
-		if before < KnockoutRig.TRIP and _knockout_time >= KnockoutRig.TRIP and animation_player != null:
+		if _knockout_trips and before < KnockoutRig.TRIP and _knockout_time >= KnockoutRig.TRIP and animation_player != null:
 			animation_player.play(&"dead", 0.12)
 	_knockout.set("time", _knockout_time if anim_state == &"dead" else -1.0)
+	_knockout.set("trips", _knockout_trips)
 
 ## Seconds since the knockout began, or -1 when Hoppy is not knocked out.
 func knockout_time() -> float:

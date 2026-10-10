@@ -18,6 +18,8 @@ enum {HIPS, SPINE, CHEST, NECK, HEAD, EAR_L, EAR_R, ARM_L, ARM_R, FOREARM_L, FOR
 const NAMES := ["hips", "spine", "chest", "neck", "head", "ear_L", "ear_R", "arm_L", "arm_R",
 	"forearm_L", "forearm_R", "leg_L", "leg_R", "shin_L", "shin_R", "foot_L", "foot_R", "cape"]
 var time := -1.0
+## False when he was caught mid-air or mid-roll: the dead clip starts at once, without the trip pose.
+var trips := true
 var _bones := PackedInt32Array()
 
 ## Resolves the bones once; a rig missing any of them leaves the modifier inert.
@@ -54,7 +56,7 @@ func _process_modification() -> void:
 	if skeleton == null or not active():
 		return
 	var t := time
-	var trip := _ramp(t, 0.0, 0.1)*(1.0-_ramp(t, TRIP, TRIP+0.3))
+	var trip := _ramp(t, 0.0, 0.1)*(1.0-_ramp(t, TRIP, TRIP+0.3))*(1.0 if trips else 0.0)
 	var splat := _ramp(t, TRIP, LANDED-0.1)
 	var crawl := _ramp(t, 0.9, 1.1)*(1.0-_ramp(t, CLAMP_AT, CLAMP_AT+0.08))
 	var pinned := _ramp(t, CLAMP_AT, CLAMP_AT+0.08)
