@@ -262,7 +262,7 @@ func _process(_delta: float) -> void:
 	hints.visible = intro and not short and p >= 0.70 - hint_advance and not skipped
 	hints.modulate.a = smoothstep(0.70 - hint_advance, 0.72 - hint_advance, p) * out
 	# Only query the facade guard, which includes running, pause, skip arm and skip tail.
-	skip_prompt.visible = intro and not short and not skipped and game.has_method("_can_skip_boss_cinematic") and bool(game.call("_can_skip_boss_cinematic"))
+	skip_prompt.visible = intro and not skipped and game.has_method("_can_skip_boss_cinematic") and bool(game.call("_can_skip_boss_cinematic"))
 	resolved.visible = not intro and p >= RESOLVED_AT
 	var resolved_age := (p - RESOLVED_AT) * seconds
 	resolved.scale = Vector2.ONE * lerpf(1.8, 1.0, 1.0 - pow(1.0 - clampf(resolved_age / 0.2, 0, 1), 3))

@@ -47,6 +47,13 @@ class Facade extends Node:
 	func _can_skip_boss_cinematic() -> bool:
 		return can_skip and not paused
 
+class RecordingRunnerAudio extends "res://scenes/runner/audio/runner_audio.gd":
+	var stop_requests: Array[StringName] = []
+
+	func _stop_cue(kind: StringName) -> void:
+		stop_requests.append(kind)
+		super._stop_cue(kind)
+
 var failures := 0
 var checks := 0
 
@@ -134,15 +141,23 @@ func _test_full_timing_and_skip(cinematic: Node, facade: Facade) -> void:
 	facade.can_skip = false
 
 func _test_short_mode(cinematic: Node, facade: Facade) -> void:
-	facade.can_skip = true
+	facade.can_skip = false
 	facade.boss_cinematic.emit(&"merge_conflict_hydra", &"intro_short", 2.5)
-	facade.boss_cinematic_progress = 0.30
+	facade.boss_cinematic_progress = 0.199
+	update_cinematic(cinematic)
+	check(not cinematic.skip_prompt.visible, "short skip prompt stays hidden before the 0.5-second facade guard")
+	facade.boss_cinematic_progress = 0.28
 	update_cinematic(cinematic)
 	check(cinematic.title_group.visible, "short title appears from the facade clock")
 	check(not cinematic.chyron.visible and not cinematic.source_path.visible, "short intro omits chyron and source path")
 	check(not cinematic.threat.visible and not cinematic.hints.visible, "short intro omits threat and tool hints")
-	check(not cinematic.skip_prompt.visible and not cinematic.resolved.visible, "short intro shows only the title and epithet")
-	facade.boss_cinematic_ended.emit(&"intro_short")
+	check(not cinematic.skip_prompt.visible and not cinematic.resolved.visible, "short intro presents its title and epithet without threat or resolved copy")
+	facade.can_skip = true
+	facade.boss_cinematic_progress = 0.28
+	update_cinematic(cinematic)
+	check(cinematic.skip_prompt.visible, "short intro shows skip when the facade says the 0.5-second guard is open")
+	facade.boss_cinematic_skipped.emit(&"intro_short")
+	check(not cinematic.skip_prompt.visible, "short skip prompt hides after the facade reports a skip")
 	facade.can_skip = false
 
 func _test_full_card_dwell(cinematic: Node, facade: Facade) -> void:
@@ -260,42 +275,44 @@ func _test_audio_defeat_fanfare_lifecycle() -> void:
 	facade.leaderboard_path = scratch_board
 	root.add_child(facade)
 	var audio := RunnerAudioScene.instantiate()
+	audio.set_script(RecordingRunnerAudio)
 	root.add_child(audio)
 	audio.bind(facade)
+	var stops: Array[StringName] = audio.get("stop_requests")
+	stops.clear()
 	var first_voice := _start_resolved_voice(audio, facade)
 	var playback: AudioStreamPlaybackPolyphonic = audio.get("_playback")
 	check(first_voice != AudioStreamPlaybackPolyphonic.INVALID_ID and playback.is_stream_playing(first_voice),
 		"defeat-short fanfare starts as a real polyphonic playback voice")
-	await create_timer(0.8).timeout
-	check(playback.is_stream_playing(first_voice), "resolved fanfare is still playing at the short defeat end")
 	facade.boss_cinematic_progress = 1.0
 	facade.boss_cinematic_ended.emit(&"defeat_short")
-	await process_frame
-	await create_timer(0.12).timeout
-	check(playback.is_stream_playing(first_voice),
-		"boss-resolved fanfare keeps its actual playback tail after defeat cinematic ends")
+	check(not stops.has(&"boss_resolved"), "cinematic end does not request stopping the resolved fanfare")
 	facade.stage_cleared.emit(1, 400)
-	check(playback.is_stream_playing(first_voice), "stage clear leaves the remaining resolved fanfare tail playing")
+	check(not stops.has(&"boss_resolved"), "stage clear leaves the resolved fanfare stop request history unchanged")
+	check(playback.is_stream_playing(first_voice), "resolved fanfare remains a real active voice before catch cleanup")
 	facade.caught.emit()
 	await process_frame
-	await create_timer(0.12).timeout
-	check(not playback.is_stream_playing(first_voice), "catch cleanup stops the resolved fanfare after cinematic end cleared its mode")
-	await create_timer(0.05).timeout
+	check(stops.has(&"boss_resolved"), "catch cleanup requests stopping the resolved fanfare after cinematic end")
+	await create_timer(0.5).timeout
+	check(not playback.is_stream_playing(first_voice), "catch cleanup stops the resolved fanfare playback voice")
+	stops.clear()
 	var run_started_voice := _start_resolved_voice(audio, facade)
 	check(run_started_voice != AudioStreamPlaybackPolyphonic.INVALID_ID and playback.is_stream_playing(run_started_voice),
 		"run-start cleanup fixture starts a real resolved fanfare voice")
 	facade.run_started.emit(2)
 	await process_frame
-	await create_timer(0.12).timeout
-	check(not playback.is_stream_playing(run_started_voice), "new-run cleanup stops the prior cinematic fanfare")
-	await create_timer(0.05).timeout
+	check(stops.has(&"boss_resolved"), "new-run cleanup requests stopping the prior cinematic fanfare")
+	await create_timer(0.5).timeout
+	check(not playback.is_stream_playing(run_started_voice), "new-run cleanup stops the prior resolved playback voice")
+	stops.clear()
 	var teardown_voice := _start_resolved_voice(audio, facade)
 	var teardown_playback: AudioStreamPlaybackPolyphonic = audio.get("_playback")
 	check(teardown_voice != AudioStreamPlaybackPolyphonic.INVALID_ID and teardown_playback.is_stream_playing(teardown_voice),
 		"teardown fixture starts another real resolved fanfare voice")
 	audio.queue_free()
 	await process_frame
-	await create_timer(0.12).timeout
+	check(stops.has(&"boss_resolved"), "RunnerAudio teardown requests stopping active resolved fanfare")
+	await create_timer(0.5).timeout
 	check(not teardown_playback.is_stream_playing(teardown_voice), "RunnerAudio teardown stops active cinematic voices")
 
 func _start_resolved_voice(audio: Node, facade: Facade) -> int:
