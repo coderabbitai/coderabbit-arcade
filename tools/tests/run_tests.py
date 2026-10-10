@@ -5,12 +5,13 @@ Usage:
     python3 tools/tests/run_tests.py -k runner -j 2      # suites whose name contains "runner"
     python3 tools/tests/run_tests.py --list              # what would run, and what is skipped
 
-Every .gd file under hoppys-adventure-arcade/tests/ (except tests/lib/) is a suite and runs
-by default; new tests need no registration. tools/tests/suites.toml is the only way to keep a
-suite out, and each skip carries a reason. A suite fails if it exits nonzero, times out, or
-prints an engine/script error or an exit-time leak. Errors a suite provokes on purpose are
-allowed only through its expected_errors patterns, and every listed pattern must still match.
-Suites listed under [serial] (timing budgets) run one at a time after the parallel batch.
+Every .gd file under hoppys-adventure-arcade/tests/ that extends SceneTree (or MainLoop) is a
+suite and runs by default; new tests need no registration. Other scripts there are helpers.
+tools/tests/suites.toml is the only way to keep a suite out, and each skip carries a reason.
+A suite fails if it exits nonzero, times out, or prints an engine/script error or an exit-time
+leak. Errors a suite provokes on purpose are allowed only through its expected_errors patterns,
+and every listed pattern must still match. Suites listed under [serial] (timing budgets) run one
+at a time after the parallel batch.
 
 Each suite gets its own HOME, so user:// writes (settings, leaderboards) never touch the
 developer's real files or another suite running in parallel. Standard library only.
@@ -58,12 +59,17 @@ class Result:
         return self.exit_code == 0 and not self.problems
 
 
+# Godot can only run a script that extends SceneTree or MainLoop with --script; anything else
+# under tests/ (shared helpers, fixtures) is support code, and running it pops a modal alert.
+SUITE_BASE = re.compile(r"^extends\s+(?:SceneTree|MainLoop)\b", re.M)
+
+
 def discover() -> list[str]:
     """Suite names are paths under tests/ without .gd, e.g. "runner_logic" or "assets/a1_check"."""
     return sorted(
         path.relative_to(TESTS).with_suffix("").as_posix()
         for path in TESTS.rglob("*.gd")
-        if "lib" not in path.relative_to(TESTS).parts[:-1]
+        if SUITE_BASE.search(path.read_text(encoding="utf-8", errors="replace"))
     )
 
 

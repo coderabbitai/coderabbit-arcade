@@ -69,7 +69,7 @@ class Discover(unittest.TestCase):
         suites = run_tests.discover()
         self.assertIn("runner_logic", suites)
         self.assertIn("assets/a1_check", suites)
-        self.assertFalse(any(name.startswith("lib/") for name in suites))
+        self.assertNotIn("support/armed_measure", suites)  # extends RefCounted: a helper, not a suite
 
 
 if __name__ == "__main__":

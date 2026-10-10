@@ -4,7 +4,16 @@ const Catalog = preload("res://modes/beatem_up/reinvent/catalog.gd")
 const Player = preload("res://modes/beatem_up/reinvent/player.gd")
 const Enemy = preload("res://modes/beatem_up/reinvent/enemy.gd")
 const Boss = preload("res://modes/beatem_up/reinvent/boss.gd")
+const StageFlow = preload("res://modes/beatem_up/stage_flow.gd")
+const Knockout = preload("res://modes/beatem_up/knockout.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
+const VictoryScreen = preload("res://modes/beatem_up/victory_screen.gd")
+const Minimap = preload("res://modes/beatem_up/minimap.gd")
+## The minimap is up while the CodeRabbit is in a room, and hidden under cards and end screens.
+const MINIMAP_STATES := ["stage_enter","combat","stage_exit","boss_victory","knockout"]
+const PAUSABLE := ["combat","cards","boss_victory","stage_enter","stage_exit","knockout"]
+const TERMINAL_OVERLAY_ARM := .5
+const CARD_HINT := "Enter / View · Skip     Esc / Start · Pause"
 var rng := RandomNumberGenerator.new()
 var stage_index := 0
 var room := 0
@@ -31,6 +40,9 @@ var ally_clock := 10.0
 var hazard_clock := 4.0
 var shake := 0.0
 var music: AudioStreamPlayer
+var flow: StageFlow
+## The last-life knockout between the fatal hit and game_over().
+var ko := Knockout.new(Catalog.KNOCKOUT)
 var sound_pool: Array[AudioStreamPlayer2D] = []
 var sound_index := 0
 var hud: Label
@@ -39,10 +51,15 @@ var boss_bar: ProgressBar
 var boss_text: Label
 var toast_label: Label
 var toast_left := 0.0
+## A toast raised while the stage title banner fades into combat waits for it, so the two never stack.
+var held_toast := ""
+var held_toast_seconds := 2.0
+var ui_layer: CanvasLayer
 var prompt: Label
 var overlay: ColorRect
 var panel: VBoxContainer
 var primary: Button
+var terminal_overlay_clock := TERMINAL_OVERLAY_ARM
 var screen_fx: ColorRect
 var completion_count := 0
 var test_mode := false
@@ -63,9 +80,13 @@ var card: Control
 var card_queue: Array[String] = []
 var card_callback: Callable
 var card_clock := 0.0
+var card_progress: ProgressBar
 var capability_hud: Label
 var second_boss_bar: ProgressBar
 var second_boss_text: Label
+## The final results screen after the victory epilogue cards.
+var victory: VictoryScreen
+var minimap: Minimap
 var pause_return_state := "combat"
 var leaving := false
 var last_swing_processed := -1
@@ -97,6 +118,10 @@ func _ready() -> void:
 		add_child(voice)
 		sound_pool.append(voice)
 	_build_ui()
+	flow = StageFlow.new()
+	add_child(flow)
+	flow.setup(ui_layer,music,Catalog.FLOW)
+	flow.phase_changed.connect(_on_flow_phase)
 	start_stage(0,true)
 
 func room_start() -> float: return room*1280.0
@@ -104,6 +129,7 @@ func clamp_ground(pos: Vector2) -> Vector2:
 	return Vector2(clampf(pos.x,room_start()+55,room_start()+(1270 if gate_open else 1150)),clampf(pos.y,455,650))
 
 func start_stage(index: int, cinematic := false) -> void:
+	ko.cancel()
 	playing=false
 	get_tree().paused=false
 	for child in world.get_children(): child.queue_free()
@@ -124,18 +150,38 @@ func start_stage(index: int, cinematic := false) -> void:
 		var decor := Art.sprite(Catalog.KITS[index],["expo_truss","gantry","cables"][index],1.2,false)
 		decor.position=Vector2(i*1280+125,230)
 		ground.add_child(decor)
-	player=Player.new();player.arena=self;player.position=Vector2(180,580)
+	player=Player.new();player.arena=self;player.position=Vector2(Catalog.FLOW.enter_from_x,580)
 	actors.add_child(player)
 	player.shield=capabilities.review
 	camera.position=Vector2(640,360)
-	music.stream=Catalog.looped(Catalog.MUSIC[index]);music.play()
+	camera.reset_physics_interpolation()
+	flow.play_music(Catalog.looped(Catalog.MUSIC[index]),Catalog.MUSIC[index])
 	enter_room(0)
+	# enter_room clamps new arrivals to the room boundary. The director owns the actual entrance.
+	player.position.x=Catalog.FLOW.enter_from_x
 	if cinematic:
-		show_cards(["opening_situation","opening_complication","opening_resolution"],begin_play)
-	else:
-		state="stage_intro"
-		show_overlay("%02d / %s" % [index+1,Catalog.TITLES[index]],Catalog.STORIES[index],"Enter the stage",begin_play)
+		show_cards(["opening_situation","opening_complication","opening_resolution"],enter_stage)
+	else: enter_stage()
 	_update_hud()
+
+## stage_enter: Hoppy runs in under the title banner, then begin_play() on flow completion.
+func enter_stage() -> void:
+	overlay.hide()
+	playing=false
+	state="stage_enter"
+	toast_left=0;held_toast="";toast_label.hide();prompt.text=""
+	flow.play_enter("%02d / %s" % [stage_index+1,Catalog.TITLES[stage_index]],Catalog.STORIES[stage_index])
+
+## stage_exit: unlock cards are gone, so Hoppy runs out while the capability banner remains visible.
+func exit_stage() -> void:
+	playing=false
+	state="stage_exit"
+	prompt.text="";toast_left=0;held_toast="";toast_label.hide()
+	flow.banner("CAPABILITY DEPLOYED","Stage score saved · Next: "+Catalog.TITLES[stage_index+1],Catalog.FLOW.exit_banner)
+	flow.play_exit(advance_stage)
+
+func _on_flow_phase(phase: String) -> void:
+	if phase=="" and state=="stage_enter": begin_play()
 
 func enter_room(index: int) -> void:
 	clear_threats()
@@ -160,7 +206,7 @@ func enter_room(index: int) -> void:
 	spawn_prop(Catalog.PROPS[stage_index][1],Vector2(room_start()+960,628),1)
 	drop(["review_stamp","change_stack_baton","security_scanner"][stage_index],Vector2(room_start()+230,595))
 	if room==2:
-		music.stream=Catalog.looped(Catalog.BOSS_MUSIC[stage_index]);music.play()
+		flow.swap_music(Catalog.looped(Catalog.BOSS_MUSIC[stage_index]),Catalog.FLOW.boss_dip,Catalog.BOSS_MUSIC[stage_index])
 		match stage_index:
 			0: spawn_boss("ai_slop",Vector2(room_start()+945,565))
 			1:
@@ -197,10 +243,12 @@ func resolve_swing(source: Node2D) -> void:
 	var damage: float=def.damage
 	if source.effects.has("strength_down"): damage=maxf(.5,damage-1.0)
 	var hit := false
+	var tip := source.position+Vector2(source.facing*70,-50)
+	if source.has_method("swing_tip"): tip=source.swing_tip()
 	if weapon=="security_scanner":
 		reveal_time=10
 		hit=true # A scan consumes one charge even without a target in the cone.
-		fx("capabilities_fx","scanner_cone",source.position+Vector2(source.facing*100,-50),1.3,.4)
+		fx("capabilities_fx","scanner_cone",source.position+Vector2(source.facing*100,-50),1.3,.4,source.facing)
 	var targets: Array=enemies.duplicate()+bosses.duplicate()
 	var zone_points: Array[Vector2]=[]
 	for enemy in targets:
@@ -215,7 +263,7 @@ func resolve_swing(source: Node2D) -> void:
 		if weapon=="pr_merger" and not enemy.is_boss and enemy.hp<enemy.max_hp*.25: amount=999
 		if enemy.take_hit(amount,def.knock,source.position,source.combo==3):
 			hit=true
-			fx("capabilities_fx","unlock_sparkle",enemy.position-Vector2(0,55),.5,.18)
+			fx("capabilities_fx","unlock_sparkle",enemy.position-Vector2(0,55),.5,.18,source.facing)
 			if weapon=="review_stamp": enemy.stun(.5)
 			if weapon=="triage_hammer": hammer_target=enemy
 			if source.combo==3 and capabilities.change_stack: zone_points.append(clamp_ground(enemy.position+Vector2(source.facing*65,0)))
@@ -235,6 +283,8 @@ func resolve_swing(source: Node2D) -> void:
 			for target in bosses:
 				if is_instance_valid(target) and not target.dead: target.stun(.8)
 		if weapon!="" and source.weapon==weapon: source.spend_weapon()
+	else:
+		fx("capabilities_fx","unlock_sparkle",tip,.5,.18,source.facing)
 
 static func melee_contains(offset: Vector2, facing: float, reach: float, depth: float) -> bool:
 	return offset.x*facing >= -20 and offset.x*facing <= reach and absf(offset.y) <= depth
@@ -322,9 +372,10 @@ func clear_threats() -> void:
 	for zone in zones: zone.node.queue_free()
 	zones.clear()
 
-func fx(sheet: String, pose: String, pos: Vector2, magnify: float, lifetime: float) -> void:
+func fx(sheet: String, pose: String, pos: Vector2, magnify: float, lifetime: float, face := 0.0) -> void:
 	var sprite := Art.sprite(sheet,pose,magnify,false)
 	sprite.position = pos
+	sprite.flip_h = face<0.0
 	actors.add_child(sprite)
 	var tween := sprite.create_tween()
 	tween.tween_property(sprite,"modulate:a",0.0,lifetime)
@@ -339,32 +390,51 @@ func sound(key: String, pos: Vector2) -> void:
 	if voice.stream!=null: voice.play()
 
 func _physics_process(dt: float) -> void:
-	if not is_instance_valid(player): return
+	if not is_instance_valid(player) or state=="leaving": return
 	_layout_card()
 	if get_tree().paused: return
+	# Camera and stage-flow clocks keep running behind a presentation card. In particular, the
+	# room-three pan must finish while the boss introduction remains on screen.
+	# Toasts count down in every state, so none freezes behind a card, the victory hop or the exit.
+	toast_left-=dt
+	toast_label.visible=toast_left>0
+	flow.tick(dt,player)
+	if state=="won" and victory.advance(dt): sound("win",player.position)
+	_refresh_minimap(dt)
+	if held_toast!="" and state=="combat" and not flow.banner_active(): toast(held_toast,held_toast_seconds)
+	# A fallen villain collapses on this clock: during the fight, the victory hop, cards and exit.
+	for target in bosses:
+		if is_instance_valid(target) and target.dead: target.defeat_tick(dt)
+	camera.position=camera.position.lerp(Vector2(room_start()+640,360),minf(1,dt*5))
+	shake=maxf(0,shake-dt*28)
+	camera.offset=Vector2(rng.randf_range(-shake,shake),rng.randf_range(-shake,shake))
+	var view := get_viewport_rect().size
+	camera.zoom=Vector2.ONE*minf(view.x/1280.0,view.y/720.0)
+	if state in ["game_over","won"]: terminal_overlay_clock=minf(TERMINAL_OVERLAY_ARM,terminal_overlay_clock+dt)
+	if state=="knockout": ko.tick(dt)
 	if state=="boss_victory":
 		victory_clock=minf(VICTORY_DURATION,victory_clock+dt)
 		# A short celebratory hop; the ground position and combat stay frozen.
-		player.body.position.y=-18.0*sin(PI*clampf(victory_clock/.7,0,1))
+		player.hop(-18.0*sin(PI*clampf(victory_clock/.7,0,1)))
 		if victory_clock>=VICTORY_DURATION:
-			player.body.position.y=0
+			player.hop(0)
 			show_boss_reward()
 		return
 	if state=="cards":
 		card_clock+=dt
 		if is_instance_valid(card):
-			card.position.x=(1.0-clampf(card_clock/.3,0,1))*1280
+			# Story scenes play in place on the card clock; the other cards slide in from the right.
+			if card.has_method("advance"): card.advance(card_clock,card_hold())
+			else: card.position.x=(1.0-clampf(card_clock/.3,0,1))*1280
+		if is_instance_valid(card_progress): card_progress.value=maxf(0,1.0-card_clock/card_hold())
+		if card_clock>=card_hold(): next_card()
 		return
 	if not playing: return
-	elapsed+=dt;toast_left-=dt;reveal_time=maxf(0,reveal_time-dt);surge_cooldown=maxf(0,surge_cooldown-dt)
-	toast_label.visible=toast_left>0
-	shake=maxf(0,shake-dt*28)
-	camera.position=camera.position.lerp(Vector2(room_start()+640,360),minf(1,dt*5))
-	camera.offset=Vector2(rng.randf_range(-shake,shake),rng.randf_range(-shake,shake))
-	var view := get_viewport_rect().size
-	camera.zoom=Vector2.ONE*minf(view.x/1280.0,view.y/720.0)
-	_tick_items(dt);_tick_threats(dt);_tick_allies(dt);_tick_capabilities(dt)
+	elapsed+=dt;reveal_time=maxf(0,reveal_time-dt);surge_cooldown=maxf(0,surge_cooldown-dt)
+	_tick_items(dt);_tick_threats(dt)
+	# A fatal hit starts the knockout here, so no ally, toast or zone acts on that frame.
 	if not playing: return
+	_tick_allies(dt);_tick_capabilities(dt)
 	check_boss_state()
 	if not playing: return
 	if room<2 and not gate_open and living_enemies()==0:
@@ -465,10 +535,13 @@ func _tick_allies(dt: float) -> void:
 		if allies[i].life<=0: allies[i].node.queue_free();allies.remove_at(i)
 
 func begin_play() -> void:
+	var entering := state in ["stage_enter"]
+	if flow.active(): flow.cancel()
 	overlay.hide();card_host.hide()
 	state="combat";playing=true
 	player.input_lock=.2
 	player.review_charge=0
+	if entering: toast("ENCOUNTER %d / 3 — clear the blockers" % (room+1),2)
 
 func advance_stage() -> void:
 	checkpoint_score=score
@@ -476,25 +549,41 @@ func advance_stage() -> void:
 	start_stage(stage_index+1)
 
 func retry_stage() -> void:
+	flow.cancel()
 	score=checkpoint_score
 	capabilities=checkpoint_capabilities.duplicate()
 	start_stage(stage_index)
 
+## The fatal hit: play stops at once (enemies, bullets and hazards freeze), the screen clears of
+## toasts and banners, and the knockout plays out before game_over(). Repeats are ignored.
+func knockout(source: Vector2) -> void:
+	if state in ["knockout","game_over","leaving"]: return
+	flow.cancel()
+	playing=false;state="knockout"
+	toast_left=0;held_toast="";toast_label.hide();prompt.text=""
+	flow.banner("","",0)
+	_update_hud()
+	ko.play(self,source,game_over)
+
 func game_over() -> void:
 	if state=="game_over": return
+	ko.cancel()
+	flow.cancel()
 	playing = false
 	state = "game_over"
 	_update_hud()
 	show_overlay("REVIEW FAILED", "Retry %s with 3 HP and fresh equipment." % Catalog.TITLES[stage_index],"Retry current stage",retry_stage)
 
 func boss_defeated() -> void:
-	if boss_rewarded: return
+	# A knocked-out Hoppy can't win: the knockout ends in game over.
+	if boss_rewarded or state=="knockout": return
+	if flow.active(): flow.cancel()
 	boss_rewarded=true
 	playing=false;clear_threats()
 	for enemy in enemies:
 		if is_instance_valid(enemy): enemy.queue_free()
 	enemies.clear()
-	player.swing_left=0;player.queued=false;player.held.hide()
+	player.swing_left=0;player.queued=false
 	score+=500
 	state="boss_victory";victory_clock=0
 	player.height=0;player.rise=0;player.velocity=Vector2.ZERO;player.knock=Vector2.ZERO
@@ -502,7 +591,8 @@ func boss_defeated() -> void:
 	player.show_pose("victory")
 	player.z_index=2 # Keep the celebration visible in front of defeated bosses.
 	shake=0;camera.offset=Vector2.ZERO
-	toast_label.hide();prompt.hide()
+	# Toasts tick in every state now, so end this one rather than only hiding the label.
+	toast_left=0;held_toast="";toast_label.hide();prompt.text="" # Clear the prompt; a hidden label would never show again.
 	sound("win",player.position)
 	_update_hud()
 
@@ -510,34 +600,37 @@ func show_boss_reward() -> void:
 	match stage_index:
 		0:
 			capabilities.review=true;player.shield=true
-			show_cards(["unlock_review"],show_stage_clear)
+			show_cards(["unlock_review"],exit_stage)
 		1:
 			capabilities.triage=true;capabilities.change_stack=true
-			show_cards(["unlock_triage","unlock_change_stack"],show_stage_clear)
+			show_cards(["unlock_triage","unlock_change_stack"],exit_stage)
 		2:
 			capabilities.security=true
 			reveal_time=999
-			show_cards(["unlock_security","victory"],win)
+			show_cards(["unlock_security"]+Catalog.ENDING_CARDS,win)
 
-func show_stage_clear() -> void:
-	playing=false;state="stage_clear"
-	_update_hud()
-	show_overlay("CAPABILITY DEPLOYED", "Next: "+Catalog.TITLES[stage_index+1],"Continue →",advance_stage)
-
+## The results screen after the epilogue cards; its score lands with the win cue.
 func win() -> void:
 	if state=="won": return
 	playing=false;state="won";completion_count+=1
 	_update_hud()
-	sound("win",player.position)
-	show_overlay("THE CODEBASE IS TRUSTED", "All four capabilities deployed.\nScore: %d   ·   Time: %d:%02d" % [score,int(elapsed)/60,int(elapsed)%60],"Return to Beat'em Up menu",leave)
+	overlay.hide();card_host.hide()
+	toast_left=0;held_toast="";toast_label.hide();prompt.text=""
+	victory.show_result(Catalog.VICTORY.title,Catalog.VICTORY.line,score,elapsed,Catalog.STORY_ACCENT,"Return to Beat'em Up menu",leave)
 
 func toast(message: String, seconds := 2.0) -> void:
+	# Combat opens under the fading stage title; anything said then waits for it (latest wins).
+	if state=="combat" and flow.banner_active():
+		held_toast=message;held_toast_seconds=seconds
+		return
+	held_toast=""
 	toast_label.text = message
 	toast_label.show()
 	toast_left = seconds
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
+	ui_layer=layer
 	add_child(layer)
 	screen_fx = ColorRect.new()
 	screen_fx.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -605,6 +698,14 @@ func _build_ui() -> void:
 	second_boss_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	second_boss_bar.position=Vector2(-430,87);second_boss_bar.size=Vector2(405,12);second_boss_bar.show_percentage=false
 	ui.add_child(second_boss_bar)
+	# Top-right, under the HUD bar and clear of both boss bars inside it.
+	minimap=Minimap.new()
+	var boss_rooms: Array[Vector2i]=[]
+	for stage in Catalog.TITLES.size(): boss_rooms.append(Vector2i(stage,2))
+	minimap.setup(Catalog.TITLES.size(),3,boss_rooms,Catalog.STORY_ACCENT)
+	minimap.dock(top.offset_bottom)
+	minimap.hide()
+	ui.add_child(minimap)
 	for bar in [boss_bar, second_boss_bar]:
 		var background := StyleBoxFlat.new()
 		background.bg_color=Color("302329")
@@ -619,6 +720,10 @@ func _build_ui() -> void:
 	card_host.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	ui.add_child(card_host)
 	card_host.hide()
+	victory=VictoryScreen.new()
+	victory.confirm_actions=["heroes_popup_advance"]
+	victory.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(victory)
 	overlay = ColorRect.new()
 	overlay.color = Color(.025,.04,.065,.91)
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -663,7 +768,23 @@ func _update_hud() -> void:
 		second_boss_bar.max_value=live[1].max_hp;second_boss_bar.value=live[1].hp
 		second_boss_text.text=Catalog.BOSS_NAMES[live[1].kind]
 
+## Feeds the minimap this frame's room: the CodeRabbit, the living enemies and bosses, the gate.
+func _refresh_minimap(dt: float) -> void:
+	# The stage title banner crosses the corner; it owns the screen while it is up.
+	minimap.visible=state in MINIMAP_STATES and not flow.banner_active()
+	if not minimap.visible: return
+	var foes := PackedVector2Array()
+	for enemy in enemies:
+		if is_instance_valid(enemy) and not enemy.dead: foes.append(enemy.position)
+	var heads := PackedVector2Array()
+	for target in bosses:
+		if is_instance_valid(target) and not target.dead: heads.append(target.position)
+	minimap.tick(dt,{"stage":stage_index, "room":room, "cleared":gate_open or state in ["boss_victory","stage_exit"],
+		"gate_open":gate_open, "room_left":room_start(), "player":player.position,
+		"enemies":foes, "bosses":heads})
+
 func show_overlay(title: String, detail: String, action: String, callback: Callable) -> void:
+	terminal_overlay_clock=0.0 if state in ["game_over","won"] else TERMINAL_OVERLAY_ARM
 	for child in panel.get_children():
 		panel.remove_child(child)
 		child.queue_free()
@@ -686,15 +807,13 @@ func show_overlay(title: String, detail: String, action: String, callback: Calla
 	overlay.show()
 	primary.grab_focus()
 
-func show_intro() -> void:
-	show_cards(["opening_situation","opening_complication","opening_resolution"],begin_play)
-
-func next_intro() -> void:
-	next_card()
-
 func _input(event: InputEvent) -> void:
 	# Filter before focused buttons receive ui_accept (which includes jump/A).
-	if state not in ["stage_intro","stage_clear","game_over","won"] or not overlay.visible: return
+	if state not in ["game_over","won"] or not overlay.visible: return
+	if terminal_overlay_clock<TERMINAL_OVERLAY_ARM:
+		if event.is_action_pressed("heroes_popup_advance") or event.is_action("ui_accept") or event is InputEventMouseButton or event is InputEventScreenTouch or event is InputEventScreenDrag:
+			get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("heroes_popup_advance"):
 		get_viewport().set_input_as_handled()
 		if not event.is_echo():
@@ -706,7 +825,7 @@ func _input(event: InputEvent) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause") and not event.is_echo():
 		if state=="paused": resume()
-		elif state in ["combat","cards","boss_victory"]:
+		elif state in PAUSABLE:
 			pause_return_state=state
 			playing=false;state="paused";get_tree().paused=true
 			show_overlay("REVIEW PAUSED","Chain attacks, sidestep warnings, and hold Q / LB to charge REVIEW.","Resume",resume)
@@ -716,18 +835,26 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func resume() -> void:
+	if state!="paused": return
 	get_tree().paused=false
-	if pause_return_state in ["cards","boss_victory"]: state=pause_return_state;overlay.hide()
+	# The return state only means something while paused; consume it so a stale one can't steer
+	# a later resume (every pause sets it first).
+	var back := pause_return_state
+	pause_return_state="combat"
+	if back in ["cards","boss_victory","stage_enter","stage_exit","knockout"]: state=back;overlay.hide()
 	else: begin_play()
 
 func leave() -> void:
 	if leaving: return
-	leaving=true;playing=false;get_tree().paused=false
+	leaving=true;ko.cancel();flow.cancel();playing=false;state="leaving";get_tree().paused=false
+	for child in panel.get_children():
+		if child is BaseButton: child.disabled=true
+	victory.action.disabled=true
 	music.stop()
 	AppRouter.go("beatem_up")
 
 func _notification(what: int) -> void:
-	if what==NOTIFICATION_APPLICATION_FOCUS_OUT and state in ["combat","cards","boss_victory"] and not test_mode:
+	if what==NOTIFICATION_APPLICATION_FOCUS_OUT and state in PAUSABLE and not test_mode:
 		pause_return_state=state
 		playing=false;state="paused";get_tree().paused=true
 		show_overlay("REVIEW PAUSED","The window lost focus.","Resume",resume)
@@ -844,14 +971,43 @@ func _load_card() -> void:
 	card=load(Art.PRESENTATION+card_queue[0]+".tscn").instantiate()
 	card.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	card_host.add_child(card)
-	card_clock=0;card.position.x=1280
-	var hint := Style.label("Enter / View (Select) · Next     Esc / Start · Pause",16)
-	hint.position=Vector2(300,696)
-	card.add_child(hint)
+	card_clock=0
+	if card.has_method("advance"):
+		# A story scene carries the hint and the drain bar in its lower letterbox bar.
+		card.position.x=0
+		card.hint.text=CARD_HINT
+		card_progress=card.drain
+		card.advance(0,card_hold())
+	else: _dress_card()
 	var name := card_queue[0]
 	if name.begins_with("boss_"): sound("reveal_"+name.trim_prefix("boss_"),player.position)
 	elif name.begins_with("unlock_"): sound("unlock",player.position)
 	_layout_card()
+
+## Slide-in cards get the hint and the drain bar along their bottom edge.
+func _dress_card() -> void:
+	card.position.x=1280
+	var hint := Style.label(CARD_HINT,16)
+	hint.position=Vector2(360,670)
+	card.add_child(hint)
+	card_progress=ProgressBar.new()
+	card_progress.position=Vector2(360,696)
+	card_progress.size=Vector2(560,5)
+	card_progress.max_value=1.0
+	card_progress.value=1.0
+	card_progress.show_percentage=false
+	card_progress.mouse_filter=Control.MOUSE_FILTER_IGNORE
+	var progress_background := StyleBoxFlat.new()
+	progress_background.bg_color=Color("142735")
+	var progress_fill := StyleBoxFlat.new()
+	progress_fill.bg_color=Color("ffab54")
+	card_progress.add_theme_stylebox_override("background",progress_background)
+	card_progress.add_theme_stylebox_override("fill",progress_fill)
+	card.add_child(card_progress)
+
+func card_hold() -> float:
+	if card_queue.is_empty(): return 0.0
+	return float(Catalog.CARD_HOLD.get(card_queue[0],4.5))
 
 func next_card() -> void:
 	if state!="cards": return

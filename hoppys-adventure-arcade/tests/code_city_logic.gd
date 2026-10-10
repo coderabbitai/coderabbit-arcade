@@ -31,10 +31,20 @@ func run() -> void:
 	game=current_scene
 	Game=game.get_script()
 	game.test_mode=true
+	# A window that starts unfocused can focus-pause the game before test_mode is set.
+	paused=false
+	if game.state=="paused": game.resume()
 	freeze()
 	check(game.state=="intro" and not game.playing,"Opening sequence precedes combat")
-	game.begin_play()
-	check(game.playing and game.stage_index==0,"Skip/complete enters stage 1")
+	var intro_steps := 0
+	while game.state=="intro" and intro_steps<900:
+		game._physics_process(1.0/60.0)
+		intro_steps += 1
+	check(game.state=="stage_enter","Intro auto-advances into the stage entrance")
+	while game.state=="stage_enter" and intro_steps<1100:
+		game._physics_process(1.0/60.0)
+		intro_steps += 1
+	check(game.playing and game.state=="combat" and game.stage_index==0,"Entrance reaches stage 1 combat")
 	var p=game.player
 	check(p.get_child(0).polygon.size()==24,"Ground shadow has visible geometry independent of jump height")
 	clear_enemies()
@@ -149,7 +159,9 @@ func run() -> void:
 	game.enter_room(2);freeze()
 	p=game.player
 	var boss=game.boss
-	check(game.music.stream is AudioStreamMP3 and game.music.stream.loop,"Boss music has an independent looping stream")
+	check(game.flow.music_track==Catalog.MUSIC[2],"Stage track plays until the boss-music dip bottoms out")
+	game.flow.tick(.65,game.player)
+	check(game.music.stream is AudioStreamMP3 and game.music.stream.loop and game.music.stream!=Catalog.BOSS_MUSIC and game.flow.music_track==Catalog.BOSS_MUSIC and not Catalog.BOSS_MUSIC.loop,"Boss music dips in as an independent looping stream")
 	boss.vulnerable=false
 	boss.take_hit(4,0,p.position,true)
 	check(boss.hp==24,"Boss rejects damage outside recovery")
@@ -186,7 +198,11 @@ func run() -> void:
 	check(game.state=="finisher" and game.bullets.is_empty() and game.warnings.is_empty(),"Boss defeat cancels threats and begins Force Merge")
 	game._physics_process(4.1)
 	game._physics_process(4.1)
-	check(game.state=="won" and game.completion_count==1,"Force Merge completes once")
+	check(game.state=="ending" and game.completion_count==0 and game.story_pages=="ENDING","Force Merge leads into the victory epilogue, not straight to the results")
+	var epilogue_guard:=0
+	while game.state=="ending" and epilogue_guard<40:
+		game._physics_process(1.0);epilogue_guard+=1
+	check(game.state=="won" and game.completion_count==1 and game.victory.visible and not game.story.visible,"Force Merge completes once: epilogue, then the results screen")
 	game.retry_stage()
 	await frames(2);freeze()
 	check(game.stage_index==2 and game.room==0 and game.player.hp==3 and game.player.weapon=="" and game.score==200,"Retry restores current-stage checkpoint and fresh player state")

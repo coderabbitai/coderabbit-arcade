@@ -175,7 +175,7 @@ func warm_census(game: Node, GpuWarmup: Script) -> Dictionary:
 	var GpuScript: Script = GpuWarmup
 	for clip: StringName in GpuScript.get("HOPPY_CLIPS"):
 		check(clips.has(clip), "warm-up poses Hoppy clip " + clip)
-	check(led_lit, "warm-up lights the backpack LED meter")
+	check(led_lit, "warm-up lights the cape LED meter")
 	# C2: the prop shader on every hazard kind, the baked pickup prop on every pickup kind.
 	for kind: StringName in HazardDefs.call("kinds"):
 		if kind != &"projectile": check(props.has(kind), "warm-up draws the hazard prop shader for " + kind)

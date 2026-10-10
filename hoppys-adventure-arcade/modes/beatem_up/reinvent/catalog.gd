@@ -41,6 +41,73 @@ const WAVES := [
 	[["ai_hacker_drone","security_gap_crawler","vulnerability_injector"], ["zero_day_phantom","security_gap_crawler","vulnerability_injector","ai_hacker_drone"], []]]
 const PROPS := [["terminal","kiosk"],["monolith","assembly"],["rack","node"]]
 const BOSS_NAMES := {"ai_slop":"AI SLOP", "agent_army":"CODING AGENT ARMY", "ten_thousand_line_pr":"10,000-LINE PR", "ai_augmented_hacker":"AI-AUGMENTED HACKER"}
+## Hands-free stage flow and presentation-card timing. stage_flow.gd consumes its default
+## tuning keys; game.gd uses boss_dip, exit_banner, and the per-card holds below.
+const FLOW := {
+	"run_speed":300.0, "exit_min":.6, "exit_max":1.6, "exit_margin":60.0,
+	"fade_out":.35, "fade_in":.35, "music_floor_db":-40.0,
+	"enter_from_x":-60.0, "enter_to_x":180.0, "enter_max":1.6,
+	"stage_banner":2.8, "banner_slide":.3, "banner_fade":.6,
+	"exit_banner":2.0, "boss_dip":.6}
+## The opening cards (presentation/opening_*.tscn) are story scenes (story_scene.gd): each one
+## shows STORY[story_index]. image is the painted scene; until it is imported, the stage art in
+## fallback stands in. from/to frame the Ken Burns move as Vector3(focus x, focus y, zoom).
+const STORY_ROOT := "res://Assets/beatemup-story/heroes/"
+const STAGE_ART := "res://Assets/heroes-vs-villains-assets-only/heroes_villains/"
+const STORY_ACCENT := Color("ffab54")
+const STORY_SERIES := "HEROES vs. VILLAINS / re:Invent EDITION"
+const STORY := [
+	{"image":STORY_ROOT+"situation.png", "fallback":STAGE_ART+"generation_floor.png",
+		"kicker":"SITUATION",
+		"caption":"10,284 additions. 147 files. AI is shipping at machine speed.\nNobody knows what any of it does.",
+		"from":Vector3(.5,.45,1.0), "to":Vector3(.6,.36,1.22)},
+	{"image":STORY_ROOT+"complication.png", "fallback":STAGE_ART+"review_gauntlet.png",
+		"kicker":"COMPLICATION",
+		"caption":"Slop floods the floor. Agents multiply.\nThe attack surface grows.",
+		"from":Vector3(.36,.42,1.14), "to":Vector3(.64,.45,1.2)},
+	{"image":STORY_ROOT+"send_in_the_rabbit.png", "fallback":STAGE_ART+"agentic_core.png",
+		"kicker":"SEND IN THE RABBIT",
+		"caption":"NEW ERA. NEW VILLAINS.\nThe CodeRabbit answers the alert.",
+		"from":Vector3(.52,.38,1.25), "to":Vector3(.5,.47,1.0)}]
+## The victory epilogue after the AI-Augmented Hacker: three ending cards
+## (presentation/ending_*.tscn), story scenes showing ENDING[story_index], then the results screen
+## (victory_screen.gd). ENDING_CARDS names them in order; CARD_HOLD sets each hold.
+const ENDING_CARDS := ["ending_hacker_falls", "ending_trust_restored", "ending_rabbit_stands"]
+const ENDING := [
+	{"image":STORY_ROOT+"hacker_falls.png", "fallback":STAGE_ART+"agentic_core.png",
+		"kicker":"THE HACKER FALLS",
+		"caption":"The AI-Augmented Hacker's rig shatters.\nEvery exploit, caught in review.",
+		"from":Vector3(.5,.42,1.22), "to":Vector3(.5,.5,1.0)},
+	{"image":STORY_ROOT+"trust_restored.png", "fallback":STAGE_ART+"review_gauntlet.png",
+		"kicker":"TRUST RESTORED",
+		"caption":"Review. Triage. Change Stack. Security.\nThe agentic core runs clean.",
+		"from":Vector3(.4,.46,1.16), "to":Vector3(.6,.42,1.06)},
+	{"image":STORY_ROOT+"rabbit_stands.png", "fallback":STAGE_ART+"generation_floor.png",
+		"kicker":"THE CODERABBIT",
+		"caption":"Ship fast. Ship safe.\nThe CodeRabbit has your back.",
+		"from":Vector3(.5,.5,1.0), "to":Vector3(.5,.4,1.25)}]
+## The results screen after the epilogue.
+const VICTORY := {"title":"THE CODEBASE IS TRUSTED", "line":"All four capabilities deployed."}
+const CARD_HOLD := {
+	"opening_situation":4.5, "opening_complication":4.5, "opening_resolution":4.5,
+	"boss_ai_slop":3.0, "boss_agent_army":3.0, "boss_ten_thousand_line_pr":3.0, "boss_ai_augmented_hacker":3.0,
+	"unlock_review":4.5, "unlock_triage":4.5, "unlock_change_stack":4.5, "unlock_security":4.5,
+	"victory":6.0, "ending_hacker_falls":5.0, "ending_trust_restored":5.0, "ending_rabbit_stands":5.0}
+const FX_ROOT := "res://Assets/heroes-vs-villains-assets-only/heroes_villains/"
+## Last-life knockout (knockout.gd DEFAULTS keys; seconds since the hit, world px, radians, dB).
+## The single hurt frame recoils facing the hit and tips over backwards in the air; on touchdown
+## he turns with the throw and defeat lies head first along it. The carry is stowed while
+## airborne and comes back with defeat.
+const KNOCKOUT := {
+	"hit_stop":.12, "launch_end":.75, "land_end":1.0, "length":2.2,
+	"distance":140.0, "height":70.0, "bounce":12.0, "tip":1.0, "pivot":60.0, "turn":.75, "edge":105.0,
+	"hit_pose":"hurt", "air_pose":"hurt", "land_pose":"defeat", "stow_airborne":true,
+	"hit_fx":{"frames":FX_ROOT+"capabilities_fx.tres",
+		"pose":"unlock_sparkle","scale":.55,"rise":72.0,"front":true},
+	"dust_fx":{"frames":FX_ROOT+"capabilities_fx.tres",
+		"pose":"spawn_burst","scale":.75,"squash":.8,"rise":32.0,"front":false},
+	"land_sound":"collapse", "head":Vector2(58,-55), "star_orbit":Vector2(30,8), "star_size":9.0,
+	"callout_color":Color("ffab54")}
 
 static func install_input() -> void:
 	Shared.install_input()

@@ -50,6 +50,64 @@ func wait_until(predicate: Callable, deadline_seconds: float) -> bool:
 		await process_frame
 	return predicate.call()
 
+## The knockout trips on the run stride, topples into the dead clip at TRIP, pins him with a wince
+## by CLAMP_AT, and clears on the next run. Caught mid-air there is no stride, so dead plays at once.
+func check_knockout(hoppy: Node3D, player: AnimationPlayer) -> void:
+	var rig = hoppy._knockout
+	var trip: float = rig.TRIP
+	hoppy.set_anim_state(&"run")
+	hoppy._process(0.0)
+	hoppy.set_anim_state(&"dead")
+	check(hoppy.anim_state == &"dead" and player.current_animation == &"run" and is_zero_approx(hoppy.knockout_time()), "knockout trips on the run stride")
+	var tripped := false
+	var target := float(rig.CLAMP_AT) + 0.2
+	# Bounded by ticks, not by the clock it waits on, so a stalled clock fails instead of hanging.
+	for _tick in int(ceil(target * 60.0)) + 10:
+		if hoppy.knockout_time() >= target: break
+		hoppy._process(1.0 / 60.0)
+		player.advance(1.0 / 60.0)
+		if hoppy.knockout_time() >= trip and player.current_animation == &"dead": tripped = true
+	check(hoppy.knockout_time() >= target, "the knockout clock reaches the pin (%.2f s)" % hoppy.knockout_time())
+	check(tripped and is_equal_approx(rig.time, hoppy.knockout_time()), "the dead clip topples him after the trip")
+	check(rig.face().z >= 1.0, "pinned Hoppy winces")
+	hoppy.set_anim_state(&"run")
+	check(hoppy.knockout_time() < 0.0 and rig.time < 0.0, "the next run clears the knockout")
+	hoppy.set_anim_state(&"jump")
+	hoppy.set_anim_state(&"dead")
+	check(player.current_animation == &"dead" and is_zero_approx(hoppy.knockout_time()) and not rig.trips, "a mid-air knockout skips the trip, its clock in step with the catch")
+	for _tick in int(ceil((trip + 0.1) * 60.0)):
+		hoppy._process(1.0 / 60.0)
+		player.advance(1.0 / 60.0)
+	check(player.current_animation == &"dead" and player.current_animation_position > trip, "the trip threshold does not restart a mid-air dead clip (%.2f s)" % player.current_animation_position)
+	hoppy.set_anim_state(&"run")
+
+## The catch holds Hoppy for the whole caught sequence while the backend keeps the threat at 1:
+## the drone lands beyond him facing the camera, the field drops around him at CLAMP_AT, and
+## a zero threat (the next run) ends it. Entered 1.4 s into the catch.
+func check_catch_hold(pursuer: Node3D) -> void:
+	var field: MeshInstance3D = pursuer.get_node("QuarantineField")
+	check(not field.visible, "quarantine field waits for the claws (%.2f s)" % pursuer._reaction_time)
+	var flash := 0.0
+	var clamp_at: float = pursuer.CLAMP_AT
+	# Bounded by ticks, not by the clock it waits on, so a stalled clock fails instead of hanging.
+	for _tick in int(ceil(3.0 * 60.0)) + 10:
+		if pursuer._reaction_time >= 3.0: break
+		pursuer.set_threat(1.0)
+		pursuer._process(1.0 / 60.0)
+		if pursuer._reaction_time >= clamp_at and pursuer._reaction_time < clamp_at + 0.1:
+			flash = maxf(flash, pursuer.get_node("RedLight").light_energy)
+	check(pursuer._reaction_time >= 3.0, "the catch clock reaches 3 s (%.2f s)" % pursuer._reaction_time)
+	var hunter: Node3D = pursuer.get_node("Hunter")
+	var victim: Vector3 = pursuer._victim()
+	check(pursuer._reaction == &"catch", "catch holds while the threat stays at 1")
+	check(field.visible and Vector2(field.global_position.x - victim.x, field.global_position.z - victim.z).length() < 0.01, "quarantine field drops around the victim")
+	check(is_equal_approx(field.global_basis.y.length(), float(pursuer.FIELD_SIZE.y)), "quarantine field reaches full height")
+	check(flash > 4.0, "claws bite with a light flash (%.2f)" % flash)
+	check(hunter.global_position.z < victim.z - 1.0 and hunter.global_basis.z.normalized().z > 0.8, "drone lands beyond the victim, facing the camera")
+	check(hunter.scale.is_equal_approx(Vector3.ONE), "catch keeps rigid proportions")
+	pursuer.set_threat(0.0)
+	check(pursuer._reaction == &"idle" and not field.visible, "a zero threat ends the catch and clears the field")
+
 func bounds(node: Node3D) -> AABB:
 	# Hoppy only: imported Mesh AABBs are rest bounds, so evaluate skin vertices.
 	var result := AABB()
@@ -221,6 +279,7 @@ func run() -> void:
 			player.advance(1.0 / 60.0)
 			await process_frame
 		check(hoppy.anim_state == &"dead", "new state interrupts hurt recovery")
+		check_knockout(hoppy, player)
 		hoppy.free()
 		corridor.free()
 		await frames()
@@ -611,6 +670,7 @@ func check_powerups_and_pursuer() -> void:
 	pursuer._process(0.7)
 	check(pursuer.get_node("Hunter").scale.is_equal_approx(initial_scale), "catch 1.4s keeps compact scale")
 	check(is_equal_approx(pursuer.get_node("RedLight").light_energy, 3.0), "catch light")
+	check_catch_hold(pursuer)
 	# Reproduce the backend zero-threat update immediately before retreat.
 	pursuer.set_threat(1.0)
 	var retreat_pose: Transform3D = pursuer.get_node("Hunter").transform
@@ -719,6 +779,12 @@ func check_runner_ui() -> void:
 		hud._process(0.1)
 	check(not hud.score_label.is_visible_in_tree() and not hud.pursuit_warning.visible, "caught hides gameplay")
 	check(is_equal_approx(hud.vignette_material.get_shader_parameter("strength"), 1), "caught vignette")
+	# The catch cinematic lasts caught_sequence_seconds; let the demo finish it.
+	var finish_guard := 0
+	while mock.state != &"finished" and finish_guard < int(ceil(float(mock.config.caught_sequence_seconds) / 0.1)) + 2:
+		mock.advance_demo(0.1)
+		hud._process(0.1)
+		finish_guard += 1
 	for restart_state: StringName in [&"running", &"ready"]:
 		mock.state_changed.emit(&"caught")
 		hud.widgets.modulate.a = 0.35
@@ -919,7 +985,8 @@ func check_runner_audio() -> void:
 			check(stream.stereo and (energy[0] > energy[1]) == (kind == &"lane_left"), "lane stereo pan: " + kind)
 	# Drive game time synchronously. Fresh slots isolate each demo tick from the
 	# real-time mixer; actual mixer contention is exercised by the burst below.
-	for i in 405:
+	# The demo catches at the 40 s mark and finishes caught_sequence_seconds later.
+	for i in int(ceil((40.0 + float(mock.config.caught_sequence_seconds) + 0.5) / 0.1)):
 		audio.one_shots.stop()
 		audio.one_shots.play()
 		audio._playback = audio.one_shots.get_stream_playback()

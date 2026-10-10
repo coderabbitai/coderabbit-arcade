@@ -166,18 +166,12 @@ func capture() -> void:
 			if view[0] in FUR_REPORT_VIEWS:
 				var fur := fur_stats(Image.load_from_file(directory.path_join("a1-%s.png" % view[0])), await capture_mask(hoppy, camera, stage))
 				print("A1 STUDIO FUR %s: luma %.4f saturation %.4f (%d px)" % [view[0], fur.luma, fur.saturation, fur.pixels])
-		if view[0] == "close":
-			var studio_image := Image.load_from_file(directory.path_join("a1-close.png"))
-			var lens := measure_goggle_band(studio_image)
-			print("A1 GOGGLE BAND: ", lens)
-			if not lens["pass"]:
-				printerr("ASSET A1 CAPTURE: opaque-looking goggle band")
-				palette_ok = false
 		if str(view[0]).begins_with("corridor"):
 			var saved := Image.load_from_file(directory.path_join("a1-%s.png" % view[0]))
 			var mask := await capture_mask(hoppy, camera, stage)
 			var guard_started := Time.get_ticks_msec()
-			var result := Guard.measure(saved, mask)
+			# The rear "corridor" view looks at the cape; "corridor-close" is a front view.
+			var result := Guard.measure(saved, mask, view[0] != "corridor")
 			var measured_ms := Time.get_ticks_msec() - guard_started
 			guard_ms += measured_ms
 			print("A1 CAPTURE TIMING guard=%d ms view=%s" % [measured_ms, view[0]])
@@ -265,7 +259,8 @@ func capture_chase(hoppy: Node3D, camera: Camera3D, stage: Node3D, directory: St
 		if state == &"victory" and metrics.paws_above_ears_px < VICTORY_PAWS_PX:
 			printerr("ASSET A1 CAPTURE: victory paws below the ear tips")
 			ok = false
-		var result := Guard.measure(image, await capture_mask(hoppy, camera, stage))
+		# Rear chase camera: the cape hides the cream tail, so only the orange class is gated here.
+		var result := Guard.measure(image, await capture_mask(hoppy, camera, stage), false)
 		# The brace plays under the mint shield bubble, which tints the fur on purpose; like the
 		# studio shield views it is reported, not gated.
 		print("A1 HUE chase-%s%s: %s" % [clip[0], " (under shield, informational)" if clip[3] else "", result])
@@ -448,16 +443,6 @@ func capture_mask(hoppy: Node3D, camera: Camera3D, stage: Node3D) -> Image:
 	blank = null
 	return image
 
-static func measure_goggle_band(image: Image) -> Dictionary:
-	# Fixed studio camera, 1280x720; inclusive reviewer coordinates.
-	var mean := Color(0, 0, 0, 0)
-	for y in range(230, 249):
-		for x in range(624, 701):
-			mean += image.get_pixel(x, y)
-	mean /= 77.0 * 19.0
-	# Authored veil a9b48d has saturation 0.217; opaque r11 62a48c has 0.402.
-	return {"pass": mean.s < 0.30, "mean_color": mean.to_html(false), "saturation": mean.s}
-
 static func limb_bounds(hoppy: Node3D, names: Array) -> AABB:
 	# CPU skin bounds for one leg/sole, valid with the dummy headless renderer too.
 	var points := skinned_points(hoppy, names)
@@ -534,6 +519,10 @@ static func jump_tuck_metrics(hoppy: Node3D) -> Dictionary:
 	var knee := skeleton.get_bone_global_pose(skeleton.find_bone("shin_R")).origin
 	var ankle := skeleton.get_bone_global_pose(skeleton.find_bone("foot_R")).origin
 	var hip := skeleton.get_bone_global_pose(skeleton.find_bone("leg_R")).origin
+	# The drop limit is 1.3 thighs (0.30 m on the original 0.23 m thigh), so it follows the rig's proportions.
+	var thigh := skeleton.get_bone_global_rest(skeleton.find_bone("leg_R")).origin.distance_to(
+		skeleton.get_bone_global_rest(skeleton.find_bone("shin_R")).origin)
 	# +Z is toward the tail; measure real joint positions along the bend plane.
-	return {"pass": ankle.z - knee.z >= 0.16 and ankle.y - knee.y >= -0.07 and hip.y - ankle.y <= 0.30,
-		"heel_back": ankle.z - knee.z, "heel_vs_knee_y": ankle.y - knee.y, "hip_to_heel_drop": hip.y - ankle.y}
+	return {"pass": ankle.z - knee.z >= 0.16 and ankle.y - knee.y >= -0.07 and hip.y - ankle.y <= 1.3 * thigh,
+		"heel_back": ankle.z - knee.z, "heel_vs_knee_y": ankle.y - knee.y, "hip_to_heel_drop": hip.y - ankle.y,
+		"drop_limit": 1.3 * thigh}

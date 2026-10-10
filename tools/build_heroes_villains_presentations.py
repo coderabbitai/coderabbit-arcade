@@ -14,9 +14,9 @@ class Scene:
         if control:
             self.nodes += ['layout_mode = 3', 'anchors_preset = 15', 'anchor_right = 1.0', 'anchor_bottom = 1.0', 'grow_horizontal = 2', 'grow_vertical = 2']
 
-    def resource(self, type, path):
+    def resource(self, type, path, root=BASE):
         id = str(len(self.ext)+1)
-        self.ext.append(f'[ext_resource type="{type}" path="{BASE}{path}" id="{id}"]')
+        self.ext.append(f'[ext_resource type="{type}" path="{root}{path}" id="{id}"]')
         return f'ExtResource("{id}")'
 
     def node(self, name, type, props, parent='.'):
@@ -113,11 +113,25 @@ for i,(id,title,copy) in enumerate([
     s.label('Footer','REVIEW. TRIAGE. UNDERSTAND. SECURE.',80,625,1100,45,24)
     s.save('unlock_'+id)
 
-# Story cards use native text over stage art; no rasterized typography.
+# The opening cards are cinematic story scenes. story_scene.gd shows the catalog's STORY entry
+# (illustration, kicker, caption, Ken Burns framing), so the copy lives in reinvent/catalog.gd.
+for i,id in enumerate(['opening_situation','opening_complication','opening_resolution']):
+    s=Scene('StoryScene',True)
+    script=s.resource('Script','res://modes/beatem_up/story_scene.gd',root='')
+    catalog=s.resource('Script','res://modes/beatem_up/reinvent/catalog.gd',root='')
+    s.nodes += ['mouse_filter = 2', f'script = {script}', f'catalog = {catalog}', f'story_index = {i}']
+    s.save(id)
+
+# The victory epilogue after the final boss: the same story scenes over the catalog's ENDING pages.
+for i,id in enumerate(['ending_hacker_falls','ending_trust_restored','ending_rabbit_stands']):
+    s=Scene('StoryScene',True)
+    script=s.resource('Script','res://modes/beatem_up/story_scene.gd',root='')
+    catalog=s.resource('Script','res://modes/beatem_up/reinvent/catalog.gd',root='')
+    s.nodes += ['mouse_filter = 2', f'script = {script}', f'catalog = {catalog}', f'story_index = {i}', 'pages = "ENDING"']
+    s.save(id)
+
+# The victory card uses native text over stage art; no rasterized typography.
 for id,title,copy,bg in [
-    ('opening_situation','SITUATION','10,284 additions. 147 files.\nAI is shipping at machine speed.\nNobody knows what any of it does.','generation_floor'),
-    ('opening_complication','COMPLICATION','Slop floods the floor. Agents multiply.\nThe attack surface grows.','review_gauntlet'),
-    ('opening_resolution','SEND IN THE RABBIT','NEW ERA. NEW VILLAINS.\nThe CodeRabbit answers the alert.','agentic_core'),
     ('victory','THE CODERABBIT','BUILT FOR THE AGENTIC ERA\nThe CodeRabbit is live. The codebase is trusted.','generation_floor')]:
     s=Scene('StoryPanel',True)
     ref=s.resource('Texture2D',f'heroes_villains/{bg}.png')
@@ -132,4 +146,4 @@ for id,title,copy,bg in [
         for j,cap in enumerate(['review','triage','change_stack','security']):
             s.sprite(cap,'capabilities_fx',cap,180+j*167,606,.55)
     s.save(id)
-print('Built 3 stage previews, 4 villain cards, 4 capability cards, 4 story cards')
+print('Built 3 stage previews, 4 villain cards, 4 capability cards, 3 story scenes, 3 ending scenes, 1 victory card')

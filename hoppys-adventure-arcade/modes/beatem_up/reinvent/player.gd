@@ -5,6 +5,8 @@ const BASE_FRAMES = preload("res://Assets/heroes-vs-villains-assets-only/heroes_
 const COMBAT_FRAMES = BASE_FRAMES
 const MOTION_FRAMES = preload("res://Assets/heroes-vs-villains-assets-only/heroes_villains/hoppy_locomotion.tres")
 const MOVE_SPEED := 264.0
+const UNARMED_OFFSET := Vector2(0, -51)
+const SHEET_POSES := ["idle", "run", "jab", "swing", "kick", "pickup", "hurt"]
 const WeaponRig = preload("res://modes/beatem_up/reinvent/weapon_rig.gd")
 var arena: Node2D
 var body: AnimatedSprite2D
@@ -35,6 +37,10 @@ var knock := Vector2.ZERO
 var controlled := true
 var review_charge := 0.0
 var review_cooldown := 0.0
+var pose_dt := 0.0
+var pose_move := Vector2.ZERO
+## Drawn unarmed with no carry (knockout.gd sets it while he is airborne); the weapon is kept.
+var stowed := false
 
 func _ready() -> void:
 	collision_layer = 0
@@ -42,8 +48,8 @@ func _ready() -> void:
 	add_child(Art.shadow())
 	body = AnimatedSprite2D.new()
 	body.sprite_frames = COMBAT_FRAMES
-	body.offset = Vector2(0,-51)
-	body.scale = Vector2.ONE * 1.65
+	body.offset = UNARMED_OFFSET
+	body.scale = Vector2.ONE * Art.BODY_SCALE
 	body.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	add_child(body)
 	held = WeaponRig.new()
@@ -115,33 +121,86 @@ func tick(dt: float) -> void:
 		else:
 			pose = "run"
 			base = true
+	pose_move=movement
+	pose_dt=dt
 	show_pose(pose,base)
+	pose_dt=0.0
 	# Keep foot cadence proportional to travel, including analog input and statuses.
 	if pose in ["run","walk_up","walk_down"]:
 		body.speed_scale=movement.length()*speed/MOVE_SPEED
-	var attacking := swing_left>0
-	var progress := clampf(1.0-swing_left/swing_duration,0,1)
-	if attacking and visual_weapon!="":
-		# Match Hoppy's hands to the weapon's windup/contact/recovery timeline.
-		body.pause()
-		body.position.x=facing*sin(progress*PI)*5
-	else: body.position.x=0
-	held.position=Vector2(0,-height)
-	held.scale=Vector2(facing,1)
-	held.animate(visual_weapon if attacking else weapon,combo,progress,attacking,movement,dt,block_time)
 
 func show_pose(pose: String, _base := false) -> void:
-	var moving := pose in ["run","walk_up","walk_down"]
-	var frames: SpriteFrames = MOTION_FRAMES if moving else COMBAT_FRAMES
-	if body.sprite_frames != frames: body.sprite_frames = frames
+	if pose=="death": pose="defeat"
+	var attacking := swing_left>0
+	var progress := clampf(1.0-swing_left/maxf(swing_duration,.001),0,1) if attacking else 0.0
+	var sheet_id := shown_weapon(attacking)
+	var armed: SpriteFrames = Art.armed_frames(sheet_id)
+	var clip := _armed_clip(pose)
+	var use_sheet := armed!=null and pose in SHEET_POSES and armed.has_animation(clip)
+	# Directional walks already face the camera. Every side pose, including a baked sheet, mirrors.
+	body.flip_h = facing<0 and pose not in ["walk_up","walk_down"]
 	body.speed_scale=1.0
-	body.flip_h = facing < 0 and pose not in ["walk_up","walk_down"]
-	if pose == "death": pose = "defeat"
-	if pose in ["jab","swing","kick"] and swing_left>0:
-		var progress := 1.0-swing_left/swing_duration
-		if progress<.4: pose += "_warning"
-		elif progress>.8: pose = "idle"
-	body.play(pose)
+	if use_sheet:
+		if body.sprite_frames!=armed: body.sprite_frames=armed
+		_apply_armed_offset(sheet_id)
+		if body.animation!=clip: body.play(clip)
+		if clip.begins_with("step"):
+			# Follow-through stays on the sheet. The old progress>.8 idle snap hid the recovery.
+			body.pause()
+			body.frame=0 if progress<.30 else 1 if progress<.64 else 2
+	else:
+		var moving := pose in ["run","walk_up","walk_down"]
+		var frames: SpriteFrames = MOTION_FRAMES if moving else COMBAT_FRAMES
+		if body.sprite_frames!=frames: body.sprite_frames=frames
+		body.offset=UNARMED_OFFSET
+		if armed==null and pose in ["jab","swing","kick"] and attacking:
+			if progress<.4: pose+="_warning"
+			elif progress>.8: pose="idle"
+		body.play(pose)
+		if attacking and visual_weapon!="" and armed==null: body.pause()
+	# Baked attacks already include the windup. The legacy rig still leans into the swing.
+	if attacking and sheet_id!="" and armed==null:
+		body.position.x=facing*sin(progress*PI)*5
+	else: body.position.x=0
+	_sync_weapon(pose,progress,attacking)
+
+## The weapon Hoppy is drawn with: the swing's weapon mid-attack, else the one he holds; none
+## while stowed.
+func shown_weapon(attacking: bool) -> String:
+	if stowed: return ""
+	return visual_weapon if attacking else weapon
+
+func _armed_clip(pose: String) -> String:
+	if pose in ["jab","swing","kick"]: return "step%d" % clampi(combo,1,3)
+	if pose=="idle": return "hold_idle"
+	if pose=="pickup": return "equip"
+	return pose
+
+func _apply_armed_offset(sheet_id: String) -> void:
+	body.offset=Art.armed_offset(sheet_id,body.flip_h)
+
+func _sync_weapon(pose: String, progress: float, attacking: bool) -> void:
+	var shown := shown_weapon(attacking)
+	var mirror := 1.0 if pose in ["walk_up","walk_down"] else facing
+	held.position=body.position
+	held.scale=Vector2(mirror,1)
+	held.z_index=0
+	# z_index sorts against the stage, so a negative value hides the carry under the ground.
+	# Sibling order draws a carry behind the body (back view, and wherever it would cover the face)
+	# while keeping it above the floor.
+	var behind: bool=held.carry_behind(shown,pose)
+	if behind and held.get_index()>body.get_index():
+		move_child(held,body.get_index())
+	elif not behind and held.get_index()<body.get_index():
+		move_child(held,get_child_count()-1)
+	held.animate(shown,combo,progress,attacking,pose_move,pose_dt,pose)
+
+func hop(offset_y: float) -> void:
+	body.position.y=offset_y
+	held.position.y=offset_y
+
+func swing_tip() -> Vector2:
+	return held.tip_global()
 
 func activate_review() -> bool:
 	if not arena.capabilities.review or review_cooldown>0 or hp<=0: return false
@@ -228,8 +287,6 @@ func take_hit(source: Vector2, status := "", force := 180.0) -> bool:
 	arena.sound("hurt",position)
 	arena.shake = 8
 	if hp <= 0:
-		held.hide()
 		body.position.x=0
-		show_pose("death",true)
-		arena.game_over()
+		arena.knockout(source)
 	return true

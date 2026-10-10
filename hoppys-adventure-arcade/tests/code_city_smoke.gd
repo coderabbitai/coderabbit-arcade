@@ -16,6 +16,10 @@ func freeze() -> void:
 func capture(name: String) -> void:
 	if DisplayServer.get_name()=="headless" or captures.has(name): return
 	captures[name]=true
+	# The bot steps the game by hand between engine ticks; draw the current state, not the last tick.
+	if is_instance_valid(game):
+		game.world.reset_physics_interpolation()
+		game.camera.reset_physics_interpolation()
 	await process_frame
 	await RenderingServer.frame_post_draw
 	DirAccess.make_dir_recursive_absolute("res://../docs/previews/code-city")
@@ -28,10 +32,12 @@ func run() -> void:
 	await process_frame;await process_frame
 	game=current_scene
 	game.test_mode=true
+	# A window that starts unfocused can focus-pause the game before test_mode is set.
+	paused=false
+	if game.state=="paused": game.resume()
 	freeze()
-	await capture("intro")
-	game.begin_play()
 	# Verify event mappings against the live controller, including gamepad buttons.
+	# The run itself never confirms: no begin_play, advance_stage, or button press.
 	var key := InputEventKey.new()
 	key.physical_keycode=KEY_W;key.pressed=true
 	Input.parse_input_event(key)
@@ -62,7 +68,13 @@ func run() -> void:
 	var max_bullets := 0
 	var rooms: Dictionary = {}
 	var elapsed_steps := 0
+	var stage_exits := 0
+	var stage_enters := 0
+	var combat_starts := 0
+	var combat_from_enter := true
+	var first_enter_step := -1
 	# This bot tests reachability/cleanup with invulnerability, not game balance.
+	# 24000 steps covers the 13.5s intro plus about 2.1s for each of the two transitions.
 	Engine.physics_ticks_per_second = 240
 	Engine.time_scale = 4.0
 	for step in 24000:
@@ -73,14 +85,10 @@ func run() -> void:
 		p.invulnerable=999
 		var tag="%d_%d" % [game.stage_index,game.room]
 		rooms[tag]=true
-		if game.state=="stage_clear":
-			game.advance_stage()
-			await process_frame
-			freeze();game.begin_play()
-			continue
 		if game.state=="won": break
 		if step%120==0:
-			if game.room==0: await capture("stage_%d" % (game.stage_index+1))
+			# Stage previews show combat, not the intro or the run-in (stage_banner covers that).
+			if game.room==0 and game.playing and not game.flow.banner_panel.visible: await capture("stage_%d" % (game.stage_index+1))
 			if is_instance_valid(game.boss): await capture("boss_phase_%d" % game.boss.phase)
 		if game.playing:
 			var target=null
@@ -103,7 +111,28 @@ func run() -> void:
 			for e in game.enemies.duplicate():
 				if is_instance_valid(e): e.tick(1.0/60.0)
 			if is_instance_valid(game.boss): game.boss.tick(1.0/60.0)
+		var prev: String = game.state
 		game._physics_process(1.0/60.0)
+		# The intro preview is the first story scene once its caption is typed (it opens on black).
+		if game.state=="intro" and game.intro_page==0 and game.intro_clock>=3.0: await capture("intro")
+		# The minimap mid-room with enemies about, and in the boss room under the boss bar, once the
+		# camera has panned onto the room the minimap shows (it lerps there after enter_room).
+		var framed: bool=absf(game.camera.position.x-(game.room_start()+640))<4
+		if framed and game.state=="combat" and game.minimap.visible and game.stage_index==1 and game.room==1 and game.minimap.enemy_dots.size()>=2: await capture("minimap")
+		if framed and game.state=="combat" and game.minimap.visible and game.stage_index==2 and is_instance_valid(game.boss) and game.boss_bar.visible and game.minimap.boss_dots.size()>=1: await capture("minimap_boss")
+		# The epilogue's middle page, once its caption is typed.
+		if game.state=="ending" and game.intro_page==1 and game.intro_clock>=3.5: await capture("ending")
+		if game.state=="stage_exit" and prev!="stage_exit": stage_exits += 1
+		if game.state=="stage_enter" and prev!="stage_enter":
+			stage_enters += 1
+			if first_enter_step<0: first_enter_step = step
+		if game.state=="combat" and prev!="combat":
+			combat_starts += 1
+			if prev!="stage_enter": combat_from_enter = false
+		if game.flow.phase=="fade_out" and game.flow.veil.color.a>=0.4 and game.flow.veil.color.a<=0.7:
+			await capture("stage_fade")
+		if game.state=="combat" and game.stage_index==1 and game.flow.banner_panel.visible and game.flow.banner_panel.modulate.a>0.9:
+			await capture("stage_banner")
 		max_enemies=maxi(max_enemies,game.living_enemies())
 		max_bullets=maxi(max_bullets,game.bullets.size())
 		if step%60==0: await process_frame
@@ -111,7 +140,14 @@ func run() -> void:
 	check(rooms.size()==9,"Traversal visited all nine gated encounters")
 	check(max_enemies<=12 and max_bullets<=32,"Combat pools remain bounded")
 	check(game.completion_count==1,"Full run reports one completion")
-	if game.state=="won": await capture("victory")
+	check(stage_exits==2 and stage_enters==3,"Passed through stage_exit twice and stage_enter three times")
+	check(combat_starts==3 and combat_from_enter,"Every combat start was preceded by stage_enter")
+	check(first_enter_step>=780,"No confirm input; intro auto-advanced into stage_enter")
+	if game.state=="won":
+		# The score counts up on the game's clock; the preview is the landed count.
+		for _i in 130: game._physics_process(1.0/60.0)
+		check(game.victory.landed and game.victory.visible and not game.minimap.visible,"The results screen counts up and lands with the minimap hidden")
+		await capture("victory")
 	Engine.time_scale = 1.0
 	Engine.physics_ticks_per_second = 60
 	print("Simulation steps: ",elapsed_steps,"; rooms: ",rooms.size(),"; state: ",game.state,"; enemies: ",game.living_enemies())

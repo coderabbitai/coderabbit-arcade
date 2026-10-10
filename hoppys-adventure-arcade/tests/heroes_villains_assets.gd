@@ -89,9 +89,9 @@ func run() -> void:
 			check(root.get_texture().get_image().save_png(BASE + file.get_basename() + "-preview.png") == OK, "capture " + file)
 		scene.queue_free()
 		await process_frame
-	check(scene_count == 15, "15 presentation scenes")
+	check(scene_count == 18, "18 presentation scenes (15 plus the three ending cards)")
 	if failures == 0:
-		print("PASS: Heroes vs. Villains: ", frame_count, " frames, ", clip_count, " clips, 22 resources, 3 backgrounds, 15 scenes; catalog links valid.")
+		print("PASS: Heroes vs. Villains: ", frame_count, " frames, ", clip_count, " clips, 22 resources, 3 backgrounds, 18 scenes; catalog links valid.")
 	else:
 		printerr(failures, " asset checks failed")
 	resources.clear()
