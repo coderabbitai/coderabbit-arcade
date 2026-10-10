@@ -13,7 +13,7 @@ extends Control
 ## under stretch/aspect=expand, including inside HvV's centred 1280x720 card host.
 ##
 ## Data comes from a catalog script: STORY[i] = {image, fallback, kicker, caption, from, to}, plus
-## STORY_ACCENT and STORY_SERIES. image is the painted scene (T8); while it is not imported, the
+## STORY_ACCENT and STORY_SERIES. The final-boss epilogue uses the same page shape under ENDING. image is the painted scene (T8); while it is not imported, the
 ## stage art in fallback stands in, so dropping the paintings in needs no code change. from/to
 ## frame the move as Vector3(focus x, focus y, zoom). The focus is in 0..1 image space and is held
 ## at the middle of the picture between the bars where the image allows. Zoom is over a cover fit
@@ -38,9 +38,11 @@ const COLUMN := 1152.0
 const BAR_COLOR := Color(.012,.012,.02,1)
 const TRACK_COLOR := Color("142735")
 
-## A presentation .tscn names its scene here: catalog.STORY[story_index] (the HvV opening cards).
+## A presentation .tscn names its scene here: catalog.<pages>[story_index] (the HvV opening and
+## ending cards).
 @export var catalog: Script
 @export var story_index := 0
+@export var pages := "STORY"
 var scene: Dictionary = {}
 var index := 0
 var seconds := 0.0
@@ -114,19 +116,19 @@ func _paint_drain(fill: Color) -> void:
 func _ready() -> void:
 	# A presentation scene shows its own catalog entry. Until a host drives it (an asset preview,
 	# say), it rests on its poster frame: bars in, caption complete, no dip.
-	if scene.is_empty() and catalog != null: show_scene(catalog,story_index)
+	if scene.is_empty() and catalog != null: show_scene(catalog,story_index,pages)
 	if not _driven:
 		seconds = type_end()+.2
 		_render()
 
-## Shows scene `at` of `source` (a catalog script with STORY, STORY_ACCENT and STORY_SERIES),
-## clamped to the scenes it has. The clock is left alone: the host's next advance() places the
-## scene in time.
-func show_scene(source: Variant, at: int) -> void:
-	var count: int = source.STORY.size()
-	if count==0: return
-	index = clampi(at,0,count-1)
-	scene = source.STORY[index]
+## Shows scene `at` of the `list` pages of `source` (a catalog script with STORY or ENDING,
+## STORY_ACCENT and STORY_SERIES), clamped to the scenes it has. The clock is left alone: the
+## host's next advance() places the scene in time.
+func show_scene(source: Variant, at: int, list := "STORY") -> void:
+	var entries := page_list(source,list)
+	if entries.is_empty(): return
+	index = clampi(at,0,entries.size()-1)
+	scene = entries[index]
 	picture.texture = texture_for(scene)
 	kicker.text = scene.kicker
 	kicker.add_theme_color_override("font_color",source.STORY_ACCENT)
@@ -134,6 +136,11 @@ func show_scene(source: Variant, at: int) -> void:
 	series.text = source.STORY_SERIES
 	_paint_drain(source.STORY_ACCENT)
 	_render()
+
+## The `list` pages of a catalog script (STORY, ENDING), or none when it has no such constant.
+static func page_list(source: Variant, list := "STORY") -> Array:
+	var constants: Dictionary = source.get_script_constant_map() if source is Script else {}
+	return constants.get(list,[])
 
 ## The painted scene once it is imported, otherwise the stage art standing in for it (also when
 ## the painting is listed but fails to load, e.g. a stale import cache).

@@ -122,6 +122,14 @@ for i,id in enumerate(['opening_situation','opening_complication','opening_resol
     s.nodes += ['mouse_filter = 2', f'script = {script}', f'catalog = {catalog}', f'story_index = {i}']
     s.save(id)
 
+# The victory epilogue after the final boss: the same story scenes over the catalog's ENDING pages.
+for i,id in enumerate(['ending_hacker_falls','ending_trust_restored','ending_rabbit_stands']):
+    s=Scene('StoryScene',True)
+    script=s.resource('Script','res://modes/beatem_up/story_scene.gd',root='')
+    catalog=s.resource('Script','res://modes/beatem_up/reinvent/catalog.gd',root='')
+    s.nodes += ['mouse_filter = 2', f'script = {script}', f'catalog = {catalog}', f'story_index = {i}', 'pages = "ENDING"']
+    s.save(id)
+
 # The victory card uses native text over stage art; no rasterized typography.
 for id,title,copy,bg in [
     ('victory','THE CODERABBIT','BUILT FOR THE AGENTIC ERA\nThe CodeRabbit is live. The codebase is trusted.','generation_floor')]:
@@ -138,4 +146,4 @@ for id,title,copy,bg in [
         for j,cap in enumerate(['review','triage','change_stack','security']):
             s.sprite(cap,'capabilities_fx',cap,180+j*167,606,.55)
     s.save(id)
-print('Built 3 stage previews, 4 villain cards, 4 capability cards, 3 story scenes, 1 victory card')
+print('Built 3 stage previews, 4 villain cards, 4 capability cards, 3 story scenes, 3 ending scenes, 1 victory card')

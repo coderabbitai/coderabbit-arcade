@@ -52,14 +52,15 @@ func steps(limit: int, until: Callable) -> void:
 	var guard := 0
 	while not until.call() and guard<limit:
 		game._physics_process(1.0/60.0);guard+=1
-## Plays the victory card out so win() arrives by the automatic transition.
+## Plays the three ending cards out so win() arrives by the automatic transition.
 func auto_win() -> void:
 	game.overlay.hide();game.state="combat";game.playing=false
-	game.show_cards(["victory"],game.win)
-	game._physics_process(5.95)
-	check(game.state=="cards","Victory card still holds at 5.95 s")
-	game._physics_process(.1)
-	check(game.state=="won","Victory card auto-advances into won by 6.0 s")
+	game.show_cards(Catalog.ENDING_CARDS.duplicate(),game.win)
+	for i in Catalog.ENDING_CARDS.size():
+		game._physics_process(4.95)
+		check(game.state=="cards","Ending card %d still holds at 4.95 s" % (i+1))
+		game._physics_process(.1)
+	check(game.state=="won" and game.victory.visible,"The ending cards auto-advance into the results screen")
 func reload_game() -> void:
 	# The router fades on a clock; a stuck route must fail the suite, not hang it.
 	var deadline: int=Time.get_ticks_msec()+5000
@@ -294,10 +295,11 @@ func run() -> void:
 	# M1: the results and game-over overlays ignore the press that lands right after an auto-advance.
 	auto_win()
 	game._physics_process(1.0/60.0)
-	game._input(advance_key());game._input(accept_event())
-	check(game.state=="won" and not game.leaving and game.overlay.visible,"Dedicated advance / ui_accept one frame after victory auto-advance cannot leave the results")
+	game.victory._input(advance_key());game.victory._input(accept_event())
+	check(game.state=="won" and not game.leaving and game.victory.visible and not game.victory.landed,"Dedicated advance / ui_accept one frame after the cards cannot leave or skip the results")
+	check(game.victory.action.disabled,"The results button is disabled before the arming time")
 	game.resume()
-	check(game.state=="won" and not game.playing and game.overlay.visible,"resume() outside paused cannot revive won")
+	check(game.state=="won" and not game.playing and game.victory.visible,"resume() outside paused cannot revive won")
 	game.state="combat";game.overlay.hide();game.playing=true
 	game.game_over()
 	game._physics_process(1.0/60.0)
@@ -410,11 +412,15 @@ func run() -> void:
 	await reload_game()
 	auto_win()
 	game._physics_process(1.0/60.0)
-	game._input(advance_key())
+	game.victory._input(advance_key())
 	check(game.state=="won" and not game.leaving,"Results survive a press on the next frame")
 	game._physics_process(.6)
-	game._input(advance_key())
-	check(game.leaving,"Dedicated advance is accepted on the results after ~0.5 s")
+	game.victory._input(advance_key())
+	check(game.state=="won" and not game.leaving and game.victory.landed,"Dedicated advance after ~0.5 s lands the count first")
+	game.victory._input(accept_event())
+	check(game.state=="won" and not game.leaving,"ui_accept (jump on Space / A) does not press Return on the landed results")
+	game.victory._input(advance_key())
+	check(game.leaving,"Dedicated advance presses Return once the count has landed")
 	game.queue_free();await process_frame
 	root.get_node("AudioService").shutdown()
 	await create_timer(.3).timeout

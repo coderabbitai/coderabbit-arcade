@@ -62,6 +62,7 @@ jobs:
             stage_flow
             beatemup_knockout
             beatemup_story
+            beatemup_minimap
             heroes_villains_assets
             heroes_villains_logic
             heroes_villains_motion
