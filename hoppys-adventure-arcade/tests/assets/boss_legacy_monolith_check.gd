@@ -594,6 +594,23 @@ func check_cinematic_envelopes(visual: Node3D, adapter: Node3D) -> void:
 		finish_envelope_scenario(summary, "runtime cinematic %s every 120 Hz across phases/health" % String(mode))
 
 
+func check_retreat_completion_timing(visual: Node3D, adapter: Node3D) -> void:
+	visual.call("on_spawned")
+	visual.call("play_retreat")
+	var player := adapter.get("animation_player") as AnimationPlayer
+	var retreat_clip := player.get_animation(&"retreat") if player != null else null
+	check(retreat_clip != null, "retreat completion timing has its imported clip")
+	if retreat_clip == null:
+		return
+	drive_visual(visual, 0.8)
+	var mid_dissolve := visual_dissolve(visual)
+	check(mid_dissolve > 0.0 and mid_dissolve < 1.0, "retreat dissolve is progressing before its completion endpoint")
+	drive_visual(visual, 0.15)
+	check(is_equal_approx(float(visual.get("_duration")), 0.95), "public retreat uses the backend-aligned 0.95 second duration")
+	check(is_equal_approx(player.current_animation_position, retreat_clip.length), "retreat samples the imported clip endpoint by 0.95 seconds")
+	check(is_equal_approx(visual_dissolve(visual), 1.0), "retreat dissolve reaches 1 by 0.95 seconds")
+
+
 func check_world_envelope_contract(visual: Node3D, adapter: Node3D) -> void:
 	check(FileAccess.file_exists("res://tests/boss_pose_bounds.gd"), "CPU skinning bounds helper is available (tests/boss_pose_bounds.gd dependency)")
 	if adapter == null or not FileAccess.file_exists("res://tests/boss_pose_bounds.gd"):
@@ -623,6 +640,7 @@ func check_world_envelope_contract(visual: Node3D, adapter: Node3D) -> void:
 			visual.call("set_health", health, 100)
 			visual.call("play_retreat")
 			sample_runtime_one_shot(visual, adapter, &"retreat", "retreat phase%d hp%d" % [phase, health])
+	check_retreat_completion_timing(visual, adapter)
 	check_cinematic_envelopes(visual, adapter)
 	visual.call("on_spawned")
 
