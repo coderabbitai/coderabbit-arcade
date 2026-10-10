@@ -6,6 +6,8 @@ const MODEL_PATH := "res://Assets/runner/bosses/merge_conflict_hydra/merge_confl
 const ACCENT := Color("d46ad4")
 const QUEUE := 6
 const HEAD_RECOIL := 0.5
+const PHASE_TWO_DROP := 0.30
+const PHASE_TWO_HEIGHT_SCALE := 0.95
 var _art: Art
 var _model: Node3D
 var _skeleton: Skeleton3D
@@ -67,7 +69,8 @@ func _ensure_model() -> void:
 		for track in range(clip.get_track_count() - 1, -1, -1):
 			if _branch_track(clip.track_get_path(track)) >= 0: clip.remove_track(track)
 	for material in _model.materials: material.set_shader_parameter(&"dissolve_color", ACCENT)
-	_tag = Art.label(self, "", Vector3(0, 3.45, 0), 0.005)
+	# Dev/gallery nameplate; the production BossHUD suppresses this label.
+	_tag = Art.label(self, "", Vector3(0, 3.15, 0), 0.005)
 	_tag.font_size = 40
 	_tag.billboard = BaseMaterial3D.BILLBOARD_DISABLED
 
@@ -317,8 +320,12 @@ func _sample(player: AnimationPlayer, action: StringName, seconds: float) -> voi
 func _apply_fourth() -> void:
 	if _fourth_bone < 0: return
 	if String(_cinematic_mode).begins_with("defeat") and _cinematic_age < minf(.12, _cinematic_seconds * .08): return
-	var amount := .001
-	if _phase >= 2: amount = lerpf(.001, 1.0, smoothstep(.24, .94, _sprout_age))
+	var growth := smoothstep(.24, .94, _sprout_age) if _phase >= 2 else 0.0
+	# Keep the crown/centre crest spacing while fitting the entire phase-two rig
+	# inside the contract's world y [1.6, 6.1], including hurt and force-push poses.
+	_model.position.y = -PHASE_TWO_DROP * growth
+	_model.scale.y = lerpf(1.0, PHASE_TWO_HEIGHT_SCALE, growth)
+	var amount := lerpf(.001, 1.0, growth)
 	_skeleton.set_bone_pose_scale(_fourth_bone, Vector3.ONE * amount)
 
 func _process(delta: float) -> void:
@@ -372,18 +379,21 @@ func _tick_action(dt: float) -> void:
 
 func _tick_cinematic() -> void:
 	var p := clampf(_cinematic_age / _cinematic_seconds, 0.0, 1.0)
+	var intro := String(_cinematic_mode).begins_with("intro")
+	var pose_progress := minf(p / float(INTRO_POSE_AT[_cinematic_mode]), 1.0) if intro else p
 	if _art != null:
 		# Reuse the original geometry and reactions when the GLB is unavailable.
-		_art.state = &"intro" if String(_cinematic_mode).begins_with("intro") else &"defeated"
+		_art.state = &"intro" if intro else &"defeated"
 		_art.duration = 1.0
-		_art.age = minf(p / .70, .9999) if _art.state == &"intro" else p
-		_art.clock = _cinematic_age
+		_art.age = minf(pose_progress, .9999) if intro else p
+		# The procedural head and neck sway also freezes when the title pose lands.
+		_art.clock = minf(p, float(INTRO_POSE_AT[_cinematic_mode])) * _cinematic_seconds if intro else _cinematic_age
 		_art.advance(0.0)
-	if String(_cinematic_mode).begins_with("intro"):
+	if intro:
 		if _model != null:
-			# Complete the unfurl then hold the final roar-ready pose for the title.
+			# Land with the title slam, holding through INTRO_HOLD_UNTIL and camera return.
 			var clip: Animation = _model.animation_player.get_animation(&"intro")
-			_sample(_model.animation_player, &"intro", clip.length * minf(p / .70, 1.0))
+			_sample(_model.animation_player, &"intro", clip.length * pose_progress)
 		if p >= 1.0:
 			_cinematic_mode = &""
 			_tag.visible = _intro_tag_visible
