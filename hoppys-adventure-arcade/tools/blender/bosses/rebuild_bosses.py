@@ -18,7 +18,7 @@ KINDS = json.loads((HERE / 'bosses_budget.json').read_text())['kinds']
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--kind', choices=KINDS + ['all'], required=True)
-    parser.add_argument('--out-dir', type=Path, default=Path('Assets/runner/bosses'))
+    parser.add_argument('--out-dir', type=Path, default=HERE.parent.parent.parent / 'Assets' / 'runner' / 'bosses')
     parser.add_argument('--quick', action='store_true')
     args = parser.parse_args(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else [])
     kinds = KINDS if args.kind == 'all' else [args.kind]

@@ -56,7 +56,7 @@
   "glb": {
     "bytes": 4494336,
     "file": "flaky_test_swarm.glb",
-    "sha256": "158851e4c2b77b39ec5f54c4eec280a871fa6a2879805c10d4aff657e528ebf7"
+    "sha256": "58532337174fa392d9ad66f3b8e4e126c3b823559fe1c250cee3a8e8ecdd16bb"
   },
   "image_report": [
     {
@@ -112,9 +112,9 @@
     "muzzle_2"
   ],
   "source_hashes": {
-    "tools/blender/bosses/boss_kit.py": "573d0a98615efa1d5da6f88d14f6844af4b53366f7679e681eb76a0ba98e5f45",
+    "tools/blender/bosses/boss_kit.py": "35977f71b3d34da34ef7a0bfe064bb840ead47a679277dac4e4d366590a44d4d",
     "tools/blender/bosses/bosses_budget.json": "01bdf13be27dbdf54cbb1846cc765978c8c97bb9c951c3867e55f891987a84b8",
-    "tools/blender/bosses/build_flaky_test_swarm.py": "516e4e16ba5cd747863fb9a5b0a3a21c620b5dc0dab59422571581ba8cee1da3",
+    "tools/blender/bosses/build_flaky_test_swarm.py": "d42b73b752df028af5ededf63615e36da423642d4ad6fe27c0c4f5e6e858d5a9",
     "tools/blender/glb_atlas.py": "6e9467f0befabed73b075a4184ab7cc5aa864649d008b7be24d313726920e35a",
     "tools/blender/props/props_kit.py": "30ec723c38e818b659075007c71300e994f5c41a36c6e343e17080c203ccc1ad"
   },

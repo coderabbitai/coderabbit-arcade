@@ -72,7 +72,7 @@ def render(kind, args):
     out.mkdir(parents=True, exist_ok=True)
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
-    scene.render.fps = 120
+    scene.render.fps = BUDGET['animation_sample_rate']
     bpy.ops.import_scene.gltf(filepath=str(glb))
     rigs = [o for o in bpy.data.objects if o.type == 'ARMATURE']
     require(len(rigs) == 1, 'Expected one rig')
@@ -138,7 +138,7 @@ def render(kind, args):
         camera_at(rest, math.tau * i / args.views)
         views.append(capture('turntable_%02d' % i))
     sheet(views, out / 'turntable.png', args.size)
-    manifest = {'kind': kind, 'fps': 120, 'turntable_degrees': [360 * i / args.views for i in range(args.views)], 'actions': {}}
+    manifest = {'kind': kind, 'fps': BUDGET['animation_sample_rate'], 'turntable_degrees': [360 * i / args.views for i in range(args.views)], 'actions': {}}
     for name in BUDGET['actions']:
         action = bind(rig, name)
         first, last = action.frame_range
@@ -153,7 +153,7 @@ def render(kind, args):
             scene.frame_set(math.floor(frame), subframe=frame % 1)
             files.append(capture(name + '_%02d' % i))
         sheet(files, out / (name + '.png'), args.size)
-        manifest['actions'][name] = {'frames': frames, 'seconds': [(f - first) / 120 for f in frames]}
+        manifest['actions'][name] = {'frames': frames, 'seconds': [(f - first) / BUDGET['animation_sample_rate'] for f in frames]}
     (out / 'captures.json').write_text(json.dumps(manifest, indent=2) + '\n')
     print('BOSS RENDER: PASS ' + str(out), flush=True)
 
@@ -161,7 +161,7 @@ def render(kind, args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--kind', choices=BUDGET['kinds'] + ['all'], required=True)
-    parser.add_argument('--asset-dir', type=Path, default=Path('Assets/runner/bosses'))
+    parser.add_argument('--asset-dir', type=Path, default=HERE.parent.parent.parent / 'Assets' / 'runner' / 'bosses')
     parser.add_argument('--out-dir', type=Path, required=True)
     parser.add_argument('--size', type=int, default=512)
     parser.add_argument('--views', type=int, default=8)

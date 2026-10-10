@@ -321,6 +321,30 @@ func bone_pose_snapshots_match(left: Array[Transform3D], right: Array[Transform3
 	return true
 
 
+func check_defeat_hitstop_timing(visual: Node3D, adapter: Node3D, mode: StringName, duration: float) -> void:
+	visual.call("on_spawned")
+	visual.call("play_telegraph", 5, &"quake", 0.8)
+	drive_visual(visual, 0.12)
+	var combat_pose := skeleton_pose_snapshot(adapter)
+	var player := adapter.get("animation_player") as AnimationPlayer
+	var defeat_clip := player.get_animation(&"defeat") if player != null else null
+	check(not combat_pose.is_empty() and defeat_clip != null, "%s hit-stop check captures a combat pose and imported defeat clip" % String(mode))
+	if combat_pose.is_empty() or defeat_clip == null:
+		return
+	visual.call("play_cinematic", mode, duration)
+	for elapsed in [0.10, 0.119]:
+		visual.call("set_cinematic_progress", mode, elapsed / duration)
+		check(bone_pose_snapshots_match(combat_pose, skeleton_pose_snapshot(adapter)), "%s preserves the captured combat pose through %.3f seconds" % [String(mode), elapsed])
+		check(visual_flash(visual) > 0.0 and is_equal_approx(visual_dissolve(visual), 0.0), "%s strobe remains active while dissolve stays independent during hit-stop" % String(mode))
+	visual.call("set_cinematic_progress", mode, 0.14 / duration)
+	check(player.current_animation_position > 0.0, "%s defeat collapse starts after the 0.12 second hit-stop" % String(mode))
+	check(is_equal_approx(visual_dissolve(visual), 0.0), "%s defeat dissolve remains independent from the early collapse" % String(mode))
+	visual.call("set_cinematic_progress", mode, 1.0)
+	check(is_equal_approx(player.current_animation_position, defeat_clip.length), "%s defeat collapse reaches the imported clip endpoint at progress 1" % String(mode))
+	check(is_equal_approx(visual_dissolve(visual), 1.0), "%s defeat dissolve reaches 1 at progress 1" % String(mode))
+	visual.call("on_spawned")
+
+
 func drive_visual(visual: Node, delta: float) -> void:
 	visual.call("_process", delta)
 
@@ -840,6 +864,8 @@ func check_visual_contract() -> void:
 	check(StringName(visual.get("_state")) == &"idle" and not bool(visual.get("_terminal")), "on_spawned resets the defeated visual for replay")
 	check(is_equal_approx(visual_dissolve(visual), 0.0), "on_spawned resets dissolve for replay")
 	check(is_equal_approx(visual_emission_energy(visual), phase_one_emission), "on_spawned restores the normal glow for replay")
+	check_defeat_hitstop_timing(visual, adapter, &"defeat_full", 3.6)
+	check_defeat_hitstop_timing(visual, adapter, &"defeat_short", 2.0)
 	var second_visual := script.new() as Node3D
 	second_visual.set("kind", &"legacy_monolith")
 	second_visual.set("hover_z", -14.0)

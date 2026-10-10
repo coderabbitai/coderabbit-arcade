@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 from mathutils import Matrix, Vector
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from boss_kit import BossBuilder, Part, xform, B2G
+from boss_kit import DEFAULT_ASSET_DIR, BossBuilder, Part, xform, B2G
 
 RECIPE_REVISION = 6
 HEADS = [(-2,2.02,.06),(0,1.72,.04),(2,2.02,.06),(0,3.02,-.40)]
@@ -239,20 +239,17 @@ def build(out_dir,quick=False):
             kit.socket(f'fx_{i*2}',lo,points[7]); kit.socket(f'fx_{i*2+1}',hi,points[21])
     kit.socket('fx_core','knot',(0,.16,.49))
     kit.bake_actions(DURATIONS,pose)
-    report=kit.export(out_dir)
     font_path=Path(bpy.utils.system_resource('DATAFILES')) / 'fonts/DejaVuSansMono.woff2'
-    report['glyph_font']={'name':'DejaVu Sans Mono','source':'Blender DATAFILES/fonts/DejaVuSansMono.woff2',
+    glyph_font={'name':'DejaVu Sans Mono','source':'Blender DATAFILES/fonts/DejaVuSansMono.woff2',
                           'license':'Bitstream Vera and DejaVu Fonts License',
                           'sha256':hashlib.sha256(font_path.read_bytes()).hexdigest(),
                           'usage':'Converted glyph outlines only; font file is not redistributed.'}
-    report_path=Path(out_dir)/kit.kind/(kit.kind+'.build.json')
-    report_path.write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
-    return report
+    return kit.export(out_dir, report_metadata={'glyph_font': glyph_font})
 
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--out-dir',type=Path,default=Path('Assets/runner/bosses'))
+    parser.add_argument('--out-dir',type=Path,default=DEFAULT_ASSET_DIR)
     parser.add_argument('--quick',action='store_true')
     args=parser.parse_args(sys.argv[sys.argv.index('--')+1:] if '--' in sys.argv else [])
     build(args.out_dir,args.quick)

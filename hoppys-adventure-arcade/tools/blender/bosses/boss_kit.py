@@ -8,16 +8,20 @@ ORM use glb_atlas. Seeded recipes are stable, but Blender's UV solver can vary b
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import random
 import re
+import shutil
 import struct
 import sys
+import tempfile
 
 import bpy
 from mathutils import Euler, Matrix, Vector
 
 HERE = Path(__file__).resolve().parent
+DEFAULT_ASSET_DIR = HERE.parent.parent.parent / 'Assets' / 'runner' / 'bosses'
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE.parent / 'props'))
 import props_kit as P
@@ -311,14 +315,30 @@ class BossBuilder:
             polygon.material_index = 0
         return written
 
-    def export(self, out_dir):
-        """out_dir is the family root; writes <out_dir>/<kind>/<kind>.*."""
+    def export(self, out_dir, report_metadata=None):
+        """Validate a staged build before publishing <out_dir>/<kind>/<kind>.*."""
+        target = Path(out_dir).resolve() / self.kind
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='.' + self.kind + '-', dir=target.parent) as temporary:
+            staged = Path(temporary)
+            # Keep Godot's UIDs and import settings when replacing an existing asset.
+            for existing in target.glob(self.kind + '*.import'):
+                shutil.copy2(existing, staged / existing.name)
+            report = self._export_staged(staged, report_metadata or {})
+            target.mkdir(exist_ok=True)
+            # All baking, encoding, metadata and checks succeeded. Publish the report last.
+            for path in sorted(staged.iterdir(), key=lambda p: (p.suffix == '.json', p.name)):
+                os.replace(path, target / path.name)
+        log('EXPORT OK kind=%s tris=%d materials=%d bones=%d surfaces=%d actions=%d sockets=%d' %
+            (self.kind, report['triangles'], report['materials'], report['bones'], report['surfaces'],
+             len(ACTIONS), len(SOCKETS)))
+        return report
+
+    def _export_staged(self, out_dir, report_metadata):
         require(set(self.sockets) == set(SOCKETS), 'All ten sockets are required')
         require(set(self.durations) == set(ACTIONS), 'Bake actions before exporting')
         self.reset_pose()
         obj = self._join()
-        out_dir = Path(out_dir).resolve() / self.kind
-        out_dir.mkdir(parents=True, exist_ok=True)
         textures = {} if self.quick else self._bake(obj, out_dir)
         path = out_dir / (self.kind + '.glb')
         bpy.ops.object.select_all(action='DESELECT')
@@ -358,7 +378,9 @@ class BossBuilder:
             triangles += count // 3
         census = dict(triangles=triangles, materials=len(payload.get('materials', [])),
                       bones=len(payload['skins'][0]['joints']), surfaces=len(primitives))
-        for key, cap in BUDGET['limits'].items():
+        limits = {key: cap for key, cap in BUDGET['limits'].items()
+                  if not (self.quick and key == 'materials')}
+        for key, cap in limits.items():
             require(0 < census[key] <= cap, '%s budget exceeded: %s > %s' % (key, census[key], cap))
         require(self.quick or len(images) == 4, 'Baked GLB must carry albedo, ORM, normal, emission')
         # Include every shared source that can change geometry, shading or the export census.
@@ -368,12 +390,14 @@ class BossBuilder:
         provenance = dict(seed=self.seed, recipe_revision=self.revision, kit_revision=RECIPE_REVISION,
                           source_hashes=hashes, kind=self.kind,
                           rest_position_encoding='TEXCOORD_1.xy,TEXCOORD_2.x;TEXCOORD_2.y=1')
+        require(not (set(provenance) | set(census)) & set(report_metadata), 'Reserved report metadata key')
+        provenance.update(report_metadata)
         payload['asset']['extras'] = provenance
         write_glb(path, payload, chunks)
         report = dict(**provenance, **census, blender=bpy.app.version_string,
                       quick=self.quick, animation_sample_rate=FPS, actions=list(ACTIONS),
                       sockets=list(SOCKETS), bone_names=[b.name for b in self.rig.data.bones],
-                      action_seconds=self.durations, budget=BUDGET['limits'], image_report=images,
+                      action_seconds=self.durations, budget=limits, image_report=images,
                       textures={k: {'file': p.name, 'sha256': sha(p)} for k, p in textures.items()},
                       glb={'file': path.name, 'sha256': sha(path), 'bytes': path.stat().st_size})
         path.with_suffix('.build.json').write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
@@ -405,6 +429,4 @@ class BossBuilder:
                 else:
                     text += key + '=' + value + '\n'
             texture_import.write_text(text)
-        log('EXPORT OK kind=%s tris=%d materials=%d bones=%d surfaces=%d actions=%d sockets=%d' %
-            (self.kind, triangles, census['materials'], census['bones'], census['surfaces'], len(animations), len(SOCKETS)))
         return report

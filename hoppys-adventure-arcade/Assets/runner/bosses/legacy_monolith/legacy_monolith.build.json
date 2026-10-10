@@ -62,7 +62,7 @@
   "glb": {
     "bytes": 3715444,
     "file": "legacy_monolith.glb",
-    "sha256": "04c9e960d88c0993647e3b8ac3bebeaafe2e8f12defbb428373aba053ee2428d"
+    "sha256": "f84f3051e5d0b47f288032b9a8e1288051f2cbcbe77be0eff996b09eed0caf49"
   },
   "image_report": [
     {
@@ -118,9 +118,9 @@
     "muzzle_2"
   ],
   "source_hashes": {
-    "tools/blender/bosses/boss_kit.py": "573d0a98615efa1d5da6f88d14f6844af4b53366f7679e681eb76a0ba98e5f45",
+    "tools/blender/bosses/boss_kit.py": "35977f71b3d34da34ef7a0bfe064bb840ead47a679277dac4e4d366590a44d4d",
     "tools/blender/bosses/bosses_budget.json": "01bdf13be27dbdf54cbb1846cc765978c8c97bb9c951c3867e55f891987a84b8",
-    "tools/blender/bosses/build_legacy_monolith.py": "771009e1d6f81c67924d6a5cce194a150b9b26bc3b97bc5289d5d99d6214e596",
+    "tools/blender/bosses/build_legacy_monolith.py": "f7e214ca0c5ebeb933928185501d182cc5e0684119fb3ba587e3cacb6f9883d4",
     "tools/blender/glb_atlas.py": "6e9467f0befabed73b075a4184ab7cc5aa864649d008b7be24d313726920e35a",
     "tools/blender/props/props_kit.py": "30ec723c38e818b659075007c71300e994f5c41a36c6e343e17080c203ccc1ad"
   },

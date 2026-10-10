@@ -119,8 +119,9 @@ func check_rest_positions(model: Node3D, model_script: Script) -> void:
 func dissolve_mask(viewport: SubViewport, instance: Node3D, progress: float, label: String) -> PackedByteArray:
 	# Convert global cinematic progress to linear dissolve input; the shader remaps that input to its threshold.
 	instance.call("set_dissolve", clampf((progress - 0.55) / 0.45, 0.0, 1.0))
+	# Seeks reach the rendered skin and BoneAttachments on physics updates.
 	for frame in 3:
-		await process_frame
+		await physics_frame
 	await RenderingServer.frame_post_draw
 	var pixels := viewport.get_texture().get_image()
 	pixels.convert(Image.FORMAT_RGBA8)

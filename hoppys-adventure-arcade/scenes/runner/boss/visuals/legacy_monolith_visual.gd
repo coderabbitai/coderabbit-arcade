@@ -297,17 +297,18 @@ func _process(delta: float) -> void:
 
 func _sample_pose() -> void:
 	var progress := clampf(_age / _duration, 0, 1)
+	var hitstop := minf(0.12, _duration)
 	var clip := _player.get_animation(_state)
 	var sample := fmod(_age, clip.length) if _state == &"idle" else progress * clip.length
 	if _state == &"intro" and not _cinematic_mode.is_empty():
 		# The title-card cue lands on this pose; keep it frozen until the cinematic ends.
 		sample = minf(progress / float(INTRO_POSE_AT[_cinematic_mode]), 1.0) * clip.length
 	if _state == &"defeat" and not _cinematic_mode.is_empty():
-		sample = clampf((progress - 0.04) / 0.80, 0.0, 1.0) * clip.length
+		sample = clampf((_age - hitstop) / maxf(_duration - hitstop, 0.001), 0.0, 1.0) * clip.length
 	_skeleton.reset_bone_poses()
 	_player.seek(sample, true)
 	_player.advance(0.0)
-	var frozen := _state == &"defeat" and not _cinematic_mode.is_empty() and progress < 0.04 and not _hitstop_pose.is_empty()
+	var frozen := _state == &"defeat" and not _cinematic_mode.is_empty() and _age < hitstop and not _hitstop_pose.is_empty()
 	if frozen:
 		for index in _hitstop_pose.size():
 			_skeleton.set_bone_pose(index, _hitstop_pose[index])
