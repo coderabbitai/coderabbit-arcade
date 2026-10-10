@@ -785,8 +785,9 @@ boss timeout → `boss_retreated` with the partial bonus and never `boss_defeate
 camera back at zero, no spawn during the bend) plus `turn_incoming` once per seam ahead of `turn_started`, on the
 same direction and with `seconds ∈ [0, turn_warning_seconds + 0.5]`; the camera swing profile (0 at p = 0 and
 p = 1, at the peak across the hold window, monotone through each ramp); `boss_intro` exactly once per fight,
-before `boss_cinematic` and `boss_spawned`, carrying `boss_intro_seconds`, with no telegraph and no tool inside that
-window (contract 2.6: the cinematic timings themselves are covered by `tests/runner_boss_cinematic.gd`);
+before `boss_cinematic` and `boss_spawned`, carrying `boss_intro_seconds` on the run's first meeting with that boss and
+`min(boss_intro_short_seconds, boss_intro_seconds)` on a repeat meeting or a checkpoint retry, with no telegraph and no
+tool inside that window (contract 2.6: the cinematic timings themselves are covered by `tests/runner_boss_cinematic.gd`);
 `pursuit_alert` ordering and the epsilon gate; caught mid-boss aborts
 to `idle` with `run_finished` once and boss stats in the result; speed with stage bonus and difficulty floor.
 `runner_smoke.gd`: duplicated config `stage_base_distance 260`, `time_to_max_speed 20`, `boss_hp_scale 0.4` (so the
