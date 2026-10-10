@@ -69,7 +69,7 @@ static var done: bool:
 static var build_ms := 0.0
 static var draw_ms := 0.0
 static var census: Dictionary = {}
-## Process-lifetime references to every material the warm-up drew. BaseMaterial3D,
+## Process-lifetime references to boss PackedScenes and every material the warm-up drew. BaseMaterial3D,
 ## ParticleProcessMaterial and code-built shaders free their compiled program with their last
 ## user, so a warmed program would otherwise be recompiled by the next pickup, pit or burst
 ## (measured: a new spark system cost 75 ms again once every earlier one was freed).
@@ -216,7 +216,7 @@ static func _drop_doomed(host: Node) -> void:
 		if is_instance_valid(node) and node.is_queued_for_deletion() and node.is_inside_tree():
 			node.get_parent().remove_child(node)
 
-## Application exit: drop the retained materials while the RenderingServer still exists.
+## Application exit: drop retained scenes and materials while the RenderingServer still exists.
 static func release() -> void:
 	retained.clear()
 
@@ -484,6 +484,12 @@ static func _signature_variants(kind: StringName) -> Array[StringName]:
 func _boss(kind: StringName, state: StringName) -> void:
 	var visual := _instance(BOSS_DIR + String(kind) + "_visual.tscn")
 	if visual == null: return
+	# Keep the imported scene itself alive after these transient copies are freed, so the next
+	# intro reuses its meshes and animation data without reparsing the GLB at the cut.
+	var model_path: String = visual.get_script().get_script_constant_map().get("MODEL_PATH", "")
+	if not model_path.is_empty() and ResourceLoader.exists(model_path):
+		var model := load(model_path) as PackedScene
+		if model != null: retained[model] = true
 	var values := {&"kind": kind, &"boss_name": String(kind), &"max_hp": 10, &"phase_count": BossDefs.PHASE_COUNT,
 		&"hover_z": 0.0, &"sway_amplitude": 0.0, &"sway_period": 1.0}
 	for key: StringName in values:

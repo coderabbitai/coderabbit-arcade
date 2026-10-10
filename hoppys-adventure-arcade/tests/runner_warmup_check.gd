@@ -88,6 +88,7 @@ func run() -> void:
 		check(stage.get_child_count() == 2, "batch %s mounted into one group" % batch)
 		stage.call("clear")
 		check(stage.get_child_count() == 1, "batch %s cleared" % batch)
+	check_boss_scenes_retained(GpuWarmup, "after clearing all warm-up batches")
 	var expected := {"pickup": 20, "burst": 2, "hazard": 42, "boss": 12, "boss_fx": 5, "boss_marks": 1,
 		"boss_projectile": 8, "projectile_swatch": 13, "pursuer": 2, "hoppy": 8, "canvas": 1}
 	for category in expected:
@@ -111,9 +112,24 @@ func run() -> void:
 	game.free()
 	var Cleanup: Script = load("res://scenes/runner/environment/hifi/fixture_cleanup.gd")
 	await Cleanup.call("release", self, [] as Array[Node])
+	GpuWarmup.call("release")
+	check((GpuWarmup.get("retained") as Dictionary).is_empty(), "GPU warm-up release drops retained boss scenes and draw materials")
 	if failures == 0: print("RUNNER WARMUP: PASS (%d checks)" % checks)
 	else: print("RUNNER WARMUP: FAIL (%d failures / %d checks)" % [failures, checks])
 	quit(0 if failures == 0 else 2)
+
+func check_boss_scenes_retained(GpuWarmup: Script, context: String) -> void:
+	var retained: Dictionary = GpuWarmup.get("retained")
+	var BossDefs: Script = load("res://scenes/runner/boss/boss_defs.gd")
+	for slot: Dictionary in BossDefs.get("SLOTS"):
+		var kind: StringName = slot.get("kind", &"")
+		var visual_path := "res://scenes/runner/boss/visuals/%s_visual.tscn" % String(kind)
+		var visual_scene := load(visual_path) as PackedScene
+		var visual := visual_scene.instantiate()
+		var model_path: String = visual.get_script().get_script_constant_map().get("MODEL_PATH", "")
+		visual.free()
+		var model := load(model_path) as PackedScene if not model_path.is_empty() else null
+		check(model != null and retained.has(model), "%s retains imported boss model scene: %s" % [context, model_path])
 
 ## The scene at bind time (graybox detached, as run() does), with the live Hoppy dressed and the
 ## corridor posed mid-turn, plus every batch the stage mounts. Also the explicit C1/C2/C4 checks.

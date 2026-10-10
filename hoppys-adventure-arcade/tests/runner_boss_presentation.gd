@@ -9,6 +9,7 @@ const CinematicScene = preload("res://scenes/runner/ui/boss_cinematic.tscn")
 const BossHud = preload("res://scenes/runner/ui/boss_hud.gd")
 const PostFX = preload("res://scenes/runner/ui/post_fx.gd")
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
+const RunnerAudioScene = preload("res://scenes/runner/audio/runner_audio.tscn")
 var scratch_board := "user://runner_boss_presentation_%d.cfg" % (randi() % 1000000)
 
 class Facade extends Node:
@@ -24,8 +25,11 @@ class Facade extends Node:
 	signal phase_changed(phase: StringName)
 	signal caught
 	signal run_started(seed: int)
+	signal stage_cleared(index: int, bonus: int)
 	var leaderboard_path := ""
 	var paused := false
+	var state: StringName = &"running"
+	var normalized_speed := 0.0
 	var stage_index := 1
 	var boss_cinematic_progress := 0.0
 	var boss_time_factor := 1.0
@@ -71,6 +75,7 @@ func run() -> void:
 	_test_resolved_bonus(cinematic, facade)
 	_test_zero_length_hp_plate(facade)
 	_test_post_fx_skip_tail(facade)
+	await _test_audio_defeat_fanfare_lifecycle()
 	var audio_service := root.get_node_or_null("AudioService")
 	if audio_service != null and audio_service.has_method("shutdown"):
 		audio_service.shutdown()
@@ -249,6 +254,59 @@ func _test_post_fx_skip_tail(facade: Facade) -> void:
 	post_fx._process(1.0)
 	check(is_equal_approx(post_fx.clock - clock_before, 0.4), "post FX local clock applies the facade boss time factor")
 	post_fx.bind(null)
+
+func _test_audio_defeat_fanfare_lifecycle() -> void:
+	var facade := Facade.new()
+	facade.leaderboard_path = scratch_board
+	root.add_child(facade)
+	var audio := RunnerAudioScene.instantiate()
+	root.add_child(audio)
+	audio.bind(facade)
+	var first_voice := _start_resolved_voice(audio, facade)
+	var playback: AudioStreamPlaybackPolyphonic = audio.get("_playback")
+	check(first_voice != AudioStreamPlaybackPolyphonic.INVALID_ID and playback.is_stream_playing(first_voice),
+		"defeat-short fanfare starts as a real polyphonic playback voice")
+	await create_timer(0.8).timeout
+	check(playback.is_stream_playing(first_voice), "resolved fanfare is still playing at the short defeat end")
+	facade.boss_cinematic_progress = 1.0
+	facade.boss_cinematic_ended.emit(&"defeat_short")
+	await process_frame
+	await create_timer(0.12).timeout
+	check(playback.is_stream_playing(first_voice),
+		"boss-resolved fanfare keeps its actual playback tail after defeat cinematic ends")
+	facade.stage_cleared.emit(1, 400)
+	check(playback.is_stream_playing(first_voice), "stage clear leaves the remaining resolved fanfare tail playing")
+	facade.caught.emit()
+	await process_frame
+	await create_timer(0.12).timeout
+	check(not playback.is_stream_playing(first_voice), "catch cleanup stops the resolved fanfare after cinematic end cleared its mode")
+	await create_timer(0.05).timeout
+	var run_started_voice := _start_resolved_voice(audio, facade)
+	check(run_started_voice != AudioStreamPlaybackPolyphonic.INVALID_ID and playback.is_stream_playing(run_started_voice),
+		"run-start cleanup fixture starts a real resolved fanfare voice")
+	facade.run_started.emit(2)
+	await process_frame
+	await create_timer(0.12).timeout
+	check(not playback.is_stream_playing(run_started_voice), "new-run cleanup stops the prior cinematic fanfare")
+	await create_timer(0.05).timeout
+	var teardown_voice := _start_resolved_voice(audio, facade)
+	var teardown_playback: AudioStreamPlaybackPolyphonic = audio.get("_playback")
+	check(teardown_voice != AudioStreamPlaybackPolyphonic.INVALID_ID and teardown_playback.is_stream_playing(teardown_voice),
+		"teardown fixture starts another real resolved fanfare voice")
+	audio.queue_free()
+	await process_frame
+	await create_timer(0.12).timeout
+	check(not teardown_playback.is_stream_playing(teardown_voice), "RunnerAudio teardown stops active cinematic voices")
+
+func _start_resolved_voice(audio: Node, facade: Facade) -> int:
+	facade.boss_cinematic_progress = 0.0
+	facade.boss_cinematic.emit(&"legacy_monolith", &"defeat_short", 2.0)
+	facade.boss_cinematic_progress = 0.60
+	audio._process(0.0)
+	for voice: int in audio.get("_voices"):
+		if audio.get("_voice_kinds").get(voice) == &"boss_resolved":
+			return voice
+	return AudioStreamPlaybackPolyphonic.INVALID_ID
 
 func update_cinematic(cinematic: Node) -> void:
 	cinematic._process(0.0)

@@ -245,6 +245,7 @@ func active_voice_count() -> int:
 	return _voices.size() + int(footsteps.playing) + int(drone.playing) + int(heartbeat.playing)
 
 func _on_run_started(_seed: int) -> void:
+	_end_boss_audio()
 	_stop_pursuit()
 	_grounded = true
 	_rolling = false
@@ -419,7 +420,7 @@ func _on_boss_phase(_phase: int) -> void:
 
 func _end_boss_audio() -> void:
 	_on_cinematic_ended(_cinematic_mode)
-	for kind in [&"boss_intro", &"turn_warning", &"turn_whoosh"]: _stop_cue(kind)
+	for kind in [&"boss_defeat", &"boss_explosion", &"boss_resolved", &"turn_warning", &"turn_whoosh"]: _stop_cue(kind)
 	_intro_remaining = 0.0
 	_boss_active = false
 	_turn_active = false
@@ -527,8 +528,10 @@ func _on_cinematic_skipped(_mode: StringName) -> void:
 	_play(&"boss_skip")
 
 func _on_cinematic_ended(_mode: StringName) -> void:
-	for kind in [&"boss_intro", &"boss_intro_short", &"boss_title", &"boss_explosion", &"boss_resolved", &"boss_skip"]:
+	# Defeat one-shots ring out over stage clear; catches, new runs and teardown use full cleanup.
+	for kind in [&"boss_intro", &"boss_intro_short", &"boss_title", &"boss_skip"]:
 		_stop_cue(kind)
+	for kind in [&"boss_defeat", &"boss_explosion"]: _pitch_cue(kind, 1.0)
 	_cinematic_mode = &""
 	_intro_remaining = 0.0
 	_cinematic_bursts = 0

@@ -119,7 +119,9 @@ func _run_boss_cinematic_probe() -> void:
 			push_error("RUNNER PERF BOSS CINEMATIC: stage %d opened %s / %s, expected %s / intro_full" % [stage, kind, intro_mode, expected_kind])
 			failed = true
 		var census := {"surfaces": 0, "multimesh_draws": 0, "multimesh_instances": 0,
-			"particle_draws": 0, "label_draws": 0, "geometry_peak": 0, "render_peak": 0}
+			"particle_draws": 0, "label_draws": 0, "geometry_peak": 0, "render_peak": 0,
+			"render_pair_samples": 0, "render_pair_invalid": 0, "boss_render_draws_peak": -1,
+			"boss_render_with_at_peak": -1, "boss_render_without_at_peak": -1}
 		var sampled_frames := 0
 		var defeat_samples := 0
 		var saw_defeat := false
@@ -157,12 +159,17 @@ func _run_boss_cinematic_probe() -> void:
 			push_error("RUNNER PERF BOSS CINEMATIC: stage %d defeat did not finish inside the frame guard" % stage)
 			failed = true
 		var boss_draws := int(census.geometry_peak)
-		var passed := defeat_samples > 0 and boss_draws > 0 and boss_draws <= BOSS_DRAW_BUDGET
+		var engine_draws := int(census.boss_render_draws_peak)
+		var passed := defeat_samples > 0 and boss_draws > 0 and boss_draws <= BOSS_DRAW_BUDGET \
+			and int(census.render_pair_samples) > 0 and int(census.render_pair_invalid) == 0 \
+			and engine_draws > 0 and engine_draws <= BOSS_DRAW_BUDGET
 		if not passed:
 			failed = true
 		var status := "PASS" if passed else "FAIL"
-		var report := "RUNNER PERF BOSS CINEMATIC: %s stage=%d kind=%s accepted_hits=%d frames=%d defeat_samples=%d render_calls_peak=%d boss_fx_draws_peak=%d (surfaces=%d multimesh_draws=%d multimeshes=%d particle_draws=%d labels=%d)" % [
-			status, stage, kind, hits, sampled_frames, defeat_samples, int(census.render_peak), boss_draws,
+		var report := "RUNNER PERF BOSS CINEMATIC: %s stage=%d kind=%s accepted_hits=%d frames=%d defeat_samples=%d render_calls_peak=%d engine_boss_draw_delta_peak=%d (with=%d without=%d pairs=%d invalid=%d) boss_fx_draws_peak=%d (surfaces=%d multimesh_draws=%d multimeshes=%d particle_draws=%d labels=%d)" % [
+			status, stage, kind, hits, sampled_frames, defeat_samples, int(census.render_peak), engine_draws,
+			int(census.boss_render_with_at_peak), int(census.boss_render_without_at_peak),
+			int(census.render_pair_samples), int(census.render_pair_invalid), boss_draws,
 			int(census.surfaces), int(census.multimesh_draws), int(census.multimesh_instances),
 			int(census.particle_draws), int(census.label_draws)]
 		print(report)
@@ -184,7 +191,7 @@ func _probe_frame(encounter: Node, manager: Node) -> void:
 	await RenderingServer.frame_post_draw
 
 func _sample_render_and_geometry(census: Dictionary) -> void:
-	var arena := game.get_node_or_null("World/TurnRig/BossArena") as Node
+	var arena := game.get_node_or_null("World/TurnRig/BossArena") as Node3D
 	if arena == null: return
 	var current := {"surfaces": 0, "multimesh_draws": 0, "multimesh_instances": 0,
 		"particle_draws": 0, "label_draws": 0}
@@ -195,6 +202,33 @@ func _sample_render_and_geometry(census: Dictionary) -> void:
 		census.geometry_peak = draws
 	var calls := int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
 	if calls > int(census.render_peak): census.render_peak = calls
+	_sample_boss_render_delta(arena, census)
+
+## Force three synchronous draws without advancing the scene tree, so the full-frame counter
+## isolates the mounted BossArena contribution from the same rendered pose and simulation tick.
+func _sample_boss_render_delta(arena: Node3D, census: Dictionary) -> void:
+	var originally_visible := arena.visible
+	if not originally_visible:
+		census.render_pair_invalid = int(census.render_pair_invalid) + 1
+		return
+	arena.visible = true
+	RenderingServer.force_draw(false, 0.0)
+	var with_boss := int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+	arena.visible = false
+	RenderingServer.force_draw(false, 0.0)
+	var without_boss := int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+	arena.visible = originally_visible
+	RenderingServer.force_draw(false, 0.0)
+	var restored := int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+	census.render_pair_samples = int(census.render_pair_samples) + 1
+	var delta := with_boss - without_boss
+	if with_boss <= 0 or without_boss < 0 or delta < 0 or restored != with_boss:
+		census.render_pair_invalid = int(census.render_pair_invalid) + 1
+		return
+	if delta > int(census.boss_render_draws_peak):
+		census.boss_render_draws_peak = delta
+		census.boss_render_with_at_peak = with_boss
+		census.boss_render_without_at_peak = without_boss
 
 func _count_boss_draws(node: Node, tally: Dictionary) -> void:
 	if (node is Node3D or node is CanvasItem) and not node.is_visible_in_tree(): return

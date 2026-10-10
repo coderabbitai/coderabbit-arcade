@@ -85,7 +85,7 @@ func bind(value: Node) -> void:
 	_disconnect()
 	clear()
 	game = value
-	connections = {&"boss_intro": _intro, &"boss_attack_planned": _planned, &"boss_attack_telegraph": _telegraph,
+	connections = {&"boss_attack_planned": _planned, &"boss_attack_telegraph": _telegraph,
 		&"boss_attack_committed": _committed, &"tool_collected": _tool, &"boss_defeated": _end,
 		&"boss_retreated": _end, &"boss_cinematic": _cinematic, &"boss_cinematic_ended": _cinematic_ended, &"caught": clear, &"run_started": _reset}
 	for event: StringName in connections:
@@ -252,10 +252,6 @@ func _clear_records() -> void:
 
 func _exit_tree() -> void:
 	_disconnect()
-
-func _intro(_kind: StringName, _name: String, _seconds: float) -> void:
-	# The encounter now calls play_cinematic itself, including progress 0. Do not restart it.
-	pass
 
 func _cinematic(kind: StringName, mode: StringName, _seconds: float) -> void:
 	_cinematic_ended(&"")

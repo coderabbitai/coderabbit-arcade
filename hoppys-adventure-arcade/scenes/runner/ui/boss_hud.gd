@@ -150,8 +150,8 @@ func _phase(value: int) -> void:
 	pip_flash.tween_property(panel, "modulate", Color.WHITE, 0.9)
 
 func _end(_kind: StringName, _bonus: int) -> void:
-	title.text = "BUG FIXED"
-	_slide_out()
+	# The cinematic owns the defeat payoff; zero-length defeats also retire the HP plate.
+	_caught()
 
 func _retreat(_kind: StringName, _bonus: int) -> void:
 	title.text = "BOSS ESCAPED"
