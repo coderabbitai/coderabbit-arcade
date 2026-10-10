@@ -20,7 +20,7 @@ const DEFAULT_TURN_SWING_OUT_FRACTION := 0.3
 ## looking up), `orbit` degrees of yaw around it. It aims at the visual's cinematic focus (§11.5,
 ## the centre of the upper third of its rest bounds unless the visual says otherwise) plus
 ## `look_bias` metres. The default focus sits about 2.4 to 3.1 m above the mount on the three
-## shipped bosses, so the biases land the hold near +1.6 m and the defeat close-up near +1.4 m, and
+## shipped bosses, so the biases land the hold near +1.6 m and the defeat close-up near +1.9 m, and
 ## a taller boss is aimed higher. Keys are [p, distance, height, orbit, fov, look_bias], smoothstepped
 ## between. The blend ramps in over [0, cut] and back out over [ret, 1]; `ret` is where a skip lands at
 ## the default lengths (the last boss_cinematic_skip_tail 0.3 s), so a skip never pops the camera.
@@ -57,10 +57,11 @@ const BOSS_SHOTS := {
 		"ret": 0.917,
 		"keys": [
 			# Punch in through the hit-stop, orbit the close-up -12 -> +12 deg, then pull back wide
-			# over Hoppy's shoulder for the triumphant beat.
+			# over Hoppy's shoulder for the triumphant beat. The close-up stands far enough back, and
+			# aims high enough, that the Monolith's eyes and brow stay clear of the top letterbox.
 			[0.0, 7.0, -0.4, -12.0, 56.0, -1.35],
-			[0.06, 4.4, -0.3, -12.0, 44.0, -1.35],
-			[0.5, 4.2, -0.2, 12.0, 44.0, -1.35],
+			[0.06, 5.6, -0.3, -12.0, 50.0, -0.8],
+			[0.5, 5.4, -0.2, 12.0, 50.0, -0.8],
 			[0.8, 19.0, 2.4, 6.0, 58.0, -2.1],
 			[1.0, 19.0, 2.4, 6.0, 58.0, -2.1]
 		]
@@ -70,8 +71,8 @@ const BOSS_SHOTS := {
 		"ret": 0.85,
 		"keys": [
 			[0.0, 7.0, -0.4, -12.0, 56.0, -1.35],
-			[0.08, 4.6, -0.3, -12.0, 46.0, -1.35],
-			[0.45, 4.4, -0.2, 12.0, 46.0, -1.35],
+			[0.08, 5.8, -0.3, -12.0, 52.0, -0.8],
+			[0.45, 5.6, -0.2, 12.0, 52.0, -0.8],
 			[0.75, 18.0, 2.2, 6.0, 58.0, -2.1],
 			[1.0, 18.0, 2.2, 6.0, 58.0, -2.1]
 		]

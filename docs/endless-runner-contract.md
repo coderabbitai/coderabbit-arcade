@@ -785,7 +785,7 @@ on the player and the skip. The frontend draws the cinematic from that clock.
   and `focus_position` is the mount plus `boss_encounter.cinematic_focus` (§11.5). It sends `(0, &"")` at every
   exit. The pure static `camera_rig.boss_shot(p, mode)` returns `{blend, distance, height, orbit, fov, look_bias}`.
   The lens sits off the mount, and it aims at the focus plus a small per-shot `look_bias`. That bias puts the hold
-  near +1.6 m and the defeat close-up near +1.4 m above the mount on the shipped bosses, and a taller boss is aimed
+  near +1.6 m and the defeat close-up near +1.9 m above the mount on the shipped bosses, and a taller boss is aimed
   higher. `blend` is exactly 0 at p = 0 and p = 1,
   and for an unknown or empty mode, which is the same invariant as `turn_swing_profile`. The rig mixes position,
   rotation and FOV with the follow pose by `blend`, and shake and FOV punch ride on top. Shots: `intro_full` cuts in
