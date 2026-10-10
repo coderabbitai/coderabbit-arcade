@@ -1019,5 +1019,6 @@ camera, the player hold and the skip, and the frontend draws from that clock.
   wide hint shot for the intro, and a punch-in, ±12° orbit and wide pull-back for the defeat. Frontend code does not
   move the camera. It may still call `shake()` and `punch_fov()`, which ride on top of the shot.
 - **Skip.** Intros only. Jump or `ui_accept` skips once 0.5 s have played (`skip_boss_cinematic()`). The press is
-  consumed and never jumps. Show the skip prompt on intros when `boss_cinematic_progress × seconds ≥ 0.5`, and never
-  on a defeat.
+  consumed and never jumps. Show the skip prompt only while `game.can_skip_boss_cinematic()` returns true; don't
+  derive it from elapsed time. The backend guard already returns false while paused or not running, once the intro
+  has been skipped, inside its last 0.3 s tail (`boss_cinematic_skip_tail`), before 0.5 s, and for every defeat.

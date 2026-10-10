@@ -1,8 +1,10 @@
 extends SceneTree
 
 const MODEL_SCRIPT_PATH := "res://scenes/runner/boss/hifi/boss_model.gd"
+const BossModelScript := preload("res://scenes/runner/boss/hifi/boss_model.gd")
 const SELFTEST_PATH := "res://Assets/runner/bosses/kit_selftest/kit_selftest.glb"
 const BUILD_PATH := "res://Assets/runner/bosses/kit_selftest/kit_selftest.build.json"
+const REST_VALIDATION_META := &"_boss_rest_validation_v2"
 const ACTIONS: Array[StringName] = [&"intro", &"idle", &"telegraph", &"attack", &"hurt", &"phase_change", &"defeat", &"retreat"]
 const SOCKETS: Array[StringName] = [&"fx_core", &"fx_0", &"fx_1", &"fx_2", &"fx_3", &"fx_4", &"fx_5", &"muzzle_0", &"muzzle_1", &"muzzle_2"]
 const MAX_TRIANGLES := 18000
@@ -114,6 +116,93 @@ func check_rest_positions(model: Node3D, model_script: Script) -> void:
 	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3.ZERO, Vector3.RIGHT, Vector3.UP])
 	old_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	check(model_script.call("rest_positions", old_mesh, 0).is_empty(), "missing rest-position attributes are rejected")
+
+
+func rest_scan_count() -> int:
+	return BossModelScript._rest_position_scan_count
+
+
+func source_meshes(model: Node3D) -> Array[Mesh]:
+	var result: Array[Mesh] = []
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh := (node as MeshInstance3D).mesh
+		if mesh != null and not result.has(mesh):
+			result.append(mesh)
+	return result
+
+
+func source_surface_count(meshes: Array[Mesh]) -> int:
+	var count := 0
+	for mesh in meshes:
+		count += mesh.get_surface_count()
+	return count
+
+
+func make_rest_validation_mesh() -> ArrayMesh:
+	var mesh := ArrayMesh.new()
+	var valid := []
+	valid.resize(Mesh.ARRAY_MAX)
+	valid[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3.ZERO, Vector3.RIGHT, Vector3.UP])
+	valid[Mesh.ARRAY_TEX_UV2] = PackedVector2Array([Vector2.ZERO, Vector2.RIGHT, Vector2(0, 1)])
+	valid[Mesh.ARRAY_CUSTOM0] = PackedFloat32Array([0.0, 1.0, 0.0, 1.0, 0.0, 1.0])
+	var rest_flags := Mesh.ARRAY_FORMAT_CUSTOM0 | (Mesh.ARRAY_CUSTOM_RG_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, valid, [], {}, rest_flags)
+	var invalid := []
+	invalid.resize(Mesh.ARRAY_MAX)
+	invalid[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3.ZERO, Vector3.RIGHT, Vector3.UP])
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, invalid)
+	return mesh
+
+
+func cache_validity(model_script: Script, mesh: Mesh, surface: int) -> bool:
+	return bool(model_script.call("_has_valid_rest_positions", mesh, surface))
+
+
+func check_rest_validation_cache(model_script: Script) -> void:
+	var mesh := make_rest_validation_mesh()
+	var before := rest_scan_count()
+	check(cache_validity(model_script, mesh, 0), "first valid surface cache lookup accepts encoded rest data")
+	check(rest_scan_count() == before + 1, "first lookup freshly scans its surface")
+	check(cache_validity(model_script, mesh, 0), "repeat lookup returns cached valid surface")
+	check(rest_scan_count() == before + 1, "repeat lookup does not rescan a valid surface")
+	check(not cache_validity(model_script, mesh, 1), "invalid second surface is rejected")
+	check(rest_scan_count() == before + 2, "second surface is validated independently")
+	check(not cache_validity(model_script, mesh, 1), "repeat lookup returns cached invalid surface")
+	check(rest_scan_count() == before + 2, "cached invalid surface does not rescan")
+	check(mesh.has_meta(REST_VALIDATION_META), "validated surfaces are recorded on the Mesh")
+	var duplicate := mesh.duplicate() as Mesh
+	check(duplicate != null and duplicate.get_instance_id() != mesh.get_instance_id(), "duplicate is a distinct Mesh resource")
+	if duplicate != null:
+		# Force the copied stale owner id so this assertion covers duplicate metadata even
+		# if a future Godot version stops copying custom metadata automatically.
+		var copied_cache: Dictionary = mesh.get_meta(REST_VALIDATION_META)
+		duplicate.set_meta(REST_VALIDATION_META, copied_cache.duplicate(true))
+		var before_duplicate := rest_scan_count()
+		check(cache_validity(model_script, duplicate, 0), "duplicate with stale metadata validates its own valid surface")
+		check(rest_scan_count() == before_duplicate + 1, "duplicate owner id forces a fresh scan")
+		check(cache_validity(model_script, duplicate, 0), "duplicate then caches its valid surface")
+		check(rest_scan_count() == before_duplicate + 1, "duplicate valid surface is warm after its first scan")
+		check(not cache_validity(model_script, duplicate, 1), "duplicate independently rejects its invalid surface")
+		check(rest_scan_count() == before_duplicate + 2, "duplicate caches each surface independently")
+	mesh.emit_changed()
+	check(not mesh.has_meta(REST_VALIDATION_META), "Mesh.changed invalidates its validation metadata")
+	var before_changed := rest_scan_count()
+	check(cache_validity(model_script, mesh, 0), "changed Mesh revalidates a valid surface")
+	check(rest_scan_count() == before_changed + 1, "changed Mesh rescans its valid surface")
+	check(not cache_validity(model_script, mesh, 1), "changed Mesh revalidates an invalid surface")
+	check(rest_scan_count() == before_changed + 2, "changed Mesh rescans each surface independently")
+	duplicate = null
+	mesh = null
+	var temporary_ref := cached_temporary_mesh_ref(model_script)
+	await process_frame
+	check(temporary_ref.get_ref() == null, "validation cache does not keep a temporary Mesh alive")
+
+
+func cached_temporary_mesh_ref(model_script: Script) -> WeakRef:
+	var temporary := make_rest_validation_mesh()
+	check(cache_validity(model_script, temporary, 0), "temporary Mesh receives a validation cache entry")
+	check(temporary.has_meta(REST_VALIDATION_META), "temporary Mesh stores cache metadata locally")
+	return weakref(temporary)
 
 
 func dissolve_mask(viewport: SubViewport, instance: Node3D, progress: float, label: String) -> PackedByteArray:
@@ -322,22 +411,36 @@ func run() -> void:
 	if not FileAccess.file_exists(SELFTEST_PATH):
 		finish()
 		return
+	var packed_scene := load(SELFTEST_PATH) as PackedScene
+	check(packed_scene != null, "self-test PackedScene is held for repeated loads")
+	var scans_before_first := rest_scan_count()
 	var first: Variant = model_script.call("load_model", SELFTEST_PATH)
 	check(first is Node3D, "self-test GLB loads through BossModel")
 	if not first is Node3D:
 		finish()
 		return
+	var first_model := first.get("model") as Node3D
+	var first_meshes := source_meshes(first_model)
+	check(rest_scan_count() - scans_before_first == source_surface_count(first_meshes),
+		"first load scans each unique source mesh surface once")
 	root.add_child(first)
+	var scans_before_second := rest_scan_count()
 	var second: Variant = model_script.call("load_model", SELFTEST_PATH)
 	check(second is Node3D, "second self-test instance loads")
 	if not second is Node3D:
 		first.free()
 		finish()
 		return
+	check(rest_scan_count() == scans_before_second, "second load reuses cached rest validation")
 	root.add_child(second)
-	var imported_model := first.get("model") as Node3D
+	var imported_model := first_model
+	var second_meshes := source_meshes(second.get("model") as Node3D)
+	check(second_meshes.size() == first_meshes.size(), "repeated loads have matching source mesh sets")
+	for index in mini(first_meshes.size(), second_meshes.size()):
+		check(second_meshes[index] == first_meshes[index], "repeated loads share held source Mesh %d" % index)
 	check_imported_orm(imported_model)
 	check_mesh_skeleton_census(imported_model, build_report)
+	await check_rest_validation_cache(model_script)
 	check_rest_positions(imported_model, model_script)
 	var animation_player: Variant = first.get("animation_player")
 	check(animation_player is AnimationPlayer, "loaded instance exposes AnimationPlayer")

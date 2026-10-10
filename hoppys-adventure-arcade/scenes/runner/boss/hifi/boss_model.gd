@@ -3,6 +3,8 @@ extends Node3D
 const Materials = preload("res://scenes/runner/boss/hifi/boss_materials.gd")
 const ACTIONS: Array[StringName] = [&"intro", &"idle", &"telegraph", &"attack", &"hurt", &"phase_change", &"defeat", &"retreat"]
 const SOCKETS: Array[StringName] = [&"fx_core", &"fx_0", &"fx_1", &"fx_2", &"fx_3", &"fx_4", &"fx_5", &"muzzle_0", &"muzzle_1", &"muzzle_2"]
+const _REST_VALIDATION_META := &"_boss_rest_validation_v2"
+static var _rest_position_scan_count := 0
 var model: Node3D
 var animation_player: AnimationPlayer
 var materials: Array[ShaderMaterial] = []
@@ -10,6 +12,7 @@ var _sockets: Dictionary = {}
 
 static func rest_positions(mesh: Mesh, surface: int) -> PackedVector3Array:
 	# Kit v2 reserves UV2.xy for rest xy and CUSTOM0.xy for rest z / ABI version.
+	_rest_position_scan_count += 1
 	var flags: int = mesh.surface_get_format(surface)
 	if not flags & Mesh.ARRAY_FORMAT_TEX_UV2 or not flags & Mesh.ARRAY_FORMAT_CUSTOM0:
 		return PackedVector3Array()
@@ -32,6 +35,28 @@ static func rest_positions(mesh: Mesh, surface: int) -> PackedVector3Array:
 			return PackedVector3Array()
 		result.append(point)
 	return result
+
+static func _has_valid_rest_positions(mesh: Mesh, surface: int) -> bool:
+	# Scalar metadata dies with the Mesh; a static resource cache would retain it at exit.
+	var cache: Dictionary = mesh.get_meta(_REST_VALIDATION_META, {})
+	var mesh_id := mesh.get_instance_id()
+	if cache.get("mesh_id", 0) != mesh_id:
+		# Resource.duplicate() copies metadata, but the new mesh needs its own validation.
+		cache = {"mesh_id": mesh_id, "surfaces": {}}
+		var invalidate := _invalidate_rest_validation.bind(mesh_id)
+		if not mesh.changed.is_connected(invalidate):
+			mesh.changed.connect(invalidate)
+	var surfaces: Dictionary = cache["surfaces"]
+	if not surfaces.has(surface):
+		surfaces[surface] = not rest_positions(mesh, surface).is_empty()
+		mesh.set_meta(_REST_VALIDATION_META, cache)
+	return surfaces[surface]
+
+static func _invalidate_rest_validation(mesh_id: int) -> void:
+	# Bind only the id so the signal cannot create a Mesh reference cycle.
+	var mesh := instance_from_id(mesh_id) as Mesh
+	if mesh != null and mesh.has_meta(_REST_VALIDATION_META):
+		mesh.remove_meta(_REST_VALIDATION_META)
 
 func _bind_dissolve_origin() -> void:
 	# The kit exports identity mesh transforms. Burn outwards from the core in rest space.
@@ -110,7 +135,7 @@ func _bind() -> bool:
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		for index in mesh.mesh.get_surface_count():
 			# Old/unencoded assets use the visual's procedural fallback until rebuilt.
-			if rest_positions(mesh.mesh, index).is_empty():
+			if not _has_valid_rest_positions(mesh.mesh, index):
 				return false
 			var source := mesh.get_active_material(index) as BaseMaterial3D
 			if source == null or source.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
