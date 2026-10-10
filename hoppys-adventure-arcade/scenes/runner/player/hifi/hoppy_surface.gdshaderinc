@@ -20,7 +20,7 @@ uniform float light_gain : hint_range(0.0, 1.0) = 0.5;
 // tan/grey. A white fill on surfaces facing Hoppy's own forward (-Z) keeps each albedo's hue
 // and saturation and adds nothing to rear-facing surfaces, so the corridor rear view is untouched.
 uniform float front_fill : hint_range(0.0, 1.0) = 0.0;
-// Backpack LED strip: the accessory GLB surface carries COLOR_0 (R = LED, G = segment 0..1).
+// Cape LED strip: the accessory GLB surface carries COLOR_0 (R = LED, G = segment 0..1).
 // Only surfaces the visual flags with has_led_mask read it; missing COLOR defaults to white.
 uniform bool has_led_mask = false;
 uniform vec4 led_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
@@ -36,7 +36,7 @@ void fragment() {
 	ALPHA = albedo_color.a * texel.a;
 #endif
 	vec3 base = texel.rgb * albedo_color.rgb;
-	// Distance-filtered cloth weave on orange fabric, absent on fur and goggles.
+	// Distance-filtered weave on orange albedo (fur, gloves, boots, lining); fades out beyond close range.
 	float fabric = step(base.g*1.25,base.r)*step(base.b*1.3,base.g);
 	vec2 weave_uv = UV*460.0;
 	float resolved = 1.0-smoothstep(0.15,0.6,max(fwidth(weave_uv.x),fwidth(weave_uv.y)));

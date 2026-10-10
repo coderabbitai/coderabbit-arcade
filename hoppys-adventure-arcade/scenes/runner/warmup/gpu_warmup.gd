@@ -30,7 +30,7 @@ const PURSUER_PATH := "res://scenes/runner/pursuer/pursuer_visual.tscn"
 const HOPPY_PATH := "res://scenes/runner/player/hoppy_runner_visual.tscn"
 const BOSS_FX_PATH := "res://scenes/runner/boss/boss_fx.tscn"
 ## Hoppy's grounded one-shots (C1); each is drawn once where Hoppy stands, powerup_react with the
-## backpack LED meter lit.
+## cape LED meter lit.
 const HOPPY_CLIPS: Array[StringName] = [&"lane_dash_left", &"lane_dash_right", &"land", &"shield_brace",
 	&"powerup_react", &"victory"]
 ## One copy per boss per state: a signature telegraph (commit, DANGER heat, charge), the attack
@@ -548,7 +548,7 @@ func _pursuer() -> void:
 
 ## Roll, hurt sparks, every aura and the shield on Hoppy; the idle run pose is drawn by the scene.
 ## Where Hoppy stands (he never runs at 9 or 55 m, and a clip only moves bones), each C1 one-shot
-## clip with its face-rig expression, the power-up reaction also lighting the backpack LED meter.
+## clip with its face-rig expression, the power-up reaction also lighting the cape LED meter.
 func _hoppies() -> void:
 	var states: Array[StringName] = [&"roll", &"hurt"]
 	if _target == _near: states.append_array(HOPPY_CLIPS)

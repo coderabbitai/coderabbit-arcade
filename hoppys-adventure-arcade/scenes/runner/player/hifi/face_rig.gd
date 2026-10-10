@@ -13,6 +13,9 @@ var blink := 0.0
 ## Largest inner-brow drop (radians): 60% of the full-focus tilt, so a determined or pained face
 ## stays friendly instead of angry.
 const MAX_BROW_DROP := 0.12
+## Brow and mouth travel (metres) scale with the face: the action-figure head (recipe 10) is about
+## half the width of the earlier chibi head these offsets were tuned on.
+const FACE_SCALE := 0.55
 ## Bone indices per side (0 = L at -x, 1 = R at +x); empty until bound.
 var _eyes := PackedInt32Array()
 var _brows := PackedInt32Array()
@@ -71,13 +74,13 @@ func _process_modification() -> void:
 	if skeleton == null or not bound():
 		return
 	var open := maxf(eye_openness(), 0.1)
-	var lift := 0.017 * wide - 0.009 * focused - 0.004 * wince + 0.009 * grin
+	var lift := (0.017 * wide - 0.009 * focused - 0.004 * wince + 0.009 * grin) * FACE_SCALE
 	# Positive tilt drops the inner brow end (focused/wince); wide eyes lift it (worried). The drop
 	# is capped so no state reaches a full scowl.
 	var tilt := minf(0.2 * focused + 0.26 * wince - 0.1 * wide - 0.05 * grin, MAX_BROW_DROP)
-	var pinch := 0.006 * wince + 0.002 * focused
-	var corner := 0.016 * grin - 0.009 * wince - 0.005 * wide
-	var spread := 0.008 * grin - 0.005 * wince
+	var pinch := (0.006 * wince + 0.002 * focused) * FACE_SCALE
+	var corner := (0.016 * grin - 0.009 * wince - 0.005 * wide) * FACE_SCALE
+	var spread := (0.008 * grin - 0.005 * wince) * FACE_SCALE
 	for i in 2:
 		var sign := -1.0 if i == 0 else 1.0
 		var scale := _eye_scale[i]

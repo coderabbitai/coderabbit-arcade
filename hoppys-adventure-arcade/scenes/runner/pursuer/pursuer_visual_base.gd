@@ -8,7 +8,7 @@ extends Node3D
 func set_threat(t: float) -> void:
 	pass
 
-## On `caught`, roughly 1.4 s long.
+## On `caught`. It plays over the caught sequence and holds until a zero threat (the next run).
 func play_catch() -> void:
 	pass
 

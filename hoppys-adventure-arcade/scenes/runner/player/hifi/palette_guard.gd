@@ -2,7 +2,9 @@ extends RefCounted
 ## Masks come from baked albedo in a separate unlit pass, never from output hue.
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 
-static func measure(image: Image, mask: Image) -> Dictionary:
+## require_fur = false for rear chase views: the hero cape covers the cream tail, so the cream class
+## is reported there but only gated where it is in view (front views and the corridor face check).
+static func measure(image: Image, mask: Image, require_fur := true) -> Dictionary:
 	var sums := [Vector2.ZERO, Vector2.ZERO]
 	var counts := [0, 0]
 	var luma_sums := [0.0, 0.0]
@@ -36,6 +38,7 @@ static func measure(image: Image, mask: Image) -> Dictionary:
 	var hoodie_luma: float = luma_sums[0] / maxi(counts[0], 1)
 	var fur_luma: float = luma_sums[1] / maxi(counts[1], 1)
 	var ratio := float(white) / maxi(body, 1)
-	return {"pass": counts[0] >= 8 and counts[1] >= 8 and orange_delta <= 12.0 and cream_delta <= 15.0 and ratio <= 0.05
-		and fur_luma >= 0.55 and fur_luma <= 0.90 and hoodie_luma >= 0.30 and hoodie_luma <= 0.75,
+	var fur_ok: bool = counts[1] >= 8 and cream_delta <= 15.0 and fur_luma >= 0.55 and fur_luma <= 0.90
+	return {"pass": counts[0] >= 8 and orange_delta <= 12.0 and ratio <= 0.05 and hoodie_luma >= 0.30 and hoodie_luma <= 0.75
+		and (fur_ok or not require_fur), "fur_gated": require_fur,
 		"hoodie_luma": hoodie_luma, "fur_luma": fur_luma, "hoodie_hue": hues[0] * 360.0, "fur_hue": hues[1] * 360.0, "white_ratio": ratio, "pixels": counts}

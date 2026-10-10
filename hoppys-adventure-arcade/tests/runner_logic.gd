@@ -802,7 +802,7 @@ func _test_config_sanity() -> void:
 	check(int(c.max_hp) == 2 and is_equal_approx(float(c.recovery_seconds), 18.0),
 		"9: health tuning matches contract §7")
 	check(is_equal_approx(float(c.hit_iframes), 0.8)
-		and is_equal_approx(float(c.caught_sequence_seconds), 1.6), "9: hit tuning matches contract §7")
+		and is_equal_approx(float(c.caught_sequence_seconds), 3.0), "9: hit tuning matches contract §7")
 	# Contract §11.2 lowered the ramp from 165 s to 100 s and raised the Nitro cap to 38 m/s, so the
 	# v2 curve reaches the top inside a first stage and Nitro still bites at the stage bonus cap.
 	check(is_equal_approx(float(c.base_speed), 12.0) and is_equal_approx(float(c.max_speed), 24.0)
