@@ -1,4 +1,6 @@
 extends Node
+const DefeatBurst = preload("res://scenes/runner/boss/defeat_burst.gd")
+const BossVisual = preload("res://scenes/runner/boss/boss_visual_base.gd")
 const BusChain = preload("res://scenes/runner/audio/hifi/bus_chain.gd")
 var _whoosh_bus: StringName = &"SFX"
 var _surface := 0
@@ -21,6 +23,11 @@ const HIGH_PENDING_TTL := 0.30
 const GATE := {&"boss_hit": 0.09, &"telegraph_tick": 0.04, &"projectile_whoosh": 0.04, &"tool_pickup": 0.04, &"tool_fire": 0.04, &"boss_phase": 0.04, &"boss_defeat": 0.04}
 var _scheduled: Array[Dictionary] = []
 var _intro_remaining := 0.0
+var _cinematic_mode: StringName = &""
+var _cinematic_seconds := 0.0
+var _cinematic_bursts := 0
+var _resolved_played := false
+var _title_played := false
 var _turn_active := false
 var _clear_remaining := 0.0
 var _turn_mask := 2
@@ -29,6 +36,7 @@ var _boss_duck := 0.0
 var _boss_pitch_offset := 0.0
 var _whoosh_mask := 2
 const HIGH_PRIORITY := {
+	&"boss_intro_short": true, &"boss_explosion": true, &"boss_resolved": true, &"boss_skip": true, &"boss_title": true,
 	&"turn_warning": true, &"boss_intro": true, &"stage_clear": true, &"turn_whoosh": true, &"boss_defeat": true, &"boss_phase": true, &"tool_fire": true,
 	&"alert_sting": true, &"hit": true, &"caught": true, &"game_over": true, &"shield_block": true,
 	&"pursuit_start": true, &"retreat": true, &"recovered_chime": true, &"powerup": true,
@@ -84,7 +92,7 @@ func bind(game: Node) -> void:
 	_normalized = maxf(0.0, float(game.get("normalized_speed")))
 	_pitch = 1.0
 	_connections = {
-		&"turn_incoming": _on_turn_warning, &"boss_intro": _on_boss_intro,
+		&"turn_incoming": _on_turn_warning, &"boss_cinematic": _on_cinematic, &"boss_cinematic_skipped": _on_cinematic_skipped, &"boss_cinematic_ended": _on_cinematic_ended,
 		&"turn_started": _on_turn, &"turn_finished": _on_turn_finished,
 		&"stage_cleared": _on_stage_clear, &"phase_changed": _on_phase,
 		&"boss_spawned": _on_boss_spawned, &"boss_phase_changed": _on_boss_phase,
@@ -113,17 +121,16 @@ func bind(game: Node) -> void:
 func _disconnect_game() -> void:
 	if is_instance_valid(_game):
 		for event: StringName in _connections:
-			if _game.is_connected(event, _connections[event]):
+			if _game.has_signal(event) and _game.is_connected(event, _connections[event]):
 				_game.disconnect(event, _connections[event])
 	_connections.clear()
 
 func _process(delta: float) -> void:
 	if not is_instance_valid(_game) or _paused:
 		return
+	_tick_cinematic_audio()
+	if "boss_time_factor" in _game: delta *= float(_game.get("boss_time_factor"))
 	_clock += delta
-	if _intro_remaining > 0.0:
-		_intro_remaining = maxf(0.0, _intro_remaining - delta)
-		if _intro_remaining == 0.0: _set_boss_mix(_boss_active)
 	if _clear_remaining > 0.0:
 		_clear_remaining = maxf(0.0, _clear_remaining - delta)
 		if _clear_remaining == 0.0: _set_boss_mix(_boss_active)
@@ -154,7 +161,13 @@ func _process(delta: float) -> void:
 			else:
 				_play(kind)
 	var target := 1.0 + 0.10 * _normalized + (0.05 if _nitro else 0.0) + _boss_pitch_offset
-	_pitch = 1.0 if _clear_remaining > 0.0 else lerpf(_pitch, target, 1.0 - exp(-5.0 * delta))
+	if _cinematic_mode != &"":
+		var p := clampf(float(_game.get("boss_cinematic_progress")), 0, 1)
+		# Mechanical tape stop under the held title; restore before the camera returns.
+		var stop := smoothstep(0.18, 0.40, p) * (1.0 - smoothstep(0.66, 0.90, p))
+		_pitch = lerpf(target, 0.18, stop) if String(_cinematic_mode).begins_with("intro") else maxf(0.18, float(_game.get("boss_time_factor")))
+	else:
+		_pitch = 1.0 if _clear_remaining > 0.0 else lerpf(_pitch, target, 1.0 - exp(-5.0 * delta))
 	if _audio_service != null and _audio_service.has_method("set_music_pitch"):
 		_audio_service.set_music_pitch(_pitch)
 	if _running and _grounded and not _rolling:
@@ -232,6 +245,7 @@ func active_voice_count() -> int:
 	return _voices.size() + int(footsteps.playing) + int(drone.playing) + int(heartbeat.playing)
 
 func _on_run_started(_seed: int) -> void:
+	_end_boss_audio()
 	_stop_pursuit()
 	_grounded = true
 	_rolling = false
@@ -386,7 +400,7 @@ func _duck(db: float, seconds: float) -> void:
 		_audio_service.duck_music(db, seconds)
 
 func _set_boss_mix(active: bool) -> void:
-	var target := -12.0 if _intro_remaining > 0.0 else -10.0 if _clear_remaining > 0.0 else (-5.0 if _turn_active else (-4.0 if active else 0.0))
+	var target := -18.0 if _cinematic_mode != &"" else -12.0 if _intro_remaining > 0.0 else -10.0 if _clear_remaining > 0.0 else (-5.0 if _turn_active else (-4.0 if active else 0.0))
 	_boss_pitch_offset = 0.04 if active else 0.0
 	if is_equal_approx(_boss_duck, target): return
 	# Hold the service's baseline so transient ducks return to the fight level.
@@ -405,7 +419,8 @@ func _on_boss_phase(_phase: int) -> void:
 	_duck(-4 if _boss_active else -8, 0.35)
 
 func _end_boss_audio() -> void:
-	for kind in [&"boss_intro", &"turn_warning", &"turn_whoosh"]: _stop_cue(kind)
+	_on_cinematic_ended(_cinematic_mode)
+	for kind in [&"boss_defeat", &"boss_explosion", &"boss_resolved", &"turn_warning", &"turn_whoosh"]: _stop_cue(kind)
 	_intro_remaining = 0.0
 	_boss_active = false
 	_turn_active = false
@@ -472,11 +487,57 @@ func _on_turn_warning(_direction: int, seconds: float) -> void:
 	# Scale the three authored ticks to the facade's warning window.
 	_pitch_cue(&"turn_warning", 3.0 / maxf(seconds, 0.05))
 
-func _on_boss_intro(_kind: StringName, _name: String, seconds: float) -> void:
-	_intro_remaining = maxf(seconds, 0.0)
+func _on_cinematic(_kind: StringName, mode: StringName, seconds: float) -> void:
+	_cinematic_mode = mode
+	_cinematic_seconds = seconds
+	_cinematic_bursts = 0
+	_resolved_played = false
+	_title_played = false
+	_intro_remaining = seconds if String(mode).begins_with("intro") else 0.0
 	_set_boss_mix(_boss_active)
-	_play(&"boss_intro")
-	_pitch_cue(&"boss_intro", 3.0 / maxf(seconds, 0.05))
+	if mode == &"intro_full": _play(&"boss_intro")
+	elif mode == &"intro_short": _play(&"boss_intro_short")
+
+func _tick_cinematic_audio() -> void:
+	if _cinematic_mode == &"": return
+	var p := clampf(float(_game.get("boss_cinematic_progress")), 0, 1)
+	_intro_remaining = (1 - p) * _cinematic_seconds if String(_cinematic_mode).begins_with("intro") else 0.0
+	if String(_cinematic_mode).begins_with("defeat"):
+		while _cinematic_bursts < DefeatBurst.BEATS.size() and p >= float(DefeatBurst.BEATS[_cinematic_bursts]):
+			_play(&"boss_explosion")
+			_cinematic_bursts += 1
+		if p >= 0.60 and not _resolved_played:
+			_resolved_played = true
+			_play(&"boss_resolved")
+	else:
+		if p >= float(BossVisual.INTRO_POSE_AT.get(_cinematic_mode, 1.0)) and not _title_played:
+			_title_played = true
+			_play(&"boss_title")
+	for kind in [&"boss_defeat", &"boss_explosion"]:
+		_pitch_cue(kind, maxf(0.2, float(_game.get("boss_time_factor"))))
+
+func _on_cinematic_skipped(_mode: StringName) -> void:
+	_stop_cue(&"boss_intro")
+	_stop_cue(&"boss_intro_short")
+	_stop_cue(&"boss_title")
+	_title_played = true
+	_cinematic_mode = &""
+	_intro_remaining = 0.0
+	_pitch = 1.0
+	_set_boss_mix(_boss_active)
+	_play(&"boss_skip")
+
+func _on_cinematic_ended(_mode: StringName) -> void:
+	# Defeat one-shots ring out over stage clear; catches, new runs and teardown use full cleanup.
+	for kind in [&"boss_intro", &"boss_intro_short", &"boss_title", &"boss_skip"]:
+		_stop_cue(kind)
+	for kind in [&"boss_defeat", &"boss_explosion"]: _pitch_cue(kind, 1.0)
+	_cinematic_mode = &""
+	_intro_remaining = 0.0
+	_cinematic_bursts = 0
+	_pitch = 1.0
+	_set_boss_mix(_boss_active)
+	if _audio_service != null and _audio_service.has_method("set_music_pitch"): _audio_service.set_music_pitch(1.0)
 
 func _pitch_cue(kind: StringName, pitch: float) -> void:
 	if _playback == null: return

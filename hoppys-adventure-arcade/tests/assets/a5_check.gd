@@ -1,4 +1,6 @@
 extends SceneTree
+const BossBounds = preload("res://tests/boss_pose_bounds.gd")
+const BossModel = preload("res://scenes/runner/boss/hifi/boss_model.gd")
 const Forge = preload("res://scenes/runner/boss/hifi/forge.gd")
 const Art = preload("res://scenes/runner/boss/boss_art.gd")
 const Capture = preload("res://scenes/runner/boss/dev/capture_a5.gd")
@@ -8,6 +10,7 @@ const HazardDefs = preload("res://scenes/runner/hazards/hazard_defs.gd")
 const ProjectileArt = preload("res://scenes/runner/boss/visuals/boss_projectile_art.gd")
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 var boss_peak_draws := 0
+var pose_context := ""
 const KINDS := ["flaky_test_swarm", "merge_conflict_hydra", "legacy_monolith"]
 var checks := 0
 var failures := 0
@@ -82,6 +85,7 @@ func inspect(visual: Node3D, entrance: bool) -> Vector2i:
 	return Vector2i(draws, tris)
 
 func run() -> void:
+	await check_glb_bosses()
 	await process_frame
 	await process_frame
 	for kind in KINDS:
@@ -89,6 +93,13 @@ func run() -> void:
 		mount.position = Vector3(0, 2.6, -14)
 		root.add_child(mount)
 		var visual: Node3D = load("res://scenes/runner/boss/visuals/%s_visual.tscn" % kind).instantiate()
+		# Retain every historical procedural art assertion against the supported fallback.
+		if "model_path" in visual: visual.model_path = "res://missing-boss-fallback.glb"
+		else:
+			visual._art = Art.new()
+			visual.add_child(visual._art)
+			visual._art.build(StringName(kind))
+			visual._tag = visual._art.tag
 		visual.kind = StringName(kind)
 		visual.boss_name = kind.replace("_", " ")
 		visual.max_hp = 100
@@ -843,6 +854,10 @@ func check_sizes() -> void:
 	root.add_child(mount)
 	visual.hover_z = -14.0
 	mount.add_child(visual)
+	visual._art = Art.new()
+	visual.add_child(visual._art)
+	visual._art.build(&"merge_conflict_hydra")
+	visual._tag = visual._art.tag
 	visual.on_spawned()
 	var art: Node3D = visual._art
 	var narrowest := INF
@@ -992,3 +1007,99 @@ func check_projectiles() -> void:
 		visual.on_spawned()
 		check(not (visual._art is ProjectileArt) and visual.get_node_or_null("Artwork") != null, "C4 base look fallback %s %s" % spec)
 		visual.free()
+
+## Accepted GLBs run the same public phases, tool reactions, signatures and cinematic modes.
+## Old geometry-specific art rounds above still run in full against forced missing-GLB fallback.
+func check_glb_bosses() -> void:
+	for kind in KINDS:
+		var path := "res://Assets/runner/bosses/%s/%s.glb" % [kind, kind]
+		check(ResourceLoader.exists(path), "accepted GLB exists " + kind)
+		var mount := Node3D.new()
+		mount.position = Vector3(0, 2.6, -14)
+		root.add_child(mount)
+		var visual: Node3D = load("res://scenes/runner/boss/visuals/%s_visual.tscn" % kind).instantiate()
+		visual.kind = StringName(kind)
+		visual.hover_z = -14
+		visual.sway_amplitude = 2.4
+		mount.add_child(visual)
+		visual.on_spawned()
+		visual.set_process(false)
+		var model: Node3D = visual.get("_model")
+		check(model != null and visual.get("_art") == null, "GLB owns production geometry " + kind)
+		if model == null:
+			mount.free()
+			continue
+		for action: StringName in BossModel.ACTIONS:
+			check(model.animation_player.has_animation(action), "GLB action " + kind + " " + action)
+		for socket: StringName in BossModel.SOCKETS:
+			check(model.socket(socket) != null, "GLB socket " + kind + " " + socket)
+		var report: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(path.replace(".glb", ".build.json")))
+		check(int(report.get("triangles", 999999)) <= 18000 and int(report.get("materials", 999)) <= 4 and int(report.get("bones", 999)) <= 40, "GLB authored budget " + kind)
+		for phase in [1, 2, 3]:
+			visual.set_phase(phase)
+			visual.set_health(100 - phase * 25, 100)
+			visual._process(0.3)
+			pose_context = "phase=%d at .3s" % phase
+			inspect_glb(visual)
+		var signature_peak := Vector2i.ZERO
+		for pair: Array in boss_attacks(KINDS.find(kind)):
+			visual.on_spawned()
+			visual.set_phase(pair[0])
+			var attack: Dictionary = pair[1]
+			visual.play_telegraph(int(attack.telegraph_mask), StringName(attack.variant), float(attack.telegraph))
+			visual._process(float(attack.telegraph) * 0.5)
+			pose_context = "phase=%d variant=%s mask=%d half-telegraph" % [pair[0], attack.variant, attack.telegraph_mask]
+			inspect_glb(visual)
+			visual.play_commit(int(attack.telegraph_mask), StringName(attack.variant), 0.25)
+			visual._process(0.15)
+			pose_context += " commit+.15s"
+			inspect_glb(visual)
+			visual.play_attack(StringName(attack.variant))
+			for frame in 4:
+				visual._process(0.08)
+				pose_context = "phase=%d variant=%s mask=%d attack frame=%d at %.2fs" % [pair[0], attack.variant, attack.telegraph_mask, frame, (frame + 1) * .08]
+				inspect_glb(visual)
+		for tool in [&"review_comment", &"lint_rule", &"unit_test", &"auto_fix_patch"]:
+			visual.play_hit(tool, 15)
+			visual._process(0.08)
+			check(float(model.materials[0].get_shader_parameter("flash")) > 0, "GLB hit flash")
+			visual.play_resist(tool)
+			visual._process(0.08)
+			inspect_glb(visual)
+		for mode in [&"intro_full", &"intro_short", &"defeat_full", &"defeat_short"]:
+			visual.on_spawned()
+			visual.play_cinematic(mode, 3.6)
+			for frame in 37:
+				pose_context = "%s frame=%d/36" % [mode, frame]
+				visual.set_cinematic_progress(mode, float(frame) / 36)
+				inspect_glb(visual)
+			if String(mode).begins_with("defeat"):
+				check(not model.visible or float(model.materials[0].get_shader_parameter("dissolve")) >= 0.999, "GLB dissolves at cinematic end")
+		visual.on_spawned()
+		var clock_before: float = visual.get("_clock")
+		visual.set_process(true)
+		paused = true
+		await process_frame
+		await process_frame
+		check(visual.get("_clock") == clock_before, "GLB animation freezes on pause")
+		paused = false
+		mount.free()
+
+func inspect_glb(visual: Node3D) -> void:
+	var bounds := AABB()
+	var first := true
+	var tris := 0
+	var draws := 0
+	for mesh: MeshInstance3D in visual.find_children("*", "MeshInstance3D", true, false):
+		if not mesh.is_visible_in_tree(): continue
+		var box := BossBounds.mesh_bounds(mesh)
+		bounds = box if first else bounds.merge(box)
+		first = false
+		tris += triangles(mesh.mesh)
+		draws += mesh.mesh.get_surface_count()
+	if first: return
+	check(bounds.position.x >= -3.501 and bounds.end.x <= 3.501, "GLB posed X envelope %s %s %s " % [visual.kind, visual.get("_state"), visual.get("_cinematic_mode")] + str(bounds))
+	check(bounds.position.y >= 1.599 and bounds.end.y <= 6.101, "GLB posed Y envelope %s %s %s " % [visual.kind, visual.get("_state"), pose_context] + str(bounds))
+	check(bounds.size.z <= 3.001, "GLB posed depth envelope " + str(bounds))
+	check(tris <= 18000 and draws <= 6, "GLB runtime mesh budget")
+	boss_peak_draws = maxi(boss_peak_draws, draws)

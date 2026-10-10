@@ -15,6 +15,7 @@ const ToolDefs = preload("res://scenes/runner/powerups/tool_defs.gd")
 const HazardDefs = preload("res://scenes/runner/hazards/hazard_defs.gd")
 const BossDefs = preload("res://scenes/runner/boss/boss_defs.gd")
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
+const DefeatBurst = preload("res://scenes/runner/boss/defeat_burst.gd")
 const Burst = preload("res://scenes/runner/powerups/visuals/hifi/collect_burst.gd")
 const Telegraph = preload("res://scenes/runner/boss/telegraph.tscn")
 const Tracer = preload("res://scenes/runner/boss/tool_tracer.gd")
@@ -36,7 +37,7 @@ const HOPPY_CLIPS: Array[StringName] = [&"lane_dash_left", &"lane_dash_right", &
 ## One copy per boss per state: a signature telegraph (commit, DANGER heat, charge), the attack
 ## after it (ring, slam, recoil, all phases' heads), the hurt flash (a BaseMaterial3D emission
 ## variant) and the defeat.
-const BOSS_STATES: Array[StringName] = [&"telegraph", &"attack", &"hurt", &"defeated"]
+const BOSS_STATES: Array[StringName] = [&"telegraph", &"attack", &"hurt", &"defeated", &"dissolve"]
 ## The boss-attack signals BossFX binds to (contract 2.4 §11.8); the warm-up emits them itself.
 const FX_SIGNALS: Array[StringName] = [&"boss_attack_planned", &"boss_attack_telegraph"]
 const Vignette = preload("res://scenes/runner/shaders/vignette.gdshader")
@@ -68,7 +69,7 @@ static var done: bool:
 static var build_ms := 0.0
 static var draw_ms := 0.0
 static var census: Dictionary = {}
-## Process-lifetime references to every material the warm-up drew. BaseMaterial3D,
+## Process-lifetime references to boss PackedScenes and every material the warm-up drew. BaseMaterial3D,
 ## ParticleProcessMaterial and code-built shaders free their compiled program with their last
 ## user, so a warmed program would otherwise be recompiled by the next pickup, pit or burst
 ## (measured: a new spark system cost 75 ms again once every earlier one was freed).
@@ -215,7 +216,7 @@ static func _drop_doomed(host: Node) -> void:
 		if is_instance_valid(node) and node.is_queued_for_deletion() and node.is_inside_tree():
 			node.get_parent().remove_child(node)
 
-## Application exit: drop the retained materials while the RenderingServer still exists.
+## Application exit: drop retained scenes and materials while the RenderingServer still exists.
 static func release() -> void:
 	retained.clear()
 
@@ -483,13 +484,19 @@ static func _signature_variants(kind: StringName) -> Array[StringName]:
 func _boss(kind: StringName, state: StringName) -> void:
 	var visual := _instance(BOSS_DIR + String(kind) + "_visual.tscn")
 	if visual == null: return
+	# Keep the imported scene itself alive after these transient copies are freed, so the next
+	# intro reuses its meshes and animation data without reparsing the GLB at the cut.
+	var model_path: String = visual.get_script().get_script_constant_map().get("MODEL_PATH", "")
+	if not model_path.is_empty() and ResourceLoader.exists(model_path):
+		var model := load(model_path) as PackedScene
+		if model != null: retained[model] = true
 	var values := {&"kind": kind, &"boss_name": String(kind), &"max_hp": 10, &"phase_count": BossDefs.PHASE_COUNT,
 		&"hover_z": 0.0, &"sway_amplitude": 0.0, &"sway_period": 1.0}
 	for key: StringName in values:
 		if key in visual: visual.set(key, values[key])
 	_place(visual, "boss")
 	_hook(visual, &"on_spawned")
-	var late := state in [&"attack", &"defeated"]
+	var late := state in [&"attack", &"defeated", &"dissolve"]
 	_hook(visual, &"set_phase", [BossDefs.PHASE_COUNT if late else 1])
 	_hook(visual, &"set_health", [3 if late else 10, 10])
 	var variants := _signature_variants(kind)
@@ -501,13 +508,16 @@ func _boss(kind: StringName, state: StringName) -> void:
 		&"hurt":
 			_hook(visual, &"play_attack", [variant])
 			_hook(visual, &"play_hit", [&"unit_test", 1])
-		&"defeated":
-			_hook(visual, &"play_resist", [&"lint_rule"])
-			_hook(visual, &"play_defeat")
+		&"defeated", &"dissolve":
+			_hook(visual, &"play_cinematic", [&"defeat_full", 3.6])
+			_hook(visual, &"set_cinematic_progress", [&"defeat_full", 0.03 if state == &"defeated" else 0.74])
 	# One art tick applies the state (DANGER heat, ring, slam, hurt emission flash) to the materials.
 	_hook(visual, &"_process", [0.05])
 
 func _boss_fx() -> void:
+	var explosions := DefeatBurst.new()
+	_place(explosions, "boss_explosions")
+	explosions.sample(0.32)
 	var telegraph := Telegraph.instantiate() as Node3D
 	_place(telegraph, "boss_fx")
 	_hook(telegraph, &"start", [1, &"orb", 1.0])

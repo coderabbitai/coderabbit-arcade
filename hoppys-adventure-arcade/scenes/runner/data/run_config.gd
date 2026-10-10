@@ -134,7 +134,27 @@ extends Resource
 @export var boss_z := -14.0
 @export var boss_sway_amplitude := 2.4
 @export var boss_sway_period := 3.2
-@export var boss_intro_seconds := 3.0
+## The full boss intro cinematic, played the first time a run meets each boss (contract 2.6 §11.14).
+@export var boss_intro_seconds := 5.0
+## The intro on every later meeting in the run, a checkpoint retry included; played as
+## min(boss_intro_short_seconds, boss_intro_seconds).
+@export var boss_intro_short_seconds := 2.5
+## The defeat cinematic the first time a run beats each boss, and on every later defeat (played as
+## min(short, full)). It holds the boss phase open, so stage_clear waits it out.
+@export var boss_defeat_seconds := 3.6
+@export var boss_defeat_short_seconds := 2.0
+## An intro can be skipped once it has played this long (a defeat never can); a skip jumps to the
+## last boss_cinematic_skip_tail seconds, so the camera return still plays.
+@export var boss_cinematic_skip_after := 0.5
+@export var boss_cinematic_skip_tail := 0.3
+## The corridor eases to this fraction of its speed while a cinematic holds the player.
+@export var boss_cinematic_speed_scale := 0.25
+## The defeat's time factor (boss_time_factor, never Engine.time_scale): a 0.05 hit-stop for
+## boss_hitstop_seconds, then slow-mo from boss_slowmo_factor eased back to 1 over boss_slowmo_seconds.
+@export var boss_hitstop_seconds := 0.12
+@export var boss_slowmo_seconds := 0.8
+@export var boss_slowmo_factor := 0.4
+## The retreat outro only; a defeat holds for its cinematic instead (contract 2.6 §11.14).
 @export var boss_outro_seconds := 1.0
 @export var boss_timeout_seconds := 55.0
 ## HP fractions that open phases 1, 2 and 3 (contract §11.10).

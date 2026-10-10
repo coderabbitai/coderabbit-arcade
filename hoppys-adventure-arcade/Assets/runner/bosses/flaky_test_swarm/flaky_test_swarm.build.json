@@ -1,0 +1,141 @@
+{
+  "action_seconds": {
+    "attack": 0.55,
+    "defeat": 2.0,
+    "hurt": 0.4,
+    "idle": 4.0,
+    "intro": 2.4,
+    "phase_change": 1.2,
+    "retreat": 1.0,
+    "telegraph": 0.8
+  },
+  "actions": [
+    "intro",
+    "idle",
+    "telegraph",
+    "attack",
+    "hurt",
+    "phase_change",
+    "defeat",
+    "retreat"
+  ],
+  "animation_sample_rate": 120,
+  "blender": "5.2.2 LTS",
+  "bone_names": [
+    "root",
+    "core",
+    "lens",
+    "carapace_L",
+    "carapace_R",
+    "drone_0",
+    "wing_0_L",
+    "wing_0_R",
+    "drone_1",
+    "wing_1_L",
+    "wing_1_R",
+    "drone_2",
+    "wing_2_L",
+    "wing_2_R",
+    "drone_3",
+    "wing_3_L",
+    "wing_3_R",
+    "drone_4",
+    "wing_4_L",
+    "wing_4_R",
+    "drone_5",
+    "wing_5_L",
+    "wing_5_R"
+  ],
+  "bones": 23,
+  "budget": {
+    "bones": 40,
+    "materials": 4,
+    "surfaces": 6,
+    "triangles": 18000
+  },
+  "glb": {
+    "bytes": 4494336,
+    "file": "flaky_test_swarm.glb",
+    "sha256": "58532337174fa392d9ad66f3b8e4e126c3b823559fe1c250cee3a8e8ecdd16bb"
+  },
+  "image_report": [
+    {
+      "bytes": 71545,
+      "height": 1024,
+      "index": 0,
+      "name": "surface_emission",
+      "sha256": "e73d398914ca977b3cc6e308074d7ddc7f5a4a48432d12334464b443cca5e56c",
+      "width": 1024
+    },
+    {
+      "bytes": 952956,
+      "height": 1024,
+      "index": 1,
+      "name": "surface_normal",
+      "sha256": "7cb7fbe9244fd628a58a36a9577e1828ba28509daafc96ab3e5dfb414172b207",
+      "width": 1024
+    },
+    {
+      "bytes": 586199,
+      "height": 1024,
+      "index": 2,
+      "name": "surface_albedo",
+      "sha256": "4e8a7a69d129858ec7786dfd3ef00e9d111389b3add6e3bd31750b9d18582580",
+      "width": 1024
+    },
+    {
+      "bytes": 742188,
+      "height": 1024,
+      "index": 3,
+      "name": "surface_orm",
+      "sha256": "6a3f0cff8b8cd8153ac082730f1c071a5c0af4d91d918d21bd8ba7ad6ba9b52b",
+      "width": 1024
+    }
+  ],
+  "kind": "flaky_test_swarm",
+  "kit_revision": 2,
+  "materials": 1,
+  "quick": false,
+  "recipe_revision": 5,
+  "rest_position_encoding": "TEXCOORD_1.xy,TEXCOORD_2.x;TEXCOORD_2.y=1",
+  "seed": 73019,
+  "sockets": [
+    "fx_core",
+    "fx_0",
+    "fx_1",
+    "fx_2",
+    "fx_3",
+    "fx_4",
+    "fx_5",
+    "muzzle_0",
+    "muzzle_1",
+    "muzzle_2"
+  ],
+  "source_hashes": {
+    "tools/blender/bosses/boss_kit.py": "35977f71b3d34da34ef7a0bfe064bb840ead47a679277dac4e4d366590a44d4d",
+    "tools/blender/bosses/bosses_budget.json": "01bdf13be27dbdf54cbb1846cc765978c8c97bb9c951c3867e55f891987a84b8",
+    "tools/blender/bosses/build_flaky_test_swarm.py": "d42b73b752df028af5ededf63615e36da423642d4ad6fe27c0c4f5e6e858d5a9",
+    "tools/blender/glb_atlas.py": "6e9467f0befabed73b075a4184ab7cc5aa864649d008b7be24d313726920e35a",
+    "tools/blender/props/props_kit.py": "30ec723c38e818b659075007c71300e994f5c41a36c6e343e17080c203ccc1ad"
+  },
+  "surfaces": 1,
+  "textures": {
+    "albedo": {
+      "file": "flaky_test_swarm_surface_albedo.png",
+      "sha256": "4e8a7a69d129858ec7786dfd3ef00e9d111389b3add6e3bd31750b9d18582580"
+    },
+    "emission": {
+      "file": "flaky_test_swarm_surface_emission.png",
+      "sha256": "e73d398914ca977b3cc6e308074d7ddc7f5a4a48432d12334464b443cca5e56c"
+    },
+    "normal": {
+      "file": "flaky_test_swarm_surface_normal.png",
+      "sha256": "7cb7fbe9244fd628a58a36a9577e1828ba28509daafc96ab3e5dfb414172b207"
+    },
+    "orm": {
+      "file": "flaky_test_swarm_surface_orm.png",
+      "sha256": "6a3f0cff8b8cd8153ac082730f1c071a5c0af4d91d918d21bd8ba7ad6ba9b52b"
+    }
+  },
+  "triangles": 17760
+}

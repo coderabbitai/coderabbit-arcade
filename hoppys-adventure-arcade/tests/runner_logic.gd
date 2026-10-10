@@ -839,8 +839,28 @@ func _test_config_sanity() -> void:
 		and float(c.turn_swing_in_fraction) + float(c.turn_swing_out_fraction) < 1.0,
 		"9: the swing ramps must leave a hold window, got %.2f + %.2f"
 			% [float(c.turn_swing_in_fraction), float(c.turn_swing_out_fraction)])
-	check(is_equal_approx(float(c.boss_intro_seconds), 3.0),
-		"9: the boss entrance runs %.2f s, expected 3.0" % float(c.boss_intro_seconds))
+	# Contract 2.6 §11.14: a 5 s first-meeting intro, 2.5 s repeats, a 3.6 / 2.0 s defeat, and the
+	# 1 s outro left to the retreat alone.
+	check(is_equal_approx(float(c.boss_intro_seconds), 5.0)
+		and is_equal_approx(float(c.boss_intro_short_seconds), 2.5),
+		"9: the boss intro runs %.2f s full / %.2f s short, expected 5.0 / 2.5"
+			% [float(c.boss_intro_seconds), float(c.boss_intro_short_seconds)])
+	check(is_equal_approx(float(c.boss_defeat_seconds), 3.6)
+		and is_equal_approx(float(c.boss_defeat_short_seconds), 2.0)
+		and is_equal_approx(float(c.boss_outro_seconds), 1.0),
+		"9: the defeat runs %.2f / %.2f s and the retreat outro %.2f s, expected 3.6 / 2.0 / 1.0"
+			% [float(c.boss_defeat_seconds), float(c.boss_defeat_short_seconds), float(c.boss_outro_seconds)])
+	check(is_equal_approx(float(c.boss_cinematic_skip_after), 0.5)
+		and is_equal_approx(float(c.boss_cinematic_skip_tail), 0.3)
+		and is_equal_approx(float(c.boss_cinematic_speed_scale), 0.25),
+		"9: the skip opens at %.2f s with a %.2f s tail and the corridor slows to %.2fx, expected 0.5 / 0.3 / 0.25"
+			% [float(c.boss_cinematic_skip_after), float(c.boss_cinematic_skip_tail),
+				float(c.boss_cinematic_speed_scale)])
+	check(is_equal_approx(float(c.boss_hitstop_seconds), 0.12)
+		and is_equal_approx(float(c.boss_slowmo_seconds), 0.8)
+		and is_equal_approx(float(c.boss_slowmo_factor), 0.4),
+		"9: the defeat hit-stop is %.2f s and the slow-mo %.2f s from %.2f, expected 0.12 / 0.8 / 0.4"
+			% [float(c.boss_hitstop_seconds), float(c.boss_slowmo_seconds), float(c.boss_slowmo_factor)])
 	# Contract §11.1/§11.10 v2.3: the stage banner covers the lanes, so the corridor stays clear
 	# across it and still owes the player a reaction once it lifts.
 	check(is_equal_approx(float(c.stage_banner_clear_seconds), 3.5)
@@ -1729,7 +1749,8 @@ func _test_escalation() -> void:
 # --- 19 / 20. Boss HP, phases and tool damage (systems spec §10.3) ---
 
 func _test_boss_fight() -> void:
-	var rig := _boss_rig({"boss_intro_seconds": 0.0, "boss_outro_seconds": 0.2})
+	# Contract 2.6 §11.14: a kill holds the fight for its defeat cinematic, shortened here to 0.2 s.
+	var rig := _boss_rig({"boss_intro_seconds": 0.0, "boss_defeat_seconds": 0.2, "boss_outro_seconds": 0.0})
 	var game: Node3D = rig["game"]
 	var arena: Node3D = rig["arena"]
 	var score: Node = rig["score"]
@@ -1785,8 +1806,11 @@ func _test_boss_fight() -> void:
 	check(_bonus_reasons(events) == [&"tool", &"tool", &"tool", &"tool", &"tool", &"boss_kill"],
 		"19: the bonus reasons are five tools and a kill, got %s" % [_bonus_reasons(events)])
 
-	# The outro holds the fight open so the visual gets its play_defeat time.
+	# The defeat cinematic holds the fight open so the visual gets its play_defeat time.
 	check(not bool(arena.finished), "19: the fight is not finished until the outro is over")
+	check(StringName(arena.cinematic_mode) == &"defeat_full" and is_equal_approx(float(arena.cinematic_seconds), 0.2),
+		"19: the kill opens a %.2f s %s cinematic, expected a 0.20 s defeat_full"
+			% [float(arena.cinematic_seconds), arena.cinematic_mode])
 	arena.tick(0.1)
 	check(not bool(arena.finished), "19: the outro is still running at 0.1 s")
 	arena.tick(0.15)
@@ -1800,7 +1824,7 @@ func _test_boss_fight() -> void:
 	_free_rig(rig)
 
 	# Resisted phases: the tool is still collected and still paid for, it just deals nothing.
-	var hydra_rig := _boss_rig({"boss_intro_seconds": 0.0, "boss_outro_seconds": 0.0})
+	var hydra_rig := _boss_rig({"boss_intro_seconds": 0.0, "boss_defeat_seconds": 0.0, "boss_outro_seconds": 0.0})
 	var hydra: Node3D = hydra_rig["arena"]
 	var hydra_events: Dictionary = hydra_rig["events"]
 	var hydra_score: Node = hydra_rig["score"]
@@ -1832,6 +1856,7 @@ func _test_boss_fight() -> void:
 func _test_boss_timeout() -> void:
 	var rig := _boss_rig({
 		"boss_intro_seconds": 0.0,
+		"boss_defeat_seconds": 0.0,
 		"boss_outro_seconds": 0.0,
 		"boss_timeout_seconds": 1.0
 	})
@@ -1947,6 +1972,7 @@ func _test_caught_mid_boss() -> void:
 		"stage_drain_timeout": 0.2,
 		"turn_seconds": 0.2,
 		"boss_intro_seconds": 0.0,
+		"boss_defeat_seconds": 0.0,
 		"boss_outro_seconds": 0.0,
 		"stage_clear_seconds": 0.5
 	}, true, true)
@@ -2020,6 +2046,7 @@ func _checkpoint_overrides() -> Dictionary:
 		"stage_drain_timeout": 0.2,
 		"turn_seconds": 0.2,
 		"boss_intro_seconds": 0.0,
+		"boss_defeat_seconds": 0.0,
 		"boss_outro_seconds": 0.0,
 		"stage_clear_seconds": 0.5
 	}
@@ -2245,7 +2272,7 @@ func _test_boss_checkpoint() -> void:
 ## The fight seed is a function of the run seed and the stage alone (contract §11.13): stage 2 reached
 ## after a whole stage-1 fight draws the same lane and tool streams as a checkpoint retry into stage 2.
 func _test_boss_stage_seed() -> void:
-	var overrides := {"boss_intro_seconds": 0.0, "boss_outro_seconds": 0.0}
+	var overrides := {"boss_intro_seconds": 0.0, "boss_defeat_seconds": 0.0, "boss_outro_seconds": 0.0}
 	var seed := 4242
 	var played := _boss_rig(overrides)
 	var retried := _boss_rig(overrides)
@@ -2480,8 +2507,12 @@ func _test_boss_intro() -> void:
 	var arena: Node3D = rig["arena"]
 	var events: Dictionary = rig["events"]
 	arena.start(1)
-	check(events["boss_log"] == [&"intro", &"spawned"],
-		"28: the entrance card precedes the boss, got %s" % [events["boss_log"]])
+	# Contract 2.6 §11.14: the intro cinematic opens between the card and the boss.
+	check(events["boss_log"] == [&"intro", &"cinematic", &"spawned"],
+		"28: the entrance card and its cinematic precede the boss, got %s" % [events["boss_log"]])
+	check(events["boss_cinematic"].size() == 1 and StringName(events["boss_cinematic"][0][1]) == &"intro_full"
+		and is_equal_approx(float(events["boss_cinematic"][0][2]), intro_seconds),
+		"28: a first meeting plays the full %.1f s intro, got %s" % [intro_seconds, events["boss_cinematic"]])
 	check(events["boss_intro"].size() == 1, "28: boss_intro fires once per fight, got %d"
 		% events["boss_intro"].size())
 	check(StringName(events["boss_intro"][0][0]) == &"flaky_test_swarm"
@@ -2503,8 +2534,8 @@ func _test_boss_intro() -> void:
 		arena.tick(TICK)
 	check(not events["boss_attack_telegraph"].is_empty(),
 		"28: the fight never opened fire after the %.1f s intro" % intro_seconds)
-	check(events["boss_log"] == [&"intro", &"spawned"],
-		"28: neither entrance signal repeats, got %s" % [events["boss_log"]])
+	check(events["boss_log"] == [&"intro", &"cinematic", &"spawned", &"cinematic_ended"],
+		"28: no entrance signal repeats and the intro ends once, got %s" % [events["boss_log"]])
 	_free_rig(rig)
 
 # --- 30. Boss signature attacks: beat data, shot motion, live encounter (contract 2.4 §11.6) ---
@@ -3609,8 +3640,10 @@ func _watch_stage(game: Node) -> Dictionary:
 		## proven rather than inferred from two independent counts (contract §11.4).
 		"turn_log": [],
 		"boss_intro": [],
-		## Same idea for the fight: boss_intro must precede boss_spawned.
+		## Same idea for the fight: boss_intro must precede boss_spawned, with the contract 2.6
+		## §11.14 cinematic between them.
 		"boss_log": [],
+		"boss_cinematic": [],
 		"boss_spawned": [],
 		"boss_health_changed": [],
 		"boss_phase_changed": [],
@@ -3640,6 +3673,11 @@ func _watch_stage(game: Node) -> Dictionary:
 	game.boss_spawned.connect(func(kind: StringName, hp: int) -> void:
 		events["boss_spawned"].append([kind, hp])
 		events["boss_log"].append(&"spawned"))
+	game.boss_cinematic.connect(func(kind: StringName, mode: StringName, seconds: float) -> void:
+		events["boss_cinematic"].append([kind, mode, seconds])
+		events["boss_log"].append(&"cinematic"))
+	game.boss_cinematic_ended.connect(func(_mode: StringName) -> void:
+		events["boss_log"].append(&"cinematic_ended"))
 	game.boss_health_changed.connect(func(hp: int, max_hp: int) -> void:
 		events["boss_health_changed"].append([hp, max_hp]))
 	game.boss_phase_changed.connect(func(phase: int) -> void:

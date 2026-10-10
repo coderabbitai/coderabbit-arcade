@@ -4,7 +4,12 @@ const RATE := 22050
 # seconds, start Hz, end Hz, waveform, gain
 const RECIPES := {
 	&"turn_warning": [3.0, 700.0, 1400.0, "warning", 0.6],
-	&"boss_intro": [3.0, 35.0, 150.0, "intro", 0.7],
+	&"boss_intro": [1.6, 35.0, 150.0, "intro", 0.7],
+	&"boss_intro_short": [0.6, 55.0, 180.0, "detuned", 0.65],
+	&"boss_title": [0.28, 160.0, 35.0, "fm", 0.72],
+	&"boss_explosion": [0.30, 120.0, 25.0, "noise", 0.72],
+	&"boss_resolved": [1.15, 440.0, 880.0, "arpeggio", 0.68],
+	&"boss_skip": [0.25, 1800.0, 180.0, "noise", 0.5],
 	&"turn_whoosh": [2.4, 300.0, 2400.0, "turn", 0.6],
 	&"stage_clear": [1.0, 440.0, 880.0, "arpeggio", 0.65],
 	&"telegraph_tick": [0.06, 1600.0, 1600.0, "square", 0.35],
@@ -36,7 +41,7 @@ const RECIPES := {
 	&"caught": [0.85, 120.0, 25.0, "noise", 0.78],
 	&"game_over": [1.20, 440.0, 110.0, "chord", 0.65],
 }
-const PERCUSSIVE := {&"tool_fire": true, &"hit": true, &"land": true, &"caught": true, &"boss_hit": true, &"roll": true, &"footstep": true, &"telegraph_tick": true, &"lane_left": true, &"lane_right": true}
+const PERCUSSIVE := {&"boss_title": true, &"boss_explosion": true,&"tool_fire": true, &"hit": true, &"land": true, &"caught": true, &"boss_hit": true, &"roll": true, &"footstep": true, &"telegraph_tick": true, &"lane_left": true, &"lane_right": true}
 const ARPEGGIO := [1.0, 1.25, 1.5, 2.0]
 # Authored carrier, detuned body, FM transient, filtered noise, sub.
 const LAYERS := {
@@ -59,7 +64,7 @@ static func family_for(kind: StringName) -> StringName:
 	var waveform := String(RECIPES[kind][3])
 	if waveform in ["sine", "chord", "arpeggio"]: return &"chime"
 	if kind == &"pursuit_drone": return &"drone"
-	if kind in [&"turn_whoosh", &"projectile_whoosh", &"nitro", &"retreat"]: return &"whoosh"
+	if kind in [&"turn_whoosh", &"projectile_whoosh", &"nitro", &"retreat", &"boss_skip"]: return &"whoosh"
 	return &"alarm"
 
 

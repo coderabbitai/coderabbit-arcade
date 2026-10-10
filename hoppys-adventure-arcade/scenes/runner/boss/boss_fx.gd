@@ -16,6 +16,7 @@ extends Node3D
 ## DANGER stays the base meaning (the lane slots); the accent is MATRIX / LILAC / ORANGE per boss.
 ## Everything is clock-driven from PAUSABLE _process deltas, and nothing is allocated per beat:
 ## records, lane entries and mark instances are all preallocated here.
+const DefeatBurst = preload("res://scenes/runner/boss/defeat_burst.gd")
 const Telegraph = preload("res://scenes/runner/boss/telegraph.tscn")
 const Tracer = preload("res://scenes/runner/boss/tool_tracer.gd")
 const Number = preload("res://scenes/runner/boss/damage_number.gd")
@@ -23,6 +24,10 @@ const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 const Marks = preload("res://scenes/runner/boss/visuals/boss_telegraph_marks.gd")
 const ProjectileArt = preload("res://scenes/runner/boss/visuals/boss_projectile_art.gd")
 const BossAttacks = preload("res://scenes/runner/boss/boss_attacks.gd")
+var explosions: DefeatBurst
+var defeat_mode: StringName = &""
+var _burst_index := 0
+var _boss_model: Node3D
 var telegraphs: Array[Node3D] = []
 var tracers: Array[Node3D] = []
 var numbers: Array[Node3D] = []
@@ -51,6 +56,8 @@ var _record_id := 0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
+	explosions = DefeatBurst.new()
+	add_child(explosions)
 	for i in 3:
 		var node := Telegraph.instantiate() as Node3D
 		add_child(node)
@@ -78,9 +85,9 @@ func bind(value: Node) -> void:
 	_disconnect()
 	clear()
 	game = value
-	connections = {&"boss_intro": _intro, &"boss_attack_planned": _planned, &"boss_attack_telegraph": _telegraph,
+	connections = {&"boss_attack_planned": _planned, &"boss_attack_telegraph": _telegraph,
 		&"boss_attack_committed": _committed, &"tool_collected": _tool, &"boss_defeated": _end,
-		&"boss_retreated": _end, &"caught": clear, &"run_started": _reset}
+		&"boss_retreated": _end, &"boss_cinematic": _cinematic, &"boss_cinematic_ended": _cinematic_ended, &"caught": clear, &"run_started": _reset}
 	for event: StringName in connections:
 		if game.has_signal(event): game.connect(event, connections[event])
 	if game.has_method("get_boss_info"):
@@ -168,6 +175,9 @@ func _open(attack: Dictionary, mask: int, kind: StringName, seconds: float, elap
 	return record
 
 func _process(delta: float) -> void:
+	if is_instance_valid(game) and game.get("paused") == true: return
+	_sample_defeat()
+	if is_instance_valid(game) and "boss_time_factor" in game: delta *= float(game.get("boss_time_factor"))
 	var any := false
 	for record in records:
 		if not record.active: continue
@@ -228,6 +238,7 @@ func _reset(_seed: int) -> void:
 	clear()
 
 func clear() -> void:
+	_cinematic_ended(&"")
 	for node in telegraphs + tracers + numbers: node.clear()
 	cursor = 0
 	number_cursor = 0
@@ -242,14 +253,39 @@ func _clear_records() -> void:
 func _exit_tree() -> void:
 	_disconnect()
 
-func _intro(_kind: StringName, _name: String, seconds: float) -> void:
-	# The visual is already mounted, but the facade mirrors boss at boss_spawned.
-	# Resolve the documented mount for the earlier intro signal, then mock/v1 fallback.
+func _cinematic(kind: StringName, mode: StringName, _seconds: float) -> void:
+	_cinematic_ended(&"")
+	if mode not in [&"defeat_full", &"defeat_short"]: return
+	defeat_mode = mode
+	explosions.accent = accent_for(kind)
 	var boss := game.get_node_or_null("World/TurnRig/BossArena/Boss") as Node3D
-	if boss == null: boss = game.get("boss") as Node3D
-	if not is_instance_valid(boss): return
-	for visual in boss.get_children():
-		if visual.has_method("play_intro"): visual.play_intro(seconds)
+	if boss == null and "boss" in game: boss = game.get("boss") as Node3D
+	if boss != null:
+		for node in boss.find_children("*", "Node3D", true, false):
+			if node.has_method("socket"):
+				_boss_model = node
+				break
+		for i in DefeatBurst.BEATS.size(): explosions.origins[i] = explosions.to_local(boss.global_position)
+	_sample_defeat()
+
+func _sample_defeat() -> void:
+	if defeat_mode == &"" or not is_instance_valid(game): return
+	var p := clampf(float(game.get("boss_cinematic_progress")), 0, 1)
+	while _burst_index < DefeatBurst.BEATS.size() and p >= float(DefeatBurst.BEATS[_burst_index]):
+		if is_instance_valid(_boss_model):
+			var socket: Node3D = _boss_model.socket("fx_core" if _burst_index == 6 else "fx_%d" % _burst_index)
+			if socket != null: explosions.origins[_burst_index] = explosions.to_local(socket.global_position)
+		if "camera_rig" in game:
+			var rig: Node = game.get("camera_rig")
+			if is_instance_valid(rig) and rig.has_method("shake"): rig.shake(0.24 if _burst_index == 6 else 0.12)
+		_burst_index += 1
+	explosions.sample(p)
+
+func _cinematic_ended(_mode: StringName) -> void:
+	defeat_mode = &""
+	_burst_index = 0
+	_boss_model = null
+	if explosions != null: explosions.clear()
 
 func limit_numbers(incoming: Node3D) -> void:
 	# Keep six reusable slots for the established smoke contract; only three draw.
