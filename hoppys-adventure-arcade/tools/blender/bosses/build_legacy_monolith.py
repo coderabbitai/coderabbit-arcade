@@ -9,7 +9,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from boss_kit import BossBuilder, Part, xform, require
 
-RECIPE_REVISION = 2
+RECIPE_REVISION = 3
 RACK_Y = (-0.47, 0.34, 1.32, 2.68)
 STATUS_Y = (-0.14, 0.68, 2.105, 3.29)
 STATUS_Z = (0.86, 0.84, 0.845, 0.78)
@@ -85,17 +85,25 @@ def smooth(a, b, t):
     return x * x * (3 - 2 * x)
 
 
+def anchor_base(kit, pitch, tower_y=0.0, thunk=0.0):
+    # Contract 11.5: the chassis can lean/slam while the lowest rack stays level.
+    pivot_y = RACK_Y[0] - 0.3
+    y = pivot_y - tower_y - thunk
+    kit.pose('rack_0', location=(0, y * math.cos(pitch) - pivot_y, -y * math.sin(pitch)),
+             rotation=(-pitch, 0, 0))
+
+
 def pose(kit, action, t):
     pulse = math.sin(math.pi * t)
     if action == 'idle':
-        kit.pose('tower', location=(0, math.sin(t * math.tau) * 0.038, 0),
-                 rotation=(0, math.sin(t * math.tau) * 0.012, 0))
+        kit.pose('tower', location=(0, math.sin(t * math.tau) * 0.012, 0),
+                 rotation=(0, math.sin(t * math.tau) * 0.008, 0))
         for side, sign in [('L', -1), ('R', 1)]:
             kit.pose('cables_' + side, rotation=(0, 0, math.sin(t * math.tau + sign) * 0.035))
             kit.pose('fan_' + side, rotation=(0, 0, sign * t * math.tau * 2))
     elif action == 'intro':
-        rise = smooth(0, 0.45, t)
-        kit.pose('root', location=(0, -1.6 * (1 - rise), -1.8 * (1 - rise)))
+        approach = smooth(0, 0.45, t)
+        kit.pose('root', location=(0, 0, -4.0 * (1 - approach)))
         stance = smooth(0.80, 1.0, t)
         kit.pose('tower', rotation=(0.08 * stance, 0, 0))
         for side, sign in [('L', -1), ('R', 1)]:
@@ -104,33 +112,37 @@ def pose(kit, action, t):
             kit.pose('hand_' + side, rotation=(-0.12 * stance, 0, 0))
         for i in range(4):
             u = smooth(0.18 + i * 0.12, 0.29 + i * 0.12, t)
-            kit.pose('rack_%d' % i, location=(0, -0.12 * math.sin(math.pi * u), 0),
-                     rotation=(0, (1 - u) * (0.06 if i % 2 else -0.06), 0))
+            if i == 0:
+                anchor_base(kit, 0.08 * stance, thunk=0.02 * math.sin(math.pi * u))
+            else:
+                kit.pose('rack_%d' % i, location=(0, -0.12 * math.sin(math.pi * u), 0),
+                         rotation=(0, (1 - u) * (0.06 if i % 2 else -0.06), 0))
             kit.pose('led_%d' % i, scale=(max(u, 0.001),) * 3)
         for side in ['L', 'R']:
             light = max(smooth(0.64, 0.82, t), 0.001)
             kit.pose('eye_' + side, scale=(light, light, 1))
     elif action == 'telegraph':
         lift = smooth(0, 0.85, t)
-        kit.pose('tower', location=(0, 0.18 * lift, 0), rotation=(-0.025 * lift, 0, 0))
+        kit.pose('tower', rotation=(-0.025 * lift, 0, 0))
         for side, sign in [('L', -1), ('R', 1)]:
-            kit.pose('arm_' + side, location=(0, 0.16 * lift, 0), rotation=(-0.32 * lift, 0, sign * 0.30 * lift))
+            kit.pose('arm_' + side, location=(-sign * 0.27 * lift, 0.16 * lift, 0), rotation=(-0.32 * lift, 0, sign * 0.30 * lift))
             kit.pose('hand_' + side, rotation=(-0.18 * lift, 0, 0))
         kit.pose('reactor', scale=(1 + 0.09 * lift,) * 3)
     elif action == 'attack':
         lift = 1 - smooth(0.06, 0.28, t)
         # 0.30..0.42 holds impact for 66 ms at the runtime's 0.55 s quake duration.
         impact = smooth(0.14, 0.30, t) * (1 - smooth(0.42, 1.0, t))
-        kit.pose('tower', location=(0, 0.18 * lift - 0.20 * impact, 0), rotation=(0.10 * impact, 0, 0))
+        kit.pose('tower', location=(0, -0.20 * impact, 0), rotation=(0.10 * impact, 0, 0))
+        anchor_base(kit, 0.10 * impact, tower_y=-0.20 * impact)
         for side, sign in [('L', -1), ('R', 1)]:
-            # Tower dip plus arm drop puts the fists at least 0.45 m below rest.
-            kit.pose('arm_' + side, location=(0, 0.16 * lift - 0.25 * impact, 0.30 * impact),
+            # Keep the slam below rest while every fist clears the 1.6 m lower bound.
+            kit.pose('arm_' + side, location=(-sign * 0.27 * lift, 0.16 * lift - 0.20 * impact, 0.30 * impact),
                      rotation=(-0.32 * lift + 0.10 * impact, 0, sign * (0.30 * lift - 0.08 * impact)))
             kit.pose('hand_' + side, rotation=(-0.18 * lift, 0, 0))
     elif action == 'hurt':
         kick = smooth(0, 0.25, t) * (1 - smooth(0.5, 1, t))
         kit.pose('rack_1', location=(kick * 0.35, 0, 0), rotation=(0, kick * 0.08, 0))
-        kit.pose('rack_3', rotation=(-pulse * 0.035, 0, -pulse * 0.04))
+        kit.pose('rack_3', rotation=(-pulse * 0.025, 0, -pulse * 0.025))
     elif action == 'phase_change':
         for side, sign in [('L', -1), ('R', 1)]:
             kit.pose('shell_' + side, location=(sign * 0.20 * pulse, 0, 0.08 * pulse), rotation=(0, sign * 0.12 * pulse, 0))
@@ -141,10 +153,13 @@ def pose(kit, action, t):
         # Four independently rigged modules topple from top to bottom, never one scaled cube.
         for i in range(4):
             fall = smooth((3 - i) * 0.13, 0.62 + (3 - i) * 0.11, t)
-            kit.pose('rack_%d' % i, location=((1 if i % 2 else -1) * fall * (0.5 if i == 2 else 0.26),
-                     -fall * (1.2 if i == 3 else 0.10 + i * 0.08), fall * 0.10),
-                     rotation=(fall * (0.9 if i == 3 else 0.12 + 0.10 * i),
-                     (i - 1.5) * fall * 0.045, (1 if i % 2 else -1) * fall * 0.15))
+            if i == 0:
+                kit.pose('rack_0', location=(-fall * 0.18, 0, fall * 0.10), rotation=(0, -fall * 0.08, 0))
+            else:
+                kit.pose('rack_%d' % i, location=((1 if i % 2 else -1) * fall * (0.5 if i == 2 else 0.26),
+                         -fall * (1.2 if i == 3 else 0.10 + i * 0.08), fall * 0.10),
+                         rotation=(fall * (0.9 if i == 3 else 0.12 + 0.10 * i),
+                         (i - 1.5) * fall * 0.045, (1 if i % 2 else -1) * fall * 0.15))
             kit.pose('led_%d' % i, scale=(max(1 - smooth(0.12 + (3 - i) * 0.1, 0.42 + (3 - i) * 0.1, t), 0.001),) * 3)
         for side, sign in [('L', -1), ('R', 1)]:
             kit.pose('arm_' + side, rotation=(0.15 * t, 0, sign * -0.18 * t))
@@ -154,7 +169,7 @@ def pose(kit, action, t):
         for i in range(3):
             kit.pose('debris_%d' % i, location=((i - 1) * t * 0.32, -t * 0.7, t * 0.25), rotation=(t * 0.5, 0, (i - 1) * t * 0.45))
     elif action == 'retreat':
-        kit.pose('root', location=(0, -smooth(0.15, 1, t) * 0.65, -smooth(0.35, 1, t) * 2.5))
+        kit.pose('root', location=(0, 0, -smooth(0.35, 1, t) * 0.35))
         for i in range(4):
             lit = max(1 - smooth((3 - i) * 0.1, 0.35 + (3 - i) * 0.1, t), 0.001)
             kit.pose('led_%d' % i, scale=(lit,) * 3)

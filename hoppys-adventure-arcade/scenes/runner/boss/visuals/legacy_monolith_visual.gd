@@ -43,6 +43,8 @@ func on_spawned() -> void:
 		_model = Model.load_model(model_path)
 		if _model != null:
 			add_child(_model)
+			# Contract 11.5 leaves 4.5 m of vertical space for the complete posed rig.
+			_model.position.y = -0.065
 			_player = _model.get("animation_player") as AnimationPlayer
 			_skeleton = _model.find_children("*", "Skeleton3D", true, false)[0] as Skeleton3D
 			# Contract 2.6: local combat clock, authoritative cinematic progress.
@@ -202,6 +204,8 @@ func play_intro(seconds: float) -> void:
 		_art.advance(0.0)
 	else:
 		_cinematic_mode = &""
+		position.x = 0.0
+		position.y = 0.0
 		_play_action(&"intro", seconds)
 		_sample_pose()
 
@@ -241,8 +245,8 @@ func set_cinematic_progress(mode: StringName, progress: float) -> void:
 	if _model != null:
 		_sample_pose()
 	elif _art != null:
-		_art.clock = _age
-		_art.age = minf(u / 0.60, 0.999999) * _duration if mode in [&"intro_full", &"intro_short"] else u * _duration
+		_art.age = minf(u / float(INTRO_POSE_AT[mode]), 0.999999) * _duration if mode in INTRO_POSE_AT else u * _duration
+		_art.clock = _art.age
 		_art.advance(0.0)
 		_state = _art.state
 	if u >= 1.0 and mode in [&"intro_full", &"intro_short"]:
@@ -287,15 +291,16 @@ func _process(delta: float) -> void:
 	_sample_pose()
 	if _state not in [&"intro", &"defeat", &"retreat"]:
 		var period := maxf(sway_period * (1 - 0.12 * (_phase - 1)), 0.1)
-		position.x = sin(_clock * TAU / period) * minf(sway_amplitude, 0.35)
-		position.y = 0.04 + sin(_clock * 2) * 0.04
+		position.x = sin(_clock * TAU / period) * minf(sway_amplitude, 0.14)
+		position.y = 0.01 + sin(_clock * 2) * 0.01
 
 func _sample_pose() -> void:
 	var progress := clampf(_age / _duration, 0, 1)
 	var clip := _player.get_animation(_state)
 	var sample := fmod(_age, clip.length) if _state == &"idle" else progress * clip.length
 	if _state == &"intro" and not _cinematic_mode.is_empty():
-		sample = minf(progress / 0.60, 1.0) * clip.length
+		# The title-card cue lands on this pose; keep it frozen until the cinematic ends.
+		sample = minf(progress / float(INTRO_POSE_AT[_cinematic_mode]), 1.0) * clip.length
 	if _state == &"defeat" and not _cinematic_mode.is_empty():
 		sample = clampf((progress - 0.04) / 0.80, 0.0, 1.0) * clip.length
 	_skeleton.reset_bone_poses()
@@ -317,7 +322,7 @@ func _sample_pose() -> void:
 	_model.call("set_flash", flash)
 	var heat := minf(_age / 0.12, 1.0) if _state == &"telegraph" else (1.0 if _state == &"attack" else 0.0)
 	if _state == &"intro":
-		var intro_progress := minf(progress / 0.60, 1.0) if not _cinematic_mode.is_empty() else progress
+		var intro_progress := minf(progress / float(INTRO_POSE_AT[_cinematic_mode]), 1.0) if not _cinematic_mode.is_empty() else progress
 		heat = smoothstep(0.64, 0.84, intro_progress)
 	# Phase tint carries escalation; extra emission washes the CRT orange into yellow.
 	var emission := 1.0 + heat * 0.7
