@@ -417,6 +417,8 @@ func run() -> void:
 	game._physics_process(.6)
 	game.victory._input(advance_key())
 	check(game.state=="won" and not game.leaving and game.victory.landed,"Dedicated advance after ~0.5 s lands the count first")
+	game.victory._input(accept_event())
+	check(game.state=="won" and not game.leaving,"ui_accept (jump on Space / A) does not press Return on the landed results")
 	game.victory._input(advance_key())
 	check(game.leaving,"Dedicated advance presses Return once the count has landed")
 	game.queue_free();await process_frame

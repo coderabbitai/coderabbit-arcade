@@ -682,7 +682,42 @@ func check_victory_screen() -> void:
 	screen.skip()
 	check(screen.shown_score() == 0 and screen.time_label.text == "TIME  0:00", "A negative score and time clamp to zero")
 	check(VictoryScreen._grouped(7) == "000,007" and VictoryScreen._grouped(1234567) == "1,234,567", "Scores group thousands")
+	# A mode with its own confirm action (HvV) confirms with it alone: ui_accept is its jump.
+	if not InputMap.has_action("victory_test_advance"): InputMap.add_action("victory_test_advance")
+	var dedicated := InputEventAction.new()
+	dedicated.action = "victory_test_advance"
+	dedicated.pressed = true
+	var own := [0]
+	screen.confirm_actions = ["victory_test_advance"]
+	screen.show_result("T", "line", 900, 1.0, Color.RED, "Back", func(): own[0] += 1)
+	screen.advance(screen.ARM)
+	screen._input(accept_press())
+	check(not screen.landed, "With its own confirm action, ui_accept does not land the count")
+	screen._input(dedicated)
+	check(screen.landed and own[0] == 0, "The dedicated confirm lands the count")
+	push_accept(screen)
+	check(own[0] == 0, "ui_accept through the viewport does not reach the focused button once landed")
+	screen._input(dedicated)
+	check(own[0] == 1, "The dedicated confirm presses the button once landed")
+	# Control: without its own confirm actions (Code City) the same ui_accept presses the button.
+	screen.confirm_actions = []
+	var city := [0]
+	screen.show_result("T", "line", 900, 1.0, Color.RED, "Back", func(): city[0] += 1)
+	screen.advance(screen.ARM)
+	screen.skip()
+	screen.advance(DT)
+	push_accept(screen)
+	check(city[0] == 1, "Without its own confirm actions, ui_accept through the viewport presses the button")
 	drop_holder()
+
+## A ui_accept press and release through the viewport, so the GUI's focused button sees whatever
+## the screen's _input lets through.
+func push_accept(screen: Control) -> void:
+	for pressed in [true, false]:
+		var event := InputEventAction.new()
+		event.action = "ui_accept"
+		event.pressed = pressed
+		screen.get_viewport().push_input(event)
 
 ## Steps the real tick loop from the boss's last hit to the results screen. Everything between
 ## runs on the game's own clocks; only the guard counts ticks.

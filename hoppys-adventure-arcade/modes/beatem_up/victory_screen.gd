@@ -9,6 +9,8 @@ extends Control
 ## Input: for the first ARM seconds every confirm, click and touch is swallowed, so a press carried
 ## over from the cinematic can't skip anything. After that a confirm during the count-up lands it at
 ## once (skip()). The button only becomes pressable, and takes focus, once the score has landed.
+## A mode that names its own confirm_actions (HvV) confirms with those alone: ui_accept, which is
+## also its jump on Space and pad A, never skips or presses anything here.
 
 const Style = preload("res://scenes/main_menu/menu_style.gd")
 ## Seconds the score takes to count up from zero; it eases out so the last digits settle slowly.
@@ -17,7 +19,8 @@ const COUNT := 1.8
 const ARM := .5
 const BACKDROP := Color(.018,.03,.05,1)
 
-## Extra actions (beyond ui_accept) that confirm here, e.g. HvV's popup-advance on the pad's View.
+## The actions that confirm here instead of ui_accept, e.g. HvV's popup-advance (Enter, the pad's
+## View). Empty means ui_accept confirms, as in Code City.
 var confirm_actions: Array[String] = []
 var final_score := 0
 var seconds_taken := 0.0
@@ -154,7 +157,7 @@ static func _grouped(value: int) -> String:
 	return out
 
 func _is_confirm(event: InputEvent) -> bool:
-	if event.is_action("ui_accept"): return true
+	if confirm_actions.is_empty(): return event.is_action("ui_accept")
 	for name in confirm_actions:
 		if event.is_action(name): return true
 	return false
@@ -162,7 +165,11 @@ func _is_confirm(event: InputEvent) -> bool:
 func _input(event: InputEvent) -> void:
 	if not is_visible_in_tree(): return
 	var pointer := event is InputEventMouseButton or event is InputEventScreenTouch or event is InputEventScreenDrag
-	if not pointer and not _is_confirm(event): return
+	var confirm := _is_confirm(event)
+	# ui_accept that isn't this mode's confirm (HvV's jump) must not reach the focused button.
+	if not pointer and not confirm:
+		if event.is_action("ui_accept"): get_viewport().set_input_as_handled()
+		return
 	if clock < ARM:
 		get_viewport().set_input_as_handled()
 		return
@@ -170,10 +177,8 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		if event.is_pressed() and not event.is_echo(): skip()
 		return
-	# Landed and armed: ui_accept and clicks reach the focused button the usual way; the extra
-	# confirm actions aren't ui_accept, so they press it here.
-	for name in confirm_actions:
-		if event.is_action(name):
-			get_viewport().set_input_as_handled()
-			if event.is_pressed() and not event.is_echo() and not action.disabled: action.pressed.emit()
-			return
+	# Landed and armed: ui_accept and clicks reach the focused button the usual way. A mode's own
+	# confirm actions may not be ui_accept, so they press it here.
+	if not pointer and not confirm_actions.is_empty():
+		get_viewport().set_input_as_handled()
+		if event.is_pressed() and not event.is_echo() and not action.disabled: action.pressed.emit()
