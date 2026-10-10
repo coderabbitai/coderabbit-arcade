@@ -353,7 +353,9 @@ func run() -> void:
 		game.player.height=0
 		game.player.position=weapon_drop.node.position+Vector2(20,0)
 		game._physics_process(1.0/60.0)
-		check(game.prompt.is_visible_in_tree() and game.prompt.text.begins_with("E / Y · PICK UP"),"Pickup prompt shows within 85 px after a stage change (got '%s')" % game.prompt.text)
+		# The prompt names the pickup key and, with a controller connected, its button.
+		var pickup: String = preload("res://app/controller_prompts.gd").either("E", &"brawl_pickup", true)+" · PICK UP"
+		check(game.prompt.is_visible_in_tree() and game.prompt.text.begins_with(pickup),"Pickup prompt shows within 85 px after a stage change (got '%s')" % game.prompt.text)
 	var score_kept: int=game.score
 	game.boss_defeated()
 	check(game.prompt.visible,"boss_defeated clears the pickup line without hiding it (text '%s')" % game.prompt.text)

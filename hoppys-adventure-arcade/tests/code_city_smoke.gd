@@ -47,6 +47,10 @@ func run() -> void:
 	game.player.tick(.05)
 	check(game.player.position.y<before.y and game.player.height==0,"Keyboard W moves in depth without jumping")
 	key.pressed=false;Input.parse_input_event(key)
+	# The pad's bottom button is also ui_accept (as Space is), so with the intro's Next button
+	# focused these mapping checks would turn the page. Test the bindings with nothing focused.
+	var focused := root.gui_get_focus_owner()
+	root.gui_release_focus()
 	var joy := InputEventJoypadButton.new()
 	joy.device=0;joy.button_index=JOY_BUTTON_A;joy.pressed=true
 	Input.parse_input_event(joy)
@@ -63,6 +67,8 @@ func run() -> void:
 	game.player.tick(.02)
 	check(game.player.swing_left>0,"Gamepad X mapping attacks")
 	attack_event.pressed=false;Input.parse_input_event(attack_event)
+	await process_frame
+	if focused: focused.grab_focus()
 	game.player.controlled=false
 	var max_enemies := 0
 	var max_bullets := 0

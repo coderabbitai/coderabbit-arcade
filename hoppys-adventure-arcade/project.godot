@@ -21,6 +21,7 @@ config/icon="res://icon.svg"
 SaveService="*res://app/save_service.gd"
 AudioService="*res://app/audio_service.gd"
 AppRouter="*res://app/app_router.gd"
+ControllerService="*res://app/controller_service.gd"
 
 [display]
 
