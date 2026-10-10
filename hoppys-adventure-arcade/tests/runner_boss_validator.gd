@@ -57,7 +57,8 @@ const STEP_GUARD := 4000
 ## Board the facade points at. Nothing here finishes a run, so the file is never created; the
 ## override exists so no code path can ever reach the real board.
 const SCRATCH_BOARD := "user://boss_validator_leaderboard.cfg"
-## B7: the frontend copy table, loaded at run time because a backend-only tree may not carry it.
+## B7: the frontend copy table. It is loaded at run time, so a missing file is a failed check rather
+## than a compile error that would stop the whole validator.
 const COPY_PATH := "res://scenes/runner/ui/boss_copy.gd"
 ## A kind no roster will ever hold, whose answers are boss_copy's own fallbacks.
 const NO_SUCH_BOSS: StringName = &"__no_such_boss__"
@@ -787,11 +788,11 @@ func _check_signature_coverage() -> void:
 ## Every roster boss at every cycle, through boss_copy's own API: epithet / threat / source path are
 ## real (not the fallback an unknown kind gets), the epithet carries "REGRESSED vN" from the second
 ## lap on, and hint_rows() gives one row per phase whose tools are BossDefs.accepted_tools exactly
-## and whose text names them (or says every tool lands). A tree without the frontend file has no copy
-## to contradict anything, so it is reported and skipped.
+## and whose text names them (or says every tool lands). The copy table ships with contract 2.6, so a
+## tree without it fails: renaming or dropping the file must not silently drop this check.
 func _check_copy() -> void:
+	check(ResourceLoader.exists(COPY_PATH), "B7: %s is missing, so the cinematic copy cannot be checked" % COPY_PATH)
 	if not ResourceLoader.exists(COPY_PATH):
-		print("RUNNER BOSS: B7 skipped, %s is not on this tree" % COPY_PATH)
 		return
 	var copy := load(COPY_PATH) as GDScript
 	check(copy != null, "B7: %s did not load as a script" % COPY_PATH)

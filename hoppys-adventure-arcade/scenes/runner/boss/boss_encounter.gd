@@ -237,6 +237,8 @@ func start(index: int) -> void:
 	_begin_cinematic(CINEMATIC_INTRO_FULL if first_meeting else CINEMATIC_INTRO_SHORT, _intro)
 	_emit(&"boss_spawned", [kind, hp])
 	_emit(&"boss_health_changed", [hp, max_hp])
+	# Contract §11.5: the visual hears every boss_health_changed, the opening full-HP one included.
+	_visual_call(&"set_health", [hp, max_hp])
 
 ## One physics tick of the `boss` phase. Projectiles and tools move themselves; this drives the
 ## intro, the telegraph queue, the attack and tool clocks, the timeout and the outro.
@@ -301,6 +303,7 @@ func apply_tool(tool_kind: StringName) -> void:
 		_visual_call(&"play_resist", [tool_kind])
 	_add_bonus(int(config.tool_bonus), ScoreManager.REASON_TOOL)
 	_emit(&"boss_health_changed", [hp, max_hp])
+	_visual_call(&"set_health", [hp, max_hp])
 	_advance_phase()
 	if hp <= 0:
 		_defeat()
@@ -404,7 +407,13 @@ func skip_cinematic() -> bool:
 	_cinematic_skipped = true
 	_intro = _skip_tail()
 	_emit(&"boss_cinematic_skipped", [cinematic_mode])
-	_push_cinematic_state()
+	# A zero tail has nothing left to play: the intro ends on the spot, since tick() would otherwise
+	# step straight into the fight and never close it (contract §11.14: ended follows the tail).
+	if _intro <= 0.0:
+		_intro = 0.0
+		_end_cinematic()
+	else:
+		_push_cinematic_state()
 	return true
 
 ## The factor the visuals, effects and HUD multiply into their own delta (boss_time_factor; the
@@ -474,8 +483,11 @@ func _end_cinematic() -> void:
 	_emit(&"boss_cinematic_ended", [mode])
 
 ## The visual's per-tick cinematic feed (contract §11.5): where the cinematic is, then the factor for
-## its ambient motion. Sent on the opening tick (progress 0), every tick it runs and after a skip.
+## its ambient motion. Sent on the opening tick (progress 0), every tick it runs and after a skip —
+## and never without a cinematic, so a retreat's outro feeds the visual nothing.
 func _push_cinematic_state() -> void:
+	if cinematic_mode == &"":
+		return
 	_visual_call(&"set_cinematic_progress", [cinematic_mode, cinematic_progress()])
 	_visual_call(&"set_time_factor", [time_factor()])
 

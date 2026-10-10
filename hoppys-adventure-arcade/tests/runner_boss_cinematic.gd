@@ -57,6 +57,10 @@ const RECORDER_SOURCE := (
 	+ "\t_note(&\"set_time_factor\", [factor])\n"
 	+ "func play_defeat() -> void:\n"
 	+ "\t_note(&\"play_defeat\", [])\n"
+	+ "func play_retreat() -> void:\n"
+	+ "\t_note(&\"play_retreat\", [])\n"
+	+ "func set_health(hp: int, max_health: int) -> void:\n"
+	+ "\t_note(&\"set_health\", [hp, max_health])\n"
 )
 ## Overrides the default focus with a fixed local point (contract §11.5).
 const FOCUS_SOURCE := "extends \"res://scenes/runner/boss/boss_visual_base.gd\"\nfunc cinematic_focus() -> Vector3:\n\treturn Vector3(1.5, 2.5, -0.5)\n"
@@ -145,8 +149,14 @@ func run() -> void:
 	_test_visual_feed()
 	_test_unskippable_defeats()
 	_test_intro_timing_and_focus()
+	_test_retreat_outro_feed()
+	_test_zero_tail_skip()
+	_test_set_health_feed()
+	_test_zero_length()
+	_test_kill_mid_intro_order()
 	await _test_real_input()
 	await _test_real_defeat_input()
+	await _test_restart_during_intro()
 	await _report()
 
 # --- 8. Pure curves (contract §11.14 boss_shot, time_factor_profile) --------------------------
@@ -230,7 +240,24 @@ func _profile_problems() -> String:
 		return "t = hitstop + slowmo is %.4f, expected 1" % _profile(HITSTOP + SLOWMO)
 	if _profile(HITSTOP + SLOWMO + 0.01) != 1.0 or _profile(DEFEAT_FULL) != 1.0:
 		return "after the slow-mo, %.4f / %.4f, expected 1" % [_profile(HITSTOP + SLOWMO + 0.01), _profile(DEFEAT_FULL)]
+	# Independent of time_factor_profile: 0.4 + 0.6 * smoothstep over the slow-mo span.
+	var interior: Array[float] = [0.16, 0.24, 0.32, 0.40, 0.48, 0.52, 0.60, 0.68, 0.76, 0.84, 0.90]
+	for sample in interior:
+		var got: float = _profile(sample)
+		var want: float = _slowmo_factor_at(sample)
+		if absf(got - want) > 0.0001:
+			return "t %.4f is %.6f, formula %.6f" % [sample, got, want]
+	var mid: float = _profile(0.52)
+	if absf(mid - 0.7) > 0.0001:
+		return "t = 0.52 is %.6f, expected 0.7" % mid
+	var late: float = _profile(0.9)
+	if late >= 1.0:
+		return "t = 0.9 is %.6f, expected below 1" % late
 	return ""
+
+## 0.4 + 0.6 * smoothstep(0, 1, (t - 0.12) / 0.8), for t inside the slow-mo ramp.
+func _slowmo_factor_at(t: float) -> float:
+	return SLOWMO_FACTOR + (1.0 - SLOWMO_FACTOR) * smoothstep(0.0, 1.0, (t - HITSTOP) / SLOWMO)
 
 func _profile(elapsed: float) -> float:
 	return float(encounter_script.time_factor_profile(elapsed, HITSTOP, SLOWMO, SLOWMO_FACTOR))
@@ -301,8 +328,11 @@ func _test_full_and_short() -> void:
 			"%s: retreat added %d boss_cinematic_ended, expected none (intro already ended once)" % [tag, extra_ended])
 		summary.append("%s %s %.3fs window %.3fs threat +%.3fs" % [
 			kind, mode, shot_seconds, int(window["ticks"]) * TICK, int(after["post_ticks"]) * TICK])
-		if index < 3 and stage.phase == &"boss":
-			pass
+		if index == 3:
+			var window_seconds: float = int(window["ticks"]) * TICK
+			check(absf(window_seconds - INTRO_SHORT) <= TICK + 0.0001,
+				"1: stage 4 intro_short ran %.4f s (%d ticks), expected %.3f s within one tick"
+				% [window_seconds, int(window["ticks"]), INTRO_SHORT])
 	note("1: %s" % [", ".join(summary)])
 	_free_rig(rig)
 
@@ -476,19 +506,34 @@ func _test_pause() -> void:
 	var game: Node = rig["game"]
 	var arena: Node = rig["arena"]
 	var stage: Node = rig["stage"]
+	# Bound before begin(), so the overlay hears boss_cinematic instead of attaching after it.
+	var ui := _mount_cinematic_ui(game)
 	stage.begin()
 	if not _require_boss(rig, "4: pause", 8.0):
 		_resume(game)
+		_free_cinematic_ui(ui)
 		_free_rig(rig)
 		return
+	if ui != null:
+		_check_overlay_advances(ui, rig)
 	var progress: float = arena.cinematic_progress()
 	var mirror := float(game.boss_cinematic_progress)
 	game.pause()
-	_tick_rig(rig, 60)
-	check(game.paused and arena.cinematic_progress() == progress and float(game.boss_cinematic_progress) == mirror,
-		"4: 60 paused ticks moved progress %.6f -> %.6f (mirror %.6f -> %.6f)"
-		% [progress, arena.cinematic_progress(), mirror, float(game.boss_cinematic_progress)])
-	_check_pause_overlay(game, stage)
+	var pause_ticks := 60
+	var frozen_before: Array = _ui_snapshot(ui) if ui != null else []
+	if ui != null and ui.has_method("_process"):
+		ui._process(1.0)
+	_tick_rig(rig, pause_ticks)
+	if ui != null and ui.has_method("_process"):
+		ui._process(1.0)
+	var frozen_after: Array = _ui_snapshot(ui) if ui != null else []
+	check(game.paused and pause_ticks > 0 and arena.cinematic_progress() == progress and float(game.boss_cinematic_progress) == mirror,
+		"4: %d paused ticks moved progress %.6f -> %.6f (mirror %.6f -> %.6f)"
+		% [pause_ticks, progress, arena.cinematic_progress(), mirror, float(game.boss_cinematic_progress)])
+	if ui != null:
+		check(str(frozen_before) == str(frozen_after),
+			"4: the boss cinematic overlay changed across _process(1.0) and %d paused ticks\n before %s\n after %s"
+			% [pause_ticks, frozen_before, frozen_after])
 	_resume(game)
 	_tick_rig(rig, 60)
 	var advanced: float = arena.cinematic_progress()
@@ -497,30 +542,53 @@ func _test_pause() -> void:
 		% [advanced, float(game.boss_cinematic_progress), progress, float(arena.cinematic_seconds)])
 	note("4: paused progress stayed %.6f, resumed to %.4f" % [progress, advanced])
 	_resume(game)
+	_free_cinematic_ui(ui)
 	_free_rig(rig)
 
-func _check_pause_overlay(game: Node, stage: Node) -> void:
+## The overlay is in the tree before the fight, so one unpaused tick that crosses the title
+## (progress 0.40) has to change what it shows.
+func _mount_cinematic_ui(game: Node) -> Node:
 	if not ResourceLoader.exists(UI_SCENE):
 		print("SKIP: %s is not in the project, so pause did not check the overlay's visible state" % UI_SCENE)
-		return
+		return null
 	var packed := load(UI_SCENE) as PackedScene
 	if packed == null:
 		check(false, "4: %s exists but did not load as a PackedScene" % UI_SCENE)
-		return
+		return null
 	var ui := packed.instantiate()
 	root.add_child(ui)
 	if ui.has_method("bind"):
 		ui.bind(game)
-	var before := _ui_snapshot(ui)
-	# Hand-called while the tree is paused: a UI that animates from its own clock would move here.
+	return ui
+
+func _free_cinematic_ui(ui: Node) -> void:
+	if ui != null and is_instance_valid(ui):
+		ui.free()
+
+func _check_overlay_advances(ui: Node, rig: Dictionary) -> void:
+	var arena: Node = rig["arena"]
+	var seconds: float = float(arena.cinematic_seconds)
+	var step: float = TICK / maxf(seconds, TICK)
+	var ticks := 0
+	var guard := _ticks(seconds + 1.0)
+	while float(arena.cinematic_progress()) + step < 0.40 and ticks < guard:
+		_tick_rig(rig, 1)
+		ticks += 1
 	if ui.has_method("_process"):
 		ui._process(TICK)
-	if ui.has_method("_physics_process"):
-		ui._physics_process(TICK)
-	_tick_rig({"game": game, "stage": stage, "speed": stage.get_parent()}, 0)
+	var title: CanvasItem = ui.get("title_group") as CanvasItem
+	var before_p: float = float(arena.cinematic_progress())
+	var before_visible := false if title == null else bool(title.visible)
+	var before := _ui_snapshot(ui)
+	_tick_rig(rig, 1)
+	if ui.has_method("_process"):
+		ui._process(TICK)
+	var after_p: float = float(arena.cinematic_progress())
+	var after_visible := false if title == null else bool(title.visible)
 	var after := _ui_snapshot(ui)
-	check(str(before) == str(after), "4: the boss cinematic overlay changed while paused\n before %s\n after %s" % [before, after])
-	ui.free()
+	check(before_p < 0.40 and after_p >= 0.40 and not before_visible and after_visible and str(before) != str(after),
+		"4: one unpaused tick %.4f -> %.4f left the title %s -> %s (overlay %s)"
+		% [before_p, after_p, before_visible, after_visible, "changed" if str(before) != str(after) else "unchanged"])
 
 # --- 5. Defeat hold, and 9. Engine.time_scale (contract §11.14) --------------------------------
 
@@ -982,21 +1050,24 @@ func _test_feed_defeat() -> void:
 		check(false, "10: the defeat rig's intro never ended (mode %s)" % arena.cinematic_mode)
 		_free_rig(rig)
 		return
+	var ended_before: int = int(events["ended"].size())
 	rec.calls.clear()
 	arena.apply_tool(&"unit_test")
 	var opening: Array = rec.calls.duplicate(true)
 	var names := _call_names(opening)
-	check(_same(names.slice(0, 4), [&"play_defeat", &"play_cinematic", &"set_cinematic_progress", &"set_time_factor"]),
-		"10: defeat opened with %s, expected play_defeat, play_cinematic, set_cinematic_progress, set_time_factor" % [names])
-	var played: Array = opening[1][1] if opening.size() >= 2 else []
-	var progressed: Array = opening[2][1] if opening.size() >= 3 else []
-	var factored: Array = opening[3][1] if opening.size() >= 4 else []
+	check(_same(names.slice(0, 5), [&"set_health", &"play_defeat", &"play_cinematic", &"set_cinematic_progress", &"set_time_factor"]),
+		"10: defeat opened with %s, expected set_health, play_defeat, play_cinematic, set_cinematic_progress, set_time_factor" % [names])
+	var health_args: Array = opening[0][1] if not opening.is_empty() else []
+	var played: Array = opening[2][1] if opening.size() >= 3 else []
+	var progressed: Array = opening[3][1] if opening.size() >= 4 else []
+	var factored: Array = opening[4][1] if opening.size() >= 5 else []
 	var seconds := float(arena.cinematic_seconds)
-	check(played.size() == 2 and StringName(played[0]) == &"defeat_full" and is_equal_approx(float(played[1]), DEFEAT_FULL)
+	check(health_args.size() == 2 and int(health_args[0]) == 0 and int(health_args[1]) == int(arena.max_hp)
+		and played.size() == 2 and StringName(played[0]) == &"defeat_full" and is_equal_approx(float(played[1]), DEFEAT_FULL)
 		and progressed.size() == 2 and StringName(progressed[0]) == &"defeat_full" and is_equal_approx(float(progressed[1]), 0.0)
 		and factored.size() == 1 and is_equal_approx(float(factored[0]), HIT_STOP_FACTOR),
-		"10: defeat opening args play %s progress %s factor %s, expected defeat_full %.1f, progress 0, factor %.2f"
-		% [played, progressed, factored, DEFEAT_FULL, HIT_STOP_FACTOR])
+		"10: defeat opening args health %s play %s progress %s factor %s, expected set_health(0, %d), defeat_full %.1f, progress 0, factor %.2f"
+		% [health_args, played, progressed, factored, int(arena.max_hp), DEFEAT_FULL, HIT_STOP_FACTOR])
 	var snap := {"calls": [], "mode": &""}
 	game.boss_cinematic_ended.connect(func(mode: StringName) -> void:
 		snap["calls"] = rec.calls.duplicate(true)
@@ -1022,8 +1093,10 @@ func _test_feed_defeat() -> void:
 		and is_equal_approx(float(end_factor[0]), _profile(seconds)),
 		"10: defeat final feed before ended was %s / %s (profile at %.3f s is %.4f), ended mode %s"
 		% [end_progress, end_factor, seconds, _profile(seconds), snap["mode"]])
-	check(events["ended"].size() >= 1, "10: the defeat never emitted boss_cinematic_ended")
-	note("10: defeat opening %s, %d feed ticks, final %s factor %s" % [names.slice(0, 4), ticks, end_progress, end_factor])
+	check(events["ended"].size() == ended_before + 1 and StringName(snap["mode"]) == &"defeat_full",
+		"10: defeat emitted boss_cinematic_ended %d time(s) as %s, expected 1 defeat_full"
+		% [events["ended"].size() - ended_before, snap["mode"]])
+	note("10: defeat opening %s, %d feed ticks, final %s factor %s" % [names.slice(0, 5), ticks, end_progress, end_factor])
 	_free_rig(rig)
 
 ## One non-ending tick: exactly one progress call matching cinematic_progress(), then one factor.
@@ -1097,7 +1170,7 @@ func _test_real_input() -> void:
 	for _i in 8:
 		await physics_frame
 	var early_after := float(game.boss_cinematic_progress)
-	check(int(skipped["n"]) == 0 and early_after < 0.5 and early_after < 0.9,
+	check(int(skipped["n"]) == 0 and early_after < SKIP_AFTER,
 		"3: the jump press before %.2f s skipped (skipped %d, progress %.4f -> %.4f)"
 		% [SKIP_AFTER, int(skipped["n"]), early_progress, early_after])
 	check(int(jumps["n"]) == 0 and not bool(player.is_airborne) and float(player.global_position.y) <= y0 + 0.05
@@ -1416,6 +1489,85 @@ func _test_real_defeat_input() -> void:
 	_release_jump()
 	_free_live_scene()
 
+## start_run during a live intro closes it with one ended, then the new run's controls and
+## corridor scale are back (contract §11.14).
+func _test_restart_during_intro() -> void:
+	_release_jump()
+	paused = false
+	Engine.time_scale = saved_scale
+	var packed := load(GAME_SCENE) as PackedScene
+	if packed == null:
+		check(false, "21: runner_game.tscn failed to load")
+		return
+	var game := packed.instantiate() as Node3D
+	game.autostart = false
+	game.config = _configured(_overrides({}))
+	game.leaderboard_path = scratch_leaderboard
+	live_scene = game
+	root.add_child(game)
+	await process_frame
+	if bool(game.paused):
+		game.resume()
+	game.start_run(11)
+	var reached := await _wait_until(func() -> bool:
+		return game.phase == &"boss" and (StringName(game.boss_cinematic_mode) == &"intro_full" or StringName(game.boss_cinematic_mode) == &"intro_short"), 20.0)
+	if bool(game.paused):
+		game.resume()
+	if not reached:
+		check(false, "21: the real scene never opened an intro (phase %s, mode %s)" % [game.phase, game.boss_cinematic_mode])
+		_release_jump()
+		_free_live_scene()
+		return
+	var dipped := await _wait_until(func() -> bool:
+		return StringName(game.boss_cinematic_mode) == &"" or float(game.speed_controller.cinematic_scale) < 0.5, 2.0)
+	if bool(game.paused):
+		game.resume()
+	var mode_before: StringName = StringName(game.boss_cinematic_mode)
+	var scale_before: float = float(game.speed_controller.cinematic_scale)
+	check(dipped and (mode_before == &"intro_full" or mode_before == &"intro_short") and scale_before < 0.5,
+		"21: the intro scale never left 1 (mode %s, scale %.4f)" % [mode_before, scale_before])
+	if mode_before != &"intro_full" and mode_before != &"intro_short":
+		_release_jump()
+		_free_live_scene()
+		return
+	var ended: Array = []
+	var on_ended := func(mode: StringName) -> void:
+		ended.append(mode)
+	game.boss_cinematic_ended.connect(on_ended)
+	game.start_run(11)
+	if game.boss_cinematic_ended.is_connected(on_ended):
+		game.boss_cinematic_ended.disconnect(on_ended)
+	if bool(game.paused):
+		game.resume()
+	paused = false
+	var stage: Node = game.stage_manager
+	var player: Node = game.player
+	var ended_mode: StringName = &""
+	if not ended.is_empty():
+		ended_mode = ended[0]
+	check(ended.size() == 1 and ended_mode == mode_before,
+		"21: start_run emitted boss_cinematic_ended %s, expected one %s" % [ended, mode_before])
+	var hold_after := false
+	var controls_after := false
+	if stage != null:
+		hold_after = bool(stage.cinematic_hold)
+	if player != null:
+		controls_after = bool(player.controls_enabled)
+	check(stage != null and player != null and not hold_after and controls_after,
+		"21: after restart hold %s controls %s" % [hold_after, controls_after])
+	check(StringName(game.boss_cinematic_mode) == &"" and game.state == &"running" and game.phase == &"run",
+		"21: the new run is state %s phase %s mode %s" % [game.state, game.phase, game.boss_cinematic_mode])
+	var scale_now: float = float(game.speed_controller.cinematic_scale)
+	for _i in _ticks(EASE_SECONDS):
+		await physics_frame
+	var scale_after: float = float(game.speed_controller.cinematic_scale)
+	check(absf(scale_after - 1.0) < 0.02,
+		"21: cinematic_scale %.4f after %.2f s, from %.4f at the restart, expected 1 within 0.02"
+		% [scale_after, EASE_SECONDS, scale_now])
+	note("21: restart closed %s, scale %.4f -> %.4f, phase %s" % [mode_before, scale_now, scale_after, game.phase])
+	_release_jump()
+	_free_live_scene()
+
 # --- 13. Intro timing, 14. focus default, 15. camera focus (contract §11.5, §11.14) -------------
 
 ## INTRO_POSE_AT / INTRO_HOLD_UNTIL, the shot keys those land on, and a frozen hold between them.
@@ -1494,8 +1646,8 @@ func _test_intro_timing() -> void:
 			if ddist > worst_dist:
 				worst_dist = ddist
 				at_dist = p
-		check(worst_fov <= 2.0 and worst_dist <= 1.0,
-			"13: %s between %.4f and %.4f fov moved %.3f° at p %.4f (anchor %.2f) and distance %.3f m at p %.4f (anchor %.2f); limits are ±2° and ±1 m"
+		check(worst_fov <= 3.0 and worst_dist <= 1.0,
+			"13: %s between %.4f and %.4f fov moved %.3f° at p %.4f (anchor %.2f) and distance %.3f m at p %.4f (anchor %.2f); limits are ±3° and ±1 m"
 			% [mode, pose_at, hold_at, worst_fov, at_fov, anchor_fov, worst_dist, at_dist, anchor_dist])
 		deltas += "%s fov Δ%.3f° dist Δ%.3f m; " % [mode, worst_fov, worst_dist]
 	note("13: pose %s hold %s; %s" % [pose, hold, deltas])
@@ -1703,6 +1855,404 @@ func _test_camera_focus_feed() -> void:
 		"15: %d boss tick(s) passed focus_position == boss.to_global(cinematic_focus) (%s)" % [matched, bad])
 	note("15: %d intro_full ticks, mount focus %s, global focus %s, look_bias on %d modes" % [
 		matched, mount_focus, want_focus, MODES.size()])
+	_free_rig(rig)
+
+# --- 16. A retreat outro feeds the visual nothing (contract §11.14) ----------------------------
+
+## Intro length 0 so no cinematic opens. The timeout still holds boss_outro_seconds, and the same
+## rig's defeat keeps the per-tick feed.
+func _test_retreat_outro_feed() -> void:
+	var rig := _boss_rig(_overrides({
+		"boss_intro_seconds": 0.0,
+		"boss_intro_short_seconds": 0.0,
+		"boss_timeout_seconds": 0.05,
+		"boss_hp_scale": 0.001,
+	}))
+	if rig.is_empty():
+		return
+	var arena: Node = rig["arena"]
+	var events: Dictionary = rig["events"]
+	var cinematic_at: int = int(events["boss_cinematic"].size())
+	var ended_at: int = int(events["ended"].size())
+	arena.start(1)
+	check(events["boss_cinematic"].size() == cinematic_at and events["ended"].size() == ended_at
+		and StringName(arena.cinematic_mode) == &"",
+		"16: an intro of 0 s opened %s (shots %d -> %d, ended %d -> %d)"
+		% [arena.cinematic_mode, cinematic_at, events["boss_cinematic"].size(), ended_at, events["ended"].size()])
+	var rec := _mount_recorder(arena)
+	if rec == null:
+		check(false, "16: the retreat recorder did not mount")
+		_free_rig(rig)
+		return
+	rec.calls.clear()
+	var mark := -1
+	var ticks := 0
+	var guard := _ticks(2.0)
+	while mark < 0 and ticks < guard and not bool(arena.finished):
+		var before: int = int(rec.calls.size())
+		var cinematic_before: int = int(events["boss_cinematic"].size())
+		var ended_before: int = int(events["ended"].size())
+		arena.tick(TICK)
+		ticks += 1
+		if int(events["boss_retreated"].size()) > 0:
+			mark = before
+			cinematic_at = cinematic_before
+			ended_at = ended_before
+	check(mark >= 0, "16: the timeout did not retreat (finished %s after %d ticks)" % [arena.finished, ticks])
+	if mark < 0:
+		_free_rig(rig)
+		return
+	var hold_ticks := 0
+	var hold_guard := _ticks(OUTRO + 2.0)
+	while not bool(arena.finished) and hold_ticks < hold_guard:
+		arena.tick(TICK)
+		hold_ticks += 1
+	var held := hold_ticks * TICK
+	var calls: Array = rec.calls
+	var progress := _count_calls(calls, &"set_cinematic_progress", mark)
+	var factor := _count_calls(calls, &"set_time_factor", mark)
+	var retreats := _count_calls(calls, &"play_retreat", 0)
+	check(progress == 0 and factor == 0,
+		"16: the retreat outro fed set_cinematic_progress %d time(s) and set_time_factor %d time(s)"
+		% [progress, factor])
+	check(events["boss_cinematic"].size() == cinematic_at and events["ended"].size() == ended_at,
+		"16: the retreat emitted cinematic %d -> %d and ended %d -> %d"
+		% [cinematic_at, events["boss_cinematic"].size(), ended_at, events["ended"].size()])
+	check(retreats == 1, "16: play_retreat ran %d time(s), expected 1" % retreats)
+	check(bool(arena.finished) and absf(held - OUTRO) <= TICK + 0.0001,
+		"16: finished %s after %.4f s (%d ticks), expected boss_outro_seconds %.3f within one tick"
+		% [arena.finished, held, hold_ticks, OUTRO])
+	note("16: retreat outro %.4f s, play_retreat %d, progress %d, factor %d" % [held, retreats, progress, factor])
+	_test_retreat_rig_defeat(rig)
+	_free_rig(rig)
+
+## The defeat on the rig that just retreated still pushes progress and the time factor every tick.
+func _test_retreat_rig_defeat(rig: Dictionary) -> void:
+	var arena: Node = rig["arena"]
+	var events: Dictionary = rig["events"]
+	arena.start(1)
+	var rec := _mount_recorder(arena)
+	if rec == null:
+		check(false, "16: the defeat recorder did not mount")
+		return
+	check(int(arena.hp) == 1, "16: HP is %d before the defeat, expected 1" % int(arena.hp))
+	if int(arena.hp) != 1:
+		return
+	var cinematic_at: int = int(events["boss_cinematic"].size())
+	rec.calls.clear()
+	arena.apply_tool(&"unit_test")
+	var names := _call_names(rec.calls)
+	var seconds: float = float(arena.cinematic_seconds)
+	check(_same(names.slice(0, 5), [&"set_health", &"play_defeat", &"play_cinematic", &"set_cinematic_progress", &"set_time_factor"])
+		and StringName(arena.cinematic_mode) == &"defeat_full" and is_equal_approx(seconds, DEFEAT_FULL),
+		"16: defeat opened with %s mode %s for %.4f s, expected set_health then the defeat_full feed"
+		% [names, arena.cinematic_mode, seconds])
+	var bad := ""
+	var prev := 0.0
+	var feed_ticks := 0
+	while feed_ticks < 8 and bad == "" and StringName(arena.cinematic_mode) == &"defeat_full":
+		bad = _feed_tick(arena, rec, &"defeat_full", prev, true, seconds)
+		if StringName(arena.cinematic_mode) == &"":
+			bad = "defeat ended on sample tick %d" % feed_ticks
+			break
+		prev = _last_progress(rec)
+		feed_ticks += 1
+	check(bad == "" and feed_ticks == 8 and events["boss_cinematic"].size() == cinematic_at + 1,
+		"16: defeat feed over %d tick(s) (%s); cinematic signals %d -> %d"
+		% [feed_ticks, bad, cinematic_at, events["boss_cinematic"].size()])
+	note("16: defeat_full feed held for %d ticks after the retreat" % feed_ticks)
+
+func _count_calls(calls: Array, method: StringName, from_index: int) -> int:
+	var n := 0
+	for i in range(maxi(from_index, 0), calls.size()):
+		var entry: Array = calls[i]
+		if not entry.is_empty() and StringName(entry[0]) == method:
+			n += 1
+	return n
+
+# --- 17. A zero skip tail closes the intro in the same call (contract §11.14) ------------------
+
+func _test_zero_tail_skip() -> void:
+	var rig := _stage_rig(_overrides({"boss_cinematic_skip_tail": 0.0}))
+	if rig.is_empty():
+		return
+	var game: Node = rig["game"]
+	var arena: Node = rig["arena"]
+	var stage: Node = rig["stage"]
+	var events: Dictionary = rig["events"]
+	var player := _attach_controls(game)
+	stage.begin()
+	if not _require_boss(rig, "17: zero tail", 8.0):
+		_free_rig(rig)
+		return
+	check(bool(stage.cinematic_hold) and not bool(player.controls_enabled) and StringName(arena.cinematic_mode) == &"intro_full",
+		"17: at the intro, hold %s controls %s mode %s" % [stage.cinematic_hold, player.controls_enabled, arena.cinematic_mode])
+	_tick_until(rig, func() -> bool: return bool(arena.can_skip_cinematic()), 2.0)
+	if not bool(arena.can_skip_cinematic()):
+		_tick_rig(rig, 1)
+	check(bool(arena.can_skip_cinematic()),
+		"17: can_skip stayed false at %.4f s with a zero tail" % _cinematic_elapsed(arena))
+	if not bool(arena.can_skip_cinematic()):
+		_free_rig(rig)
+		return
+	var order_at: int = int(events["order"].size())
+	var ended_before: int = int(events["ended"].size())
+	var skipped_before: int = int(events["skipped"].size())
+	var did_skip := bool(arena.skip_cinematic())
+	var tail: Array = events["order"].slice(order_at)
+	check(did_skip and _same(tail, [&"skipped", &"ended"]),
+		"17: skip_cinematic returned %s and the same call recorded %s, expected skipped then ended" % [did_skip, tail])
+	check(events["skipped"].size() == skipped_before + 1 and StringName(events["skipped"].back()) == &"intro_full"
+		and events["ended"].size() == ended_before + 1 and StringName(events["ended"].back()) == &"intro_full",
+		"17: skipped %s ended %s, expected one intro_full of each" % [events["skipped"], events["ended"]])
+	check(StringName(arena.cinematic_mode) == &"" and is_equal_approx(float(arena.cinematic_progress()), 0.0)
+		and not bool(arena.can_skip_cinematic()),
+		"17: after the skip, mode %s progress %.4f can_skip %s" % [arena.cinematic_mode, float(arena.cinematic_progress()), arena.can_skip_cinematic()])
+	var mirror: Dictionary = _last_mirror(events, "mirror_end")
+	check(StringName(game.boss_cinematic_mode) == &"" and is_equal_approx(float(game.boss_cinematic_progress), 0.0)
+		and is_equal_approx(float(game.boss_time_factor), 1.0)
+		and StringName(mirror.get("mode", &"missing")) == &"" and not bool(mirror.get("hold", true))
+		and not bool(stage.cinematic_hold) and bool(player.controls_enabled),
+		"17: mirrors after the call mode %s progress %.4f factor %.4f hold %s (snapshot %s), controls %s"
+		% [game.boss_cinematic_mode, float(game.boss_cinematic_progress), float(game.boss_time_factor),
+			stage.cinematic_hold, mirror, player.controls_enabled])
+	var ended_at: int = int(events["ended"].size())
+	var after := _wait_for_threat(rig, "17: zero tail", 3.0)
+	check(bool(after["appeared"]) and StringName(arena.cinematic_mode) == &"" and events["ended"].size() == ended_at
+		and stage.phase == &"boss",
+		"17: after the skip the fight did not start (threat %s, mode %s, ended %d -> %d, phase %s)"
+		% [after["appeared"], arena.cinematic_mode, ended_at, events["ended"].size(), stage.phase])
+	note("17: zero tail closed intro_full in the skip call, threat +%.3f s" % (int(after["post_ticks"]) * TICK))
+	_free_rig(rig)
+
+# --- 18. set_health follows every boss_health_changed (contract §11.5) -------------------------
+
+func _test_set_health_feed() -> void:
+	var rig := _boss_rig(_overrides({
+		"boss_hp_scale": 1.0,
+		"boss_timeout_seconds": 55.0,
+	}))
+	if rig.is_empty():
+		return
+	var game: Node = rig["game"]
+	var arena: Node = rig["arena"]
+	var events: Dictionary = rig["events"]
+	var holder := {"rec": null}
+	var on_open := func(_hp: int, _max_hp: int) -> void:
+		if holder["rec"] == null:
+			holder["rec"] = _mount_recorder(arena)
+	game.boss_health_changed.connect(on_open)
+	# Stage 2 is the hydra: phase 2 accepts only unit_test and lint_rule, so a review comment resists.
+	# Stage 1's swarm accepts every tool in every phase.
+	arena.start(2)
+	if game.boss_health_changed.is_connected(on_open):
+		game.boss_health_changed.disconnect(on_open)
+	var rec: Node = holder["rec"]
+	if rec == null:
+		check(false, "18: the health signal did not mount the recorder")
+		_free_rig(rig)
+		return
+	var health_rows: Array = events["boss_health_changed"]
+	var open_args := _last_named(rec.calls, &"set_health")
+	check(_count_calls(rec.calls, &"set_health", 0) == 1 and health_rows.size() == 1
+		and open_args.size() == 2 and int(open_args[0]) == int(health_rows[0][0]) and int(open_args[1]) == int(health_rows[0][1])
+		and int(open_args[0]) == int(arena.hp) and int(open_args[0]) == int(arena.max_hp) and int(arena.hp) > 1,
+		"18: opening set_health %s, signal %s, live hp %d / %d"
+		% [open_args, health_rows, int(arena.hp), int(arena.max_hp)])
+	var hit := _health_step(arena, rec, events, &"unit_test")
+	check(_health_matches(hit) and int(hit["hp"]) < int(hit["hp_before"]) and int(hit["added"]) == 1,
+		"18: unit_test set_health %s signal %s, hp %s -> %s, %d new call(s)"
+		% [hit["sets"], hit["health"], hit["hp_before"], hit["hp"], int(hit["added"])])
+	var climbed := 0
+	while int(arena.phase) < 2 and int(arena.hp) > 20 and climbed < 12:
+		var mid := _health_step(arena, rec, events, &"unit_test")
+		check(_health_matches(mid) and int(mid["hp"]) < int(mid["hp_before"]),
+			"18: climb set_health %s signal %s, hp %s -> %s phase %s"
+			% [mid["sets"], mid["health"], mid["hp_before"], mid["hp"], arena.phase])
+		climbed += 1
+	check(int(arena.phase) == 2 and int(arena.hp) > 0,
+		"18: phase is %d at hp %d / %d, expected phase 2 with HP left" % [int(arena.phase), int(arena.hp), int(arena.max_hp)])
+	if int(arena.phase) != 2 or int(arena.hp) <= 0:
+		_free_rig(rig)
+		return
+	var info: Dictionary = arena.get_info()
+	var accepted: Array = info.get("accepted_tools", [])
+	var resist_tool: StringName = &""
+	for kind in [&"review_comment", &"lint_rule", &"auto_fix_patch", &"unit_test"]:
+		if not accepted.has(kind):
+			resist_tool = kind
+			break
+	check(resist_tool != &"", "18: phase %d accepted %s, so nothing resists" % [int(arena.phase), accepted])
+	if resist_tool == &"":
+		_free_rig(rig)
+		return
+	var hp_at: int = int(arena.hp)
+	var resist := _health_step(arena, rec, events, resist_tool)
+	check(_health_matches(resist) and int(resist["hp"]) == hp_at and int(resist["added"]) == 1,
+		"18: %s set_health %s signal %s, hp %d -> %s, %d new call(s) (phase %d accepts %s)"
+		% [resist_tool, resist["sets"], resist["health"], hp_at, resist["hp"], int(resist["added"]), int(arena.phase), accepted])
+	var kill_tool: StringName = &"unit_test" if accepted.has(&"unit_test") else accepted[0]
+	var kill := {"hp": int(arena.hp)}
+	var guard := 0
+	while int(arena.hp) > 0 and guard < 30:
+		kill = _health_step(arena, rec, events, kill_tool)
+		guard += 1
+		if not _health_matches(kill):
+			break
+	check(_health_matches(kill) and int(kill["hp"]) == 0 and int(kill["max_hp"]) == int(arena.max_hp),
+		"18: kill set_health %s signal %s, hp %s" % [kill["sets"], kill["health"], kill["hp"]])
+	note("18: set_health tracked full %d, a hit, %s resisted at %d, and the kill" % [int(arena.max_hp), resist_tool, hp_at])
+	_free_rig(rig)
+
+func _health_step(arena: Node, rec: Node, events: Dictionary, tool: StringName) -> Dictionary:
+	var call_at: int = int(rec.calls.size())
+	var health_at: int = int(events["boss_health_changed"].size())
+	var hp_before: int = int(arena.hp)
+	arena.apply_tool(tool)
+	var added: Array = rec.calls.slice(call_at)
+	var health_all: Array = events["boss_health_changed"]
+	var health: Array = health_all.slice(health_at)
+	var sets: Array = []
+	for entry in added:
+		var row: Array = entry
+		if not row.is_empty() and StringName(row[0]) == &"set_health":
+			sets.append(row[1])
+	return {
+		"hp_before": hp_before,
+		"hp": int(arena.hp),
+		"max_hp": int(arena.max_hp),
+		"health": health,
+		"sets": sets,
+		"added": added.size(),
+	}
+
+func _health_matches(step: Dictionary) -> bool:
+	var sets: Array = step["sets"]
+	var health: Array = step["health"]
+	if sets.size() != 1 or health.size() != 1:
+		return false
+	var args: Array = sets[0]
+	var signal_row: Array = health[0]
+	if args.size() != 2 or signal_row.size() < 2:
+		return false
+	return int(args[0]) == int(signal_row[0]) and int(args[1]) == int(signal_row[1]) \
+		and int(args[0]) == int(step["hp"]) and int(args[1]) == int(step["max_hp"])
+
+# --- 19. A zero-length intro and defeat are not cinematics (contract §11.14) -------------------
+
+func _test_zero_length() -> void:
+	var overrides := _overrides({
+		"boss_intro_seconds": 0.0,
+		"boss_intro_short_seconds": 0.0,
+		"boss_defeat_seconds": 0.0,
+		"boss_defeat_short_seconds": 0.0,
+		"boss_hp_scale": 0.001,
+		"boss_timeout_seconds": 55.0,
+	})
+	_test_zero_length_boss(overrides)
+	_test_zero_length_stage(overrides)
+
+func _test_zero_length_boss(overrides: Dictionary) -> void:
+	var rig := _boss_rig(overrides)
+	if rig.is_empty():
+		return
+	var arena: Node = rig["arena"]
+	var events: Dictionary = rig["events"]
+	var cinematic_at: int = int(events["boss_cinematic"].size())
+	var ended_at: int = int(events["ended"].size())
+	arena.start(1)
+	check(events["boss_cinematic"].size() == cinematic_at and events["ended"].size() == ended_at
+		and StringName(arena.cinematic_mode) == &"",
+		"19: an intro of 0 s opened %s (shots %d -> %d, ended %d -> %d)"
+		% [arena.cinematic_mode, cinematic_at, events["boss_cinematic"].size(), ended_at, events["ended"].size()])
+	check(int(arena.hp) == 1, "19: HP is %d before the zero defeat, expected 1" % int(arena.hp))
+	if int(arena.hp) != 1:
+		_free_rig(rig)
+		return
+	arena.apply_tool(&"unit_test")
+	check(bool(arena.finished) and StringName(arena.cinematic_mode) == &""
+		and events["boss_cinematic"].size() == cinematic_at and events["ended"].size() == ended_at,
+		"19: defeat of 0 s finished %s inside apply_tool, mode %s, shots %d -> %d, ended %d -> %d"
+		% [arena.finished, arena.cinematic_mode, cinematic_at, events["boss_cinematic"].size(), ended_at, events["ended"].size()])
+	note("19: boss rig finished %s with no cinematic" % arena.finished)
+	_free_rig(rig)
+
+func _test_zero_length_stage(overrides: Dictionary) -> void:
+	var rig := _stage_rig(overrides)
+	if rig.is_empty():
+		return
+	var game: Node = rig["game"]
+	var arena: Node = rig["arena"]
+	var stage: Node = rig["stage"]
+	var events: Dictionary = rig["events"]
+	var player := _attach_controls(game)
+	stage.begin()
+	if not _require_boss(rig, "19: zero length", 8.0):
+		_free_rig(rig)
+		return
+	check(StringName(arena.cinematic_mode) == &"" and not bool(stage.cinematic_hold) and bool(player.controls_enabled)
+		and events["boss_cinematic"].is_empty() and events["ended"].is_empty(),
+		"19: boss entry with a 0 s intro is mode %s hold %s controls %s shots %d ended %d"
+		% [arena.cinematic_mode, stage.cinematic_hold, player.controls_enabled, events["boss_cinematic"].size(), events["ended"].size()])
+	check(int(arena.hp) == 1, "19: stage HP is %d, expected 1" % int(arena.hp))
+	if int(arena.hp) != 1:
+		_free_rig(rig)
+		return
+	arena.apply_tool(&"unit_test")
+	check(bool(arena.finished) and not bool(stage.cinematic_hold) and StringName(arena.cinematic_mode) == &""
+		and events["boss_cinematic"].is_empty() and events["ended"].is_empty(),
+		"19: the 0 s defeat finished %s with hold %s mode %s shots %d ended %d"
+		% [arena.finished, stage.cinematic_hold, arena.cinematic_mode, events["boss_cinematic"].size(), events["ended"].size()])
+	_tick_rig(rig, 1)
+	check(stage.phase != &"boss",
+		"19: one tick after the zero defeat left phase %s" % stage.phase)
+	note("19: stage hold stayed false, phase %s one tick later" % stage.phase)
+	_free_rig(rig)
+
+# --- 20. A kill during the intro ends it before the defeat cinematic ---------------------------
+
+func _test_kill_mid_intro_order() -> void:
+	var rig := _boss_rig(_overrides({
+		"boss_hp_scale": 0.001,
+		"boss_timeout_seconds": 55.0,
+	}))
+	if rig.is_empty():
+		return
+	var arena: Node = rig["arena"]
+	var events: Dictionary = rig["events"]
+	arena.start(1)
+	check(StringName(arena.cinematic_mode) == &"intro_full",
+		"20: the kill's intro is %s, expected intro_full" % arena.cinematic_mode)
+	if StringName(arena.cinematic_mode) != &"intro_full":
+		_free_rig(rig)
+		return
+	var order_at: int = int(events["order"].size())
+	var ended_before: int = int(events["ended"].size())
+	var cinematic_before: int = int(events["boss_cinematic"].size())
+	arena.apply_tool(&"unit_test")
+	var tail: Array = events["order"].slice(order_at)
+	var ended_i := -1
+	var cinematic_i := -1
+	for i in tail.size():
+		if StringName(tail[i]) == &"ended" and ended_i < 0:
+			ended_i = i
+		if StringName(tail[i]) == &"cinematic":
+			cinematic_i = i
+	var shot: Array = []
+	if not events["boss_cinematic"].is_empty():
+		shot = events["boss_cinematic"].back()
+	var shot_mode: StringName = &""
+	if shot.size() >= 2:
+		shot_mode = shot[1]
+	var ended_mode: StringName = &""
+	if not events["ended"].is_empty():
+		ended_mode = events["ended"].back()
+	check(ended_i >= 0 and cinematic_i > ended_i
+		and events["ended"].size() == ended_before + 1 and ended_mode == &"intro_full"
+		and events["boss_cinematic"].size() == cinematic_before + 1 and shot_mode == &"defeat_full",
+		"20: order %s (ended at %d, cinematic at %d), ended %s x%d, next shot %s"
+		% [tail, ended_i, cinematic_i, ended_mode, events["ended"].size() - ended_before, shot_mode])
+	note("20: ended(intro_full) then boss_cinematic(defeat_full)")
 	_free_rig(rig)
 
 func _focus_box(size: Vector3, at := Vector3.ZERO, shown := true) -> MeshInstance3D:
@@ -2301,7 +2851,6 @@ func _press_jump(game: Node) -> void:
 	event.pressed = true
 	event.strength = 1.0
 	Input.parse_input_event(event)
-	game._unhandled_input(event)
 
 func _release_jump() -> void:
 	if not InputMap.has_action("jump"):
@@ -2335,9 +2884,11 @@ func _resume(game: Node) -> void:
 		game.resume()
 	paused = false
 
-func _wait_until(predicate: Callable, wall_timeout: float) -> bool:
-	var deadline := Time.get_ticks_msec() + int(wall_timeout * 1000.0)
-	while Time.get_ticks_msec() < deadline:
+## `seconds` is game time. The bound is that many physics frames, so a slow host cannot
+## exhaust the wait before the simulation has had those ticks (Godot caps physics steps per frame).
+func _wait_until(predicate: Callable, seconds: float) -> bool:
+	var frames := _ticks(seconds)
+	for _i in frames:
 		if bool(predicate.call()):
 			return true
 		await physics_frame
@@ -2383,6 +2934,12 @@ func _report() -> void:
 			node.free()
 	junk.clear()
 	_silence_audio()
+	var audio := root.get_node_or_null("AudioService")
+	if audio != null and audio.has_method("shutdown"):
+		audio.shutdown()
+	await process_frame
+	await create_timer(0.3).timeout
+	await process_frame
 	await process_frame
 	var status := "PASS" if failures == 0 else "FAIL"
 	print("RUNNER BOSS CINEMATIC: ", status, " (", failures, " failures / ", checks, " checks)")
