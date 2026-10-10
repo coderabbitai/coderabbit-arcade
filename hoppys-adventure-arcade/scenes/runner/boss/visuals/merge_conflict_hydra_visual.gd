@@ -46,6 +46,10 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
 	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 
+func cinematic_focus() -> Vector3:
+	# Raise the faces above the title band while retaining the base rest-focus cache.
+	return super.cinematic_focus() - Vector3(0, 0.3, 0)
+
 func _ensure_model() -> void:
 	if _model != null or _art != null: return
 	_model = BossModel.load_model(MODEL_PATH)

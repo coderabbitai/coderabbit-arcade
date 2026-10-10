@@ -764,6 +764,7 @@ func check_visual_runtime() -> void:
 		return
 	root.add_child(visual)
 	visual.call("on_spawned")
+	check_cinematic_focus_override(visual, "imported GLB")
 	check(visual.get("_model") is Node3D, "visual mounts BossModel adapter without fallback art")
 	check(visual.process_mode == Node.PROCESS_MODE_PAUSABLE, "visual uses pausable process mode")
 	check(visual.has_method("play_cinematic"), "visual exposes cinematic intro and defeat hook")
@@ -787,6 +788,14 @@ func check_visual_runtime() -> void:
 	check_lane_queues(visual)
 	await check_cinematics_and_time(visual)
 	visual.free()
+
+
+func check_cinematic_focus_override(visual: Node3D, fixture_name: String) -> void:
+	var base_focus := BossVisualBase.rest_focus(visual)
+	var expected_focus := base_focus - Vector3(0, 0.3, 0)
+	var actual_focus: Vector3 = visual.call("cinematic_focus")
+	check(actual_focus.is_equal_approx(expected_focus),
+		"%s cinematic focus is cached rest focus lowered by 0.3m" % fixture_name)
 
 
 func check_lane_queues(visual: Node3D) -> void:
@@ -1135,6 +1144,7 @@ func check_missing_model_fallback() -> void:
 	if art == null:
 		fallback.free()
 		return
+	check_cinematic_focus_override(fallback, "missing-GLB fallback")
 	var child_count := fallback.get_child_count()
 	fallback.call("on_spawned")
 	check(fallback.get_child_count() == child_count, "fallback respawn reuses its existing children")
