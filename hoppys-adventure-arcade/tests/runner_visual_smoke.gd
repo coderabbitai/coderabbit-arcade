@@ -1180,6 +1180,13 @@ func _force_loop_hit(game: Node) -> void:
 	check(game.hit_manager.report_hit(hazard) == &"damaged", "full loop forced hazard applies damage")
 	hazard.free()
 
+func _remove_temporary_leaderboard(board_path: String) -> void:
+	for suffix in ["", ".tmp", ".bak"]:
+		var path: String = board_path + suffix
+		if FileAccess.file_exists(path):
+			check(DirAccess.remove_absolute(path) == OK, "temporary leaderboard cleanup: " + path)
+		check(not FileAccess.file_exists(path), "temporary leaderboard removed: " + path)
+
 func check_runner_full_loop() -> void:
 	var before := failures
 	var router := root.get_node("AppRouter")
@@ -1253,11 +1260,7 @@ func check_runner_full_loop() -> void:
 	check(current_scene.name == &"MainMenu", "hub is MainMenu")
 	check(audio.music.stream == audio.default_track and audio.music.playing, "hub restores default music")
 	node_added.disconnect(_isolate_routed_game)
-	for suffix in ["", ".tmp", ".bak"]:
-		var path: String = loop_board_path + suffix
-		if FileAccess.file_exists(path):
-			check(DirAccess.remove_absolute(path) == OK, "temporary leaderboard cleanup")
-	check(not FileAccess.file_exists(loop_board_path), "temporary leaderboard removed")
+	_remove_temporary_leaderboard(loop_board_path)
 	print("RUNNER FULL LOOP: ", "PASS" if before == failures else "FAIL", " (menu, play, hit, pursuit, %ss timer recovery, hit, hit, caught, finished, game over, Codex, retry, menu, hub, default music; isolated board removed)" % recovery_seconds)
 	current_scene.free()
 	await frames()
@@ -1849,8 +1852,17 @@ func check_tools_and_projectiles() -> void:
 	# Exercise the actual backend mount and signals without simulating collisions by hand.
 	var game := (load("res://scenes/runner/runner_game.tscn") as PackedScene).instantiate()
 	game.autostart = false
-	game.leaderboard_path = "user://test_runner_boss_mount_%d.cfg" % OS.get_process_id()
+	var board_path := "user://test_runner_boss_mount_%d.cfg" % OS.get_process_id()
+	game.leaderboard_path = board_path
 	root.add_child(game)
+	# Keep teardown in the caller so a failed check or early return cannot bypass it.
+	_check_boss_mount_game(game)
+	game.free()
+	_remove_temporary_leaderboard(board_path)
+	await frames()
+	print("TOOLS AND PROJECTILES: ", "PASS" if failures == before else "FAIL")
+
+func _check_boss_mount_game(game: Node) -> void:
 	var arena: Node = game.boss_encounter
 	var boss_hud: Control
 	for node in game.find_children("*", "Control", true, false):
@@ -1875,9 +1887,6 @@ func check_tools_and_projectiles() -> void:
 		arena.apply_tool(&"review_comment" if stage == 3 else &"unit_test")
 		check(arena.hp < previous_hp, "real phase accepts correct tool")
 		arena.abort()
-	game.free()
-	await frames()
-	print("TOOLS AND PROJECTILES: ", "PASS" if failures == before else "FAIL")
 
 func check_turn() -> void:
 	var before := failures
@@ -2113,11 +2122,20 @@ func check_turn_warning() -> void:
 
 func check_boss_intro() -> void:
 	var before := failures
-	var copy := preload("res://scenes/runner/ui/boss_copy.gd")
 	var game: Node = load("res://scenes/runner/runner_game.tscn").instantiate()
 	game.autostart = false
-	game.leaderboard_path = "user://test_runner_boss_intro_%d.cfg" % OS.get_process_id()
+	var board_path := "user://test_runner_boss_intro_%d.cfg" % OS.get_process_id()
+	game.leaderboard_path = board_path
 	root.add_child(game)
+	# Keep teardown in the caller so a failed check or early return cannot bypass it.
+	_check_boss_intro_game(game)
+	game.free()
+	_remove_temporary_leaderboard(board_path)
+	await frames()
+	print("BOSS INTRO: ", "PASS" if before == failures else "FAIL")
+
+func _check_boss_intro_game(game: Node) -> void:
+	var copy := preload("res://scenes/runner/ui/boss_copy.gd")
 	game.start_run(721)
 	game.set_process(false)
 	game.set_physics_process(false)
@@ -2158,6 +2176,3 @@ func check_boss_intro() -> void:
 		check(audio._boss_duck == -4.0, "intro releases into fight mix")
 		arena.abort()
 	check(copy.threat(&"unknown") == "Review required.", "unknown boss has safe fallback copy")
-	game.free()
-	await frames()
-	print("BOSS INTRO: ", "PASS" if before == failures else "FAIL")
