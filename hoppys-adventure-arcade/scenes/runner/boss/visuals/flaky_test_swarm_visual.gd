@@ -5,6 +5,10 @@ const BossModel = preload("res://scenes/runner/boss/hifi/boss_model.gd")
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 const MODEL_PATH := "res://Assets/runner/bosses/flaky_test_swarm/flaky_test_swarm.glb"
 const ACCENT := Color("8fd14f")
+## Conservative worker extents and scales from the Blender recipe. These reserve
+## the full ambient sway when a runtime scatter expands an already bounded clip.
+const DRONE_HALF_EXTENTS := Vector3(0.90, 0.70, 0.64)
+const DRONE_SCALES := [0.95, 1.07, 0.93, 1.05, 0.92, 1.10]
 const COMMIT_ARC := [Vector3(1.74, 1.10, 0.20), Vector3(1.03, 2.40, -0.25),
 	Vector3(-1.03, 2.40, 0.25), Vector3(-1.74, 1.10, -0.20),
 	Vector3(-1.32, 0.0, 0.15), Vector3(1.32, 0.0, -0.15)]
@@ -211,7 +215,7 @@ func play_cinematic(mode: StringName, seconds: float) -> void:
 	_cinematic_seconds = maxf(seconds, 0.001)
 	_tag.hide()
 	if mode in [&"intro_full", &"intro_short"]:
-		play_intro(_cinematic_seconds * 0.55)
+		play_intro(_cinematic_seconds * float(INTRO_POSE_AT[mode]))
 	else:
 		_terminal = true
 		_flash_strength = 0.0
@@ -234,8 +238,10 @@ func set_cinematic_progress(mode: StringName, progress: float) -> void:
 		var p := clampf(progress, 0.0, 1.0)
 		_art.clock = _cinematic_age
 		if mode in [&"intro_full", &"intro_short"]:
-			_art.state = &"intro" if p < 0.80 else &"idle"
-			_art.age = minf(p / 0.55, 0.99999) * _art.duration if p < 0.80 else (p - 0.80) * _cinematic_seconds
+			var pose_at := float(INTRO_POSE_AT[mode])
+			_art.state = &"intro"
+			_art.age = minf(p / pose_at, 0.99999) * _art.duration
+			_art.clock = minf(_cinematic_age, _cinematic_seconds * pose_at)
 		else:
 			_art.state = &"defeated"
 			var hitstop := minf(0.12, _cinematic_seconds)
@@ -244,7 +250,10 @@ func set_cinematic_progress(mode: StringName, progress: float) -> void:
 		_tag.hide()
 		if p >= 1.0:
 			_cinematic_mode = &""
-			if not _terminal: _tag.visible = _intro_tag_visible
+			if not _terminal:
+				# Preserve the sampled hold; the next normal advance enters idle.
+				_art.age = _art.duration
+				_tag.visible = _intro_tag_visible
 
 func set_time_factor(factor: float) -> void:
 	_time_factor = maxf(factor, 0.0)
@@ -309,16 +318,16 @@ func _sample_action() -> void:
 func _sample_cinematic() -> void:
 	var p := clampf(_cinematic_age / _cinematic_seconds, 0, 1)
 	if _cinematic_mode in [&"intro_full", &"intro_short"]:
-		# Assemble, hold the finished pose for the card, then ease into idle.
-		if p < 0.80:
-			_seek(&"intro", minf(p / 0.55, 1.0))
-		else:
-			if _state != &"idle": _play(&"idle")
-			_seek(&"idle", (_cinematic_age - _cinematic_seconds * 0.80) / _state_duration)
+		# Land at the shared card cue. Keep the finished pose through
+		# INTRO_HOLD_UNTIL and the camera return, until normal play resumes.
+		_seek(&"intro", minf(p / float(INTRO_POSE_AT[_cinematic_mode]), 1.0))
 		_tag.hide()
 		if p >= 1.0:
 			_cinematic_mode = &""
-			_play(&"idle")
+			# Do not seek idle on this last cinematic frame or apply formation
+			# offsets to it. _sample_action enters idle on the next normal tick.
+			_state_age = _state_duration
+			_tag.visible = _intro_tag_visible
 	else:
 		# The struck pose holds for 0.12 s. Collapse starts immediately after it,
 		# with the opening strobe overlapping the action instead of delaying it.
@@ -343,6 +352,12 @@ func _apply_formation() -> void:
 		var point := _skeleton.get_bone_pose_position(index)
 		point.x *= 1.0 - tighter + scatter
 		point.y = 1.02 + (point.y - 1.02) * (1.0 - tighter + scatter)
+		if scatter > 0.0:
+			var rotation := Basis(_skeleton.get_bone_pose_rotation(index))
+			var half_size := DRONE_HALF_EXTENTS * float(DRONE_SCALES[i])
+			var extent := rotation.x.abs() * half_size.x + rotation.y.abs() * half_size.y + rotation.z.abs() * half_size.z
+			point.x = clampf(point.x, -3.30 + extent.x, 3.30 - extent.x)
+			point.y = clampf(point.y, -0.98 + extent.y, 3.38 - extent.y)
 		if committed > 0.0:
 			# Each drone keeps an individual slot around the queen. Only the arc
 			# centre tracks the committed lane, preserving separation in close-up.

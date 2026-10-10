@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from boss_kit import BossBuilder, Part, xform
 
-RECIPE_REVISION = 4
+RECIPE_REVISION = 5
 TAU = math.tau
 CENTRE_Y = 1.02
 DRONES = [(2.16, 1.28, .27), (.90, 2.36, -.31),
@@ -260,8 +260,9 @@ def pose(kit, action, t):
             location = (target_x - x, target_y - y, (heap[i][2] - z) * fall - .12 * (1 - fall))
             yaw = math.pi
             roll = math.copysign(.50 + .70 * fall, x)
-        # Keep every posed worker within the shared corridor XY envelope and
-        # the coordinator's old-front + 0.4 m limit, including edge-on flips.
+        # Mount Y is 2.6 m. The contract floor is 1.6 m, so reserve 2 cm
+        # above local -1.0 for interpolation, including the cinematic idle tail.
+        # Keep the old-front + 0.4 m limit through edge-on face flips too.
         size = DRONE_SCALES[i]
         ex = size * (.90 * abs(math.cos(roll)) + .64 * abs(math.sin(roll)))
         ey = size * (.90 * abs(math.sin(roll)) + .70 * abs(math.cos(roll)))
@@ -270,7 +271,7 @@ def pose(kit, action, t):
         ez = size * (.90 * abs(math.sin(yaw)) + .64 * abs(math.cos(yaw)))
         edge = 3.48 if action == 'intro' else 3.26
         location = (min(edge - ex, max(-edge + ex, x + location[0])) - x,
-                    min(3.38 - ey, max(-1.10 + ey, y + location[1])) - y,
+                    min(3.38 - ey, max(-.98 + ey, y + location[1])) - y,
                     min(location[2], .84 - z - ez))
         kit.pose('drone_%d' % i, location=location, rotation=(0, yaw, roll))
         wing_beat = .14 * math.sin(TAU * (8 * t) + phase) if action not in ['defeat', 'retreat'] else -.30 * t
