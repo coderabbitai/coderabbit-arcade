@@ -1,4 +1,5 @@
 extends SceneTree
+const BossBounds = preload("res://tests/boss_pose_bounds.gd")
 const TurnPreview = preload("res://scenes/runner/environment/dev/turn_preview.gd")
 const CorridorScript = preload("res://scenes/runner/environment/corridor.gd")
 const SignatureDefs = preload("res://scenes/runner/boss/boss_defs.gd")
@@ -26,6 +27,14 @@ class LegacyPursuitGame extends Node:
 	signal damage_blocked(kind: StringName, reason: StringName)
 	signal caught
 	var paused := false
+
+class CinematicAudioGame extends "res://scenes/runner/ui/dev/mock_runner_game.gd":
+	signal boss_cinematic(kind: StringName, mode: StringName, seconds: float)
+	signal boss_cinematic_skipped(mode: StringName)
+	signal boss_cinematic_ended(mode: StringName)
+	var boss_cinematic_mode: StringName = &""
+	var boss_cinematic_progress := 0.0
+	var boss_time_factor := 1.0
 
 var failures := 0
 var _logger := ErrorCapture.new()
@@ -876,7 +885,7 @@ func check_runner_audio() -> void:
 	const Mock = preload("res://scenes/runner/ui/dev/mock_runner_game.gd")
 	var music := load("res://Assets/Backgrounds/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg") as AudioStreamOggVorbis
 	check(music != null and music.loop == true, "imported runner OGG loops before audio bind")
-	var mock := Mock.new()
+	var mock := CinematicAudioGame.new()
 	mock.autoplay = false
 	root.add_child(mock)
 	var audio := RunnerAudio.instantiate()
@@ -889,6 +898,7 @@ func check_runner_audio() -> void:
 		peak[0] = maxi(peak[0], audio.active_voice_count())
 		check(audio.active_voice_count() <= 10, "audio hard ten voice cap")
 	)
+	mock.boss_intro.connect(func(kind, _name, seconds): mock.boss_cinematic.emit(kind, &"intro_full", seconds))
 	audio.bind(mock)
 	audio.bind(mock)
 	audio.set_process(false)
@@ -899,7 +909,7 @@ func check_runner_audio() -> void:
 	var service := root.get_node("AudioService")
 	check(service.music.stream.resource_path == audio.MUSIC_PATH and service.music.stream.loop, "runner BGM loaded and looping")
 	check(service.music.volume_db == -12.0, "runner BGM level")
-	check(Synth.RECIPES.size() == 32, "F10 has exactly 32 recipes")
+	check(Synth.RECIPES.size() == 37, "cinematic cues extend all 32 existing recipes")
 	check(audio.HIGH_PRIORITY.has(&"alert_sting"), "alert sting is high priority")
 	for kind: StringName in Synth.RECIPES:
 		var stream := Synth.sound(kind)
@@ -929,6 +939,27 @@ func check_runner_audio() -> void:
 		mock.advance_demo(0.1)
 		audio._process(0.1)
 	check(mock.state == &"finished", "audio demo completes")
+	# New contract 2.6 cues use the real progress feed, including a skip and seven bursts.
+	mock.state_changed.emit(&"running")
+	for mode in [&"intro_full", &"intro_short", &"defeat_full"]:
+		audio.one_shots.stop()
+		audio.one_shots.play()
+		audio._playback = audio.one_shots.get_stream_playback()
+		audio._voices.clear()
+		audio._voice_kinds.clear()
+		mock.boss_cinematic_progress = 0.0
+		mock.boss_cinematic.emit(&"flaky_test_swarm", mode, 5.0)
+		for i in 20:
+			audio.one_shots.stop()
+			audio.one_shots.play()
+			audio._playback = audio.one_shots.get_stream_playback()
+			audio._voices.clear()
+			audio._voice_kinds.clear()
+			mock.boss_cinematic_progress = float(i) / 20
+			audio._process(0.15)
+			await process_frame
+		if mode == &"intro_short": mock.boss_cinematic_skipped.emit(mode)
+		mock.boss_cinematic_ended.emit(mode)
 	for kind: StringName in Synth.RECIPES:
 		check(int(counts.get(kind, 0)) > 0, "demo played trigger: " + kind)
 	check(counts.get(&"heartbeat", 0) == 1, "demo heartbeat starts exactly once across low progress ticks")
@@ -1118,7 +1149,7 @@ func check_runner_audio() -> void:
 	mock.paused_changed.emit(false)
 	audio._process(2.0)
 	check(is_equal_approx(service.music_volume_db, -12.0), "stage card releases hold")
-	print("RUNNER AUDIO: 32 recipes/triggers; demo heartbeat starts=1; peak voices=", peak[0], "; AudioService players=", service.get_child_count())
+	print("RUNNER AUDIO: 37 recipes/triggers; demo heartbeat starts=1; peak voices=", peak[0], "; AudioService players=", service.get_child_count())
 	mock.free()
 	await frames()
 	check(is_equal_approx(service.music.pitch_scale, 1.0), "audio teardown resets pitch")
@@ -1537,7 +1568,11 @@ func boss_geometry_bounds(visual: Node3D) -> AABB:
 					var box: AABB = visual.global_transform.affine_inverse() * node.global_transform * pose * AABB(-Vector3.ONE * 0.5, Vector3.ONE)
 					result = box if first else result.merge(box)
 					first = false
-		else:
+		elif node is MeshInstance3D and node.skin != null:
+			var box: AABB = visual.global_transform.affine_inverse() * BossBounds.mesh_bounds(node)
+			result = box if first else result.merge(box)
+			first = false
+		elif not node is Label3D:
 			var box: AABB = visual.global_transform.affine_inverse() * node.global_transform * node.get_aabb()
 			result = box if first else result.merge(box)
 			first = false
@@ -1574,16 +1609,17 @@ func check_bosses() -> void:
 		visual.sway_amplitude = 2.4
 		visual.sway_period = 3.2
 		visual.on_spawned()
-		check(visual._art.tag.text.replace("\n", " ") == visual.boss_name, "boss plate reads boss_name")
-		check(visual._art.tag.font_size >= 40 and visual._art.tag.position.y >= 3.15 and visual._art.tag.texture_filter == BaseMaterial3D.TEXTURE_FILTER_LINEAR, "gallery plate above body and linearly filtered")
+		check(visual._tag.text.replace("\n", " ") == visual.boss_name, "boss plate reads boss_name")
+		check(visual._tag.font_size >= 40 and visual._tag.position.y >= 3.15 and visual._tag.texture_filter == BaseMaterial3D.TEXTURE_FILTER_LINEAR, "gallery plate above body and linearly filtered")
 		var count := visual.find_children("*", "", true, false).size()
 		visual.on_spawned()
 		check(count == visual.find_children("*", "", true, false).size(), "idempotent boss spawn " + kind)
 		check(visual.process_mode == Node.PROCESS_MODE_PAUSABLE, "boss PAUSABLE " + kind)
-		visual.play_intro(3.0)
+		check(visual._model != null, "accepted GLB mounted " + kind)
+		visual.play_cinematic(&"intro_full", 3.0)
 		for frame in 181:
 			check_boss_envelope(visual, "%s intro frame %d" % [kind, frame], true)
-			if frame < 180: visual._process(1.0 / 60.0)
+			if frame < 180: visual.set_cinematic_progress(&"intro_full", float(frame + 1) / 180)
 		visual.on_spawned()
 		var boss_peak := 0
 		for phase in [1, 2, 3]:
@@ -1633,12 +1669,14 @@ func check_bosses() -> void:
 		for ending in [&"play_defeat", &"play_retreat"]:
 			visual.on_spawned()
 			visual.call(ending)
+			if ending == &"play_defeat": visual.play_cinematic(&"defeat_full", 3.6)
 			for i in 20:
-				visual._process(0.045)
+				if ending == &"play_defeat": visual.set_cinematic_progress(&"defeat_full", float(i + 1) / 20)
+				else: visual._process(0.05)
 				check_boss_envelope(visual, String(kind) + " " + String(ending))
 				boss_peak = maxi(boss_peak, hazard_draw_count(visual))
 			visual._process(0.1)
-			check(not visual._art.visible, "boss outro fits backend second")
+			check(not visual.is_visible_in_tree() or not visual._model.visible or float(visual._model.materials[0].get_shader_parameter("dissolve")) >= 0.999, "boss terminal hides or fully dissolves")
 		check(boss_peak <= 40, "boss peak draw budget " + kind)
 		peak = maxi(peak, boss_peak)
 		print("BOSS DRAW CENSUS: ", kind, "=", boss_peak)
@@ -1811,6 +1849,7 @@ func check_tools_and_projectiles() -> void:
 	# Exercise the actual backend mount and signals without simulating collisions by hand.
 	var game := (load("res://scenes/runner/runner_game.tscn") as PackedScene).instantiate()
 	game.autostart = false
+	game.leaderboard_path = "user://test_runner_boss_mount_%d.cfg" % OS.get_process_id()
 	root.add_child(game)
 	var arena: Node = game.boss_encounter
 	var boss_hud: Control
@@ -1821,18 +1860,18 @@ func check_tools_and_projectiles() -> void:
 	for stage in [1, 2, 3]:
 		arena.start(stage)
 		check(arena.visual.get_script().resource_path.contains("boss/visuals/"), "backend mounts shipped boss visual")
-		check(boss_hud.intro_card.visible and not boss_hud.visible and boss_hud.intro_name.text == String(game.get_boss_info().name), "real facade intro precedes fight name plate")
-		check(arena.visual.intro_calls == 1 and arena.visual._art.state == &"intro", "real facade forwards entrance")
-		boss_hud._process(float(game.config.boss_intro_seconds))
-		arena.visual._process(float(game.config.boss_intro_seconds))
+		var cinematic: Node = game.get_node("HUD/BossCinematic")
+		check(cinematic.root.visible and not boss_hud.visible and cinematic.boss_name.text == String(game.get_boss_info().name).to_upper(), "real facade cinematic precedes HP plate")
+		check(arena.visual.intro_calls == 1 and arena.visual._state == &"intro", "encounter forwards one cinematic entrance")
+		arena.tick(float(game.config.boss_intro_seconds))
 		check(boss_hud.visible and boss_hud.title.text.contains(String(game.get_boss_info().name).to_upper()), "real fight name plate after intro")
 		while arena.phase < 2: arena.apply_tool(&"unit_test")
 		check(boss_hud.pips[1].filled, "real fight phase pip")
 		var previous_hp: int = arena.hp
-		check(not arena.visual._art.tag.visible, "mounted boss HUD suppresses 3D name plate")
+		check(not arena.visual._tag.visible, "mounted boss HUD suppresses 3D name plate")
 		if stage == 2: arena.apply_tool(&"review_comment")
 		elif stage == 3: arena.apply_tool(&"unit_test")
-		if stage > 1: check(arena.hp == previous_hp and arena.visual._art.state == &"resist", "real phase resists wrong tool")
+		if stage > 1: check(arena.hp == previous_hp and arena.visual._model != null, "real phase resists wrong tool")
 		arena.apply_tool(&"review_comment" if stage == 3 else &"unit_test")
 		check(arena.hp < previous_hp, "real phase accepts correct tool")
 		arena.abort()
@@ -2074,71 +2113,51 @@ func check_turn_warning() -> void:
 
 func check_boss_intro() -> void:
 	var before := failures
-	var mock := preload("res://scenes/runner/ui/dev/mock_runner_game.gd").new()
-	mock.autoplay = false
-	root.add_child(mock)
-	mock.start_run()
-	var audio := preload("res://scenes/runner/audio/runner_audio.tscn").instantiate()
-	mock.add_child(audio)
-	audio.bind(mock)
-	audio.set_process(false)
-	var overlay: Control = mock.boss_overlay
-	overlay.set_process(false)
-	var expected_taunts := {
-		&"flaky_test_swarm": "PASSED LOCALLY. FAILS ON CI.",
-		&"merge_conflict_hydra": "<<<<<<< HEAD  \u2014  3 BRANCHES, SOON 4. ZERO AGREEMENT.",
-		&"legacy_monolith": "@deprecated SINCE 2011. STILL IN PRODUCTION.",
-	}
-	for kind: StringName in expected_taunts:
-		mock.boss_kind = kind
-		mock.mount_demo_boss()
-		var visual: Node3D = mock.boss.get_child(0)
-		visual.set_process(false)
-		mock.boss_hp = 140
-		mock.boss_intro.emit(kind, "Test Boss", 3.0)
-		mock.boss_spawned.emit(kind, 140)
-		await frames()
-		check(overlay.intro_card.size.x <= 680.0 and overlay.intro_card.position.y >= 0.0 and overlay.intro_card.get_global_rect().end.y <= 130.0, "intro card stays in top band")
-		check(overlay.intro_name.get_theme_font_size("font_size") == 24, "intro name retains compact 24 unit layout")
-		check(overlay.intro_card.visible and overlay.intro_name.text == "Test Boss", "intro card shows facade name")
-		check(overlay.intro_taunt.text == expected_taunts[kind] and overlay.intro_taunt.visible_characters == 0, "correct typed taunt " + kind)
-		mock.stage_started.emit(2, &"Queued stage", 13.0)
-		check(not overlay.visible and not mock.stage_banner.visible, "intro suppresses HP and stage banner")
-		check(visual.intro_calls == 1 and visual._art.state == &"intro", "boss FX forwards optional entrance " + kind)
-		check(audio._boss_duck == -12.0, "intro heavier music duck survives spawned")
-		overlay._process(1.0)
-		visual._process(1.0)
-		if kind == &"flaky_test_swarm":
-			check(visual._art.batches[0].poses[0].origin.z < -1.0, "swarm tiles fly from vanishing point")
-		elif kind == &"merge_conflict_hydra":
-			check(visual._art.heads[0].position.y < 1.75 and visual._art.heads[2].scale.y < 1.0, "hydra rises and unfurls heads")
-		else:
-			check(visual._art.position.z < -10.0, "monolith approaches from far end")
-		check(overlay.intro_taunt.visible_characters == overlay.intro_taunt.text.length(), "taunt typed within one second")
-		mock.pause()
-		var age: float = overlay.intro_age
-		overlay._process(1.0)
-		audio._process(1.0)
-		check(overlay.intro_age == age and audio._intro_remaining == 3.0, "pause freezes intro card and duck")
-		visual.set_process(true)
-		paused = true
-		var visual_age: float = visual._art.age
-		for i in 4: await process_frame
-		check(visual._art.age == visual_age, "scene pause freezes boss entrance")
-		paused = false
-		visual.set_process(false)
-		mock.resume()
-		overlay._process(1.4)
-		check(overlay.intro_flash.color.a > 0.0 and overlay.intro_vignette.visible, "entrance impact uses screen flash and vignette")
-		overlay._process(0.6)
-		visual._process(2.0)
-		audio._process(3.0)
-		check(not overlay.intro_card.visible and overlay.visible, "HP enters only at end of intro")
-		check(visual._art.state == &"idle" and visual._art.position == Vector3.ZERO, "entrance restores idle exactly at duration")
-		check(audio._boss_duck == -4.0 and audio.active_voice_count() <= 10, "intro releases into boss duck with voice cap")
-		check_boss_envelope(visual, "post intro " + kind)
-	mock.boss_intro.emit(&"unknown", "Unknown Bug", 1.0)
-	check(overlay.intro_name.text == "Unknown Bug" and overlay.intro_taunt.text.is_empty(), "unknown boss name-only fallback")
-	mock.free()
+	var copy := preload("res://scenes/runner/ui/boss_copy.gd")
+	var game: Node = load("res://scenes/runner/runner_game.tscn").instantiate()
+	game.autostart = false
+	game.leaderboard_path = "user://test_runner_boss_intro_%d.cfg" % OS.get_process_id()
+	root.add_child(game)
+	game.start_run(721)
+	game.set_process(false)
+	game.set_physics_process(false)
+	var overlay: Node = game.get_node("HUD/BossCinematic")
+	var hud: Node = game.get_node("HUD/BossHud")
+	var audio: Node = game.get_node("Audio/RunnerAudio")
+	var arena: Node = game.boss_encounter
+	for stage in [1, 2, 3]:
+		arena.start(stage)
+		var kind: StringName = game.get_boss_info().kind
+		check(overlay.root.visible and not hud.visible, "cinematic replaces HP before spawn")
+		check(overlay.epithet.text == copy.epithet(kind).to_upper(), "single epithet source " + kind)
+		check(overlay.threat.text == copy.threat(kind), "single threat source " + kind)
+		check(arena.visual._model != null and arena.visual.intro_calls == 1, "GLB cinematic receives one start")
+		check(audio._boss_duck == -18.0, "cinematic duck survives spawn")
+		arena.tick(2.0)
+		game.stage_manager._publish()
+		overlay._process(0)
+		check(overlay.title_group.visible and overlay.title_group.scale.x > 1.7, "title slams during camera hold")
+		arena.tick(0.75)
+		game.stage_manager._publish()
+		overlay._process(0)
+		check(overlay.threat.visible_characters >= 22 and overlay.threat.visible_characters <= 23, "threat types at 40 characters per second")
+		game.pause()
+		var frozen: int = overlay.threat.visible_characters
+		var duck: float = audio._boss_duck
+		overlay._process(1)
+		audio._process(1)
+		check(overlay.threat.visible_characters == frozen and audio._boss_duck == duck, "pause freezes clock-driven UI and mix")
+		game.resume()
+		arena.tick(0.9)
+		game.stage_manager._publish()
+		overlay._process(0)
+		check(overlay.hints.visible and overlay.threat.visible, "hint row and complete threat coexist for the wide shot")
+		arena.tick(1.35)
+		game.stage_manager._publish()
+		check(not overlay.root.visible and hud.visible, "HP plate enters on cinematic end")
+		check(audio._boss_duck == -4.0, "intro releases into fight mix")
+		arena.abort()
+	check(copy.threat(&"unknown") == "Review required.", "unknown boss has safe fallback copy")
+	game.free()
 	await frames()
 	print("BOSS INTRO: ", "PASS" if before == failures else "FAIL")

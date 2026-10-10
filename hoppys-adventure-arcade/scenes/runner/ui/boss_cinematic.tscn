@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scenes/runner/ui/boss_cinematic.gd" id="1"]
+
+[node name="BossCinematic" type="CanvasLayer"]
+process_mode = 1
+layer = 12
+script = ExtResource("1")

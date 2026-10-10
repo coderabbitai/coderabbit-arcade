@@ -19,6 +19,10 @@ var suspended: Dictionary = {}
 var signal_handlers: Dictionary = {}
 var signal_paused := false
 var grain_seed := 17
+var cinematic_hold := false
+var cinematic_released := false
+var cinematic_seconds := 1.0
+var cinematic_skip_tail := 0.3
 
 func _init() -> void:
 	layer = 9
@@ -37,7 +41,7 @@ func _init() -> void:
 		&"pursuit_started": _pursuit_started, &"pursuit_progress": _pursuit_progress,
 		&"pursuit_recovered": _recovered, &"caught": _caught,
 		&"speed_changed": _speed, &"power_up_collected": _power_up, &"power_up_expired": _expired,
-		&"boss_intro": _boss_intro, &"stage_cleared": _stage_clear,
+		&"boss_cinematic": _boss_cinematic, &"boss_cinematic_skipped": _boss_skipped, &"boss_cinematic_ended": _boss_ended, &"stage_cleared": _stage_clear,
 		&"phase_changed": _phase, &"run_finished": _finished, &"paused_changed": _paused,
 	}
 	_apply()
@@ -85,6 +89,8 @@ func _apply() -> void:
 func _process(delta: float) -> void:
 	if signal_paused:
 		return
+	if is_instance_valid(game) and "boss_time_factor" in game:
+		delta *= float(game.get("boss_time_factor"))
 	clock += delta
 	for key: String in channels.keys():
 		var channel: Dictionary = channels[key]
@@ -94,6 +100,9 @@ func _process(delta: float) -> void:
 		values[key] = lerpf(channel.from, channel.to, 1.0 - (1.0 - t) * (1.0 - t))
 		if t >= 1.0:
 			channels.erase(key)
+	if cinematic_hold and is_instance_valid(game):
+		var p := clampf(float(game.get("boss_cinematic_progress")), 0, 1)
+		values.letterbox = smoothstep(0.0, 0.18, p * cinematic_seconds) if not cinematic_released else 1.0 - smoothstep(1.0 - minf(cinematic_skip_tail / cinematic_seconds, 1.0), 1.0, p)
 	_apply()
 
 func _write(value: float, key: String) -> void:
@@ -141,6 +150,8 @@ func _animate(key: String, target: float, seconds: float = 0.18, hold: float = -
 		_suspend(key, tween)
 
 func _reset() -> void:
+	cinematic_hold = false
+	cinematic_released = false
 	for key: String in transitions.keys():
 		_cancel(key)
 	channels.clear()
@@ -191,9 +202,26 @@ func _expired(kind: StringName) -> void:
 	if kind == &"nitro":
 		_animate("bloom_lift", 0.0, 0.35)
 
-func _boss_intro(_kind: StringName, _name: String, seconds: float) -> void:
-	var entrance := minf(0.2, maxf(seconds, 0.0))
-	_animate("letterbox", 1.0, entrance, maxf(0.0, seconds - entrance))
+func _boss_cinematic(_kind: StringName, _mode: StringName, seconds: float) -> void:
+	_cancel("letterbox")
+	cinematic_hold = true
+	cinematic_released = false
+	cinematic_seconds = maxf(seconds, 0.001)
+	cinematic_skip_tail = 0.3
+	if is_instance_valid(game) and "config" in game:
+		var config: Resource = game.get("config")
+		if config != null and "boss_cinematic_skip_tail" in config:
+			cinematic_skip_tail = maxf(0.001, float(config.get("boss_cinematic_skip_tail")))
+	_process(0.0)
+
+func _boss_skipped(_mode: StringName) -> void:
+	cinematic_released = true
+	_process(0.0)
+
+func _boss_ended(_mode: StringName) -> void:
+	cinematic_hold = false
+	cinematic_released = false
+	_animate("letterbox", 0.0, 0.18)
 
 func _stage_clear(_index: int, _bonus: int) -> void:
 	# Matches the existing stage_clear.gd card's 2.8 second lifetime.
