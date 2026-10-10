@@ -188,7 +188,8 @@ func play_retreat() -> void:
 	if _art != null:
 		_art.react(&"retreat", 0.95)
 	elif _model != null:
-		_play_action(&"retreat")
+		# Finish the clip and dissolve before the backend's 1.0 s outro frees the visual.
+		_play_action(&"retreat", 0.95)
 	_terminal = true
 	if _tag != null: _tag.hide()
 
