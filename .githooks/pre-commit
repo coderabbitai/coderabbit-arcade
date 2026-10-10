@@ -5,6 +5,7 @@ set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
 
 python3 "$root/tools/checks/repo_hygiene.py" --staged
+(cd "$root" && python3 tools/vendor/vendor_lock.py --check)
 
 if command -v gitleaks >/dev/null 2>&1; then
   gitleaks git --pre-commit --staged --redact --no-banner "$root"

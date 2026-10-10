@@ -93,6 +93,11 @@ jobs:
         run: python -m unittest discover -s tools/build -v
       - name: Hygiene checker unit tests
         run: python -m unittest discover -s tools/checks -v
+      # Vendored add-ons are exact copies of a tagged upstream release (tools/vendor/vendor.lock.json).
+      - name: Vendored add-ons match their lock
+        run: python tools/vendor/vendor_lock.py --check
+      - name: Vendor lock unit tests
+        run: python -m unittest discover -s tools/vendor -v
 
   gitleaks:
     name: gitleaks
