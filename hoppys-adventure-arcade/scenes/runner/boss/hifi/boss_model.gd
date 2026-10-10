@@ -107,7 +107,8 @@ static func load_model(path: String) -> Node3D:
 
 func _bind() -> bool:
 	var players := model.find_children("*", "AnimationPlayer", true, false)
-	if players.size() != 1:
+	var skeletons := model.find_children("*", "Skeleton3D", true, false)
+	if players.size() != 1 or skeletons.is_empty():
 		return false
 	animation_player = players[0] as AnimationPlayer
 	var library := AnimationLibrary.new()

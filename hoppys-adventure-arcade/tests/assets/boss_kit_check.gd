@@ -138,7 +138,7 @@ func source_surface_count(meshes: Array[Mesh]) -> int:
 	return count
 
 
-func make_rest_validation_mesh() -> ArrayMesh:
+func make_valid_rest_mesh() -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	var valid := []
 	valid.resize(Mesh.ARRAY_MAX)
@@ -147,6 +147,11 @@ func make_rest_validation_mesh() -> ArrayMesh:
 	valid[Mesh.ARRAY_CUSTOM0] = PackedFloat32Array([0.0, 1.0, 0.0, 1.0, 0.0, 1.0])
 	var rest_flags := Mesh.ARRAY_FORMAT_CUSTOM0 | (Mesh.ARRAY_CUSTOM_RG_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, valid, [], {}, rest_flags)
+	return mesh
+
+
+func make_rest_validation_mesh() -> ArrayMesh:
+	var mesh := make_valid_rest_mesh()
 	var invalid := []
 	invalid.resize(Mesh.ARRAY_MAX)
 	invalid[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3.ZERO, Vector3.RIGHT, Vector3.UP])
@@ -203,6 +208,69 @@ func cached_temporary_mesh_ref(model_script: Script) -> WeakRef:
 	check(cache_validity(model_script, temporary, 0), "temporary Mesh receives a validation cache entry")
 	check(temporary.has_meta(REST_VALIDATION_META), "temporary Mesh stores cache metadata locally")
 	return weakref(temporary)
+
+
+func make_skeleton_guard_scene(include_skeleton: bool) -> PackedScene:
+	var scene_root := Node3D.new()
+	var player := AnimationPlayer.new()
+	var library := AnimationLibrary.new()
+	for action in ACTIONS:
+		library.add_animation(action, Animation.new())
+	player.add_animation_library(&"", library)
+	scene_root.add_child(player)
+	player.owner = scene_root
+	for socket_name in SOCKETS:
+		var socket := Node3D.new()
+		socket.name = String(socket_name)
+		scene_root.add_child(socket)
+		socket.owner = scene_root
+	var surface_mesh := make_valid_rest_mesh()
+	surface_mesh.surface_set_material(0, StandardMaterial3D.new())
+	var mesh_instance := MeshInstance3D.new()
+	mesh_instance.name = "FixtureMesh"
+	mesh_instance.mesh = surface_mesh
+	scene_root.add_child(mesh_instance)
+	mesh_instance.owner = scene_root
+	if include_skeleton:
+		var skeleton := Skeleton3D.new()
+		skeleton.name = "FixtureSkeleton"
+		scene_root.add_child(skeleton)
+		skeleton.owner = scene_root
+	var packed := PackedScene.new()
+	var pack_error := packed.pack(scene_root)
+	scene_root.free()
+	check(pack_error == OK, "skeleton guard fixture packs successfully")
+	return packed if pack_error == OK else null
+
+
+func check_skeletonless_fallback(model_script: Script) -> void:
+	var fixture_id := "%d_%d" % [OS.get_process_id(), Time.get_ticks_usec()]
+	var missing_skeleton_path := "user://boss_kit_no_skeleton_%s.tscn" % fixture_id
+	var skeleton_path := "user://boss_kit_with_skeleton_%s.tscn" % fixture_id
+	var no_skeleton_scene := make_skeleton_guard_scene(false)
+	var with_skeleton_scene := make_skeleton_guard_scene(true)
+	var no_skeleton_saved := false
+	var skeleton_saved := false
+	if no_skeleton_scene != null:
+		no_skeleton_saved = ResourceSaver.save(no_skeleton_scene, missing_skeleton_path) == OK
+	check(no_skeleton_saved, "skeleton-less bind fixture saves as a scratch PackedScene")
+	if not skeleton_saved and with_skeleton_scene != null:
+		skeleton_saved = ResourceSaver.save(with_skeleton_scene, skeleton_path) == OK
+	check(skeleton_saved, "skeleton-present control fixture saves as a scratch PackedScene")
+	if no_skeleton_saved:
+		var missing_skeleton_instance: Variant = model_script.call("load_model", missing_skeleton_path)
+		check(missing_skeleton_instance == null, "skeleton-less scene returns null for procedural fallback")
+		if missing_skeleton_instance is Node:
+			missing_skeleton_instance.free()
+	if skeleton_saved:
+		var skeleton_instance: Variant = model_script.call("load_model", skeleton_path)
+		check(skeleton_instance is Node3D, "skeleton-present control satisfies the remaining bind prerequisites")
+		if skeleton_instance is Node:
+			skeleton_instance.free()
+	var no_skeleton_removed := not FileAccess.file_exists(missing_skeleton_path) or DirAccess.remove_absolute(ProjectSettings.globalize_path(missing_skeleton_path)) == OK
+	var skeleton_removed := not FileAccess.file_exists(skeleton_path) or DirAccess.remove_absolute(ProjectSettings.globalize_path(skeleton_path)) == OK
+	check(no_skeleton_removed, "skeleton-less scratch scene is removed")
+	check(skeleton_removed, "skeleton-present scratch scene is removed")
 
 
 func dissolve_mask(viewport: SubViewport, instance: Node3D, progress: float, label: String) -> PackedByteArray:
@@ -408,6 +476,7 @@ func run() -> void:
 		return
 	var fallback: Variant = model_script.call("load_model", "res://Assets/runner/bosses/kit_selftest/missing.glb")
 	check(fallback == null, "missing model path returns null for procedural fallback")
+	check_skeletonless_fallback(model_script)
 	if not FileAccess.file_exists(SELFTEST_PATH):
 		finish()
 		return
