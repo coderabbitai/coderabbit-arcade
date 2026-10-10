@@ -20,6 +20,9 @@ const ScoreManager = preload("res://scenes/runner/systems/score_manager.gd")
 ## script preloads this one back, so there is no cycle).
 const Projectile = preload("res://scenes/runner/hazards/projectile.gd")
 const ToolPickup = preload("res://scenes/runner/powerups/tool_pickup.gd")
+## The cinematic-focus default (contract §11.5) for a visual without the hook, the graybox included;
+## the base preloads nothing, so there is no cycle.
+const BossVisualBase = preload("res://scenes/runner/boss/boss_visual_base.gd")
 const PROJECTILE_SCENE := "res://scenes/runner/hazards/projectile.tscn"
 const TOOL_SCENE := "res://scenes/runner/powerups/tool_pickup.tscn"
 const VISUAL_DIR := "res://scenes/runner/boss/visuals/"
@@ -85,6 +88,10 @@ var boss: Node3D
 ## own windows can never drift apart.
 var cinematic_mode: StringName = &""
 var cinematic_seconds := 0.0
+## Where the cinematic camera aims, in the Boss mount's space (contract §11.5): the visual's
+## cinematic_focus(), read once straight after on_spawned() at its rest pose and kept for the fight.
+## Zero outside a fight.
+var cinematic_focus := Vector3.ZERO
 
 @onready var boss_root: Node3D = $Boss
 @onready var projectiles_root: Node3D = $Projectiles
@@ -862,6 +869,7 @@ func _mount_boss() -> void:
 				_apply_visual_vars()
 				if visual.has_method("on_spawned"):
 					visual.on_spawned()
+				_read_cinematic_focus()
 				return
 			if instance != null:
 				push_warning("Runner boss visual at %s root is %s, expected Node3D; using graybox" % [path, instance.get_class()])
@@ -869,6 +877,21 @@ func _mount_boss() -> void:
 	_graybox = _build_graybox()
 	visual = _graybox
 	boss_root.add_child(visual)
+	_read_cinematic_focus()
+
+## The camera's aim for this fight (contract §11.5), taken at the rest pose on_spawned() leaves and
+## before any cinematic cue: the visual's own cinematic_focus() when it has one (a Vector3), else the
+## shared rest_focus() default, carried into the mount's space through the visual's transform.
+func _read_cinematic_focus() -> void:
+	cinematic_focus = Vector3.ZERO
+	if not is_instance_valid(visual):
+		return
+	var local := BossVisualBase.rest_focus(visual)
+	if visual.has_method("cinematic_focus"):
+		var value: Variant = visual.call(&"cinematic_focus")
+		if value is Vector3:
+			local = value
+	cinematic_focus = visual.transform * local
 
 ## The contract §11.5 base vars, set before on_spawned(). A visual that does not extend
 ## boss_visual_base.gd simply does not receive them.
@@ -923,6 +946,7 @@ func _free_visual() -> void:
 		visual.queue_free()
 	visual = null
 	_graybox = null
+	cinematic_focus = Vector3.ZERO
 
 # --- arena housekeeping ---
 

@@ -626,7 +626,7 @@ func _apply_boss_camera() -> void:
 	var arena := _boss_encounter()
 	var mode: StringName = _cinematic_mode(arena)
 	var progress := float(arena.cinematic_progress()) if mode != &"" and arena.has_method("cinematic_progress") else 0.0
-	camera.set_boss_cinematic(progress, mode, _boss_position(arena))
+	camera.set_boss_cinematic(progress, mode, _boss_position(arena), _boss_focus_position(arena))
 
 func _apply_boss_camera_reset() -> void:
 	if game == null:
@@ -648,6 +648,20 @@ func _boss_position(arena: Node) -> Vector3:
 		if node != null and is_instance_valid(node) and node.is_inside_tree():
 			return node.global_position
 	return Vector3(0.0, BOSS_CENTER_Y, _float_config(&"boss_z", DEFAULT_BOSS_Z))
+
+## Contract §11.5: the global point the shot aims at — the Boss mount carrying the encounter's
+## cinematic_focus (the visual's rest focus, read at spawn), so a pose can never move the aim.
+func _boss_focus_position(arena: Node) -> Vector3:
+	var focus := Vector3.ZERO
+	if arena != null and is_instance_valid(arena) and &"cinematic_focus" in arena:
+		var value: Variant = arena.get(&"cinematic_focus")
+		if value is Vector3:
+			focus = value
+	if arena != null and is_instance_valid(arena) and &"boss" in arena:
+		var node := arena.get(&"boss") as Node3D
+		if node != null and is_instance_valid(node) and node.is_inside_tree():
+			return node.to_global(focus)
+	return _boss_position(arena) + focus
 
 # --- drain ---
 

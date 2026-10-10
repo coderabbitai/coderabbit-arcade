@@ -15,34 +15,41 @@ const DEFAULT_TURN_CAMERA_YAW := 55.0
 const DEFAULT_TURN_CAMERA_BANK := 12.0
 const DEFAULT_TURN_SWING_IN_FRACTION := 0.3
 const DEFAULT_TURN_SWING_OUT_FRACTION := 0.3
-## Contract 2.6 §11.14 boss shots, one per cinematic mode. A pose is placed off the Boss node:
-## `distance` metres back toward the player, `height` metres off the boss centre (below it is a low
-## angle looking up), `orbit` degrees of yaw around the boss, and the lens aims `look_y` metres above
-## the centre. Keys are [p, distance, height, orbit, fov, look_y], smoothstepped between. The blend
-## ramps in over [0, cut] and back out over [ret, 1]; `ret` is where a skip lands at the default
-## lengths (the last boss_cinematic_skip_tail 0.3 s), so a skip never pops the camera.
+## Contract 2.6 §11.14 boss shots, one per cinematic mode. The lens is placed off the Boss mount:
+## `distance` metres back toward the player, `height` metres off the mount (below it is a low angle
+## looking up), `orbit` degrees of yaw around it. It aims at the visual's cinematic focus (§11.5,
+## the centre of the upper third of its rest bounds unless the visual says otherwise) plus
+## `look_bias` metres. The default focus sits about 2.4 to 3.1 m above the mount on the three
+## shipped bosses, so the biases land the hold near +1.6 m and the defeat close-up near +1.4 m, and
+## a taller boss is aimed higher. Keys are [p, distance, height, orbit, fov, look_bias], smoothstepped
+## between. The blend ramps in over [0, cut] and back out over [ret, 1]; `ret` is where a skip lands at
+## the default lengths (the last boss_cinematic_skip_tail 0.3 s), so a skip never pops the camera.
+## The intro push lands on BossVisualBase.INTRO_POSE_AT and the hold ends on INTRO_HOLD_UNTIL.
 const BOSS_SHOTS := {
 	&"intro_full": {
 		"cut": 0.03,
 		"ret": 0.94,
 		"keys": [
-			# Cut in low and wide, push up at the boss (FOV 70 -> 48), freeze under the title card,
-			# then widen behind Hoppy for the hint row.
-			[0.0, 9.0, -1.5, 0.0, 70.0, 0.4],
-			[0.4, 5.4, -1.0, 0.0, 48.0, 0.5],
-			[0.66, 5.2, -0.9, 0.0, 48.0, 0.5],
-			[0.84, 16.0, 1.0, 0.0, 62.0, 0.0],
-			[1.0, 16.0, 1.0, 0.0, 62.0, 0.0]
+			# Cut in low and wide, push up at the boss (FOV 70 -> 52) to land with the pose and the
+			# title card at 0.40, hold under the card until 0.66, then widen behind Hoppy for the hint
+			# row. The hold sits far enough back that the Hydra's crests clear the top letterbox.
+			[0.0, 9.0, -1.5, 0.0, 70.0, -1.9],
+			[0.4, 6.5, -1.0, 0.0, 52.0, -1.1],
+			[0.66, 6.3, -0.9, 0.0, 52.0, -1.1],
+			[0.84, 16.0, 1.0, 0.0, 62.0, -2.4],
+			[1.0, 16.0, 1.0, 0.0, 62.0, -2.4]
 		]
 	},
 	&"intro_short": {
 		"cut": 0.05,
 		"ret": 0.88,
 		"keys": [
-			[0.0, 8.0, -1.3, 0.0, 64.0, 0.4],
-			[0.45, 5.6, -0.9, 0.0, 50.0, 0.5],
-			[0.88, 7.0, -0.5, 0.0, 54.0, 0.4],
-			[1.0, 7.0, -0.5, 0.0, 54.0, 0.4]
+			# The same push and hold, compressed: the push lands at 0.28 and the hold runs to the
+			# return at 0.88.
+			[0.0, 8.0, -1.3, 0.0, 64.0, -1.9],
+			[0.28, 6.7, -0.9, 0.0, 54.0, -1.1],
+			[0.88, 7.4, -0.5, 0.0, 56.0, -1.2],
+			[1.0, 7.4, -0.5, 0.0, 56.0, -1.2]
 		]
 	},
 	&"defeat_full": {
@@ -51,22 +58,22 @@ const BOSS_SHOTS := {
 		"keys": [
 			# Punch in through the hit-stop, orbit the close-up -12 -> +12 deg, then pull back wide
 			# over Hoppy's shoulder for the triumphant beat.
-			[0.0, 7.0, -0.4, -12.0, 56.0, 0.3],
-			[0.06, 4.4, -0.3, -12.0, 44.0, 0.3],
-			[0.5, 4.2, -0.2, 12.0, 44.0, 0.3],
-			[0.8, 19.0, 2.4, 6.0, 58.0, 0.0],
-			[1.0, 19.0, 2.4, 6.0, 58.0, 0.0]
+			[0.0, 7.0, -0.4, -12.0, 56.0, -1.35],
+			[0.06, 4.4, -0.3, -12.0, 44.0, -1.35],
+			[0.5, 4.2, -0.2, 12.0, 44.0, -1.35],
+			[0.8, 19.0, 2.4, 6.0, 58.0, -2.1],
+			[1.0, 19.0, 2.4, 6.0, 58.0, -2.1]
 		]
 	},
 	&"defeat_short": {
 		"cut": 0.06,
 		"ret": 0.85,
 		"keys": [
-			[0.0, 7.0, -0.4, -12.0, 56.0, 0.3],
-			[0.08, 4.6, -0.3, -12.0, 46.0, 0.3],
-			[0.45, 4.4, -0.2, 12.0, 46.0, 0.3],
-			[0.75, 18.0, 2.2, 6.0, 58.0, 0.0],
-			[1.0, 18.0, 2.2, 6.0, 58.0, 0.0]
+			[0.0, 7.0, -0.4, -12.0, 56.0, -1.35],
+			[0.08, 4.6, -0.3, -12.0, 46.0, -1.35],
+			[0.45, 4.4, -0.2, 12.0, 46.0, -1.35],
+			[0.75, 18.0, 2.2, 6.0, 58.0, -2.1],
+			[1.0, 18.0, 2.2, 6.0, 58.0, -2.1]
 		]
 	}
 }
@@ -97,8 +104,10 @@ var turn_direction := 0
 ## 0..1 through the boss cinematic and its mode, &"" outside one (contract 2.6 §11.14).
 var boss_progress := 0.0
 var boss_mode: StringName = &""
-## The Boss node, in this rig's space, that the shot is framed on.
+## The Boss mount, in this rig's space, that the lens is placed off.
 var boss_target := Vector3.ZERO
+## The visual's cinematic focus, in this rig's space, that the lens aims at (contract §11.5).
+var boss_focus := Vector3.ZERO
 
 ## Where the rig wants the camera before shake, refreshed in _physics_process.
 var _rest_position := Vector3(0, 4, 8)
@@ -130,6 +139,7 @@ func reset() -> void:
 	boss_progress = 0.0
 	boss_mode = &""
 	boss_target = Vector3.ZERO
+	boss_focus = Vector3.ZERO
 	_rest_position = base_position
 	if camera != null:
 		camera.position = base_position
@@ -201,22 +211,27 @@ func turn_swing_out_fraction() -> float:
 	return float(config.turn_swing_out_fraction)
 
 ## The boss cinematic shot (contract 2.6 §11.14). The StageManager calls this every physics tick of
-## the `boss` phase, the way it drives set_turn(), and with (0, &"") once the cinematic is over;
-## `boss_position` is the Boss node's global position. boss_shot() blends to 0 at p = 0 and p = 1,
-## so the camera hands back to the follow exactly where it left it.
-func set_boss_cinematic(progress: float, mode: StringName, boss_position: Vector3) -> void:
+## the `boss` phase, the way it drives set_turn(), and with (0, &"") once the cinematic is over.
+## `boss_position` is the Boss mount's global position and `focus_position` the global point the
+## shot aims at (the mount plus the visual's cinematic focus, §11.5); without one the shot aims at
+## the mount itself. boss_shot() blends to 0 at p = 0 and p = 1, so the camera hands back to the
+## follow exactly where it left it.
+func set_boss_cinematic(progress: float, mode: StringName, boss_position: Vector3,
+		focus_position: Variant = null) -> void:
 	boss_progress = clampf(progress, 0.0, 1.0)
 	boss_mode = mode
 	boss_target = to_local(boss_position) if is_inside_tree() else boss_position
+	var focus: Vector3 = focus_position if focus_position is Vector3 else boss_position
+	boss_focus = to_local(focus) if is_inside_tree() else focus
 
-## Pure shot curve for `mode` at progress `p`: {blend, distance, height, orbit, fov, look_y} (see
+## Pure shot curve for `mode` at progress `p`: {blend, distance, height, orbit, fov, look_bias} (see
 ## BOSS_SHOTS). Like turn_swing_profile, `blend` is exactly 0 at p = 0 and p = 1 — the endpoints are
 ## answered before the ramps — and an unknown or empty mode never blends at all.
 static func boss_shot(p: float, mode: StringName) -> Dictionary:
 	var progress := clampf(p, 0.0, 1.0)
 	var table: Dictionary = BOSS_SHOTS.get(mode, {})
 	var keys: Array = table.get("keys", [])
-	var shot := {"blend": 0.0, "distance": 0.0, "height": 0.0, "orbit": 0.0, "fov": 0.0, "look_y": 0.0}
+	var shot := {"blend": 0.0, "distance": 0.0, "height": 0.0, "orbit": 0.0, "fov": 0.0, "look_bias": 0.0}
 	if keys.is_empty():
 		return shot
 	var pose: Array = _shot_pose(keys, progress)
@@ -224,7 +239,7 @@ static func boss_shot(p: float, mode: StringName) -> Dictionary:
 	shot["height"] = float(pose[2])
 	shot["orbit"] = float(pose[3])
 	shot["fov"] = float(pose[4])
-	shot["look_y"] = float(pose[5])
+	shot["look_bias"] = float(pose[5])
 	if progress <= 0.0 or progress >= 1.0:
 		return shot
 	var cut := clampf(float(table.get("cut", 0.0)), 0.0, 1.0)
@@ -318,15 +333,16 @@ func _apply_turn_swing() -> void:
 	camera.position = pivot + (camera.position - pivot).rotated(Vector3.UP, yaw)
 	camera.rotation = _base_rotation + Vector3(0.0, yaw, bank)
 
-## Blend the follow pose toward the boss shot (contract 2.6 §11.14): the camera sits off the Boss
-## node where the shot says and aims at it, the shake offset rides along, and position and rotation
-## both mix by `blend`, which is 0 outside a cinematic and at both of its ends.
+## Blend the follow pose toward the boss shot (contract 2.6 §11.14): the lens sits off the Boss
+## mount where the shot says and aims at the visual's focus plus the shot's look_bias, the shake
+## offset rides along, and position and rotation both mix by `blend`, which is 0 outside a cinematic
+## and at both of its ends.
 func _apply_boss_shot(shot: Dictionary, blend: float, offset: Vector3) -> void:
 	if blend <= 0.0:
 		return
 	var orbit := deg_to_rad(float(shot["orbit"]))
 	var lens := boss_target + Vector3(0.0, float(shot["height"]), float(shot["distance"])).rotated(Vector3.UP, orbit)
-	var aim := boss_target + Vector3(0.0, float(shot["look_y"]), 0.0)
+	var aim := boss_focus + Vector3(0.0, float(shot["look_bias"]), 0.0)
 	var follow_rotation := camera.quaternion
 	camera.position = camera.position.lerp(lens + offset, blend)
 	var look := aim - lens

@@ -622,7 +622,8 @@ cinematic. After the outro `finished` is set (a plain bool the StageManager poll
 StageManager side (§11.14): `boss_cinematic` sets `cinematic_hold` (player controls off through
 `RunnerGame.refresh_player_controls()`, `speed_controller.set_cinematic_scale(boss_cinematic_speed_scale)`), and
 `boss_cinematic_skipped` / `boss_cinematic_ended`, a catch, a reset and the stage clear release it. Every boss tick
-drives `camera_rig.set_boss_cinematic(progress, mode, boss_global_position)` and publishes the facade mirrors
+drives `camera_rig.set_boss_cinematic(progress, mode, boss_global_position, focus_global_position)` (the focus is
+`boss_encounter.cinematic_focus`, the visual's `cinematic_focus()` read once after `on_spawned()`) and publishes the facade mirrors
 `boss_cinematic_mode`, `boss_cinematic_progress`, `boss_time_factor`. `_snapshot()` adds `bosses_met` and `bosses_defeated_kinds`.
 
 Both endings can be reached from inside a physics callback — the killing blow is a tool auto-firing in

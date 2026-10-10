@@ -1,6 +1,6 @@
 extends SceneTree
-## Boss cinematics (contract 2.6 §11.14, plus the §11.4 signals, §11.5 visual feed and §11.13
-## bosses_met / bosses_defeated_kinds). Hand-driven 1/60 ticks, like tests/runner_logic.gd.
+## Boss cinematics (contract 2.6 §11.14, plus the §11.4 signals, §11.5 visual feed and focus, and
+## §11.13 bosses_met / bosses_defeated_kinds). Hand-driven 1/60 ticks, like tests/runner_logic.gd.
 ## Run with --path hoppys-adventure-arcade --script res://tests/runner_boss_cinematic.gd.
 ##
 ## Only scripts that never reach runner_game.gd are preloaded: under --script this file is compiled
@@ -58,6 +58,10 @@ const RECORDER_SOURCE := (
 	+ "func play_defeat() -> void:\n"
 	+ "\t_note(&\"play_defeat\", [])\n"
 )
+## Overrides the default focus with a fixed local point (contract §11.5).
+const FOCUS_SOURCE := "extends \"res://scenes/runner/boss/boss_visual_base.gd\"\nfunc cinematic_focus() -> Vector3:\n\treturn Vector3(1.5, 2.5, -0.5)\n"
+## Records every set_boss_cinematic, including the optional focus argument (contract §11.14).
+const CAMERA_FEED_SOURCE := "extends Node3D\nvar calls: Array = []\nfunc set_boss_cinematic(progress: float, mode: StringName, boss_position: Vector3, focus_position: Variant = null) -> void:\n\tcalls.append([progress, mode, boss_position, focus_position])\nfunc set_turn(_progress: float, _direction: int) -> void:\n\tpass\nfunc shake(_strength: float, _duration := 0.35) -> void:\n\tpass\n"
 
 var failures := 0
 var checks := 0
@@ -70,6 +74,9 @@ var spawner_script: GDScript
 var rig_script: GDScript
 var controls_script: GDScript
 var recorder_script: GDScript
+var focus_script: GDScript
+var camera_feed_script: GDScript
+var visual_base_script: GDScript
 var hit_manager_script: GDScript
 var score_manager_script: GDScript
 var effect_manager_script: GDScript
@@ -116,8 +123,12 @@ func run() -> void:
 	rig_script = _compile(RIG_SOURCE)
 	controls_script = _compile(CONTROLS_SOURCE)
 	recorder_script = _compile(RECORDER_SOURCE)
+	focus_script = _compile(FOCUS_SOURCE)
+	camera_feed_script = _compile(CAMERA_FEED_SOURCE)
+	visual_base_script = load("res://scenes/runner/boss/boss_visual_base.gd") as GDScript
 	if game_script == null or hazard_script == null or spawner_script == null or rig_script == null \
-			or controls_script == null or recorder_script == null or runner_game_script == null \
+			or controls_script == null or recorder_script == null or focus_script == null \
+			or camera_feed_script == null or visual_base_script == null or runner_game_script == null \
 			or hit_manager_script == null or score_manager_script == null or effect_manager_script == null \
 			or speed_controller_script == null or stage_manager_script == null or autopilot_script == null \
 			or encounter_script == null or camera_script == null or base_config == null:
@@ -133,6 +144,7 @@ func run() -> void:
 	_test_hold_and_abort()
 	_test_visual_feed()
 	_test_unskippable_defeats()
+	_test_intro_timing_and_focus()
 	await _test_real_input()
 	await _test_real_defeat_input()
 	await _report()
@@ -1403,6 +1415,328 @@ func _test_real_defeat_input() -> void:
 		% [elapsed_at, progress_at, progress_after, int(skipped["n"]), player.is_airborne])
 	_release_jump()
 	_free_live_scene()
+
+# --- 13. Intro timing, 14. focus default, 15. camera focus (contract §11.5, §11.14) -------------
+
+## INTRO_POSE_AT / INTRO_HOLD_UNTIL, the shot keys those land on, and a frozen hold between them.
+func _test_intro_timing_and_focus() -> void:
+	_test_intro_timing()
+	_test_focus_bounds()
+	_test_focus_cache_and_override()
+	_test_graybox_focus()
+	_test_camera_focus_feed()
+
+func _test_intro_timing() -> void:
+	var base_map: Dictionary = visual_base_script.get_script_constant_map()
+	var cam_map: Dictionary = camera_script.get_script_constant_map()
+	var pose: Dictionary = base_map.get("INTRO_POSE_AT", {})
+	var hold: Dictionary = base_map.get("INTRO_HOLD_UNTIL", {})
+	var shots: Dictionary = cam_map.get("BOSS_SHOTS", {})
+	var expected_pose: Dictionary = {&"intro_full": 0.40, &"intro_short": 0.28}
+	var expected_hold: Dictionary = {&"intro_full": 0.66, &"intro_short": 0.88}
+	var const_bad := ""
+	if pose.size() != 2 or hold.size() != 2:
+		const_bad = "sizes pose %d hold %d, maps have pose %s hold %s shots %s" % [
+			pose.size(), hold.size(), base_map.has("INTRO_POSE_AT"), base_map.has("INTRO_HOLD_UNTIL"), cam_map.has("BOSS_SHOTS")]
+	else:
+		for mode in expected_pose:
+			var got_pose: float = float(pose.get(mode, -1))
+			var got_hold: float = float(hold.get(mode, -1))
+			if not is_equal_approx(got_pose, float(expected_pose[mode])) or not is_equal_approx(got_hold, float(expected_hold[mode])):
+				const_bad = "%s pose %s hold %s" % [mode, pose.get(mode, "<missing>"), hold.get(mode, "<missing>")]
+				break
+	check(const_bad == "",
+		"13: INTRO_POSE_AT %s INTRO_HOLD_UNTIL %s, expected intro_full 0.40/0.66 and intro_short 0.28/0.88 (%s)"
+		% [pose, hold, const_bad])
+	var deltas := ""
+	for mode in [&"intro_full", &"intro_short"]:
+		var pose_at: float = float(pose.get(mode, -1))
+		var hold_at: float = float(hold.get(mode, -1))
+		var table: Dictionary = shots.get(mode, {})
+		var ret: float = float(table.get("ret", -1))
+		# intro_short's hold runs right up to its return (§11.14), so the hold may end on `ret`.
+		check(pose_at < hold_at and hold_at <= ret,
+			"13: %s pose %.4f hold %.4f ret %.4f, expected pose < hold <= ret" % [mode, pose_at, hold_at, ret])
+		var keys: Array = table.get("keys", [])
+		var has_pose := false
+		var has_hold := false
+		var listed := ""
+		for key in keys:
+			var row: Array = key
+			if row.is_empty():
+				continue
+			var p: float = float(row[0])
+			listed += " %.4f" % p
+			if is_equal_approx(p, pose_at):
+				has_pose = true
+			if is_equal_approx(p, hold_at):
+				has_hold = true
+		check(has_pose and has_hold,
+			"13: %s shot keys [%s ], expected one at pose %.4f and one at hold %.4f" % [mode, listed, pose_at, hold_at])
+		if not has_pose or not has_hold or pose_at >= hold_at:
+			check(false, "13: %s hold not sampled (pose %.4f hold %.4f)" % [mode, pose_at, hold_at])
+			continue
+		var anchor: Dictionary = camera_script.boss_shot(pose_at, mode)
+		var anchor_fov: float = float(anchor.get("fov", -999.0))
+		var anchor_dist: float = float(anchor.get("distance", -999.0))
+		var worst_fov := 0.0
+		var worst_dist := 0.0
+		var at_fov := pose_at
+		var at_dist := pose_at
+		for i in 21:
+			var p: float = pose_at + (hold_at - pose_at) * float(i) / 20.0
+			var shot: Dictionary = camera_script.boss_shot(p, mode)
+			var dfov: float = absf(float(shot.get("fov", 0.0)) - anchor_fov)
+			var ddist: float = absf(float(shot.get("distance", 0.0)) - anchor_dist)
+			if dfov > worst_fov:
+				worst_fov = dfov
+				at_fov = p
+			if ddist > worst_dist:
+				worst_dist = ddist
+				at_dist = p
+		check(worst_fov <= 2.0 and worst_dist <= 1.0,
+			"13: %s between %.4f and %.4f fov moved %.3f° at p %.4f (anchor %.2f) and distance %.3f m at p %.4f (anchor %.2f); limits are ±2° and ±1 m"
+			% [mode, pose_at, hold_at, worst_fov, at_fov, anchor_fov, worst_dist, at_dist, anchor_dist])
+		deltas += "%s fov Δ%.3f° dist Δ%.3f m; " % [mode, worst_fov, worst_dist]
+	note("13: pose %s hold %s; %s" % [pose, hold, deltas])
+
+## Two visible boxes, one of them under a scaled pivot, plus a hidden box that must not count.
+func _test_focus_bounds() -> void:
+	var probe := BoxMesh.new()
+	probe.size = Vector3(2, 2, 2)
+	var probe_aabb: AABB = probe.get_aabb()
+	check(probe_aabb.position.is_equal_approx(Vector3(-1, -1, -1)) and probe_aabb.size.is_equal_approx(Vector3(2, 2, 2)),
+		"14: BoxMesh (2, 2, 2) aabb pos %s size %s, expected pos (-1, -1, -1) size (2, 2, 2)"
+		% [probe_aabb.position, probe_aabb.size])
+	var host := Node3D.new()
+	root.add_child(host)
+	junk.append(host)
+	host.add_child(_focus_box(Vector3(2, 2, 2), Vector3(4, 0, 0)))
+	var pivot := Node3D.new()
+	pivot.position = Vector3(0, 10, 0)
+	pivot.scale = Vector3(2, 1, 1)
+	host.add_child(pivot)
+	pivot.add_child(_focus_box(Vector3(1, 1, 1), Vector3(0, 1, 0)))
+	host.add_child(_focus_box(Vector3(10, 10, 10), Vector3(50, 0, 0), false))
+	var hand := AABB(Vector3(-1, -1, -1), Vector3(6, 12.5, 2))
+	var want_focus: Vector3 = _upper_third(hand)
+	var got: AABB = visual_base_script.call(&"rest_bounds", host)
+	var focus: Vector3 = visual_base_script.call(&"rest_focus", host)
+	check(got.position.is_equal_approx(hand.position) and got.size.is_equal_approx(hand.size),
+		"14: rest_bounds pos %s size %s, expected pos %s size %s with the hidden mesh ignored"
+		% [got.position, got.size, hand.position, hand.size])
+	check(focus.is_equal_approx(want_focus),
+		"14: rest_focus %s, expected the upper-third centre %s" % [focus, want_focus])
+	var hidden_root := Node3D.new()
+	root.add_child(hidden_root)
+	junk.append(hidden_root)
+	hidden_root.add_child(_focus_box(Vector3(2, 2, 2), Vector3.ZERO, false))
+	hidden_root.add_child(_focus_box(Vector3(2, 2, 2), Vector3(4, 0, 0), false))
+	var hidden_hand := AABB(Vector3(-1, -1, -1), Vector3(6, 2, 2))
+	var hidden_got: AABB = visual_base_script.call(&"rest_bounds", hidden_root)
+	var hidden_focus: Vector3 = visual_base_script.call(&"rest_focus", hidden_root)
+	check(hidden_got.position.is_equal_approx(hidden_hand.position) and hidden_got.size.is_equal_approx(hidden_hand.size),
+		"14: hidden-only rest_bounds pos %s size %s, expected the fallback merge pos %s size %s"
+		% [hidden_got.position, hidden_got.size, hidden_hand.position, hidden_hand.size])
+	check(hidden_focus.is_equal_approx(_upper_third(hidden_hand)),
+		"14: hidden-only rest_focus %s, expected %s" % [hidden_focus, _upper_third(hidden_hand)])
+	var empty := Node3D.new()
+	root.add_child(empty)
+	junk.append(empty)
+	var empty_bounds: AABB = visual_base_script.call(&"rest_bounds", empty)
+	var empty_focus: Vector3 = visual_base_script.call(&"rest_focus", empty)
+	check(not empty_bounds.has_volume() and empty_focus.is_equal_approx(Vector3.ZERO),
+		"14: no-mesh rest_focus %s bounds pos %s size %s, expected the origin"
+		% [empty_focus, empty_bounds.position, empty_bounds.size])
+
+## The base caches cinematic_focus() on first read. An override is what the encounter stores.
+func _test_focus_cache_and_override() -> void:
+	var cached := Node3D.new()
+	cached.set_script(recorder_script)
+	root.add_child(cached)
+	junk.append(cached)
+	var box := _focus_box(Vector3(2, 2, 2))
+	cached.add_child(box)
+	var before: Vector3 = visual_base_script.call(&"rest_focus", cached)
+	var first: Vector3 = cached.call(&"cinematic_focus")
+	box.position = Vector3(0, 20, 0)
+	box.scale = Vector3(3, 3, 3)
+	var second: Vector3 = cached.call(&"cinematic_focus")
+	var after: Vector3 = visual_base_script.call(&"rest_focus", cached)
+	check(first.is_equal_approx(before) and second.is_equal_approx(first) and not second.is_equal_approx(after),
+		"14: cinematic_focus %s then %s, rest_focus before %s after the move %s"
+		% [first, second, before, after])
+	var rig := _boss_rig(_overrides({}))
+	if rig.is_empty():
+		return
+	var arena: Node = rig["arena"]
+	var visual := Node3D.new()
+	visual.set_script(focus_script)
+	visual.position = Vector3(0.25, -0.5, 0.1)
+	visual.scale = Vector3(2, 3, 1)
+	var boss_root: Node3D = arena.get("boss_root")
+	if boss_root == null:
+		check(false, "14: the encounter has no boss mount for the focus override")
+		_free_rig(rig)
+		return
+	boss_root.add_child(visual)
+	arena.set("visual", visual)
+	arena.call(&"_read_cinematic_focus")
+	var fixed := Vector3(1.5, 2.5, -0.5)
+	var want: Vector3 = visual.transform * fixed
+	var got: Vector3 = arena.get("cinematic_focus")
+	check(got.is_equal_approx(want) and not got.is_equal_approx(fixed) and not got.is_equal_approx(visual.position),
+		"14: arena.cinematic_focus %s, expected visual.transform * %s = %s (visual position %s)"
+		% [got, fixed, want, visual.position])
+	note("14: cached focus %s stayed put after the mesh moved to %s; override stored %s" % [first, after, got])
+	_free_rig(rig)
+
+## Shipped visual scenes exist, so start() does not mount the graybox. Install the encounter's own
+## graybox and read the focus through the same function _mount_boss uses, then finish the fight.
+func _test_graybox_focus() -> void:
+	var rig := _boss_rig(_overrides({
+		"boss_hp_scale": 0.001,
+		"boss_timeout_seconds": 55.0,
+	}))
+	if rig.is_empty():
+		return
+	var arena: Node = rig["arena"]
+	arena.start(1)
+	var gray := _mount_graybox(arena)
+	if gray == null:
+		check(false, "14: the graybox did not mount")
+		_free_rig(rig)
+		return
+	var local_bounds: AABB = visual_base_script.call(&"rest_bounds", gray)
+	var mount_bounds: AABB = gray.transform * local_bounds
+	var y0: float = mount_bounds.position.y
+	var y1: float = mount_bounds.position.y + mount_bounds.size.y
+	var rest: Vector3 = visual_base_script.call(&"rest_focus", gray)
+	var focus: Vector3 = arena.get("cinematic_focus")
+	var carried: Vector3 = gray.transform * rest
+	check(is_equal_approx(y0, -1.0) and is_equal_approx(y1, 1.4),
+		"14: graybox mount-space y spans %.4f .. %.4f, expected -1.0 .. 1.4 (bounds pos %s size %s)"
+		% [y0, y1, mount_bounds.position, mount_bounds.size])
+	check(focus.is_equal_approx(carried) and focus.is_equal_approx(Vector3(0, 1, 0)),
+		"14: graybox cinematic_focus %s, expected the upper-third centre %s (about (0, 1, 0))"
+		% [focus, carried])
+	if not _skip_arena_intro(arena):
+		check(false, "14: the graybox fight's intro never ended (mode %s)" % arena.cinematic_mode)
+		_free_rig(rig)
+		return
+	check(int(arena.hp) == 1, "14: HP is %d before the kill, expected 1" % int(arena.hp))
+	if int(arena.hp) != 1:
+		_free_rig(rig)
+		return
+	var during: Vector3 = arena.get("cinematic_focus")
+	check(during.is_equal_approx(focus),
+		"14: cinematic_focus moved from %s to %s before the kill" % [focus, during])
+	arena.apply_tool(&"unit_test")
+	var ticks := 0
+	var guard := _ticks(DEFEAT_FULL + 1.0)
+	while not bool(arena.finished) and ticks < guard:
+		if not (arena.get("cinematic_focus") as Vector3).is_equal_approx(focus):
+			break
+		arena.tick(TICK)
+		ticks += 1
+	var after: Vector3 = arena.get("cinematic_focus")
+	check(bool(arena.finished) and after.is_equal_approx(Vector3.ZERO),
+		"14: finished %s after %d ticks with cinematic_focus %s, expected zero once the fight ends"
+		% [arena.finished, ticks, after])
+	note("14: graybox y %.3f..%.3f focus %s, cleared to %s (finished %s)" % [y0, y1, focus, after, arena.finished])
+	_free_rig(rig)
+
+## Every boss tick hands the stage the mount position and the global cinematic focus.
+func _test_camera_focus_feed() -> void:
+	var bias_bad := ""
+	for mode in MODES:
+		var shot: Dictionary = camera_script.boss_shot(0.5, mode)
+		if not shot.has("look_bias") or shot.has("look_y"):
+			bias_bad = "%s keys %s" % [mode, shot.keys()]
+			break
+	check(bias_bad == "", "15: boss_shot exposes look_bias and not look_y (%s)" % bias_bad)
+	var rig := _stage_rig(_overrides({}))
+	if rig.is_empty():
+		return
+	var game: Node = rig["game"]
+	var stage: Node = rig["stage"]
+	var feed := Node3D.new()
+	feed.set_script(camera_feed_script)
+	root.add_child(feed)
+	junk.append(feed)
+	game.camera_rig = feed
+	stage.begin()
+	if not _require_boss(rig, "15: camera", 8.0):
+		_free_rig(rig)
+		return
+	_tick_rig(rig, 8)
+	var arena: Node = rig["arena"]
+	var boss: Node3D = arena.get("boss")
+	if boss == null or not boss.is_inside_tree():
+		check(false, "15: the boss mount is missing during the intro")
+		_free_rig(rig)
+		return
+	var mount_focus: Vector3 = arena.get("cinematic_focus")
+	var want_pos: Vector3 = boss.global_position
+	var want_focus: Vector3 = boss.to_global(mount_focus)
+	check(not mount_focus.is_equal_approx(Vector3.ZERO) and not want_focus.is_equal_approx(want_pos),
+		"15: cinematic_focus %s (global %s) is not distinct from the mount %s" % [mount_focus, want_focus, want_pos])
+	var calls: Array = feed.get("calls")
+	var matched := 0
+	var bad := ""
+	for entry in calls:
+		var row: Array = entry
+		if row.size() < 4 or not (row[2] is Vector3) or not (row[3] is Vector3):
+			bad = "call %s is not a 4-arg boss tick" % [row]
+			break
+		if StringName(row[1]) != &"intro_full":
+			bad = "mode %s at progress %s, expected intro_full" % [row[1], row[0]]
+			break
+		var got_pos: Vector3 = row[2]
+		var got_focus: Vector3 = row[3]
+		if not got_pos.is_equal_approx(want_pos) or not got_focus.is_equal_approx(want_focus):
+			bad = "passed boss %s focus %s, expected boss %s focus %s (mount focus %s)" % [
+				got_pos, got_focus, want_pos, want_focus, mount_focus]
+			break
+		matched += 1
+	check(bad == "" and matched >= 9,
+		"15: %d boss tick(s) passed focus_position == boss.to_global(cinematic_focus) (%s)" % [matched, bad])
+	note("15: %d intro_full ticks, mount focus %s, global focus %s, look_bias on %d modes" % [
+		matched, mount_focus, want_focus, MODES.size()])
+	_free_rig(rig)
+
+func _focus_box(size: Vector3, at := Vector3.ZERO, shown := true) -> MeshInstance3D:
+	var mesh := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = size
+	mesh.mesh = box
+	mesh.position = at
+	mesh.visible = shown
+	return mesh
+
+func _upper_third(bounds: AABB) -> Vector3:
+	return bounds.position + Vector3(bounds.size.x * 0.5, bounds.size.y * 5.0 / 6.0, bounds.size.z * 0.5)
+
+func _mount_graybox(arena: Node) -> Node3D:
+	var old: Node = arena.get("visual")
+	if is_instance_valid(old):
+		var parent := old.get_parent()
+		if parent != null:
+			parent.remove_child(old)
+		old.free()
+	arena.set("visual", null)
+	arena.set("_graybox", null)
+	var boss_root: Node3D = arena.get("boss_root")
+	if boss_root == null:
+		return null
+	var gray: Node3D = arena.call(&"_build_graybox")
+	if gray == null:
+		return null
+	boss_root.add_child(gray)
+	arena.set("visual", gray)
+	arena.set("_graybox", gray)
+	arena.call(&"_read_cinematic_focus")
+	return gray
 
 # --- harness ------------------------------------------------------------------------------------
 

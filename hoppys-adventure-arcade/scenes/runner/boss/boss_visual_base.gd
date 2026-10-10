@@ -8,6 +8,13 @@ extends Node3D
 ## <= 40 draw calls at peak. The hover sway is the visual's own job, in _process (PAUSABLE).
 @warning_ignore_start("unused_parameter")
 
+## Contract 2.6 §11.14 intro timing, shared by the visuals, the HUD and the camera: by this progress
+## the visual has landed its final intro pose and the title card slams; the pose then holds frozen
+## until INTRO_HOLD_UNTIL, where the camera leaves the hold (camera_rig.gd BOSS_SHOTS keys its push
+## end and its hold end on exactly these values).
+const INTRO_POSE_AT := {&"intro_full": 0.40, &"intro_short": 0.28}
+const INTRO_HOLD_UNTIL := {&"intro_full": 0.66, &"intro_short": 0.88}
+
 ## flaky_test_swarm, merge_conflict_hydra or legacy_monolith.
 var kind: StringName = &""
 ## Display name for a name plate, e.g. "Flaky Test Swarm".
@@ -20,6 +27,9 @@ var hover_z := 0.0
 ## Suggested sway for the idle hover, in metres and seconds (config.boss_sway_*).
 var sway_amplitude := 0.0
 var sway_period := 1.0
+
+var _cinematic_focus_point := Vector3.ZERO
+var _cinematic_focus_read := false
 
 ## After the vars above are set, once per fight; reset every tween and particle.
 func on_spawned() -> void:
@@ -78,5 +88,69 @@ func set_cinematic_progress(mode: StringName, progress: float) -> void:
 ## owns. The engine time scale is never touched.
 func set_time_factor(factor: float) -> void:
 	pass
+
+## Optional (contract 2.6 §11.5): the point, in this visual's local space, the cinematic camera aims
+## at. The backend reads it once, straight after on_spawned() and before any cinematic cue. The
+## default, the centre of the upper third of the visual's rest bounds, is cached on that first read,
+## so no later pose can move the aim. Override it to aim somewhere else (a head, a core).
+func cinematic_focus() -> Vector3:
+	if not _cinematic_focus_read:
+		_cinematic_focus_point = rest_focus(self)
+		_cinematic_focus_read = true
+	return _cinematic_focus_point
+
+## The default focus for any boss root, the backend graybox included: the centre of the upper third
+## of rest_bounds(root), or the root's own origin when it carries no mesh.
+static func rest_focus(root: Node3D) -> Vector3:
+	var bounds := rest_bounds(root)
+	if not bounds.has_volume():
+		return bounds.get_center()
+	return bounds.position + Vector3(bounds.size.x * 0.5, bounds.size.y * 5.0 / 6.0, bounds.size.z * 0.5)
+
+## The combined bounds of every visible MeshInstance3D under `root`, in root's local space. Each mesh
+## contributes its own mesh AABB — the rest shape, never a skinned pose — through its transform chain
+## up to `root`. A root with nothing visible falls back to every mesh, then to an empty AABB.
+static func rest_bounds(root: Node3D) -> AABB:
+	if root == null or not is_instance_valid(root):
+		return AABB()
+	var meshes := root.find_children("*", "MeshInstance3D", true, false)
+	if root is MeshInstance3D:
+		meshes.push_front(root)
+	var bounds := _merged_bounds(root, meshes, true)
+	return bounds if bounds.has_volume() else _merged_bounds(root, meshes, false)
+
+static func _merged_bounds(root: Node3D, meshes: Array[Node], visible_only: bool) -> AABB:
+	var merged := AABB()
+	var any := false
+	for node in meshes:
+		var mesh_node := node as MeshInstance3D
+		if mesh_node == null or mesh_node.mesh == null:
+			continue
+		if visible_only and not _visible_under(root, mesh_node):
+			continue
+		var box := _chain_to(root, mesh_node) * mesh_node.get_aabb()
+		merged = box if not any else merged.merge(box)
+		any = true
+	return merged
+
+## `node`'s transform in `root`'s space, multiplied up the parent chain (no tree needed).
+static func _chain_to(root: Node3D, node: Node3D) -> Transform3D:
+	var xform := Transform3D.IDENTITY
+	var current: Node = node
+	while current != null and current != root:
+		var spatial := current as Node3D
+		if spatial != null:
+			xform = spatial.transform * xform
+		current = current.get_parent()
+	return xform
+
+static func _visible_under(root: Node3D, node: Node3D) -> bool:
+	var current: Node = node
+	while current != null and current != root:
+		var spatial := current as Node3D
+		if spatial != null and not spatial.visible:
+			return false
+		current = current.get_parent()
+	return true
 
 @warning_ignore_restore("unused_parameter")
