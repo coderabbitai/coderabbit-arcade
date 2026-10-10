@@ -8,10 +8,13 @@ func check(ok: bool, message: String) -> void:
 		failures += 1
 		push_error(message)
 func _initialize() -> void: call_deferred("run")
+## The hunter rig's bounds. The quarantine field is a separate world-space effect dropped around
+## Hoppy during a catch, so it is not part of the hunter's envelope.
 func bounds(node: Node3D) -> AABB:
 	var result := AABB()
 	var first := true
 	for mesh: MeshInstance3D in node.find_children("*","MeshInstance3D",true,false):
+		if mesh == node.get("_field"): continue
 		var box: AABB = node.global_transform.affine_inverse()*mesh.global_transform*mesh.mesh.get_aabb()
 		result = box if first else result.merge(box)
 		first = false
@@ -46,13 +49,22 @@ func run() -> void:
 	visual._process(0.1)
 	check(not visual._fans[0].rotation.is_equal_approx(rotor),"Visible propulsion rotates")
 	var count := visual.find_children("*","",true,false).size()
+	var start_z: float = visual._wall.global_position.z
 	visual.play_catch()
-	visual._process(0.4)
-	check(absf(visual._arms[0].rotation.x) > 0.3,"Capture deploys claws")
+	visual._process(visual.CLAMP_AT)
+	check(absf(visual._arms[0].rotation.x) > 0.3,"Capture clamps the claws at CLAMP_AT")
+	check(visual._field.visible,"Quarantine field drops once the claws shut")
 	visual.play_catch()
-	check(is_equal_approx(visual._reaction_time,0.4),"Catch idempotent")
+	check(is_equal_approx(visual._reaction_time,visual.CLAMP_AT),"Catch idempotent")
 	visual._process(1.0)
-	check(visual._wall.scale.is_equal_approx(Vector3.ONE) and visual._wall.position.z > 2,"Catch lunges without giant growth")
+	var held: Transform3D = visual._wall.global_transform
+	var unscaled := held.basis.get_scale().is_equal_approx(Vector3.ONE)
+	check(unscaled and held.origin.z < start_z - 4.0,"Catch leaps past Hoppy without giant growth")
+	visual.set_threat(1)
+	check(visual._reaction == &"catch","Catch holds while the threat stays at 1")
+	visual.set_threat(0)
+	check(visual._reaction == &"idle" and not visual._field.visible,
+		"Run reset ends the catch and lifts the field")
 	visual.set_threat(1)
 	var pose: Transform3D = visual._wall.transform
 	visual.set_threat(0)
