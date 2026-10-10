@@ -1121,20 +1121,16 @@ func fallback_intro_pose_matches(fallback: Node3D, art: Node3D, snapshot: Array[
 
 
 func check_missing_model_fallback() -> void:
-	var visual_source := FileAccess.get_file_as_string(VISUAL_SCRIPT_PATH)
-	check(not visual_source.is_empty(), "fallback probe reads the Hydra visual source")
-	if visual_source.is_empty():
+	var packed := load(VISUAL_SCENE_PATH) as PackedScene
+	check(packed != null, "fallback probe loads the production Hydra visual scene")
+	if packed == null:
 		return
-	check(visual_source.contains(GLB_PATH), "fallback probe finds the model path literal")
-	var missing_path := "res://__hydra_missing_model_fallback_probe__.glb"
-	var fallback_script := GDScript.new()
-	fallback_script.source_code = visual_source.replace(GLB_PATH, missing_path)
-	check(fallback_script.reload() == OK, "missing-model visual source reloads without changing asset files")
-	if not fallback_script.can_instantiate():
-		fallback_script = null
+	var fallback := packed.instantiate() as Node3D
+	check(fallback != null, "fallback probe instantiates the production Hydra visual")
+	if fallback == null:
 		return
-	var fallback := Node3D.new()
-	fallback.set_script(fallback_script)
+	check(fallback.get("model_path") == GLB_PATH, "visual model_path defaults to the Hydra GLB")
+	fallback.set("model_path", "res://__hydra_missing_model_fallback_probe__.glb")
 	fallback.set("sway_amplitude", 0.12)
 	fallback.set("sway_period", 1.0)
 	root.add_child(fallback)

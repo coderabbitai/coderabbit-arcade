@@ -8,6 +8,7 @@ const QUEUE := 6
 const HEAD_RECOIL := 0.5
 const PHASE_TWO_DROP := 0.30
 const PHASE_TWO_HEIGHT_SCALE := 0.95
+var model_path := MODEL_PATH
 var _art: Art
 var _model: Node3D
 var _skeleton: Skeleton3D
@@ -52,7 +53,7 @@ func cinematic_focus() -> Vector3:
 
 func _ensure_model() -> void:
 	if _model != null or _art != null: return
-	_model = BossModel.load_model(MODEL_PATH)
+	_model = BossModel.load_model(model_path)
 	if _model == null:
 		_art = Art.new()
 		add_child(_art)
