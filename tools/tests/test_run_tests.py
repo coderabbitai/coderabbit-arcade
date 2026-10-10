@@ -38,6 +38,12 @@ class ClassifyLeaks(unittest.TestCase):
              "Leaked instance: AudioStreamPlaybackPolyphonic:2 - Reference count: 1\n"
              "Resource still in use: res://Assets/Audio/Main Menu/track.mp3 (AudioStreamMP3)\n")
 
+    def test_ogg_internals_count_as_audio(self):
+        log = ("Leaked instance: OggPacketSequence:1 - Reference count: 3\n"
+               "Leaked instance: OggPacketSequencePlayback:2 - Reference count: 1\n"
+               "Leaked instance: AudioStreamOggVorbis:3 - Reference count: 1\n")
+        self.assertTrue(run_tests.classify_leaks(log)[0])
+
     def test_audio_teardown_race_is_recognized(self):
         audio_only, details = run_tests.classify_leaks(self.AUDIO)
         self.assertTrue(audio_only)

@@ -127,8 +127,9 @@ RESOURCE_IN_USE = re.compile(r"^Resource still in use: (.+) \((\w+)\)$", re.M)
 # The engine releases audio playbacks on its audio thread. When a suite quits while that thread
 # is starved (parallel 3D suites on a small CI runner), the shared music and UI voices are
 # reported as leaked even after AudioService.settle(). Only that exact shape is tolerated:
-# AudioStream* instances and audio files still in use. Any other leaked object fails the suite.
-AUDIO_CLASS = re.compile(r"^AudioStream\w*$")
+# audio stream classes (AudioStream*, and Ogg Vorbis's internal OggPacketSequence*) and audio
+# files still in use. Any other leaked object fails the suite.
+AUDIO_CLASS = re.compile(r"^(?:AudioStream\w*|OggPacketSequence\w*)$")
 VERBOSE_NOISE = re.compile(r"^(?:Loading resource:|Completed load for:|Loaded builtin|Loading |  ->|ResourceFormat)")
 
 

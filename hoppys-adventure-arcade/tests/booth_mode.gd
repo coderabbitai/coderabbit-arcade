@@ -86,7 +86,6 @@ func run() -> void:
 
 	router.set_booth(false)
 	router.idle_limit = router.IDLE_SECONDS
-	root.get_node("AudioService").shutdown()
-	await wait(0.4)
+	await root.get_node("AudioService").settle()
 	print("Booth mode failures: ", failures)
 	quit(1 if failures else 0)
