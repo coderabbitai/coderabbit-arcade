@@ -7,6 +7,7 @@ const Surface = preload("res://scenes/runner/player/hifi/hoppy_surface.gdshader"
 const Hologram = preload("res://scenes/runner/player/hifi/energy.gdshader")
 const LaneLook = preload("res://scenes/runner/player/hifi/lane_look.gd")
 const FaceRig = preload("res://scenes/runner/player/hifi/face_rig.gd")
+const KnockoutRig = preload("res://scenes/runner/player/hifi/knockout_rig.gd")
 const STATES: Array[StringName] = [&"idle", &"run", &"jump", &"fall", &"roll", &"hurt", &"dead",
 	&"lane_dash_left", &"lane_dash_right", &"land", &"shield_brace", &"powerup_react", &"victory"]
 ## Backend-owned locomotion; one-shots return to the last of these.
@@ -83,6 +84,10 @@ var _trail: MultiMeshInstance3D
 var _flash_remaining := 0.0
 var _clock := 0.0
 var _face: SkeletonModifier3D
+## The trip, faceplant and pin layered over `dead` (hifi/knockout_rig.gd), and seconds since it
+## began (< 0 when not knocked out).
+var _knockout: SkeletonModifier3D
+var _knockout_time := -1.0
 ## Smoothed face weights (focused, wide, wince, grin).
 var _expression := Vector4.ZERO
 ## A victory requested mid-air or mid-roll plays on the next grounded return.
@@ -146,6 +151,10 @@ func _ready() -> void:
 	_face.name = "FaceRig"
 	skeleton.add_child(_face)
 	_face.bind(skeleton)
+	_knockout = KnockoutRig.new()
+	_knockout.name = "KnockoutRig"
+	skeleton.add_child(_knockout)
+	_knockout.bind(skeleton)
 	_led_colors = [Palette.ORANGE, Palette.MINT, Palette.MATRIX, Palette.CREAM, Palette.MATRIX, Palette.MINT]
 	_led_remaining.resize(LED_KINDS.size())
 	_led_duration.resize(LED_KINDS.size())
@@ -273,8 +282,17 @@ func _play(state: StringName) -> void:
 			_return_state = anim_state
 		elif anim_state not in GAIT_ONE_SHOTS:
 			_return_state = &"run"
+	var clip := state
 	if state == &"dead":
 		_victory_pending = false
+		# The knockout trips on the run stride, then the dead clip topples him at TRIP. Caught
+		# mid-air or mid-roll, there is no stride to trip on, so he goes straight down.
+		var tripping := anim_state not in AIRBORNE and anim_state != &"roll"
+		_knockout_time = 0.0 if tripping else KnockoutRig.TRIP
+		if tripping:
+			clip = &"run"
+	else:
+		_knockout_time = -1.0
 	var leaving_roll := anim_state == &"roll"
 	anim_state = state
 	if animation_player != null:
@@ -283,7 +301,7 @@ func _play(state: StringName) -> void:
 			blend = ROLL_BLEND_IN
 		elif leaving_roll:
 			blend = ROLL_BLEND_OUT
-		animation_player.play(state, blend)
+		animation_player.play(clip, blend)
 		set_run_speed(_speed)
 		animation_player.advance(0.0)
 		_process(0.0)
@@ -435,13 +453,31 @@ func _process(delta: float) -> void:
 				for i in mesh.mesh.get_surface_count():
 					var material := mesh.get_surface_override_material(i) as ShaderMaterial
 					material.set_shader_parameter("flash", 0.0)
+	_update_knockout(delta)
 	_update_face(delta)
 	_update_leds(delta)
+
+## Advances the knockout clock and starts the dead clip once the trip has played.
+func _update_knockout(delta: float) -> void:
+	if _knockout == null:
+		return
+	if _knockout_time >= 0.0 and anim_state == &"dead":
+		var before := _knockout_time
+		_knockout_time += delta
+		if before < KnockoutRig.TRIP and _knockout_time >= KnockoutRig.TRIP and animation_player != null:
+			animation_player.play(&"dead", 0.12)
+	_knockout.set("time", _knockout_time if anim_state == &"dead" else -1.0)
+
+## Seconds since the knockout began, or -1 when Hoppy is not knocked out.
+func knockout_time() -> float:
+	return _knockout_time if anim_state == &"dead" else -1.0
 
 func _update_face(delta: float) -> void:
 	if _face == null:
 		return
 	var target: Vector4 = EXPRESSIONS.get(anim_state, Vector4.ZERO)
+	if knockout_time() >= 0.0:
+		target = _knockout.face()
 	_expression = _expression.lerp(target, 1.0 - exp(-FACE_RATE * delta))
 	_face.focused = _expression.x
 	_face.wide = _expression.y
