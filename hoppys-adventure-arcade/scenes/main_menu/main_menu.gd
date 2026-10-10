@@ -1,6 +1,7 @@
 extends Node2D
 const Style = preload("res://scenes/main_menu/menu_style.gd")
 const Preview = preload("res://scenes/main_menu/preview.gd")
+const Prompts := preload("res://app/controller_prompts.gd")
 @onready var showcase = $Showcase
 @onready var hoppy = $Interface/Hoppy
 var ui: Control
@@ -89,7 +90,9 @@ func _ready() -> void:
 	for i in buttons.size():
 		buttons[i].focus_neighbor_top = buttons[i].get_path_to(buttons[(i - 1 + buttons.size()) % buttons.size()])
 		buttons[i].focus_neighbor_bottom = buttons[i].get_path_to(buttons[(i + 1) % buttons.size()])
-	var footer := Style.label("↑ ↓  SELECT     ENTER / A  CONFIRM", 12, Color("9baebc"))
+	var footer := Style.label("", 12, Color("9baebc"))
+	Prompts.track(footer, func() -> String:
+		return "↑ ↓  SELECT     %s  CONFIRM" % Prompts.either("ENTER", &"ui_accept", true))
 	footer.position = Vector2(76, 670)
 	ui.add_child(footer)
 	caption = Style.label("", 21)
@@ -255,7 +258,13 @@ func _open_settings(invoker: Control) -> void:
 	fullscreen.toggled.connect(func(value):
 		SaveService.values.fullscreen = value
 		SaveService.apply_display())
-	column.add_child(Style.label("Arrows / D-pad / stick: select\nEnter / A: confirm   •   Esc / B: back", 13, Color("afbdc9")))
+	var hint := Style.label("", 13, Color("afbdc9"))
+	Prompts.track(hint, func() -> String:
+		return "%s: select\n%s: confirm   •   %s: back" % [
+			Prompts.keys_or_pad("Arrows", Prompts.if_pad("D-pad / stick")),
+			Prompts.either("Enter", &"ui_accept"),
+			Prompts.either("Esc", &"ui_cancel")])
+	column.add_child(hint)
 	var close := Style.button("Save & return", 45)
 	column.add_child(close)
 	close.pressed.connect(_close_modal)

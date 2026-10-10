@@ -107,7 +107,9 @@ func run() -> void:
 			continue
 		if game.state=="cards":
 			game._physics_process(1.0/60.0)
-			if card_settled(): await capture(game.card_queue[0])
+			if card_settled():
+				await capture(game.card_queue[0])
+				if game.card_queue[0]=="ending_trust_restored": await capture("ending")
 			if step%15==0: await process_frame
 			continue
 		if game.playing:
@@ -138,6 +140,10 @@ func run() -> void:
 			for e in game.enemies.duplicate()+game.bosses.duplicate():
 				if is_instance_valid(e) and not e.dead: e.tick(1.0/60.0)
 			game._physics_process(1.0/60.0)
+			# The minimap mid-room with enemies about, and under the boss bars.
+			if game.state=="combat" and game.minimap.visible and game.stage_index==1 and game.room==1 and game.minimap.enemy_dots.size()>=2: await capture("minimap")
+			if game.state=="combat" and game.minimap.visible and game.stage_index==2 and game.boss_bar.visible and game.minimap.boss_dots.size()>=1: await capture("minimap_boss")
+			if game.state=="combat" and game.minimap.visible and game.second_boss_bar.visible: await capture("minimap_boss_dual")
 			if step%150==0:
 				await capture("stage_%d_room_%d" % [game.stage_index+1,game.room+1])
 				for b in game.bosses:
@@ -151,7 +157,10 @@ func run() -> void:
 	check(phases.has("ai_slop3") and phases.has("ai_augmented_hacker3") and phases.has("ten_thousand_line_pr1"),"Traversal reaches all boss mechanics")
 	check(maxima.x<=14 and maxima.y<=32 and maxima.z<=12,"Runtime pools remain bounded: "+str(maxima))
 	check(game.capabilities.review and game.capabilities.triage and game.capabilities.change_stack and game.capabilities.security,"All capabilities persist through the run")
-	await capture("victory_result")
+	# The score counts up on the game's clock; the preview is the landed count.
+	for _i in 130: game._physics_process(1.0/60.0)
+	check(game.victory.landed and game.victory.visible and not game.minimap.visible,"The results screen counts up and lands with the minimap hidden")
+	await capture("victory")
 	game.leave()
 	deadline=Time.get_ticks_msec()+5000
 	while Time.get_ticks_msec()<deadline:

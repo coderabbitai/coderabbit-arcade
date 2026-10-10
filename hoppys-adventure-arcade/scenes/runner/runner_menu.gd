@@ -5,6 +5,7 @@ const Style = preload("res://scenes/runner/ui/hud_style.gd")
 const Leaderboard = preload("res://scenes/runner/systems/runner_leaderboard.gd")
 const GpuWarmup = preload("res://scenes/runner/warmup/gpu_warmup.gd")
 const Music = preload("res://Assets/Backgrounds/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg")
+const Prompts := preload("res://app/controller_prompts.gd")
 
 var leaderboard_path := Leaderboard.DEFAULT_PATH
 var leaderboard_path_at_open := Leaderboard.DEFAULT_PATH
@@ -78,16 +79,23 @@ func _ready() -> void:
 	controls.add_theme_constant_override("separation", 8)
 	card.add_child(controls)
 	controls.add_child(Style.label("KEEP THE BUILD MOVING", 26, Style.MINT))
-	controls.add_child(Style.label("A / D · ← →  Change lane\nW / SPACE / ↑  Jump\nS / CTRL / ↓  Roll\nESC / START  Pause", 22))
+	var keys := Style.label("", 22)
+	Prompts.track(keys, func() -> String:
+		return "A / D · ← →  Change lane\nW / SPACE / ↑  Jump\nS / CTRL / ↓  Roll\n%s  Pause" % Prompts.either("ESC", &"pause", true))
+	controls.add_child(keys)
 	controls.add_child(Style.teaching_legend(true))
 	controls.add_child(Style.label("Two hits without recovery\nand the backlog catches you.", 18))
-	_label("↑ ↓ / D-PAD  SELECT    ENTER / A  CONFIRM    ESC / B  BACK", 12, Vector2(76, 670), Color("9baebc"))
+	Prompts.track(_label("", 12, Vector2(76, 670), Color("9baebc")), func() -> String:
+		return "%s  SELECT    %s  CONFIRM    %s  BACK" % [
+			Prompts.keys_or_pad("↑ ↓", Prompts.if_pad("D-PAD")),
+			Prompts.either("ENTER", &"ui_accept", true),
+			Prompts.either("ESC", &"ui_cancel", true)])
 	buttons[0].grab_focus()
 	_process(0.0)
 	# Compile every gameplay shader now, behind the opaque route veil, instead of on first sight.
 	GpuWarmup.run(self, camera)
 
-func _label(text: String, size: int, position_2d: Vector2, color: Color = Style.CREAM) -> void:
+func _label(text: String, size: int, position_2d: Vector2, color: Color = Style.CREAM) -> Label:
 	var label := Style.label(text, size, color)
 	var backing := PanelContainer.new()
 	backing.position = position_2d - Vector2(14, 8)
@@ -96,6 +104,7 @@ func _label(text: String, size: int, position_2d: Vector2, color: Color = Style.
 	ui.add_child(backing)
 	backing.add_child(label)
 	if size == 60: title_label = label
+	return label
 
 func _panel_style() -> StyleBoxFlat:
 	var box := Style.panel(Style.MINT, 0.96)

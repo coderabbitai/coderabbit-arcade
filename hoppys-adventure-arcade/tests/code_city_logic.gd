@@ -198,7 +198,11 @@ func run() -> void:
 	check(game.state=="finisher" and game.bullets.is_empty() and game.warnings.is_empty(),"Boss defeat cancels threats and begins Force Merge")
 	game._physics_process(4.1)
 	game._physics_process(4.1)
-	check(game.state=="won" and game.completion_count==1,"Force Merge completes once")
+	check(game.state=="ending" and game.completion_count==0 and game.story_pages=="ENDING","Force Merge leads into the victory epilogue, not straight to the results")
+	var epilogue_guard:=0
+	while game.state=="ending" and epilogue_guard<40:
+		game._physics_process(1.0);epilogue_guard+=1
+	check(game.state=="won" and game.completion_count==1 and game.victory.visible and not game.story.visible,"Force Merge completes once: epilogue, then the results screen")
 	game.retry_stage()
 	await frames(2);freeze()
 	check(game.stage_index==2 and game.room==0 and game.player.hp==3 and game.player.weapon=="" and game.score==200,"Retry restores current-stage checkpoint and fresh player state")

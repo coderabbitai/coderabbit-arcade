@@ -6,11 +6,11 @@ Playable builds come from `tools/build/export_game.py`, both locally and in the 
 
 | You want | Where |
 |---|---|
-| A specific release | **Releases**. Tag `v<version>` and the workflow publishes macOS, Windows and Linux zips as a prerelease. |
+| A specific release | **Releases**. Tag `v<version>` and the workflow publishes macOS, Windows, Linux and Web zips as a prerelease. |
 | The latest `main` | **Actions → Build →** the newest run on `main` → **Artifacts**. Kept for 30 days. |
 | A pull request's build | Add the `preview-build` label to the PR; the run's artifacts are kept for 7 days. Every PR is export-checked either way. |
 
-Each platform is its own artifact: `hoppys-adventure-arcade-macos`, `-windows` and `-linux`. Each includes `BUILD_MANIFEST.json` and `SHA256SUMS.txt`.
+Each platform is its own artifact: `hoppys-adventure-arcade-macos`, `-windows`, `-linux` and `-web`. Each includes `BUILD_MANIFEST.json` and `SHA256SUMS.txt`.
 
 ## Run it
 
@@ -19,7 +19,23 @@ Each platform is its own artifact: `hoppys-adventure-arcade-macos`, `-windows` a
   xattr -dr com.apple.quarantine "Hoppy’s Adventure Arcade.app"
   ```
 - **Windows** (x86_64): unzip and run `HoppysAdventureArcade.exe`. SmartScreen may ask you to confirm (**More info → Run anyway**), because the build isn't code-signed.
-- **Linux** (x86_64): unzip and run `./HoppysAdventureArcade.x86_64`.
+- **Linux** (x86_64): unzip and run `./HoppysAdventureArcade.x86_64` (use `chmod +x HoppysAdventureArcade.x86_64` if your unzip tool drops executable permissions).
+- **Web**: extract the whole zip, run `python3 -m http.server 8000 --bind 127.0.0.1` in that folder, and open `http://localhost:8000`. Opening `index.html` directly will not work. For shared hosting, serve the entire folder over HTTPS. This is a single-threaded WebGL 2 build, so it does not need cross-origin isolation headers. Click the game to enable audio. See [Godot's Web export documentation](https://docs.godotengine.org/en/stable/tutorials/export/exporting_for_web.html).
+
+## Run it at a booth
+
+Launch with `--booth` to run an unattended kiosk. Arguments go after `--`; for a macOS app, use `open -a … --args …`.
+
+```sh
+./HoppysAdventureArcade.x86_64 -- --booth
+./HoppysAdventureArcade.x86_64 -- --booth --route=heroes_vs_villains
+open -a "Hoppy’s Adventure Arcade.app" --args -- --booth --route=heroes_vs_villains
+```
+
+- **Fullscreen.** The game starts fullscreen without changing the saved settings.
+- **Idle reset.** After 90 seconds with no keyboard, mouse, touch or controller input, any game returns to the hub, whose rotating previews act as the attract screen.
+- **No quitting from the menu.** The menu's **Quit Game** does nothing in booth mode; staff close the window (Cmd+Q, Alt+F4).
+- **Launch route.** `--route=<name>` opens a route at launch (`heroes_vs_villains`, `code_city_brawl`, `bay_area_blitz`, `orbital_ops`, `enchanted_repo`, `runner`, `platformer`, `beatem_up`, `hub`), with or without `--booth`. An unknown name logs an error and opens the hub.
 
 ## Build locally
 
@@ -35,8 +51,19 @@ python3 tools/build/export_game.py --preset macOS --smoke
 
 ## Versions and releases
 
-- The version is `application/config/version` in `project.godot`; the macOS bundle and Windows file version use it too.
-- To release: bump the version in a PR, merge, then push tag `v<version>` from `main`. The workflow refuses a tag that doesn't match the project version.
+- The version is `application/config/version` in `project.godot`; it controls artifact filenames and the manifest. Blank macOS version fields inherit it. Windows resource modification is disabled for portable Linux CI exports, so the executable retains the template metadata; its zip and manifest carry the game version.
+- To release: bump the version in a PR, merge, then push tag `v<version>` from `main`. The workflow refuses a tag that doesn't match the project version. For the current `0.1.0`:
+  ```sh
+  git switch main
+  git pull --ff-only
+  git tag v0.1.0
+  git push origin v0.1.0
+  ```
+- The workflow verifies all four zip checksums, creates a draft, uploads all assets, then publishes a **prerelease** in the repository's **Releases** section. Failed draft uploads can be retried with **Re-run failed jobs**. Published releases are not overwritten: make a new version/tag for the next playtest.
+- **Actions → Build → Run workflow** on a branch creates downloadable Actions artifacts only. Select an existing `v*` tag to build and release that tag. The workflow must be present on the default branch for the manual button to appear.
+- No custom repository secrets or variables are required. The release job uses the automatic `GITHUB_TOKEN` with `contents: write`; repository/organization policy must allow GitHub Actions and that permission. Signing certificates and Apple notarization credentials are intentionally not configured for these playtest builds.
+- Blank `export_path` fields are intentional: the build script supplies absolute staging paths. Preset names must remain `macOS`, `Windows Desktop`, `Linux`, and `Web`.
+- CI smoke-tests the packaged Linux game. Web packaging checks that HTML, JavaScript, WebAssembly, and PCK files are present, but browser gameplay is not automated. Playtest each platform before promoting a prerelease.
 
 ## What the exports leave out
 

@@ -47,6 +47,10 @@ func run() -> void:
 	game.player.tick(.05)
 	check(game.player.position.y<before.y and game.player.height==0,"Keyboard W moves in depth without jumping")
 	key.pressed=false;Input.parse_input_event(key)
+	# The pad's bottom button is also ui_accept (as Space is), so with the intro's Next button
+	# focused these mapping checks would turn the page. Test the bindings with nothing focused.
+	var focused := root.gui_get_focus_owner()
+	root.gui_release_focus()
 	var joy := InputEventJoypadButton.new()
 	joy.device=0;joy.button_index=JOY_BUTTON_A;joy.pressed=true
 	Input.parse_input_event(joy)
@@ -63,6 +67,8 @@ func run() -> void:
 	game.player.tick(.02)
 	check(game.player.swing_left>0,"Gamepad X mapping attacks")
 	attack_event.pressed=false;Input.parse_input_event(attack_event)
+	await process_frame
+	if focused: focused.grab_focus()
 	game.player.controlled=false
 	var max_enemies := 0
 	var max_bullets := 0
@@ -115,6 +121,13 @@ func run() -> void:
 		game._physics_process(1.0/60.0)
 		# The intro preview is the first story scene once its caption is typed (it opens on black).
 		if game.state=="intro" and game.intro_page==0 and game.intro_clock>=3.0: await capture("intro")
+		# The minimap mid-room with enemies about, and in the boss room under the boss bar, once the
+		# camera has panned onto the room the minimap shows (it lerps there after enter_room).
+		var framed: bool=absf(game.camera.position.x-(game.room_start()+640))<4
+		if framed and game.state=="combat" and game.minimap.visible and game.stage_index==1 and game.room==1 and game.minimap.enemy_dots.size()>=2: await capture("minimap")
+		if framed and game.state=="combat" and game.minimap.visible and game.stage_index==2 and is_instance_valid(game.boss) and game.boss_bar.visible and game.minimap.boss_dots.size()>=1: await capture("minimap_boss")
+		# The epilogue's middle page, once its caption is typed.
+		if game.state=="ending" and game.intro_page==1 and game.intro_clock>=3.5: await capture("ending")
 		if game.state=="stage_exit" and prev!="stage_exit": stage_exits += 1
 		if game.state=="stage_enter" and prev!="stage_enter":
 			stage_enters += 1
@@ -136,7 +149,11 @@ func run() -> void:
 	check(stage_exits==2 and stage_enters==3,"Passed through stage_exit twice and stage_enter three times")
 	check(combat_starts==3 and combat_from_enter,"Every combat start was preceded by stage_enter")
 	check(first_enter_step>=780,"No confirm input; intro auto-advanced into stage_enter")
-	if game.state=="won": await capture("victory")
+	if game.state=="won":
+		# The score counts up on the game's clock; the preview is the landed count.
+		for _i in 130: game._physics_process(1.0/60.0)
+		check(game.victory.landed and game.victory.visible and not game.minimap.visible,"The results screen counts up and lands with the minimap hidden")
+		await capture("victory")
 	Engine.time_scale = 1.0
 	Engine.physics_ticks_per_second = 60
 	print("Simulation steps: ",elapsed_steps,"; rooms: ",rooms.size(),"; state: ",game.state,"; enemies: ",game.living_enemies())

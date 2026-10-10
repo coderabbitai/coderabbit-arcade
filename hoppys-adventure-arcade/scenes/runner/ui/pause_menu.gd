@@ -3,6 +3,7 @@ extends CanvasLayer
 ## It deliberately does NOT bind ui_cancel: RunnerGame owns the `pause` action.
 
 const Style = preload("res://scenes/runner/ui/hud_style.gd")
+const Prompts := preload("res://app/controller_prompts.gd")
 
 var game: Node
 var resume_button: Button
@@ -45,7 +46,10 @@ func _ready() -> void:
 	column.add_child(menu)
 	buttons.append(menu)
 	menu.pressed.connect(func() -> void: _call_game(&"go_to_menu"))
-	column.add_child(Style.label("ESC / START  resume", 20, Style.MINT))
+	var resume_hint := Style.label("", 20, Style.MINT)
+	Prompts.track(resume_hint, func() -> String:
+		return "%s  resume" % Prompts.either("ESC", &"pause", true))
+	column.add_child(resume_hint)
 	for i in buttons.size():
 		buttons[i].focus_neighbor_top = buttons[i].get_path_to(buttons[(i - 1 + buttons.size()) % buttons.size()])
 		buttons[i].focus_neighbor_bottom = buttons[i].get_path_to(buttons[(i + 1) % buttons.size()])

@@ -4,6 +4,7 @@ extends SceneTree
 const StoryScene = preload("res://modes/beatem_up/story_scene.gd")
 const City = preload("res://modes/beatem_up/catalog.gd")
 const Heroes = preload("res://modes/beatem_up/reinvent/catalog.gd")
+const VictoryScreen = preload("res://modes/beatem_up/victory_screen.gd")
 const DT := 1.0/60.0
 const IMAGE_A := "res://Assets/code-city-brawl-assets-only/code_city/district_background.png"
 const IMAGE_B := "res://Assets/code-city-brawl-assets-only/code_city/hq_background.png"
@@ -65,6 +66,8 @@ func run() -> void:
 	for key in ["opening_situation", "opening_complication", "opening_resolution"]:
 		check(is_equal_approx(float(Heroes.CARD_HOLD[key]), hold), "HvV %s hold is 4.5s" % key)
 	check_textures()
+	check_ending_data()
+	await check_victory_screen()
 	for index in City.STORY.size():
 		await exercise(City, "Code City", index, hold)
 	for index in Heroes.STORY.size():
@@ -77,6 +80,7 @@ func run() -> void:
 	drop_holder()
 	await check_code_city(hold)
 	await check_hvv(hold)
+	await check_hvv_ending()
 	print("Story checks: ", checks, " failures: ", failures)
 	paused = false
 	if is_instance_valid(current_scene): current_scene.queue_free()
@@ -398,6 +402,7 @@ func check_code_city(hold: float) -> void:
 	check(game.state == "stage_enter" and not game.story.visible, "Skip intro goes straight to the stage with the story hidden")
 	reopen_city()
 	await run_city_hands_free(hold)
+	await check_city_ending_controls()
 	check_intro_guard()
 	await check_return_to_menu()
 
@@ -443,6 +448,7 @@ func run_city_hands_free(hold: float) -> void:
 	game._physics_process(DT)
 	check(game.state == "stage_enter" and not game.playing, "The intro reaches the stage entrance hands-free (%d ticks)" % expect)
 	check(absi(per-int(round(hold/DT))) <= 2, "Each 4.5s page crosses within 2 ticks (%d)" % per)
+	await run_city_ending_hands_free()
 
 func check_return_to_menu() -> void:
 	reopen_city()
@@ -560,3 +566,349 @@ func pause_press() -> void:
 	event.action = "pause"
 	event.pressed = true
 	game._unhandled_input(event)
+
+# --- The victory epilogue and the results screen ---
+func check_ending_data() -> void:
+	for catalog in [City, Heroes]:
+		var label: String = catalog.STORY_ROOT
+		var pages := StoryScene.page_list(catalog, "ENDING")
+		check(pages.size() == 3, "%s ENDING has three pages" % label)
+		check(StoryScene.page_list(catalog, "STORY").size() == 3 and StoryScene.page_list(catalog, "NOPE").is_empty(), "page_list reads STORY and ENDING, and nothing for an unknown list")
+		for entry in pages:
+			var kicker := str(entry["kicker"]).strip_edges()
+			var caption := str(entry["caption"]).strip_edges()
+			var tex: Texture2D = StoryScene.texture_for(entry)
+			var expect := str(entry["image"] if ResourceLoader.exists(str(entry["image"])) else entry["fallback"])
+			check(kicker != "" and caption != "", "%s ending page %s has a kicker and a caption" % [label.get_file(), kicker])
+			check(tex != null and tex == load(expect), "%s ending page %s loads its image or fallback (%s)" % [label.get_file(), kicker, expect.get_file()])
+		check(str(catalog.VICTORY.title).strip_edges() != "" and str(catalog.VICTORY.line).strip_edges() != "", "%s has a victory title and line" % label.get_file())
+	check(is_equal_approx(float(City.FLOW.ending_hold), 5.0), "Code City ending pages hold 5.0s")
+	check(Heroes.ENDING_CARDS.size() == 3, "HvV has three ending cards")
+	for name in Heroes.ENDING_CARDS: check(is_equal_approx(float(Heroes.CARD_HOLD[name]), 5.0), "HvV %s holds 5.0s" % name)
+	var scene := mount(StoryScene.new()) as StoryScene
+	scene.show_scene(City, 1, "ENDING")
+	check(scene.index == 1 and scene.kicker.text == str(City.ENDING[1]["kicker"]), "show_scene(list=ENDING) shows the ending page")
+	scene.show_scene(City, 9, "ENDING")
+	check(scene.index == 2, "An ending index past the last page shows the last one")
+	scene.show_scene(City, 0, "MISSING")
+	check(scene.index == 2, "An unknown list leaves the scene alone")
+	drop_holder()
+
+func lands_at(screen, score: int) -> Dictionary:
+	var out := {"monotonic": true, "ticks": 0, "landed_calls": 0, "exact_before": false}
+	var previous := 0
+	var guard := 0
+	while not screen.landed and guard < 1000:
+		var before_landed: bool = screen.landed
+		var crossed: bool = screen.advance(DT)
+		guard += 1
+		var shown: int = screen.shown_score()
+		if shown < previous: out.monotonic = false
+		if crossed: out.landed_calls += 1
+		if not screen.landed and shown == score and score > 0 and screen.clock < screen.COUNT-0.3: out.exact_before = true
+		previous = shown
+	out.ticks = guard
+	return out
+
+func key_event(action_key: Key, pressed := true, echo := false) -> InputEventKey:
+	var key := InputEventKey.new()
+	key.physical_keycode = action_key
+	key.keycode = action_key
+	key.pressed = pressed
+	key.echo = echo
+	return key
+func accept_press() -> InputEventAction:
+	var event := InputEventAction.new()
+	event.action = "ui_accept"
+	event.pressed = true
+	return event
+func click_press() -> InputEventMouseButton:
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	return click
+
+func check_victory_screen() -> void:
+	var presses := [0]
+	var screen := mount(VictoryScreen.new()) as VictoryScreen
+	check(not screen.visible, "The results screen starts hidden")
+	screen.show_result("T", "line", 12480, 95.0, Color.RED, "Back", func(): presses[0] += 1)
+	await process_frame
+	check(screen.visible and screen.shown_score() == 0 and screen.score_label.text == "000,000", "The count starts at zero")
+	check(screen.time_label.text == "TIME  1:35" and screen.action.text == "Back" and screen.title.text.contains("T"), "Title, time and button label are set")
+	check(screen.action.disabled and not screen.armed(), "The button is disabled before the count lands")
+	var run := lands_at(screen, 12480)
+	check(run.monotonic and not run.exact_before, "The count is monotonic and not at the score before COUNT")
+	check(screen.landed and screen.shown_score() == 12480 and screen.score_label.text == "012,480", "The count lands exactly on the score")
+	check(absi(run.ticks-int(ceil(screen.COUNT/DT))) <= 2 and run.landed_calls == 1, "It lands at COUNT on exactly one advance() call (%d ticks)" % run.ticks)
+	check(not screen.advance(DT) and not screen.advance(DT), "advance() is true only on the landing frame")
+	check(not screen.action.disabled and screen.armed() and screen.action.has_focus(), "The button is enabled and focused once landed and armed")
+	# skip() lands the count at once.
+	screen.show_result("T", "line", 5000, 10.0, Color.RED, "Back", func(): presses[0] += 1)
+	check(screen.shown_score() == 0 and not screen.landed and screen.action.disabled, "A new result restarts the count and disables the button")
+	screen.advance(.4)
+	var mid: int = screen.shown_score()
+	check(mid > 0 and mid < 5000, "Part-way through, the score is between zero and the total (%d)" % mid)
+	screen.skip()
+	check(screen.landed and screen.shown_score() == 5000 and screen.score_label.text == "005,000", "skip() lands the count")
+	check(screen.advance(DT), "The first advance() after skip() reports the landing, so the win cue still plays")
+	check(not screen.advance(DT), "Later advance() calls after skip() do not report it again")
+	# Input before ARM is swallowed and never skips.
+	screen.show_result("T", "line", 5000, 10.0, Color.RED, "Back", func(): presses[0] += 1)
+	screen.advance(.2)
+	screen._input(accept_press())
+	screen._input(click_press())
+	screen._input(key_event(KEY_ENTER))
+	check(not screen.landed and presses[0] == 0, "Confirms and clicks before ARM are swallowed and do not skip")
+	var touch := InputEventScreenTouch.new()
+	touch.pressed = true
+	screen._input(touch)
+	check(not screen.landed, "A touch before ARM does not skip")
+	screen.advance(screen.ARM)
+	check(not screen.landed and screen.action.disabled, "After ARM and before the landing the button is still disabled")
+	screen._input(accept_press())
+	check(screen.landed and screen.shown_score() == 5000 and presses[0] == 0, "A confirm after ARM lands the count (and does not press the button)")
+	check(not screen.action.disabled and screen.action.has_focus(), "The button enables and takes focus after the skip")
+	screen.action.pressed.emit()
+	check(presses[0] == 1, "The button presses once enabled")
+	# A re-shown result replaces the callback rather than stacking it.
+	var later := [0]
+	screen.show_result("T", "line", 1, 1.0, Color.RED, "Back", func(): later[0] += 1)
+	screen.skip()
+	screen.advance(1.0)
+	screen.action.pressed.emit()
+	check(presses[0] == 1 and later[0] == 1, "show_result replaces the button callback")
+	screen.show_result("T", "line", -50, -3.0, Color.RED, "Back", func(): pass)
+	screen.skip()
+	check(screen.shown_score() == 0 and screen.time_label.text == "TIME  0:00", "A negative score and time clamp to zero")
+	check(VictoryScreen._grouped(7) == "000,007" and VictoryScreen._grouped(1234567) == "1,234,567", "Scores group thousands")
+	# A mode with its own confirm action (HvV) confirms with it alone: ui_accept is its jump.
+	if not InputMap.has_action("victory_test_advance"): InputMap.add_action("victory_test_advance")
+	var dedicated := InputEventAction.new()
+	dedicated.action = "victory_test_advance"
+	dedicated.pressed = true
+	var own := [0]
+	screen.confirm_actions = ["victory_test_advance"]
+	screen.show_result("T", "line", 900, 1.0, Color.RED, "Back", func(): own[0] += 1)
+	screen.advance(screen.ARM)
+	screen._input(accept_press())
+	check(not screen.landed, "With its own confirm action, ui_accept does not land the count")
+	screen._input(dedicated)
+	check(screen.landed and own[0] == 0, "The dedicated confirm lands the count")
+	push_accept(screen)
+	check(own[0] == 0, "ui_accept through the viewport does not reach the focused button once landed")
+	screen._input(dedicated)
+	check(own[0] == 1, "The dedicated confirm presses the button once landed")
+	# Control: without its own confirm actions (Code City) the same ui_accept presses the button.
+	screen.confirm_actions = []
+	var city := [0]
+	screen.show_result("T", "line", 900, 1.0, Color.RED, "Back", func(): city[0] += 1)
+	screen.advance(screen.ARM)
+	screen.skip()
+	screen.advance(DT)
+	push_accept(screen)
+	check(city[0] == 1, "Without its own confirm actions, ui_accept through the viewport presses the button")
+	drop_holder()
+
+## A ui_accept press and release through the viewport, so the GUI's focused button sees whatever
+## the screen's _input lets through.
+func push_accept(screen: Control) -> void:
+	for pressed in [true, false]:
+		var event := InputEventAction.new()
+		event.action = "ui_accept"
+		event.pressed = pressed
+		screen.get_viewport().push_input(event)
+
+## Steps the real tick loop from the boss's last hit to the results screen. Everything between
+## runs on the game's own clocks; only the guard counts ticks.
+func city_to_finisher() -> void:
+	game.flow.cancel()
+	game.start_stage(2)
+	freeze()
+	var guard := 0
+	while game.state != "combat" and guard < 2000:
+		game._physics_process(DT)
+		guard += 1
+	for e in game.enemies:
+		if is_instance_valid(e): e.free()
+	game.enemies.clear()
+	game.enter_room(2)
+	freeze()
+	var boss = game.boss
+	for damage in [12, 6, 6]:
+		boss.vulnerable = true
+		boss.take_hit(damage, 0, Vector2.ZERO, true)
+	freeze()
+func win_sounds_between(before: int) -> int:
+	var count := 0
+	for i in range(before, game.sound_index):
+		if game.sound_pool[i%game.sound_pool.size()].stream == City.SOUNDS["win"]: count += 1
+	return count
+
+func run_city_ending_hands_free() -> void:
+	city_to_finisher()
+	check(game.state == "finisher", "The boss's last hit starts the Force Merge finisher")
+	var guard := 0
+	while game.state == "finisher" and guard < 600:
+		game._physics_process(DT)
+		guard += 1
+	check(game.state == "ending" and game.story_pages == "ENDING" and game.intro_page == 0 and game.story.visible, "The finisher hands off to the ending after ~4s (%d ticks)" % guard)
+	check(game.completion_count == 0 and not game.minimap.visible and not game.victory.visible, "The ending is not yet a win, and has no minimap or results")
+	check(game.story.kicker.text == str(City.ENDING[0]["kicker"]) and game.intro_next.text == "Next →" and game.intro_skip.text == "Skip" and not game.intro_return.visible, "Ending page 1: Next, Skip, and no Return")
+	var per := ticks_to_cross(float(City.FLOW.ending_hold))
+	var expect := per*City.ENDING.size()
+	var kickers_ok := true
+	var count := 0
+	while game.state == "ending" and count < expect+30:
+		if game.story.kicker.text != str(City.ENDING[game.intro_page]["kicker"]): kickers_ok = false
+		if count == expect-1: check(game.intro_page == City.ENDING.size()-1 and game.intro_next.text == "Results →", "One tick before the end the last page offers Results")
+		game._physics_process(DT)
+		count += 1
+	check(kickers_ok, "Each ending page shows its own kicker as it turns")
+	check(absi(count-expect) <= 3 and game.state == "won", "The three ending pages auto-advance into the results (%d ticks, expected %d)" % [count, expect])
+	check(game.completion_count == 1 and game.victory.visible and not game.story.visible and not game.overlay.visible, "Results show once, with the story and overlay hidden")
+	check(game.victory.final_score == game.score and game.victory.title.text.contains(City.VICTORY.title), "The results show the run's score and the victory title")
+	check(game.victory.shown_score() == 0 and game.victory.action.disabled, "The score starts at zero")
+	var before: int = game.sound_index
+	var steps := 0
+	var win_at := -1
+	var last := -1
+	while not game.victory.landed and steps < 400:
+		var seen: int = game.sound_index
+		game._physics_process(DT)
+		steps += 1
+		if win_sounds_between(seen) > 0: win_at = steps
+		if game.victory.shown_score() < last: win_at = -99
+		last = game.victory.shown_score()
+	check(game.victory.landed and game.victory.shown_score() == game.score and absi(steps-int(ceil(VictoryScreen.COUNT/DT))) <= 2, "The count reaches exactly the score at COUNT (%d ticks)" % steps)
+	check(win_sounds_between(before) == 1 and win_at == steps, "The win sound plays once, on the frame the count lands")
+	var rest: int = game.sound_index
+	for _i in 120: game._physics_process(DT)
+	check(win_sounds_between(rest) == 0 and game.completion_count == 1 and game.state == "won", "No further win sound and no second completion afterwards")
+	check(not game.victory.action.disabled and game.victory.action.has_focus(), "Return to the menu is enabled and focused after the count")
+	game.boss_defeated()
+	game.show_victory()
+	check(game.completion_count == 1 and game.state == "won", "boss_defeated() and show_victory() cannot count a second completion")
+
+func check_city_ending_controls() -> void:
+	# Next, and the Return button hidden, then Skip.
+	city_to_finisher()
+	var guard := 0
+	while game.state == "finisher" and guard < 600:
+		game._physics_process(DT)
+		guard += 1
+	check(game.state == "ending" and not game.intro_return.visible, "The ending starts with Return hidden")
+	game.intro_next.pressed.emit()
+	check(game.state == "ending" and game.intro_page == 1 and is_equal_approx(game.intro_clock, 0.0), "Next turns to ending page 2 and resets the clock")
+	check(game.story.kicker.text == str(City.ENDING[1]["kicker"]) and focused_next(), "Page 2 shows its kicker with Next focused")
+	# Pause freezes the ending and resume restores the page.
+	for _i in 60: game._physics_process(DT)
+	var clock: float = game.intro_clock
+	var seconds: float = game.story.seconds
+	game.pause("x")
+	game._physics_process(1.0)
+	for _i in 4: await process_frame
+	var frozen: bool = game.state == "paused" and game.pause_return_state == "ending" and game.intro_page == 1
+	frozen = frozen and is_equal_approx(game.intro_clock, clock) and is_equal_approx(game.story.seconds, seconds)
+	check(frozen, "Pause freezes the ending clock and the story scene")
+	for child in game.story.actions.get_children():
+		if child is Button: child.pressed.emit()
+	check(game.state == "paused" and game.intro_page == 1 and is_equal_approx(game.intro_clock, clock), "Next, Skip and Return do nothing while the ending is paused")
+	game.resume()
+	paused = false
+	var restored: bool = game.state == "ending" and game.intro_page == 1 and is_equal_approx(game.intro_clock, clock)
+	restored = restored and game.story.kicker.text == str(City.ENDING[1]["kicker"]) and is_equal_approx(game.story.seconds, clock)
+	check(restored and focused_next(), "Resume restores the ending page, its clock and the focus")
+	# A second boss_defeated is ignored.
+	var completions: int = game.completion_count
+	game.boss_defeated()
+	check(game.state == "ending" and game.completion_count == completions and game.intro_page == 1, "A second boss_defeated during the ending is ignored")
+	game.intro_next.pressed.emit()
+	check(game.state == "ending" and game.intro_page == 2 and game.intro_next.text == "Results →", "Next to the last page reads Results")
+	game.intro_next.pressed.emit()
+	check(game.state == "won" and game.completion_count == completions+1 and game.victory.visible, "Results → opens the results screen")
+	# Skip.
+	city_to_finisher()
+	guard = 0
+	while game.state == "finisher" and guard < 600:
+		game._physics_process(DT)
+		guard += 1
+	var skip := action_button("Skip")
+	check(skip != null and game.state == "ending" and action_button("Skip intro") == null, "The ending's skip button reads Skip")
+	var done: int = game.completion_count
+	if skip: skip.pressed.emit()
+	check(game.state == "won" and game.completion_count == done+1 and game.victory.visible and not game.story.visible, "Skip goes straight to the results screen and completes once")
+	# The next opening restores the intro's own labels.
+	game.flow.cancel()
+	game.start_stage(0, true)
+	freeze()
+	check(game.state == "intro" and game.story_pages == "STORY" and action_button("Skip intro") != null and game.intro_return.visible, "A new opening restores Skip intro and Return")
+
+func check_hvv_ending() -> void:
+	await load_mode("res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn")
+	game.flow.cancel()
+	game.start_stage(2)
+	await process_frame
+	freeze()
+	game.begin_play()
+	game.enter_room(2)
+	freeze()
+	for e in game.enemies:
+		if is_instance_valid(e): e.free()
+	game.enemies.clear()
+	var hacker = game.bosses[0]
+	hacker.take_hit(99, 0, Vector2.ZERO)
+	hacker.tick(1)
+	hacker.tick(2)
+	hacker.take_hit(99, 0, Vector2.ZERO)
+	hacker.tick(1)
+	hacker.tick(2)
+	hacker.take_hit(999, 0, Vector2.ZERO)
+	game.check_boss_state()
+	check(game.state == "boss_victory", "The Hacker's defeat starts the boss victory")
+	game._physics_process(game.VICTORY_DURATION)
+	var chain := ["unlock_security"]
+	chain.append_array(Heroes.ENDING_CARDS)
+	check(game.state == "cards" and game.card_queue == chain, "The last reward is unlock_security plus the three ending cards")
+	check(game.card_callback == Callable(game, "win") and game.completion_count == 0, "The chain ends in win(), and nothing has completed yet")
+	var guard := 0
+	while game.card_queue[0] == "unlock_security" and guard < 600:
+		game._physics_process(DT)
+		guard += 1
+	check(absi(guard-int(round(4.5/DT))) <= 3, "unlock_security holds 4.5s (%d ticks)" % guard)
+	for i in Heroes.ENDING_CARDS.size():
+		var name: String = Heroes.ENDING_CARDS[i]
+		var entry: Dictionary = Heroes.ENDING[i]
+		check(game.state == "cards" and game.card_queue[0] == name, "Ending card %d is %s" % [i+1, name])
+		check(game.card.has_method("advance") and game.card.index == i and game.card.kicker.text == str(entry["kicker"]), "%s is a story scene showing ENDING page %d" % [name, i])
+		check(game.card.pages == "ENDING" and game.card.position.x == 0.0 and game.card.picture.texture != null, "%s reads the ENDING list, sits at x=0 and has a picture" % name)
+		check(game.card.caption.text == str(entry["caption"]) and not game.minimap.visible, "%s shows its caption with the minimap hidden" % name)
+		var ticks := 0
+		while game.card_queue.size() > 0 and game.card_queue[0] == name and ticks < 600:
+			game._physics_process(DT)
+			ticks += 1
+		check(absi(ticks-ticks_to_cross(5.0)) <= 3, "%s holds 5.0s (%d ticks)" % [name, ticks])
+	check(game.state == "won" and game.completion_count == 1 and game.victory.visible and not game.card_host.visible and not game.overlay.visible, "The ending cards lead to the results screen; completion counts once")
+	check(game.victory.confirm_actions == ["heroes_popup_advance"] and game.victory.final_score == game.score, "The results screen takes the popup-advance and shows the score")
+	check(game.victory.shown_score() == 0 and game.victory.action.disabled, "The HvV score starts at zero")
+	var before: int = game.sound_index
+	var steps := 0
+	var last := -1
+	var monotonic := true
+	var win_at := -1
+	while not game.victory.landed and steps < 400:
+		var seen: int = game.sound_index
+		game._physics_process(DT)
+		steps += 1
+		if win_sounds_between(seen) > 0: win_at = steps
+		if game.victory.shown_score() < last: monotonic = false
+		last = game.victory.shown_score()
+	check(monotonic and game.victory.shown_score() == game.score and absi(steps-int(ceil(VictoryScreen.COUNT/DT))) <= 2, "The HvV count is monotonic and lands exactly on the score (%d ticks)" % steps)
+	check(win_sounds_between(before) == 1 and win_at == steps, "The HvV win sound plays once, when the count lands")
+	for _i in 120: game._physics_process(DT)
+	check(win_sounds_between(before) == 1 and game.completion_count == 1, "No further win sound or completion afterwards")
+	game.boss_defeated()
+	game.win()
+	check(game.completion_count == 1 and game.state == "won", "HvV completion counts exactly once")
+	check(not game.victory.action.disabled and game.victory.action.has_focus(), "HvV Return is enabled and focused after the count")
+

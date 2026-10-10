@@ -72,7 +72,7 @@
     "cape",
     "cape_tip"
   ],
-  "script_sha256": "f3586c21f60e5a61d7710c84e560cec5315ee16983adf0af2bd75ff149c5ddf1",
+  "script_sha256": "030cce03a0e94154065c1fa355b5a9a511eb4830f33c45ab4dd44694bde762d2",
   "atlas_helper_sha256": "6e9467f0befabed73b075a4184ab7cc5aa864649d008b7be24d313726920e35a",
   "blender": "5.2.2 LTS",
   "seed": 41027,
@@ -83,32 +83,32 @@
       "name": "accessory_emissive",
       "width": 1024,
       "height": 1024,
-      "bytes": 119508,
-      "sha256": "09975c4faa9cc7af630cbf942496fcccfe38673f258c4599d7be27c127492cd5"
+      "bytes": 124108,
+      "sha256": "f5cdf2078e0a3d7216b6ff8f8d05ef0adee55b90bc03457bfae7eb609841b91e"
     },
     {
       "index": 1,
       "name": "accessory_normal",
       "width": 1024,
       "height": 1024,
-      "bytes": 774828,
-      "sha256": "7aa927ab9caf115bd482c75cc8a5ddf407ac4fc2947cd09fc7c1608da047b689"
+      "bytes": 800368,
+      "sha256": "c6d955154f397d4f3cb55755b6fb30749ffc8ae5710264aa6188db6ee485bc96"
     },
     {
       "index": 2,
       "name": "accessory_albedo",
       "width": 1024,
       "height": 1024,
-      "bytes": 856161,
-      "sha256": "94a9e024061d3261f535f71eaf7595a4bac6494ed91437e0085bc6e60054ec6d"
+      "bytes": 876690,
+      "sha256": "c230dc1a286de8828ac746e9ebedc76225b15a048a562f7bf44efb9ab4a7ed1f"
     },
     {
       "index": 3,
       "name": "accessory_orm",
       "width": 1024,
       "height": 1024,
-      "bytes": 392139,
-      "sha256": "b6eeb72355e332b90b31981ad38a6a6abd585d55f2bfe54db17d5c8e8a5a81f0"
+      "bytes": 390344,
+      "sha256": "09babe7c988c28a1242c6664e73ce28ebea201e2a1cb2f71ee55c21fa8fd0bc4"
     },
     {
       "index": 4,
@@ -123,24 +123,24 @@
       "name": "body_normal",
       "width": 2048,
       "height": 2048,
-      "bytes": 2410191,
-      "sha256": "73b6fb596ac45aeea917b5ef31f6bb9a9b57a1ac3ab9a6a28067c6f035c8e2c7"
+      "bytes": 2405472,
+      "sha256": "4c011aa58b6a3875605f0a8fbacbd21b309d101f2f790dae63a8f6be2664227b"
     },
     {
       "index": 6,
       "name": "body_albedo",
       "width": 2048,
       "height": 2048,
-      "bytes": 2499347,
-      "sha256": "9ef917f0ca5bdc36279a3adda44f7c13f976af17bcbea9476bcf754386fe3b1d"
+      "bytes": 2504246,
+      "sha256": "aedd0d338a12b204686b1181be7a1f40288883d1aa1d045db28f8ff3374bf7c8"
     },
     {
       "index": 7,
       "name": "body_orm",
       "width": 2048,
       "height": 2048,
-      "bytes": 460034,
-      "sha256": "de96ea758b52a1c6c9118e1b3444e7cfc857521598b09542b210d48a0e60ecde"
+      "bytes": 460091,
+      "sha256": "c0d8b5818f61befa15aef6f27c55027c7366de27c2b5f94a73993cd21ddd48d3"
     }
   ],
   "textures": [

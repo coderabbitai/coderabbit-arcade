@@ -170,8 +170,11 @@ func run() -> void:
 	audio.play_ui_click()
 	var heard := {}
 	audio.sound_played.connect(func(kind: StringName, _stream: AudioStream) -> void: heard[kind] = true)
-	# Existing mock timeline exercises all 32 signal-triggered recipes.
-	for i in 405:
+	# The mock timeline exercises all 32 signal-triggered recipes. Run it until it finishes, so the
+	# Game Over sting still fires when config.caught_sequence_seconds changes (#61 made it 3.0 s).
+	var ticks := 0
+	while mock.state != &"finished" and ticks < 600:
+		ticks += 1
 		audio.one_shots.stop()
 		audio.one_shots.play()
 		audio._playback = audio.one_shots.get_stream_playback()
@@ -180,6 +183,7 @@ func run() -> void:
 		mock.advance_demo(0.1)
 		audio._process(0.1)
 		check(audio.active_voice_count() <= 10, "voice cap")
+	check(mock.state == &"finished", "demo timeline reaches Game Over (%d ticks)" % ticks)
 	for kind: StringName in Synth.RECIPES: check(heard.has(kind), "trigger exercised: " + kind)
 	audio._stop_all()
 	audio.one_shots.play()

@@ -497,7 +497,8 @@ const PRESSES := ["space", "pad", "click", "touch"]
 ## One press or release through the viewport. Viewport coordinates: headless, the 64 px window
 ## is stretched, so window-space pointers miss.
 func send(kind: String, pressed: bool) -> void:
-	var at: Vector2 = game.primary.get_global_rect().get_center()
+	var button: Button = game.victory.action if game.state=="won" else game.primary
+	var at: Vector2 = button.get_global_rect().get_center()
 	var event: InputEvent
 	match kind:
 		"space":
@@ -542,6 +543,25 @@ func guarded(label: String, activate: String) -> void:
 	for kind in PRESSES: send(kind, false)
 	check(game.state==before and game.overlay.visible, "%s ignores a press held from its first frame and released after 0.5 s" % label)
 	confirm(activate)
+## The results screen: it swallows every press for 0.5 s, a press after that lands the count, and
+## only once the count has landed does a press reach Return.
+func guarded_results(activate: String) -> void:
+	await process_frame
+	var screen = game.victory
+	check(screen.clock<screen.ARM and screen.action.get_global_rect().size.x>screen.action.custom_minimum_size.x, "Results are laid out and still unarmed")
+	for kind in PRESSES: confirm(kind)
+	check(game.state=="won" and not screen.landed, "Results ignore Space, pad A, a click and a touch on their first frame")
+	for kind in PRESSES: send(kind, true)
+	arm()
+	for kind in PRESSES: send(kind, false)
+	check(game.state=="won" and not screen.landed, "Results ignore a press held from the first frame and released after 0.5 s")
+	check(screen.action.disabled, "Return is disabled until the count lands")
+	confirm(activate)
+	check(game.state=="won" and screen.landed and game.state!="leaving" and screen.shown_score()==screen.final_score, "A %s after 0.5 s lands the count instead of leaving" % activate)
+	check(not screen.action.disabled and screen.action.has_focus(), "Return is enabled and focused once the count lands")
+	confirm(activate)
+	check(game.state=="leaving", "A %s once the count has landed presses Return" % activate)
+
 func to_combat(index: int) -> void:
 	game.start_stage(index)
 	freeze()
@@ -585,10 +605,9 @@ func check_armed_overlays() -> void:
 			boss.take_hit(damage, 0, Vector2.ZERO, true)
 		freeze()
 		var guard := 0
-		while game.state=="finisher" and guard<400:
+		while game.state in ["finisher","ending"] and guard<2000:
 			game._physics_process(DT)
 			guard += 1
-		check(game.state=="won" and game.primary.has_focus(), "The Force Merge hands off to results with Return focused")
-		await guarded("Results", activate)
-		check(game.state=="leaving", "A %s after 0.5 s presses Return" % activate)
+		check(game.state=="won" and game.victory.visible and not game.victory.landed and game.victory.action.disabled, "The Force Merge hands off through the ending to the results screen mid-count")
+		await guarded_results(activate)
 		await reload()

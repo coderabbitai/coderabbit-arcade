@@ -10,6 +10,7 @@ const Burst = preload("res://scenes/runner/powerups/visuals/hifi/collect_burst.g
 ## Every glyph HUD copy can use; drawn once at ready per toast/chip font size so a first toast or
 ## chip never rasterises and uploads new glyphs on the pickup frame.
 const WARM_TEXT := "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 ×\u2014+-:/.,!'"
+const Prompts := preload("res://app/controller_prompts.gd")
 var turn_fx: Node3D
 var turn_panel: PanelContainer
 var turn_label: Label
@@ -147,8 +148,16 @@ func _ready() -> void:
 	get_ready.name = "GetReady"
 	get_ready.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ready_box.add_child(get_ready)
-	for line in ["A / D · ← / →  lane    SPACE / A  jump", "S / ↓ / B  roll    ESC / START  pause"]:
-		var hint := Style.label(line, 22)
+	var lines: Array[Callable] = [
+		func() -> String:
+			return "A / D · ← / →  lane    %s  jump" % Prompts.either("SPACE", &"jump", true),
+		func() -> String:
+			return "%s  roll    %s  pause" % [Prompts.either("S / ↓", &"roll", true),
+				Prompts.either("ESC", &"pause", true)],
+	]
+	for line in lines:
+		var hint := Style.label("", 22)
+		Prompts.track(hint, line)
 		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		ready_box.add_child(hint)
 	ready_box.add_child(Style.teaching_legend())

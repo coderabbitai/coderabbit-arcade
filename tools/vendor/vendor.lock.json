@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "addons": {
+    "cr_kit": {
+      "source": "coderabbitai/godot-kit",
+      "tag": "v0.1.1",
+      "commit": "d785eaebc404e41536f3a3e95169e267c223c3fd",
+      "upstream_path": "addons/cr_kit",
+      "path": "hoppys-adventure-arcade/addons/cr_kit",
+      "tree": "594fb30dc3f7b91809c8f7ecf695e02461021cad"
+    }
+  }
+}

@@ -4,19 +4,18 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://b27dm5dn5qhlj"
 path.s3tc="res://.godot/imported/hoppy_accessory_normal.png-8498ac34154d1c36039fcb9428c418ee.s3tc.ctex"
-path.etc2="res://.godot/imported/hoppy_accessory_normal.png-8498ac34154d1c36039fcb9428c418ee.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"imported_formats": ["s3tc_bptc"],
 "vram_texture": true
 }
 generator_parameters={
-"md5": "029e5eeb43c07c48cc28b0e653530070"
+"md5": "ca837196a548101c4ce1d30a9644f167"
 }
 
 [deps]
 
 source_file="res://Assets/runner/hoppy/hoppy_accessory_normal.png"
-dest_files=["res://.godot/imported/hoppy_accessory_normal.png-8498ac34154d1c36039fcb9428c418ee.s3tc.ctex", "res://.godot/imported/hoppy_accessory_normal.png-8498ac34154d1c36039fcb9428c418ee.etc2.ctex"]
+dest_files=["res://.godot/imported/hoppy_accessory_normal.png-8498ac34154d1c36039fcb9428c418ee.s3tc.ctex"]
 
 [params]
 

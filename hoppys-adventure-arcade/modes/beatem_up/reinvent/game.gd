@@ -7,9 +7,14 @@ const Boss = preload("res://modes/beatem_up/reinvent/boss.gd")
 const StageFlow = preload("res://modes/beatem_up/stage_flow.gd")
 const Knockout = preload("res://modes/beatem_up/knockout.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
+const VictoryScreen = preload("res://modes/beatem_up/victory_screen.gd")
+const Minimap = preload("res://modes/beatem_up/minimap.gd")
+## The minimap is up while the CodeRabbit is in a room, and hidden under cards and end screens.
+const MINIMAP_STATES := ["stage_enter","combat","stage_exit","boss_victory","knockout"]
 const PAUSABLE := ["combat","cards","boss_victory","stage_enter","stage_exit","knockout"]
 const TERMINAL_OVERLAY_ARM := .5
 const CARD_HINT := "Enter / View · Skip     Esc / Start · Pause"
+const Prompts := preload("res://app/controller_prompts.gd")
 var rng := RandomNumberGenerator.new()
 var stage_index := 0
 var room := 0
@@ -80,6 +85,9 @@ var card_progress: ProgressBar
 var capability_hud: Label
 var second_boss_bar: ProgressBar
 var second_boss_text: Label
+## The final results screen after the victory epilogue cards.
+var victory: VictoryScreen
+var minimap: Minimap
 var pause_return_state := "combat"
 var leaving := false
 var last_swing_processed := -1
@@ -392,6 +400,8 @@ func _physics_process(dt: float) -> void:
 	toast_left-=dt
 	toast_label.visible=toast_left>0
 	flow.tick(dt,player)
+	if state=="won" and victory.advance(dt): sound("win",player.position)
+	_refresh_minimap(dt)
 	if held_toast!="" and state=="combat" and not flow.banner_active(): toast(held_toast,held_toast_seconds)
 	# A fallen villain collapses on this clock: during the fight, the victory hop, cards and exit.
 	for target in bosses:
@@ -451,7 +461,7 @@ func _tick_items(dt: float) -> void:
 		item.sprite.position.y = -22+sin(item.age*4)*4
 		var distance: float = item.node.position.distance_to(player.position)
 		if Catalog.WEAPONS.has(item.kind):
-			if distance<85: prompt.text = "E / Y · PICK UP "+item.kind.replace("_"," ").to_upper()
+			if distance<85: prompt.text = Prompts.either("E", &"brawl_pickup", true)+" · PICK UP "+item.kind.replace("_"," ").to_upper()
 		elif distance < 45 and player.height < 20 and player.hp>0:
 			player.apply_effect(item.kind)
 			sound("pickup",player.position)
@@ -598,14 +608,16 @@ func show_boss_reward() -> void:
 		2:
 			capabilities.security=true
 			reveal_time=999
-			show_cards(["unlock_security","victory"],win)
+			show_cards(["unlock_security"]+Catalog.ENDING_CARDS,win)
 
+## The results screen after the epilogue cards; its score lands with the win cue.
 func win() -> void:
 	if state=="won": return
 	playing=false;state="won";completion_count+=1
 	_update_hud()
-	sound("win",player.position)
-	show_overlay("THE CODEBASE IS TRUSTED", "All four capabilities deployed.\nScore: %d   ·   Time: %d:%02d" % [score,int(elapsed)/60,int(elapsed)%60],"Return to Beat'em Up menu",leave)
+	overlay.hide();card_host.hide()
+	toast_left=0;held_toast="";toast_label.hide();prompt.text=""
+	victory.show_result(Catalog.VICTORY.title,Catalog.VICTORY.line,score,elapsed,Catalog.STORY_ACCENT,"Return to Beat'em Up menu",leave)
 
 func toast(message: String, seconds := 2.0) -> void:
 	# Combat opens under the fading stage title; anything said then waits for it (latest wins).
@@ -671,7 +683,15 @@ func _build_ui() -> void:
 	prompt.offset_bottom = -54
 	prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ui.add_child(prompt)
-	var controls := Style.label("WASD / stick · Move   Space / A · Jump   J, X / X · Combo   E / Y · Pickup   Hold Q / LB · REVIEW   Esc / Start · Pause",13)
+	var controls := Style.label("",13)
+	Prompts.track(controls, func() -> String:
+		return "%s · Move   %s · Jump   %s · Combo   %s · Pickup   Hold %s · REVIEW   %s · Pause" % [
+			Prompts.keys_or_pad("WASD", Prompts.if_pad("stick")),
+			Prompts.either("Space", &"brawl_jump"),
+			Prompts.either("J, X", &"brawl_attack"),
+			Prompts.either("E", &"brawl_pickup"),
+			Prompts.either("Q", &"review_burst"),
+			Prompts.either("Esc", &"pause")])
 	controls.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	controls.offset_top = -27
 	controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -687,6 +707,14 @@ func _build_ui() -> void:
 	second_boss_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	second_boss_bar.position=Vector2(-430,87);second_boss_bar.size=Vector2(405,12);second_boss_bar.show_percentage=false
 	ui.add_child(second_boss_bar)
+	# Top-right, under the HUD bar and clear of both boss bars inside it.
+	minimap=Minimap.new()
+	var boss_rooms: Array[Vector2i]=[]
+	for stage in Catalog.TITLES.size(): boss_rooms.append(Vector2i(stage,2))
+	minimap.setup(Catalog.TITLES.size(),3,boss_rooms,Catalog.STORY_ACCENT)
+	minimap.dock(top.offset_bottom)
+	minimap.hide()
+	ui.add_child(minimap)
 	for bar in [boss_bar, second_boss_bar]:
 		var background := StyleBoxFlat.new()
 		background.bg_color=Color("302329")
@@ -701,6 +729,10 @@ func _build_ui() -> void:
 	card_host.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	ui.add_child(card_host)
 	card_host.hide()
+	victory=VictoryScreen.new()
+	victory.confirm_actions=["heroes_popup_advance"]
+	victory.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(victory)
 	overlay = ColorRect.new()
 	overlay.color = Color(.025,.04,.065,.91)
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -722,7 +754,7 @@ func _update_hud() -> void:
 	var caps := ""
 	for key in capabilities:
 		caps += ("● " if capabilities[key] else "○ ")+key.replace("_"," ").to_upper()+"   "
-	if capabilities.review: caps += " Q / LB: "+("READY" if player.review_cooldown<=0 else "%ds" % ceili(player.review_cooldown))
+	if capabilities.review: caps += " %s: " % Prompts.either("Q", &"review_burst")+("READY" if player.review_cooldown<=0 else "%ds" % ceili(player.review_cooldown))
 	if player.shield: caps += "  SHIELD"
 	if not player.effects.is_empty(): caps += "\n"
 	for effect in player.effects: caps += "  "+effect.replace("_"," ").to_upper()+" %ds" % ceili(player.effects[effect])
@@ -744,6 +776,21 @@ func _update_hud() -> void:
 	if second_boss_bar.visible:
 		second_boss_bar.max_value=live[1].max_hp;second_boss_bar.value=live[1].hp
 		second_boss_text.text=Catalog.BOSS_NAMES[live[1].kind]
+
+## Feeds the minimap this frame's room: the CodeRabbit, the living enemies and bosses, the gate.
+func _refresh_minimap(dt: float) -> void:
+	# The stage title banner crosses the corner; it owns the screen while it is up.
+	minimap.visible=state in MINIMAP_STATES and not flow.banner_active()
+	if not minimap.visible: return
+	var foes := PackedVector2Array()
+	for enemy in enemies:
+		if is_instance_valid(enemy) and not enemy.dead: foes.append(enemy.position)
+	var heads := PackedVector2Array()
+	for target in bosses:
+		if is_instance_valid(target) and not target.dead: heads.append(target.position)
+	minimap.tick(dt,{"stage":stage_index, "room":room, "cleared":gate_open or state in ["boss_victory","stage_exit"],
+		"gate_open":gate_open, "room_left":room_start(), "player":player.position,
+		"enemies":foes, "bosses":heads})
 
 func show_overlay(title: String, detail: String, action: String, callback: Callable) -> void:
 	terminal_overlay_clock=0.0 if state in ["game_over","won"] else TERMINAL_OVERLAY_ARM
@@ -790,7 +837,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif state in PAUSABLE:
 			pause_return_state=state
 			playing=false;state="paused";get_tree().paused=true
-			show_overlay("REVIEW PAUSED","Chain attacks, sidestep warnings, and hold Q / LB to charge REVIEW.","Resume",resume)
+			show_overlay("REVIEW PAUSED","Chain attacks, sidestep warnings, and hold %s to charge REVIEW." % Prompts.either("Q", &"review_burst"),"Resume",resume)
 		get_viewport().set_input_as_handled()
 	elif state=="cards" and event.is_action_pressed("heroes_popup_advance") and not event.is_echo():
 		if card_clock>.25: next_card()
@@ -811,6 +858,7 @@ func leave() -> void:
 	leaving=true;ko.cancel();flow.cancel();playing=false;state="leaving";get_tree().paused=false
 	for child in panel.get_children():
 		if child is BaseButton: child.disabled=true
+	victory.action.disabled=true
 	music.stop()
 	AppRouter.go("beatem_up")
 

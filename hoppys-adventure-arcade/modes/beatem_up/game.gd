@@ -7,11 +7,16 @@ const Boss = preload("res://modes/beatem_up/boss.gd")
 const StageFlow = preload("res://modes/beatem_up/stage_flow.gd")
 const Knockout = preload("res://modes/beatem_up/knockout.gd")
 const StoryScene = preload("res://modes/beatem_up/story_scene.gd")
+const VictoryScreen = preload("res://modes/beatem_up/victory_screen.gd")
+const Minimap = preload("res://modes/beatem_up/minimap.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
-const PAUSABLE := ["combat","intro","stage_enter","stage_exit","knockout"]
+const PAUSABLE := ["combat","intro","ending","stage_enter","stage_exit","knockout"]
+## The minimap is up while Hoppy is in a room, and hidden under the story scenes and end screens.
+const MINIMAP_STATES := ["stage_enter","combat","stage_exit","finisher","knockout"]
 ## Results and game-over menus arm this long after appearing (see _input).
 const OVERLAY_ARM := .5
 const ARMED_OVERLAYS := ["won","game_over"]
+const Prompts := preload("res://app/controller_prompts.gd")
 var rng := RandomNumberGenerator.new()
 var stage_index := 0
 var room := 0
@@ -23,9 +28,17 @@ var state := "intro"
 var pause_return_state := "combat"
 var intro_page := 0
 var intro_clock := 0.0
+## The story scenes now playing: Catalog.STORY (the opening) or Catalog.ENDING (the victory
+## epilogue). intro_page and intro_clock step through either.
+var story_pages := "STORY"
 ## The opening's story scenes, with Next / Skip intro / Return in the lower bar.
 var story: StoryScene
 var intro_next: Button
+var intro_skip: Button
+var intro_return: Button
+## The final results screen after the victory epilogue.
+var victory: VictoryScreen
+var minimap: Minimap
 var overlay_clock := 0.0
 var flow: StageFlow
 ## The last-life knockout between the fatal hit and game_over().
@@ -151,6 +164,7 @@ func start_stage(index: int, cinematic := false) -> void:
 	enter_room(0)
 	if cinematic:
 		state = "intro"
+		story_pages = "STORY"
 		intro_page = 0
 		intro_clock = 0
 		hide_toast() # enter_room(0)'s line would sit behind the intro; begin_play announces the room.
@@ -370,7 +384,9 @@ func _physics_process(dt: float) -> void:
 	if not is_instance_valid(player) or get_tree().paused or state=="leaving": return
 	overlay_clock += dt
 	if state=="finisher": _tick_finisher(dt)
-	elif state=="intro": _tick_intro(dt)
+	elif state in ["intro","ending"]: _tick_intro(dt)
+	elif state=="won" and victory.advance(dt): sound("win",player.position)
+	_refresh_minimap(dt)
 	# Toasts, banners and transitions run outside combat too, so none freezes on screen.
 	toast_left -= dt
 	toast_label.visible = toast_left > 0
@@ -417,7 +433,7 @@ func _tick_items(dt: float) -> void:
 		item.sprite.position.y = -22+sin(item.age*4)*4
 		var distance: float = item.node.position.distance_to(player.position)
 		if Catalog.WEAPONS.has(item.kind):
-			if distance<85: prompt.text = "E / Y · PICK UP "+item.kind.replace("_"," ").to_upper()
+			if distance<85: prompt.text = Prompts.either("E", &"brawl_pickup", true)+" · PICK UP "+item.kind.replace("_"," ").to_upper()
 		elif distance < 45 and player.height < 20 and player.hp>0:
 			player.apply_effect(item.kind)
 			sound("pickup",player.position)
@@ -546,7 +562,7 @@ func game_over() -> void:
 
 func boss_defeated() -> void:
 	# A knocked-out Hoppy can't win: the knockout ends in game over.
-	if state in ["finisher","won","knockout"]: return
+	if state in ["finisher","ending","won","knockout"]: return
 	# No stage sequence may outlive the boss; a boss-music swap still finishes (it isn't one).
 	if flow.active(): flow.cancel()
 	playing = false
@@ -584,10 +600,30 @@ func _tick_finisher(dt: float) -> void:
 		score += 1000
 		_update_hud()
 		screen_fx.material.set_shader_parameter("phase",0.0)
-	if finish_clock >= 4.0:
-		state = "won"
-		completion_count += 1
-		show_overlay("MERGED. SHIPPED. SAVED.","Code City is back online.\nScore: %d   ·   Time: %d:%02d" % [score,int(elapsed)/60,int(elapsed)%60],"Return to Beat'em Up menu",leave)
+	if finish_clock >= 4.0: start_ending()
+
+## The victory epilogue: the ENDING story scenes play like the opening (Next / Skip, pausable),
+## then the results screen counts the score up.
+func start_ending() -> void:
+	if state!="finisher": return
+	state = "ending"
+	story_pages = "ENDING"
+	intro_page = 0
+	intro_clock = 0
+	hide_toast()
+	prompt.text = ""
+	show_intro()
+
+## The results screen; the run counts as complete once, here.
+func show_victory() -> void:
+	if state=="won": return
+	state = "won"
+	completion_count += 1
+	story.hide()
+	overlay.hide()
+	hide_toast()
+	prompt.text = ""
+	victory.show_result(Catalog.VICTORY.title,Catalog.VICTORY.line,score,elapsed,Catalog.STORY_ACCENT,"Return to Beat'em Up menu",leave)
 
 func toast(message: String, seconds := 2.0) -> void:
 	# Combat opens under the fading stage title; anything said then waits for it (latest wins).
@@ -659,11 +695,24 @@ func _build_ui() -> void:
 	prompt.offset_bottom = -54
 	prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ui.add_child(prompt)
-	var controls := Style.label("WASD / stick · Move    Space / A · Jump    J, X / X · Combo    E / Y · Pickup    Esc · Pause",13)
+	var controls := Style.label("",13)
+	Prompts.track(controls, func() -> String:
+		return "%s · Move    %s · Jump    %s · Combo    %s · Pickup    %s · Pause" % [
+			Prompts.keys_or_pad("WASD", Prompts.if_pad("stick")),
+			Prompts.either("Space", &"brawl_jump"),
+			Prompts.either("J, X", &"brawl_attack"),
+			Prompts.either("E", &"brawl_pickup"),
+			Prompts.either("Esc", &"pause")])
 	controls.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	controls.offset_top = -27
 	controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ui.add_child(controls)
+	# Top-right, under the HUD bar and clear of the boss bar inside it.
+	minimap = Minimap.new()
+	minimap.setup(Catalog.TITLES.size(),3,[Vector2i(2,2)],Catalog.STORY_ACCENT)
+	minimap.dock(top.offset_bottom)
+	minimap.hide()
+	ui.add_child(minimap)
 	# Over the HUD (the scenes are full-bleed), under the pause overlay.
 	story = StoryScene.new()
 	story.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -671,8 +720,11 @@ func _build_ui() -> void:
 	story.hide()
 	ui.add_child(story)
 	intro_next = _intro_button("Next →",next_intro)
-	_intro_button("Skip intro",enter_stage)
-	_intro_button("Return to Beat'em Up menu",leave)
+	intro_skip = _intro_button("Skip intro",finish_story)
+	intro_return = _intro_button("Return to Beat'em Up menu",leave)
+	victory = VictoryScreen.new()
+	victory.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(victory)
 	overlay = ColorRect.new()
 	overlay.color = Color(.025,.04,.065,.91)
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -701,6 +753,20 @@ func _update_hud() -> void:
 		boss_bar.value = boss.hp
 		boss_text.text = "GRAND MERGE CONFLICT · PHASE %d" % boss.phase
 
+## Feeds the minimap this frame's room: Hoppy, the living enemies and the boss, and the gate.
+func _refresh_minimap(dt: float) -> void:
+	# The stage title banner crosses the corner; it owns the screen while it is up.
+	minimap.visible = state in MINIMAP_STATES and not flow.banner_active()
+	if not minimap.visible: return
+	var foes := PackedVector2Array()
+	for enemy in enemies:
+		if is_instance_valid(enemy) and not enemy.dead: foes.append(enemy.position)
+	var heads := PackedVector2Array()
+	if is_instance_valid(boss) and not boss.dead: heads.append(boss.position)
+	minimap.tick(dt,{"stage":stage_index, "room":room, "cleared":gate_open or state=="finisher",
+		"gate_open":gate_open, "room_left":room_start(), "player":player.position,
+		"enemies":foes, "bosses":heads})
+
 func show_overlay(title: String, detail: String, action: String, callback: Callable) -> void:
 	for child in panel.get_children():
 		panel.remove_child(child)
@@ -724,32 +790,45 @@ func show_overlay(title: String, detail: String, action: String, callback: Calla
 	overlay.show()
 	primary.grab_focus()
 
-## Page intro_page of the opening as a story scene (Catalog.STORY). It turns by itself after
-## FLOW.intro_hold while its bar drains; resume calls this again to restore the page. Past the
-## last page the intro is over, so it hands off to the stage entrance as next_intro() does.
+## Page intro_page of the story now playing (story_pages: the opening or the victory epilogue)
+## as a story scene. It turns by itself after story_hold() while its bar drains; resume calls this
+## again to restore the page. Past the last page the story is over (finish_story()).
 func show_intro() -> void:
-	if intro_page>=Catalog.STORY.size():
-		enter_stage()
+	var count := StoryScene.page_list(Catalog,story_pages).size()
+	if intro_page>=count:
+		finish_story()
 		return
 	overlay.hide()
-	story.show_scene(Catalog,intro_page)
-	intro_next.text = "Start the review →" if intro_page==Catalog.STORY.size()-1 else "Next →"
+	story.show_scene(Catalog,intro_page,story_pages)
+	var ending := story_pages=="ENDING"
+	var last := intro_page==count-1
+	intro_next.text = ("Results →" if ending else "Start the review →") if last else "Next →"
+	intro_skip.text = "Skip" if ending else "Skip intro"
+	intro_return.visible = not ending
 	story.show()
 	intro_next.grab_focus()
 	_tick_intro(0)
 
+func story_hold() -> float:
+	return Catalog.FLOW.ending_hold if story_pages=="ENDING" else Catalog.FLOW.intro_hold
+
 func _tick_intro(dt: float) -> void:
 	intro_clock += dt
-	story.advance(intro_clock,Catalog.FLOW.intro_hold)
-	if intro_clock >= Catalog.FLOW.intro_hold: next_intro()
+	story.advance(intro_clock,story_hold())
+	if intro_clock >= story_hold(): next_intro()
 
 func next_intro() -> void:
 	intro_page += 1
 	intro_clock = 0
-	if intro_page>=Catalog.STORY.size(): enter_stage()
+	if intro_page>=StoryScene.page_list(Catalog,story_pages).size(): finish_story()
 	else: show_intro()
 
-## A small focusable action in the story scene's lower bar. It only acts while the intro runs,
+## The opening hands off to the stage entrance; the epilogue to the results screen.
+func finish_story() -> void:
+	if state=="ending": show_victory()
+	else: enter_stage()
+
+## A small focusable action in the story scene's lower bar. It only acts while a story runs,
 ## so a press that reaches it under the pause overlay or during the leave fade does nothing.
 func _intro_button(text: String, action: Callable) -> Button:
 	var button := Style.button(text,32)
@@ -760,7 +839,7 @@ func _intro_button(text: String, action: Callable) -> Button:
 	return button
 
 func _intro_action(action: Callable) -> void:
-	if state=="intro": action.call()
+	if state in ["intro","ending"]: action.call()
 
 func pause(detail: String) -> void:
 	pause_return_state = state
@@ -780,7 +859,7 @@ func _input(event: InputEvent) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause") and not event.is_echo():
-		if state in PAUSABLE: pause("Chain three attacks for a knockback finisher. Jump or change lanes to dodge.\nApproach a weapon and press E / Y to equip it.")
+		if state in PAUSABLE: pause("Chain three attacks for a knockback finisher. Jump or change lanes to dodge.\nApproach a weapon and press %s to equip it." % Prompts.either("E", &"brawl_pickup"))
 		elif state=="paused": resume()
 		get_viewport().set_input_as_handled()
 
@@ -792,8 +871,8 @@ func resume() -> void:
 	var back := pause_return_state
 	pause_return_state = "combat"
 	match back:
-		"intro":
-			state = "intro"
+		"intro", "ending":
+			state = back
 			show_intro()
 		"stage_enter", "stage_exit":
 			state = back
@@ -812,6 +891,7 @@ func leave() -> void:
 	playing = false
 	for child in panel.get_children():
 		if child is BaseButton: child.disabled = true
+	victory.action.disabled = true
 	get_tree().paused = false
 	music.stop()
 	AppRouter.go("beatem_up")

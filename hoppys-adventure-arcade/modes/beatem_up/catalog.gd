@@ -8,13 +8,14 @@ const MUSIC := [
 	preload("res://Assets/Audio/Beat'em Up/kim_lightyear_-_angel_eyes_vision_ii.mp3")]
 const BOSS_MUSIC = preload("res://Assets/Audio/Beat'em Up/Kim Lightyear - The Final.mp3")
 ## Hands-free stage flow (seconds, world px, px/s, dB). stage_flow.gd reads its DEFAULTS keys;
-## the rest are game.gd's: intro page hold, room-0 telegraph grace, boss-music dip, exit banner.
+## the rest are game.gd's: intro page hold, room-0 telegraph grace, boss-music dip, exit banner,
+## and the hold of each victory-epilogue page.
 const FLOW := {
 	"run_speed":300.0, "exit_min":.6, "exit_max":1.6, "exit_margin":60.0,
 	"fade_out":.35, "fade_in":.35, "music_floor_db":-40.0,
 	"enter_from_x":-60.0, "enter_to_x":180.0, "enter_max":1.6,
 	"stage_banner":2.8, "banner_slide":.3, "banner_fade":.6,
-	"exit_banner":2.0, "intro_hold":4.5, "enemy_grace":.8, "boss_dip":.6}
+	"exit_banner":2.0, "intro_hold":4.5, "enemy_grace":.8, "boss_dip":.6, "ending_hold":5.0}
 const FX_ROOT := "res://Assets/code-city-brawl-assets-only/code_city/"
 ## Last-life knockout (knockout.gd DEFAULTS keys; seconds since the hit, world px, radians, dB).
 ## Hoppy recoils facing the hit, then turns with the blow and the death clip does the tipping
@@ -50,6 +51,23 @@ const STORY := [
 		"kicker":"HOPPY CLOCKS IN",
 		"caption":"The codebase needs a review. And Hoppy delivers.\nClear three districts and force the final merge.",
 		"from":Vector3(.5,.38,1.25), "to":Vector3(.5,.48,1.0)}]
+## The victory epilogue after the Force Merge: three more story scenes, each held for
+## FLOW.ending_hold, then the results screen (victory_screen.gd). Same shape as STORY.
+const ENDING := [
+	{"image":STORY_ROOT+"merge_resolved.png", "fallback":STAGE_ART+"hq_background.png",
+		"kicker":"CONFLICT RESOLVED",
+		"caption":"The Grand Merge Conflict collapses.\nEvery branch folds into one clean history.",
+		"from":Vector3(.5,.42,1.22), "to":Vector3(.5,.5,1.0)},
+	{"image":STORY_ROOT+"city_back_online.png", "fallback":STAGE_ART+"district_background.png",
+		"kicker":"CODE CITY: BACK ONLINE",
+		"caption":"District by district, the terminals light back up.\nThe review pipeline holds.",
+		"from":Vector3(.36,.46,1.18), "to":Vector3(.62,.42,1.08)},
+	{"image":STORY_ROOT+"hoppy_ships_it.png", "fallback":STAGE_ART+"security_background.png",
+		"kicker":"SHIPPED.",
+		"caption":"Merged, shipped and saved.\nCode City owes Hoppy one.",
+		"from":Vector3(.5,.5,1.0), "to":Vector3(.5,.4,1.25)}]
+## The results screen after the epilogue.
+const VICTORY := {"title":"MERGED. SHIPPED. SAVED.", "line":"Code City is back online."}
 const SOUNDS := {
 	"jab": preload(SOUND_ROOT + "Weapons/Melee/sfx_wpn_punch1.wav"),
 	"swing": preload(SOUND_ROOT + "Weapons/Melee/sfx_wpn_punch2.wav"),
@@ -83,14 +101,12 @@ const WAVES := [
 	[["merge_conflict_soldier","force_push_bandit"], ["stale_branch_zombie","force_push_bandit","merge_conflict_soldier"], []]]
 ## InputMap's "any device" id. A new InputEventJoypadButton defaults to device 0, so a code-made
 ## binding would answer only the first pad; booths and reconnected controllers use other ids.
-const ANY_DEVICE := -1
+const Bindings := preload("res://addons/cr_kit/input.gd").Bindings
+const ANY_DEVICE := Bindings.ANY_DEVICE
 const PAD_BUTTONS := {
 	"brawl_jump":JOY_BUTTON_A,"brawl_pickup":JOY_BUTTON_Y,"brawl_attack":JOY_BUTTON_X}
 static func joy_button(button: JoyButton) -> InputEventJoypadButton:
-	var event := InputEventJoypadButton.new()
-	event.device = ANY_DEVICE
-	event.button_index = button
-	return event
+	return Bindings.joy_button(button)
 static func install_input() -> void:
 	for action in ["brawl_jump","brawl_pickup","brawl_attack"]:
 		if InputMap.has_action(action): continue

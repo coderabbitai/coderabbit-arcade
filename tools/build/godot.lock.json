@@ -16,6 +16,8 @@
     "windows_release_x86_64.exe",
     "windows_release_x86_64_console.exe",
     "windows_debug_x86_64.exe",
-    "windows_debug_x86_64_console.exe"
+    "windows_debug_x86_64_console.exe",
+    "web_nothreads_release.zip",
+    "web_nothreads_debug.zip"
   ]
 }

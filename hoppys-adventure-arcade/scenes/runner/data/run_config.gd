@@ -36,7 +36,7 @@ extends Resource
 @export var max_hp := 2
 @export var recovery_seconds := 18.0
 @export var hit_iframes := 0.8
-@export var caught_sequence_seconds := 1.6
+@export var caught_sequence_seconds := 3.0
 @export var hit_stop_max := 0.12
 
 @export_group("Score")

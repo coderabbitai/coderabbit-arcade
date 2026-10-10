@@ -4,19 +4,18 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://bjkoyu6nxsyci"
 path.s3tc="res://.godot/imported/hoppy_body_orm.png-a36dae46ff5d3b78351e386b721c189f.s3tc.ctex"
-path.etc2="res://.godot/imported/hoppy_body_orm.png-a36dae46ff5d3b78351e386b721c189f.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"imported_formats": ["s3tc_bptc"],
 "vram_texture": true
 }
 generator_parameters={
-"md5": "8ff429a2d415b5976242ba86214c5416"
+"md5": "f684053ef742dca3be2d514aacf3a5a3"
 }
 
 [deps]
 
 source_file="res://Assets/runner/hoppy/hoppy_body_orm.png"
-dest_files=["res://.godot/imported/hoppy_body_orm.png-a36dae46ff5d3b78351e386b721c189f.s3tc.ctex", "res://.godot/imported/hoppy_body_orm.png-a36dae46ff5d3b78351e386b721c189f.etc2.ctex"]
+dest_files=["res://.godot/imported/hoppy_body_orm.png-a36dae46ff5d3b78351e386b721c189f.s3tc.ctex"]
 
 [params]
 

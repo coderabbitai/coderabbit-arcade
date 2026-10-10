@@ -95,6 +95,84 @@ Avoid: photorealism, smooth vector art, blurry pixels, collage, text signs, bran
 
 Regenerations: 1. Generation zero dressed Hoppy in dark cargo pants and a belt, which did not match the in-game Code City sprite. Generation one keeps the rooftop, teal/cyan skyline, ready stance and cyan debug baton while replacing every lower-body garment with bare orange rabbit legs and feet under the black T-shirt.
 
+## code_city: merge_resolved
+
+Selected master: `code_city/sources/merge_resolved-generation0.png`. Retained masters: `code_city/sources/merge_resolved-generation0.png`.
+
+### Exact generation prompt history
+
+#### Generation 0
+
+Use case: illustration-story
+Asset type: full-screen in-game cinematic scene, to be cover-cropped to 16:9
+Primary request: A 16-bit painted pixel-art cinematic illustration of a giant merge-conflict monster collapsing inside Git Repository HQ. The single giant monster is an abstract tangle of clashing red and cyan branching energy cables twisting around one glowing core, NOT a humanoid and NOT carrying any signs. Its central core is resolving into one clean, bright braided beam of white-cyan light. Monster debris visibly dissolves into small abstract square pixels as it falls. The victory is clear without any words.
+Scene/backdrop: Code City Git Repository HQ hall, a monumental futuristic cathedral-like source-control server chamber of deep navy metal, cyan server columns, dark glossy floor, elegant arching structures, no exterior signs.
+Subject: one collapsing giant tangle monster with the braided resolving beam of light, centered and entirely inside the central 80 percent of the frame.
+Style/medium: polished 16-bit painted pixel art, chunky pixels, crisp dark outlines, detailed but game-readable, deliberately coherent perspective.
+Composition/framing: cinematic 16:9 wide shot from a low central viewpoint; collapse and beam at center, debris turns to pixels before reaching frame edges, clear empty margins for runtime crop; no UI or caption panel inside artwork.
+Lighting/mood: cathartic resolution after alarm, deep teal and cyan ambient glow, radiant white-cyan core light, fading crimson and magenta remnants.
+Color palette: deep navy, near-black steel, teal, cyan, cobalt blue, fading crimson, magenta, bright white highlights.
+Materials/textures: wet metal floor, glowing server glass, dissipating pixel fragments, braided energy beam.
+Text (verbatim): ""
+Constraints: no readable text, no words, no logos, no watermark, no UI, no typography, no letterforms, no glyphs, no code, no signage, no humanoid boss, no other major character, no duplicated focal creature, no malformed anatomy; keep every key subject in the central 80 percent because the game pans and zooms; illustration only, not a sprite sheet or comic panel.
+Avoid: photorealism, smooth vector art, blurry pixels, collage, text signs, branded symbols.
+
+### Refinements
+
+Regenerations: 0. The first generated master was retained. The tangled red-and-cyan merge-conflict monster resolves into a clean braided beam while its debris dissolves inside the Git Repository HQ hall.
+
+## code_city: city_back_online
+
+Selected master: `code_city/sources/city_back_online-generation0.png`. Retained masters: `code_city/sources/city_back_online-generation0.png`.
+
+### Exact generation prompt history
+
+#### Generation 0
+
+Use case: illustration-story
+Asset type: full-screen in-game cinematic scene, to be cover-cropped to 16:9
+Primary request: A 16-bit painted pixel-art cinematic illustration of Code City coming back online at the exact transition from night to dawn. It is the same dense cyberpunk city world as a rain-slick Code City under siege, now visibly healed. Terminal windows and building windows light up in organized waves across the skyline, district by district, using teal, mint and steady green. A repaired luminous review pipeline runs intact across the middle distance, glowing steadily without any marks or labels. The recovery must read instantly without written text.
+Scene/backdrop: wide futuristic Code City skyline, elevated transit rails, angular server towers, rooftop foreground with subtle wet-metal reflections, fading night sky that warms toward sunrise.
+Subject: the restored glowing pipeline and successive waves of terminal and window light across the central 80 percent, with distinct city districts visible at center and center-right.
+Style/medium: polished 16-bit painted pixel art, chunky pixels, crisp dark outlines, detailed but game-readable, deliberately coherent perspective.
+Composition/framing: cinematic 16:9 wide shot from a high rooftop vantage; restored pipeline curves across the middle distance, waking lights propagate outward across central city districts, clean dark-to-dawn sky margins for runtime crop; no UI or caption panel inside artwork.
+Lighting/mood: hopeful recovery, cool navy night fading into warm peach dawn, teal cyan mint and green electrical glow establishing the repaired system.
+Color palette: deep navy, charcoal black, teal, cyan, mint, emerald green, pale peach sunrise, limited bright white highlights.
+Materials/textures: rain-damp metal, glowing terminal glass, reflective transit rails, quiet low clouds and pixel dawn haze.
+Text (verbatim): ""
+Constraints: no readable text, no words, no logos, no watermark, no UI, no typography, no letterforms, no glyphs, no code, no signage, no human faces, no major character, no monster, no damage, no duplicated focal architecture; keep every key subject in the central 80 percent because the game pans and zooms; illustration only, not a sprite sheet or comic panel.
+Avoid: photorealism, smooth vector art, blurry pixels, collage, text signs, branded symbols.
+
+### Refinements
+
+Regenerations: 0. The first generated master was retained. The repaired review pipeline and waves of teal, mint and green terminal light carry Code City from night into dawn.
+
+## code_city: hoppy_ships_it
+
+Selected master: `code_city/sources/hoppy_ships_it-generation0.png`. Retained masters: `code_city/sources/hoppy_ships_it-generation0.png`.
+
+### Exact generation prompt history
+
+#### Generation 0
+
+Use case: precise-scene-transform using Image 1 only as the authoritative character-look and painted-pixel-art world reference.
+Asset type: full-screen in-game cinematic ending scene, to be cover-cropped to 16:9
+Primary request: Create a completely new Code City victory scene. Show the same single small heroic Hoppy rabbit coder from Image 1, recognizable as an orange rabbit with cream muzzle and belly, two long orange ears, friendly determined eyes, plain black short-sleeve shirt, bare orange legs, bare orange rabbit feet and a small cream tail. He must stand triumphantly in a proud open stance on a high Code City rooftop at sunrise. The recovered city below celebrates with contained abstract fireworks and a few small friendly allied robot helpers nearby. Do not preserve the rain, crisis skyline, baton, rear-facing stance, or threatened city from Image 1. No weapon. The scene must read as a warm final victory.
+Scene/backdrop: same dense cyberpunk Code City world as Image 1, now at dawn with recovered teal and cyan systems, sunlit clouds, elevated rails and towers.
+Subject: exactly one Hoppy, large enough to be clearly read in the center-lower central 80 percent. At most three small clearly friendly robot helpers may appear as secondary silhouettes near his feet or on distant roof edges.
+Style/medium: preserve the polished 16-bit painted pixel art, chunky pixels, crisp dark outlines, detailed but game-readable, coherent Hoppy anatomy from Image 1.
+Composition/framing: cinematic 16:9 wide hero shot, Hoppy three-quarter facing the camera, rooftop and sunrise skyline, fireworks only in the upper central sky and never obscuring Hoppy, no UI or caption panel inside artwork.
+Lighting/mood: joyous sunrise resolution, warm orange and peach sun rimlight on Hoppy, sustained teal/cyan recovered city lights, small mint highlights.
+Color palette: deep navy fading to warm peach and orange, charcoal, teal, cyan, mint, bright controlled fireworks color accents.
+Materials/textures: warm wet-to-dry rooftop metal, soft sunrise haze, glowing windows, contained abstract pixel fireworks, friendly compact robots.
+Text (verbatim): ""
+Constraints: no readable text, no words, no logos, no watermark, no UI, no typography, no letterforms, no glyphs, no code, no signage, exactly one Hoppy, no pants, no trousers, no belt, no armor, no cape, no weapon, no extra limbs, no malformed paws, no human character; keep every key subject in the central 80 percent because the game pans and zooms; illustration only, not a sprite sheet or comic panel.
+Avoid: photorealism, smooth vector art, blurry pixels, collage, text signs, branded symbols.
+
+### Refinements
+
+Regenerations: 0. The first generated master was retained. Bare-legged, black-shirt Hoppy celebrates on a sunrise rooftop with three small friendly robot helpers and contained abstract fireworks.
+
 ## heroes: situation
 
 Selected master: `heroes/sources/situation-generation1.png`. Retained masters: `heroes/sources/situation-generation0.png`, `heroes/sources/situation-generation1.png`.
@@ -188,3 +266,81 @@ Avoid: photorealism, smooth vector art, blurry pixels, collage, text signs, bran
 ### Refinements
 
 Regenerations: 0. The first generated master was retained. Armored, caped Hoppy lands under an orange alert beacon with the slop, agent army and hacker held behind as secondary threats.
+
+## heroes: hacker_falls
+
+Selected master: `heroes/sources/hacker_falls-generation0.png`. Retained masters: `heroes/sources/hacker_falls-generation0.png`.
+
+### Exact generation prompt history
+
+#### Generation 0
+
+Use case: illustration-story
+Asset type: full-screen in-game cinematic scene, to be cover-cropped to 16:9
+Primary request: A 16-bit painted pixel-art cinematic illustration of the AI-Augmented Hacker villain falling in defeat inside the Agentic Core. The single villain is a hooded hacker in a dark charcoal cybernetic rig with a red-black hood and a fully shadowed featureless face. Its orange and purple holographic tendrils snap and burst into fragmentary light as the rig visibly shatters and falls backward. Make the broken rig and falling body unmistakable but avoid injury detail. The action must read immediately as the hacker falls.
+Scene/backdrop: the Agentic Core, a monumental futuristic server-engine chamber connected to the warm orange-and-white re:Invent-style technology-expo architecture of the Heroes world, with orange trusses, glossy pale floor, quiet blue holographic energy cubes and tall server spires, all with no labels.
+Subject: exactly one falling hooded hacker and its breaking orange/purple cybernetic rig, entirely within the central 80 percent. Abstract shards trail downward inside the central frame.
+Style/medium: polished 16-bit painted pixel art, chunky pixels, crisp dark outlines, detailed but game-readable, coherent anatomy.
+Composition/framing: cinematic 16:9 wide shot from a slightly low central viewpoint; central core glows behind the falling villain, tendrils curve inward rather than touching edges, no UI or caption panel inside artwork.
+Lighting/mood: decisive liberation, orange and purple corruption breaks against clean teal, blue and white core light.
+Color palette: warm orange, amber, white, charcoal, cobalt/cyan blue, saturated purple, restrained crimson.
+Materials/textures: glossy expo floor, luminous server spires, fractured hologram shards, metal rig plates, clear digital energy trails.
+Text (verbatim): ""
+Constraints: no readable text, no words, no logos, no watermark, no UI, no typography, no letterforms, no glyphs, no code, no signage, no human faces, no duplicated villain, no Hoppy, no other major character, no gore, no malformed limbs or hands; keep every key subject in the central 80 percent because the game pans and zooms; illustration only, not a sprite sheet or comic panel.
+Avoid: photorealism, smooth vector art, blurry pixels, collage, text signs, branded symbols.
+
+### Refinements
+
+Regenerations: 0. The first generated master was retained. The hooded AI-Augmented Hacker falls through the purified Agentic Core as the orange-and-purple cybernetic rig fractures into abstract light and metal fragments.
+
+## heroes: trust_restored
+
+Selected master: `heroes/sources/trust_restored-generation0.png`. Retained masters: `heroes/sources/trust_restored-generation0.png`.
+
+### Exact generation prompt history
+
+#### Generation 0
+
+Use case: illustration-story
+Asset type: full-screen in-game cinematic scene, to be cover-cropped to 16:9
+Primary request: A 16-bit painted pixel-art cinematic illustration of the Agentic Core restored and purified after victory. A bright stable central server-energy core glows peacefully between calm tall server spires. Exactly four distinct simple glowing capability emblem shapes orbit it in a balanced ring: a shield outline, a magnifying-glass outline, three stacked offset rounded layers, and a padlock outline. Each emblem must be a clear shape only, with absolutely no letters, numbers, marks, glyphs, text or symbols inside it. The scene must visually communicate trust restored.
+Scene/backdrop: the Agentic Core, a monumental futuristic server-engine chamber connected to a bright warm orange-and-white re:Invent-style technology-expo world, with orange trusses, glossy pale floor, calm blue holographic cubes and tall server spires, all unlabelled.
+Subject: the tranquil central core and exactly four emblem shapes orbiting it, all inside the central 80 percent.
+Style/medium: polished 16-bit painted pixel art, chunky pixels, crisp dark outlines, detailed but game-readable, coherent perspective.
+Composition/framing: cinematic 16:9 wide symmetrical shot; core centered, emblems at upper-left, upper-right, lower-left and lower-right positions within a centered orbit, serene spires framing them, no UI or caption panel inside artwork.
+Lighting/mood: calm, trusted and celebratory, warm orange and clean white architecture balanced with teal and cyan core radiance.
+Color palette: white, warm orange, charcoal, cobalt/cyan blue, teal, mint and small bright gold highlights.
+Materials/textures: polished reflective expo floor, glass server spires, clear holographic light, quiet pixel sparkles, smooth clean energy rings.
+Text (verbatim): ""
+Constraints: no readable text, no words, no logos, no watermark, no UI, no typography, no letterforms, no glyphs, no code, no signage, exactly four floating capability emblems, no person, no robot, no Hoppy, no villain, no extra emblems, no malformed icon shapes; keep every key subject in the central 80 percent because the game pans and zooms; illustration only, not a sprite sheet or comic panel.
+Avoid: photorealism, smooth vector art, blurry pixels, collage, text signs, branded symbols.
+
+### Refinements
+
+Regenerations: 0. The first generated master was retained. The calm Agentic Core has exactly four distinct text-free capability emblems: shield, magnifier, stacked layers and lock.
+
+## heroes: rabbit_stands
+
+Selected master: `heroes/sources/rabbit_stands-generation0.png`. Retained masters: `heroes/sources/rabbit_stands-generation0.png`.
+
+### Exact generation prompt history
+
+#### Generation 0
+
+Use case: precise-scene-transform using Image 1 only as the authoritative CodeRabbit hero character and painted-pixel-art style reference.
+Asset type: full-screen in-game cinematic ending scene, to be cover-cropped to 16:9
+Primary request: Create a completely new warm final victory hero shot. Show the same single CodeRabbit hero from Image 1 standing proudly and calmly over a re:Invent-style conference-expo technology floor after victory. Preserve the character's orange rabbit fur, cream muzzle and belly, two long ears, friendly determined eyes, black and charcoal armored suit, orange chest crest, orange legs, and flowing dark charcoal cape with warm orange lining. Change the lunging arrival pose into an upright victorious stance. Do not preserve the enemy crowd, alarm beacon, fight smoke or villain from Image 1. No weapon. Conference lights, falling abstract confetti and distant cheering spectator silhouettes celebrate around him.
+Scene/backdrop: a broad high-end technology conference and expo floor with warm orange trusses, white architecture, teal and cyan holographic glow forms, polished reflective floor, and no written signage.
+Subject: exactly one upright armored caped CodeRabbit in the center of the central 80 percent, strongly silhouette-readable. Background cheering figures remain small, simple and distant.
+Style/medium: preserve the polished 16-bit painted pixel art, chunky pixels, crisp dark outlines and coherent orange rabbit anatomy from Image 1.
+Composition/framing: cinematic 16:9 wide hero shot from a slightly low frontal angle; CodeRabbit center foreground, cape draped clearly to one side, orange and teal celebration lights framing him, confetti only around the central upper space and never obscuring face, no UI or caption panel inside artwork.
+Lighting/mood: completed heroic victory, warm amber-orange light and bright teal highlights, optimistic communal celebration.
+Color palette: warm orange, amber, white, charcoal black, cobalt/cyan blue, teal, small controlled colorful confetti accents.
+Materials/textures: glossy expo floor reflections, metal trusses, acrylic holographic light, flowing fabric cape, falling abstract pixel confetti.
+Text (verbatim): ""
+Constraints: no readable text, no words, no logos, no watermark, no UI, no typography, no letterforms, no glyphs, no code, no signage, exactly one CodeRabbit, no unarmored shirt, no extra limbs, no malformed paws, no visible villain, no enemy robots, no monster; keep every key subject in the central 80 percent because the game pans and zooms; illustration only, not a sprite sheet or comic panel.
+Avoid: photorealism, smooth vector art, blurry pixels, collage, text signs, branded symbols.
+
+### Refinements
+
+Regenerations: 0. The first generated master was retained. The armored, caped CodeRabbit holds an upright final-victory stance above the lit conference floor, with teal holographic light, orange trusses, confetti and distant cheering silhouettes.

@@ -126,7 +126,7 @@ never moves in Z (`axis_lock_linear_z`); chunks move toward +Z at the authoritat
 | `pursuit_progress(remaining: float, total: float)` | Every physics tick while PURSUED |
 | `pursuit_recovered(reason: StringName)` | `timer` (clean 18 s) or `shield` (shield absorbed a hit while pursued) |
 | `caught()` | Second hit while PURSUED; the catch cinematic starts (world decelerates, controls lock) |
-| `run_finished(result: Dictionary)` | `caught_sequence_seconds` (1.6 s) after `caught`; leaderboard already written. Show Game Over here. Emitted exactly once per run |
+| `run_finished(result: Dictionary)` | `caught_sequence_seconds` (3.0 s) after `caught`; leaderboard already written. Show Game Over here. Emitted exactly once per run |
 | `leaderboard_saved(entries: Array, rank: int)` | Just before `run_finished`, and again after a successful `submit_name` |
 | `score_changed(score: int, multiplier: float)` | Only when the integer score or the multiplier changes |
 | `bonus_awarded(points: int, reason: StringName)` | Pickup or blast bonus |
@@ -234,7 +234,8 @@ Base var `kind`. Hooks `on_spawned()`, `on_collected()`. Pickup sphere radius 0.
 ### 5.4 `pursuer/pursuer_visual.tscn` — extends `pursuer/pursuer_visual_base.gd`
 
 `set_threat(t: float)` (0 retreated … 1 about to catch, every tick while pursued), `play_catch()`
-(on `caught`, ~1.4 s), `play_retreat()` (on `pursuit_recovered`). The backend positions the pursuer root
+(on `caught`; the trap holds for the whole caught sequence, until the next run resets the threat to 0),
+`play_retreat()` (on `pursuit_recovered`). The backend positions the pursuer root
 at y = 0 between the camera and the player: z = lerp(12, 4.5, threat). Keep the visual ≤ 6 m wide and
 ≤ 2.6 m tall at threat 1 so it looms in the lower third of the frame without hiding hazards.
 
@@ -285,7 +286,7 @@ Actions: `move_left` (A, ←, D-pad ←, left stick −X), `move_right` (D, →,
 | Lanes / body | `lane_width 2.0`, `lane_change_time 0.13`, capsule r 0.4, standing 1.8 m, rolling 0.9 m |
 | Jump / roll | `gravity 28`, `jump_velocity 9.8` (apex 1.715 m, airtime 0.70 s), `super_jump_velocity 13.2` (apex 3.11 m), `jump_buffer 0.10`, `coyote_time 0.06`, `roll_duration 0.70`, `roll_cooldown 0.25`, fast-fall gravity ×2.5 |
 | Speed | `base_speed 12`, `max_speed 24` at `time_to_max_speed 165` (smoothstep), then +1 m/s per 60 s to `hard_cap 26`; `nitro_speed_multiplier 1.25` applied after the curve and then clamped: `speed = min(curve_speed × 1.25, nitro_speed_cap 32)` |
-| Health | `max_hp 2`, `recovery_seconds 18`, `hit_iframes 0.8`, `caught_sequence_seconds 1.6` |
+| Health | `max_hp 2`, `recovery_seconds 18`, `hit_iframes 0.8`, `caught_sequence_seconds 3.0` (the trip-and-trap catch cinematic) |
 | Score | `base_score_rate 10` pts/s × (Nitro ×2) × (Code Review ×1.5); `pickup_bonus 25`; `blast_bonus_per_hazard 10`; fractional accumulator, integer display |
 | Effects | `lgtm_duration 5`, `nitro_duration 8` (+1 s ease-down with i-frames), Super Jump invulnerable in flight + 0.5 s, Code Review Bonus lost on unblocked hit only, refresh-not-stack |
 | Spawner | `spawn_horizon_z −90`, `despawn_z 12`, `max_active_chunks 9`, `t_spacing(d) = lerp(1.2, 0.85, d)`, `gap = max(0, v × 1.02 × (t_spacing(d) + (0.15 if pursued else 0)) − prev.exit_clear − next.entry_clear)` (parenthesised: `t_spacing(d)` always applies, the 0.15 s relief is added only while pursued) — the pursuit relief is inside the time term, not distance added after it; `v` is `max(speed, base_speed)`, `min_hazard_depth 1.2` (pits 3.0), `blast_range_z 60`, 50 % chunk X-mirroring, no immediate repeats |

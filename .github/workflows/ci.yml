@@ -59,9 +59,11 @@ jobs:
             code_city_logic
             code_city_motion
             code_city_smoke
+            controller_service
             stage_flow
             beatemup_knockout
             beatemup_story
+            beatemup_minimap
             heroes_villains_assets
             heroes_villains_logic
             heroes_villains_motion
@@ -126,8 +128,15 @@ jobs:
       # The same check runs locally in .githooks/pre-commit, so most problems never get pushed.
       - name: No local paths or internal links
         run: python tools/checks/repo_hygiene.py --all
+      - name: Release packaging unit tests
+        run: python -m unittest discover -s tools/build -v
       - name: Hygiene checker unit tests
         run: python -m unittest discover -s tools/checks -v
+      # Vendored add-ons are exact copies of a tagged upstream release (tools/vendor/vendor.lock.json).
+      - name: Vendored add-ons match their lock
+        run: python tools/vendor/vendor_lock.py --check
+      - name: Vendor lock unit tests
+        run: python -m unittest discover -s tools/vendor -v
 
   gitleaks:
     name: gitleaks

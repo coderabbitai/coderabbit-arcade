@@ -201,7 +201,7 @@ models this with `recovery_remaining = 0.005`, `report_hit()`, then one tick.
 
 `RunnerGame._on_caught()`: state `caught`, `player.set_controls_enabled(false)`, `player.play_dead()`,
 `speed_controller.begin_stop(0.4)`, `camera_rig.shake(1.0)`, `pursuer.catch()`, emit `caught`.
-After `caught_sequence_seconds` (1.6): `_finish_run(&"caught")` builds `result`, calls
+After `caught_sequence_seconds` (3.0): `_finish_run(&"caught")` builds `result`, calls
 `RunnerLeaderboard.submit(entry)` exactly once, sets `rank`/`qualifies`, emits `leaderboard_saved`,
 `state_changed(&"finished")`, `run_finished(result)`. Guarded so it can never run twice.
 
@@ -451,7 +451,7 @@ instantiate `runner_game.tscn` with `autostart = false`, `config` duplicate with
 `start_run(12345)`; `set_autopilot(true)`; after 45 s game-time assert hp 2, `hits_taken == 0`, speed ≈
 max, active chunks ≤ 9, score > 0, ≥ 1 power-up collected (print seed + chunk log on failure). Then
 autopilot off → within 8 s `damage_taken` → PURSUED; autopilot on for `recovery_seconds + 1` → SAFE;
-off → hit → hit → `caught`, `run_finished` exactly once ≈ 1.6 s later; leaderboard has this `run_id`;
+off → hit → hit → `caught`, `run_finished` exactly once ≈ 3.0 s later; leaderboard has this `run_id`;
 `submit_name("  Test  ")` → name `Test`, count unchanged. `auto_fix` mid-run → cleared > 0 and no
 hit for 2 s. `pause()` for 1 s → score unchanged, `paused_changed` seen; `resume()`. Real input:
 `InputEventKey` with `physical_keycode = KEY_SPACE` → `player_action("jump")`. Routing:
