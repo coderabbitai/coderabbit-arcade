@@ -57,6 +57,9 @@ const LAYERS := {
 	&"alarm": [0.42, 0.22, 0.08, 0.04, 0.24],
 }
 const FOOTSTEP_SOFTNESS := [0.85, 0.38, 0.16]
+## LAYERS' drone weights, typed for drone_sample(), which runs once per sample. Built when the
+## script compiles, on the thread that loads it, before any worker can read it.
+static var _drone_weights := PackedFloat64Array(LAYERS[&"drone"])
 static var _cache: Dictionary = {}
 static var raw_peaks: Dictionary = {}
 
@@ -277,8 +280,7 @@ static func sting_sub(t: float, duration: float, intro: bool) -> float:
 
 ## Integral cycles for every layer, with no artificial seam fade.
 static func drone_sample(t: float) -> float:
-	var weights := PackedFloat64Array(LAYERS[&"drone"])
-	return sin(TAU * 55.0 * t) * weights[0] + sin(TAU * 57.0 * t) * weights[1] + sin(TAU * 27.5 * t) * weights[4]
+	return sin(TAU * 55.0 * t) * _drone_weights[0] + sin(TAU * 57.0 * t) * _drone_weights[1] + sin(TAU * 27.5 * t) * _drone_weights[4]
 
 ## Surface and strike variation are independent cache/seed axes.
 static func footstep(surface: int, variant: int = 0) -> AudioStreamWAV:
