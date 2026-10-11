@@ -28,16 +28,14 @@ var _cinematic_seconds := 0.0
 var _cinematic_bursts := 0
 var _resolved_played := false
 var _title_played := false
-var _turn_active := false
 var _clear_remaining := 0.0
-var _turn_mask := 2
 var _boss_active := false
 var _boss_duck := 0.0
 var _boss_pitch_offset := 0.0
 var _whoosh_mask := 2
 const HIGH_PRIORITY := {
 	&"boss_intro_short": true, &"boss_explosion": true, &"boss_resolved": true, &"boss_skip": true, &"boss_title": true,
-	&"turn_warning": true, &"boss_intro": true, &"stage_clear": true, &"turn_whoosh": true, &"boss_defeat": true, &"boss_phase": true, &"tool_fire": true,
+	&"boss_intro": true, &"stage_clear": true, &"boss_defeat": true, &"boss_phase": true, &"tool_fire": true,
 	&"alert_sting": true, &"hit": true, &"caught": true, &"game_over": true, &"shield_block": true,
 	&"pursuit_start": true, &"retreat": true, &"recovered_chime": true, &"powerup": true,
 }
@@ -73,7 +71,7 @@ func _ready() -> void:
 		player.process_mode = Node.PROCESS_MODE_PAUSABLE
 
 func bind(game: Node) -> void:
-	# Shared warmup also covers turn cues and every panned whoosh variant. bind() runs inside the
+	# Shared warmup also covers the cinematic cues and every panned whoosh variant. bind() runs inside the
 	# game's _ready (veil opaque, before the first frame), so whatever the menu did not absorb is
 	# completed here rather than one package per frame during play; then every runtime shader is
 	# drawn once. Both are no-ops after the runner menu or an earlier run.
@@ -92,8 +90,7 @@ func bind(game: Node) -> void:
 	_normalized = maxf(0.0, float(game.get("normalized_speed")))
 	_pitch = 1.0
 	_connections = {
-		&"turn_incoming": _on_turn_warning, &"boss_cinematic": _on_cinematic, &"boss_cinematic_skipped": _on_cinematic_skipped, &"boss_cinematic_ended": _on_cinematic_ended,
-		&"turn_started": _on_turn, &"turn_finished": _on_turn_finished,
+		&"boss_cinematic": _on_cinematic, &"boss_cinematic_skipped": _on_cinematic_skipped, &"boss_cinematic_ended": _on_cinematic_ended,
 		&"stage_cleared": _on_stage_clear, &"phase_changed": _on_phase,
 		&"boss_spawned": _on_boss_spawned, &"boss_phase_changed": _on_boss_phase,
 		&"boss_defeated": _on_boss_defeated, &"boss_retreated": _on_boss_retreated,
@@ -182,7 +179,6 @@ func _play(kind: StringName, player: AudioStreamPlayer = null) -> void:
 	if _paused or _clock - float(_last_play.get(kind, -1.0)) < float(GATE.get(kind, 0.04)):
 		return
 	var stream := Synth.panned_whoosh(_whoosh_mask) if kind == &"projectile_whoosh" else Synth.sound(kind)
-	if kind == &"turn_whoosh": stream = Synth.panned_whoosh(_turn_mask, kind)
 	if kind == &"footstep":
 		stream = Synth.footstep(_surface, _tread % 2)
 		_tread += 1
@@ -199,7 +195,7 @@ func _play(kind: StringName, player: AudioStreamPlayer = null) -> void:
 		if not HIGH_PRIORITY.has(kind) and _high_pending_count() > 0:
 			_queue(kind)
 			return
-		var voice := _playback.play_stream(stream, 0.0, 0.0, 1.0, AudioServer.PLAYBACK_TYPE_DEFAULT, _whoosh_bus if kind in [&"turn_whoosh", &"projectile_whoosh", &"nitro"] else &"SFX")
+		var voice := _playback.play_stream(stream, 0.0, 0.0, 1.0, AudioServer.PLAYBACK_TYPE_DEFAULT, _whoosh_bus if kind in [&"projectile_whoosh", &"nitro"] else &"SFX")
 		if voice == AudioStreamPlaybackPolyphonic.INVALID_ID:
 			_queue(kind)
 			var poly := one_shots.stream as AudioStreamPolyphonic
@@ -400,13 +396,13 @@ func _duck(db: float, seconds: float) -> void:
 		_audio_service.duck_music(db, seconds)
 
 func _set_boss_mix(active: bool) -> void:
-	var target := -18.0 if _cinematic_mode != &"" else -12.0 if _intro_remaining > 0.0 else -10.0 if _clear_remaining > 0.0 else (-5.0 if _turn_active else (-4.0 if active else 0.0))
+	var target := -18.0 if _cinematic_mode != &"" else -12.0 if _intro_remaining > 0.0 else -10.0 if _clear_remaining > 0.0 else (-4.0 if active else 0.0)
 	_boss_pitch_offset = 0.04 if active else 0.0
 	if is_equal_approx(_boss_duck, target): return
 	# Hold the service's baseline so transient ducks return to the fight level.
 	if _audio_service != null and _audio_service.has_method("duck_music") and "music_volume_db" in _audio_service:
 		_audio_service.set("music_volume_db", float(_audio_service.get("music_volume_db")) + target - _boss_duck)
-		_duck(0, 1.2 if _clear_remaining > 0.0 else (0.5 if _turn_active else (0.6 if active else 0.2)))
+		_duck(0, 1.2 if _clear_remaining > 0.0 else (0.6 if active else 0.2))
 	_boss_duck = target
 
 func _on_boss_spawned(_kind: StringName, _hp: int) -> void:
@@ -420,10 +416,9 @@ func _on_boss_phase(_phase: int) -> void:
 
 func _end_boss_audio() -> void:
 	_on_cinematic_ended(_cinematic_mode)
-	for kind in [&"boss_defeat", &"boss_explosion", &"boss_resolved", &"turn_warning", &"turn_whoosh"]: _stop_cue(kind)
+	for kind in [&"boss_defeat", &"boss_explosion", &"boss_resolved"]: _stop_cue(kind)
 	_intro_remaining = 0.0
 	_boss_active = false
-	_turn_active = false
 	_clear_remaining = 0.0
 	_scheduled.clear()
 	_set_boss_mix(false)
@@ -455,20 +450,6 @@ func _on_tool(_kind: StringName, damage: int) -> void:
 	_scheduled.append({"kind": &"tool_fire", "remaining": 0.10})
 	if damage > 0: _scheduled.append({"kind": &"boss_hit", "remaining": 0.14})
 
-func _on_turn(direction: int, _seconds: float) -> void:
-	_turn_active = true
-	_turn_mask = 1 if direction < 0 else 4
-	_set_boss_mix(false)
-	_stop_cue(&"turn_warning")
-	_play(&"turn_whoosh")
-	_pitch_cue(&"turn_whoosh", 2.4 / maxf(_seconds, 0.05))
-
-func _on_turn_finished() -> void:
-	_stop_cue(&"turn_warning")
-	_stop_cue(&"turn_whoosh")
-	_turn_active = false
-	_set_boss_mix(_boss_active)
-
 func _on_stage_clear(_index: int, _bonus: int) -> void:
 	_clear_remaining = 2.8
 	_pitch = 1.0
@@ -478,14 +459,8 @@ func _on_stage_clear(_index: int, _bonus: int) -> void:
 
 func _on_phase(value: StringName) -> void:
 	if value in [&"idle", &"run"]:
-		_turn_active = false
 		_clear_remaining = 0.0
 		_set_boss_mix(false)
-
-func _on_turn_warning(_direction: int, seconds: float) -> void:
-	_play(&"turn_warning")
-	# Scale the three authored ticks to the facade's warning window.
-	_pitch_cue(&"turn_warning", 3.0 / maxf(seconds, 0.05))
 
 func _on_cinematic(_kind: StringName, mode: StringName, seconds: float) -> void:
 	_cinematic_mode = mode

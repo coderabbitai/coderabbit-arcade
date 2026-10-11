@@ -87,9 +87,6 @@ signal paused_changed(paused: bool)
 signal phase_changed(phase: StringName)
 signal stage_started(index: int, name: StringName, speed: float)
 signal stage_cleared(index: int, bonus: int)
-signal turn_incoming(direction: int, seconds: float)
-signal turn_started(direction: int, seconds: float)
-signal turn_finished
 signal boss_intro(kind: StringName, name: String, seconds: float)
 signal boss_spawned(kind: StringName, hp: int)
 signal boss_health_changed(hp: int, max_hp: int)
@@ -149,7 +146,7 @@ var cosmetic_rng := RandomNumberGenerator.new()
 
 # Read-only v2 properties (contract §11.4). The StageManager writes the stage block every tick and
 # the boss block is mirrored off the boss signals, so both survive the encounter being freed.
-## idle / run / turn / boss / stage_clear, orthogonal to `state`.
+## idle / run / boss / stage_clear, orthogonal to `state`.
 var phase: StringName = &"idle"
 ## 1-based, never resets between stages; 0 before the first stage starts.
 var stage_index := 0
@@ -159,10 +156,6 @@ var stage_distance := 0.0
 var stage_distance_target := 0.0
 ## RUN-phase seconds only; drives speed and difficulty (contract §11.1).
 var run_clock := 0.0
-## -1 left, +1 right for the turn this seam is about to take; 0 when none is pending. Set when the
-## stage enters its drain window, which is before turn_incoming announces it, and back to 0 once
-## the bend is over (contract §11.4).
-var next_turn_direction := 0
 ## The live boss node, or null outside a fight.
 var boss: Node3D = null
 var boss_kind: StringName = &""
@@ -233,9 +226,9 @@ func _ready() -> void:
 		config = load(CONFIG_PATH) as RunConfig
 	hp = int(config.max_hp)
 	speed = float(config.base_speed)
-	# The TurnRig and the boss arena are set up before the StageManager, so the machine finds a
-	# square rig and a live encounter; the frontend mounts come last, because a corridor is handed
-	# to the rig only once it exists.
+	# The TurnRig and the boss arena are set up before the StageManager, so the machine finds its
+	# mount and a live encounter; the frontend mounts come last, because a corridor is handed to the
+	# rig only once it exists.
 	for node in [speed_controller, hit_manager, score_manager, effect_manager, spawner, turn_rig,
 			boss_encounter, stage_manager, autopilot, player, pursuer, camera_rig, debug_overlay]:
 		if node != null and node.has_method("setup"):
@@ -283,7 +276,6 @@ func start_run(run_seed := 0) -> void:
 	run_clock = 0.0
 	stage_distance = 0.0
 	stage_distance_target = 0.0
-	next_turn_direction = 0
 	_clear_boss_state()
 	for node in [speed_controller, hit_manager, score_manager, effect_manager, autopilot,
 			player, pursuer, camera_rig, turn_rig]:
@@ -304,7 +296,7 @@ func start_run(run_seed := 0) -> void:
 	speed_changed.emit(speed, normalized_speed)
 	# Stage 1 opens only once every system is back at zero and the run is live, so the first
 	# stage_started lands after run_started and the spawner fills against a running phase. A boss
-	# checkpoint opens on the turn into that stage's boss instead.
+	# checkpoint opens in front of that stage's boss instead.
 	if checkpoint_retry and stage_manager != null and stage_manager.has_method("begin_at_boss"):
 		stage_manager.begin_at_boss(checkpoint)
 	elif stage_manager != null and stage_manager.has_method("begin"):
@@ -384,8 +376,8 @@ func retry() -> void:
 	pending_boss_checkpoint = {}
 	_take_route("runner_game")
 
-## Contract §11.13: a fresh session that opens on the turn into the boss the checkpoint was taken
-## at, with the score, clocks and tallies it held and full HP. Without a checkpoint this is retry().
+## Contract §11.13: a fresh session that opens in front of the boss the checkpoint was taken at,
+## with the score, clocks and tallies it held and full HP. Without a checkpoint this is retry().
 func retry_boss() -> void:
 	if _route_in_flight():
 		return
@@ -516,8 +508,9 @@ func _empty_boss_info() -> Dictionary:
 		"pending_attacks": empty_attacks
 	}
 
-## Rig-local z for anything on the track (systems spec §10.5). Gameplay never rotates, so this is
-## the identity today; it exists so a bent corridor can never skew a z test.
+## Rig-local z for anything on the track (systems spec §10.5). The TurnRig is a static mount and
+## gameplay never rotates, so this is the identity; z tests still go through it rather than
+## assuming the rig sits at the origin.
 func track_z(node: Node3D) -> float:
 	if node == null or not is_instance_valid(node):
 		return 0.0
@@ -805,7 +798,7 @@ func _finish_run(outcome: StringName) -> void:
 		"max_speed_reached": _system_float(speed_controller, &"max_speed_reached", speed),
 		"best_multiplier": _system_float(score_manager, &"best_multiplier", multiplier),
 		"chunks_spawned": _system_int(spawner, &"chunks_spawned", 0),
-		# Contract §11.4. The StageManager tallies all seven off the facade signals, so they are
+		# Contract §11.4. The StageManager tallies all six off the facade signals, so they are
 		# right whether or not a boss encounter was ever mounted.
 		"stages_cleared": _system_int(stage_manager, &"stages_cleared", 0),
 		"stage_reached": _system_int(stage_manager, &"stage_index", stage_index),
@@ -813,7 +806,6 @@ func _finish_run(outcome: StringName) -> void:
 		"bosses_escaped": _system_int(stage_manager, &"bosses_escaped", 0),
 		"tools_used": _system_int(stage_manager, &"tools_used", 0),
 		"boss_damage_dealt": _system_int(stage_manager, &"boss_damage_dealt", 0),
-		"turns_taken": _system_int(stage_manager, &"turns_taken", 0),
 		# Contract §11.13: true when this run was started from a boss checkpoint.
 		"checkpoint_retry": checkpoint_retry,
 		"score_rule_revision": int(config.score_rule_revision),
@@ -886,8 +878,8 @@ func _mount_frontend() -> void:
 				instance.process_mode = Node.PROCESS_MODE_PAUSABLE
 			if instance.has_method("bind"):
 				instance.bind(self)
-			# A real corridor replaces the backend graybox lighting and grid (contract §3), and the
-			# TurnRig hands it the bend instead of yawing the graybox itself (contract §11.9).
+			# A real corridor replaces the backend graybox lighting and grid (contract §3); the
+			# StageManager reaches it through the TurnRig mount (contract §11.9).
 			if mount == environment_mount:
 				_corridor = instance
 				if turn_rig != null and is_instance_valid(turn_rig) and turn_rig.has_method("set_corridor"):

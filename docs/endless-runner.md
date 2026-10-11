@@ -41,7 +41,7 @@ Key 6 reaches the F1 26 m/s acceptance limit; key 7 exercises the Nitro cap. The
 
 ## Behavior and ownership
 
-F0-F6 introduced the runner menu, routed full-loop integration, capture fixture and documentation. F7 adds legibility and pursuit presentation, F8 adds boss fights, and F9 adds cinematic turns and stage transitions. F10 sharpens announced corners and boss entrances. The milestone sections and v2 tables retain their original verification history; the high-fidelity section below records the integrated asset pass and its evidence limits.
+F0-F6 introduced the runner menu, routed full-loop integration, capture fixture and documentation. F7 adds legibility and pursuit presentation, F8 adds boss fights, and F9 adds cinematic turns and stage transitions. F10 sharpens announced corners and boss entrances. Contract 2.7 removed the turns again: the corridor now stays straight (see "Contract 2.7: straight corridor" below), so the turn parts of F9 and F10 are history only. The milestone sections and v2 tables retain their original verification history; the high-fidelity section below records the integrated asset pass and its evidence limits.
 
 The hub routes to `RunnerMenu`, a Node3D with Backdrop and Interface children. The backdrop mounts the existing corridor at 3.5 m/s and Hoppy in run at normalized speed 0.25. Hoppy stands at (0.7, 0, -0.3), facing -Z with feet at y=0, in the gap between the buttons and controls card. The camera remains at (2.6, 1.9, 3.4), looking at (0, 1, -2), with its existing slow drift. A shaded 1280x720 composition uses the hub Style helpers, mint eyebrow, cream title, numbered buttons, controls card and footer. It centers in larger viewports and scales to fit smaller ones. Play owns initial focus; Up/Down and Tab wrap through the four buttons. Leaderboard reads `runner_leaderboard.gd.load_entries()` without a game instance, shows ten rank/name/score/mm:ss rows with `---` placeholders, disables the other three menu buttons while keeping Leaderboard enabled and focusable, and initially focuses Close. A "Reset scores" button sits beside Close; it is disabled when the board is empty. Pressing "Reset scores" opens a confirmation modal ("RESET ALL SCORES?") with a safe "Keep scores" button (initial focus) and a destructive "Reset" button; focus wraps between the two. If the player confirms, `RunnerLeaderboard.clear(leaderboard_path)` is called: on success the rows rebuild as placeholders, "Reset scores" is disabled, and Close is focused; on error the confirmation stays open with an error message and focus returns to "Keep scores". Pressing "Keep scores" or pressing `ui_cancel` while the confirmation is open closes it without resetting, and restores focus to "Reset scores". Pressing Leaderboard again closes the panel. Closing restores Leaderboard focus. `ui_cancel` closes the confirmation first (if open), then the leaderboard panel, then returns to the hub.
 
@@ -723,9 +723,12 @@ Both collision-removal grep commands printed `0` (grep exit 1 means no matching 
 
 ## F9: cinematic turns and stage transitions
 
+> Contract 2.7 removed the turn: the corner presentation below (bend, corner wall, chevron, turn preview, turn
+> audio and HUD dimming) no longer exists. The stage banner, stage-clear card and stage audio remain.
+
 F0 through F9 are implemented. F9 follows contract §11: the backend owns phases, collision,
 turn progress, camera yaw/bank and boss lifetime. The frontend corridor never rotates gameplay.
-`set_turn(progress, direction)` derives signed curvature `0.0042 * sin(PI * progress)` and an
+The corridor's turn hook derived signed curvature `0.0042 * sin(PI * progress)` and an
 11-degree root yaw from its arguments. Both endpoints and `(0, 0)` are straight. The shader
 converts the displacement through the corridor frame so rotated wall planes and CPU pillars bend
 in the same direction. Each of the four planes has `subdivide_depth = 72`. Post-bend grid
@@ -745,8 +748,8 @@ outlined chevron's text surfaces. Budgets are 14 at rest and 18 in a turn. These
 counts, not a graphical renderer measurement; the host capture prints the actual GPU count.
 
 The optional `HUD/StageBanner` and `HUD/StageClear` mounts use `hud_style.gd` and idempotent
-`bind(game)`. The banner announces the stage and boss name, defers announcements received during
-a turn until `turn_finished`, and closes when a boss spawns. Stage 1 and subsequent RUN entries
+`bind(game)`. The banner announces the stage and boss name, deferred announcements received during
+a turn until the turn ended (until contract 2.7), and closes when a boss spawns. Stage 1 and subsequent RUN entries
 announce immediately because the backend emits `stage_started` at RUN entry. The card reads
 `get_stage_info()` and `get_boss_info()`, tracks elapsed stage time and tool events, and distinguishes
 FIXED from ESCAPED. Its bonus row counts the already-awarded `stage_cleared` bonus without changing
@@ -761,11 +764,10 @@ AudioService still owns exactly two players.
 
 | Music event | Held level relative to running music | Pitch / release |
 |---|---|---|
-| `turn_started` | -5 dB | Existing speed pitch; restore on `turn_finished` |
 | `boss_spawned` | -4 dB | Speed pitch +0.04; restore on defeat or retreat |
 | `boss_phase_changed` | -8 dB transient, 0.35 s | Returns to the held fight level |
 | `stage_cleared` | -10 dB through the 2.8 s card | Exactly 1.0; pause freezes the hold |
-| Catch, next RUN or teardown | Restore baseline | Remove stage/turn/fight offsets |
+| Catch, next RUN or teardown | Restore baseline | Remove stage/fight offsets |
 
 F8 capture polish is included: mounted boss HUDs suppress the 3D name plate, gallery plates sit
 above the body, and shared boss/tool labels use LINEAR filtering and outlines. The swarm cloud
@@ -925,8 +927,10 @@ The worktree was clean at task start. Task-touched files:
 ## F10: sharp announced corners and boss entrances
 
 Frontend-only implementation of contract 2.1, sections 11.4, 11.9 and 11.10. No backend API or camera changes.
+(Contract 2.7 removed the corner warning, chevrons, corridor yaw, turn preview and turn audio described here; the boss
+entrance parts remain.)
 
-- `turn_incoming(direction, seconds)` opens an outlined 42-unit orange warning in a DANGER-bordered panel above the lane reading area. The arrow and remaining-seconds countdown pulse over the supplied duration. One reusable additive MultiMesh draws chevrons in all three lanes. HUD binding mounts it directly under the frontend corridor, inheriting its transform. `turn_started` clears the floor chevrons as the end wall takes over; `turn_finished` clears the banner and pending warning audio.
+- The turn announcement opened an outlined 42-unit orange warning in a DANGER-bordered panel above the lane reading area. The arrow and remaining-seconds countdown pulsed over the supplied duration. One reusable additive MultiMesh drew chevrons in all three lanes, mounted directly under the frontend corridor. The bend's start cleared the floor chevrons as the end wall took over; its end cleared the banner and pending warning audio.
 - Corridor yaw reaches 55 degrees at progress 0.3, holds through 0.7, then returns to zero at 1.0. Curvature peaks at 0.010. `TURN_SWING_IN`, `TURN_SWING_OUT` and `TURN_YAW` in `corridor.gd` mirror RunConfig defaults and must stay in sync with the backend camera. The end wall spans the corridor and carries a 120-unit directional TURN face. Glyphs sweep laterally, rain accelerates and speed lines intensify in the hold. Endpoints and explicit `(0, 0)` reset restore the same pose.
 - The turn preview mirrors the backend camera swing: positive direction applies positive yaw and bank, orbiting the player at (0, 0, 0), with 55° yaw, 12° bank, and 0.3 ramp-in/out fractions. Hold alignment is checked in both directions at p = 0.3/0.5/0.7.
 - `boss_intro(kind, name, seconds)` opens a top-centre card at x=300..980, y=48..128 at 1280x720. It displays `WARNING · BUG DETECTED`, the supplied boss name at 24 units, and a kind-specific taunt typed over one second. Copy is centralized in `boss_hud.gd:TAUNTS`; unknown kinds show only the supplied name. The stage banner stays suppressed, and the health HUD slides in only after the supplied duration. Pause freezes the card and entrance.
@@ -983,7 +987,7 @@ The standard backend smoke reported `RUNNER SMOKE: FAIL (3 failures / 127 checks
 
 ### Performance: W1 world motion clock
 
-One scroll clock: the spawner keeps `scroll_travel` / `scroll_travel_previous` (metres scrolled at the latest and the previous physics tick). A bound corridor (`corridor.gd` `bind()`) draws its floor, walls, racks and the starship world at `lerp(previous, latest, Engine.get_physics_interpolation_fraction())`, which is exactly where the interpolated chunk, hazard and pickup transforms are drawn, so floor markers no longer swim against the grid. Unbound corridors (runner menu, fixtures) keep their render-delta clock. The turn bend is interpolated the same way: `set_turn()` calls made inside a physics tick keep the previous tick's signed wave and progress, and `_apply_turn()` draws between them like the interpolated camera swing; calls from outside physics snap. SpeedLines emission has one writer (`_apply_turn()`, changed-only, never on a hidden emitter), and the rain/streak process materials are rewritten only when the speed moves by 0.05 m/s. Each placed chunk calls `reset_physics_interpolation()` after its gap and pickup placement, so it never slides in from `frontier_z` for a frame. Interpolation opt-outs on cosmetic children are consistent with this: a measured `PHYSICS_INTERPOLATION_MODE_OFF` child renders at its interpolated parent's pose (the chunk scroll stays interpolated); OFF only stops interpolation of the child's own local transform. Cameras (game and menu) use near 0.15 / far 200 for 3x the depth precision of the 0.05 default; the farthest geometry (deck plane, fog end at 96 m, boss entrance at -69 m) stays well inside. The pursuer light is written only on a 0.01 energy change, and a retreat requested while the threat is still gliding down is ignored (the next tick cancelled it anyway, after a one-frame light-off flash). Measured and left alone: chunk despawn (remove + free of the largest chunk, 229 nodes, is 0.3 ms rendered) and the per-tick `runner_hazards` group scans (about 0.1 µs each). The starship corridor now leaves the legacy `KeyLight` at its palette tuning and switched off, and lights the deck with an identical `StarshipKeyLight` in the same place; every StarshipWorld part is PAUSABLE, like the rest of the corridor. Measured in a rendered turn, corridor yaw now matches the interpolated camera swing to 0.000° (the latest-tick yaw it used before was up to 3.6° ahead).
+One scroll clock: the spawner keeps `scroll_travel` / `scroll_travel_previous` (metres scrolled at the latest and the previous physics tick). A bound corridor (`corridor.gd` `bind()`) draws its floor, walls, racks and the starship world at `lerp(previous, latest, Engine.get_physics_interpolation_fraction())`, which is exactly where the interpolated chunk, hazard and pickup transforms are drawn, so floor markers no longer swim against the grid. Unbound corridors (runner menu, fixtures) keep their render-delta clock. The turn bend was interpolated the same way until contract 2.7 removed it. SpeedLines emission has one writer (`_refresh_dressing()`, changed-only, never on a hidden emitter), and the rain/streak process materials are rewritten only when the speed moves by 0.05 m/s. Each placed chunk calls `reset_physics_interpolation()` after its gap and pickup placement, so it never slides in from `frontier_z` for a frame. Interpolation opt-outs on cosmetic children are consistent with this: a measured `PHYSICS_INTERPOLATION_MODE_OFF` child renders at its interpolated parent's pose (the chunk scroll stays interpolated); OFF only stops interpolation of the child's own local transform. Cameras (game and menu) use near 0.15 / far 200 for 3x the depth precision of the 0.05 default; the farthest geometry (deck plane, fog end at 96 m, boss entrance at -69 m) stays well inside. The pursuer light is written only on a 0.01 energy change, and a retreat requested while the threat is still gliding down is ignored (the next tick cancelled it anyway, after a one-frame light-off flash). Measured and left alone: chunk despawn (remove + free of the largest chunk, 229 nodes, is 0.3 ms rendered) and the per-tick `runner_hazards` group scans (about 0.1 µs each). The starship corridor now leaves the legacy `KeyLight` at its palette tuning and switched off, and lights the deck with an identical `StarshipKeyLight` in the same place; every StarshipWorld part is PAUSABLE, like the rest of the corridor. (A rendered-turn yaw measurement here was retired with the turn in contract 2.7.)
 
 ## Contract 2.6: boss cinematics (backend hand-off)
 
@@ -1022,3 +1026,24 @@ camera, the player hold and the skip, and the frontend draws from that clock.
   consumed and never jumps. Show the skip prompt only while `game.can_skip_boss_cinematic()` returns true; don't
   derive it from elapsed time. The backend guard already returns false while paused or not running, once the intro
   has been skipped, inside its last 0.3 s tail (`boss_cinematic_skip_tail`), before 0.5 s, and for every defeat.
+
+## Contract 2.7: straight corridor (backend)
+
+The automatic turn-left/turn-right phase is gone. Phases are `run → boss → stage_clear`; the drain at the end of
+`run` hands straight to `boss` on the tick it ends, so the boss's own intro cinematic is the stage's lead-in.
+
+- **Removed:** the three turn signals and `next_turn_direction` on the facade, `turns_taken` in the result and the
+  boss checkpoint, the RunConfig Turn group, the corridor's turn hook and bend (`CornerWall`, `TurnChevron`, the
+  `code_wall_fade` shader), the camera swing, the HUD's TURN LEFT/RIGHT warning and floor chevrons
+  (`environment/turn_fx.gd`), the turn audio recipes, the GPU warmup's mid-turn pose, `environment/dev/turn_preview.*`
+  and the turn views of the capture tools.
+- **Kept:** `World/TurnRig` keeps its name as a static mount, because every mount path, fixture and capture tool
+  addresses it; `track_z()` still measures through it. The starship corridor still hides the legacy glyph rain and
+  speed streaks, now in `_refresh_dressing()`, which also re-uploads the corridor frame to the shaders only when the
+  node moves. The shaders' `bend` uniform stays at its default 0.
+- **Entry bulkhead:** `starship_world.gd` closes the near end of the corridor behind Hoppy with a sealed door at
+  z ≈ +24.4 and a sleeve over z 11.5..24.5, the mirror of the far bulkhead. Gameplay never sees it; the run intro's
+  reverse shots land on it.
+- **Boss-checkpoint retry** opens straight in front of the boss.
+- **Main menu:** the fifth runner still is now "JUMP, ROLL, DODGE" (`runner_dodge.png`, a jump over a blocking
+  hazard captured by `tests/capture_runner_menu_previews.gd`).

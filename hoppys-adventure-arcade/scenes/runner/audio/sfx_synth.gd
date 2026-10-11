@@ -3,14 +3,12 @@ extends RefCounted
 const RATE := 22050
 # seconds, start Hz, end Hz, waveform, gain
 const RECIPES := {
-	&"turn_warning": [3.0, 700.0, 1400.0, "warning", 0.6],
 	&"boss_intro": [1.6, 35.0, 150.0, "intro", 0.7],
 	&"boss_intro_short": [0.6, 55.0, 180.0, "detuned", 0.65],
 	&"boss_title": [0.28, 160.0, 35.0, "fm", 0.72],
 	&"boss_explosion": [0.30, 120.0, 25.0, "noise", 0.72],
 	&"boss_resolved": [1.15, 440.0, 880.0, "arpeggio", 0.68],
 	&"boss_skip": [0.25, 1800.0, 180.0, "noise", 0.5],
-	&"turn_whoosh": [2.4, 300.0, 2400.0, "turn", 0.6],
 	&"stage_clear": [1.0, 440.0, 880.0, "arpeggio", 0.65],
 	&"telegraph_tick": [0.06, 1600.0, 1600.0, "square", 0.35],
 	&"projectile_whoosh": [0.30, 900.0, 180.0, "noise", 0.45],
@@ -64,7 +62,7 @@ static func family_for(kind: StringName) -> StringName:
 	var waveform := String(RECIPES[kind][3])
 	if waveform in ["sine", "chord", "arpeggio"]: return &"chime"
 	if kind == &"pursuit_drone": return &"drone"
-	if kind in [&"turn_whoosh", &"projectile_whoosh", &"nitro", &"retreat", &"boss_skip"]: return &"whoosh"
+	if kind in [&"projectile_whoosh", &"nitro", &"retreat", &"boss_skip"]: return &"whoosh"
 	return &"alarm"
 
 
@@ -109,10 +107,6 @@ static func render(kind: StringName) -> Dictionary:
 		var envelope := _envelope(family, t, seconds)
 		var sample := sin(phase)
 		match waveform:
-			"warning":
-				frequency = 700.0 * pow(1.3, floor(t))
-				var beat := fposmod(t, 1.0)
-				envelope = sin(PI * beat / 0.12) if beat < 0.12 else 0.0
 			"intro":
 				sample = (sin(phase) + sin(phase * 1.012)) * 0.5
 				envelope = smoothstep(0.0, 0.7, progress) * (1.0 - smoothstep(0.8, 1.0, progress))
@@ -120,14 +114,6 @@ static func render(kind: StringName) -> Dictionary:
 					var impact_envelope := exp(-(progress - 0.8) * 35.0)
 					sample = sample * 0.4 + rng.randf_range(-1.0, 1.0) * 0.6
 					envelope = impact_envelope
-			"turn":
-				frequency = lerpf(300.0, 2400.0, sin(progress * PI))
-				sample = sample * 0.4 + rng.randf_range(-1, 1) * 0.6
-				envelope = sin(progress * PI)
-				# Snap at the camera hold boundary, inside the same voice.
-				if progress >= 0.3 and progress < 0.34:
-					sample = rng.randf_range(-1.0, 1.0)
-					envelope = 1.0 - (progress - 0.3) / 0.04
 			"arpeggio":
 				frequency = 440.0 * float(ARPEGGIO[mini(3, int(progress * 4))])
 			"alert":
@@ -163,7 +149,7 @@ static func render(kind: StringName) -> Dictionary:
 			sample = sample * 0.78 + sin(phase * 2.0 + 0.3 * sin(phase * 3.0)) * 0.16
 		if not looping:
 			sample = sample * weights[0] + body * weights[1] + transient * weights[2] + low_noise * weights[3] + sub * weights[4]
-		# Keep authored radar gaps, warning ticks and heartbeat handover precise.
+		# Keep authored radar gaps and heartbeat handover precise.
 		var edge := 1.0 if looping else minf(t / 0.002, 1.0) * minf((seconds - t - 1.0 / RATE) / 0.006, 1.0)
 		for channel in channels:
 			var side := sin(phase * 1.007) * width * (1.0 if channel == 0 else -1.0) if stereo else 0.0
@@ -319,7 +305,7 @@ static func footstep_pcm(source: PackedByteArray, material: int, strike: int) ->
 static func render_family(kind: StringName) -> Dictionary:
 	var rendered := render(kind)
 	var variants := {}
-	if kind in [&"projectile_whoosh", &"turn_whoosh"]:
+	if kind == &"projectile_whoosh":
 		for mask in 8: variants[mask] = panned_pcm(rendered.data, rendered.stereo, mask)
 	elif kind == &"footstep":
 		for surface in 3:

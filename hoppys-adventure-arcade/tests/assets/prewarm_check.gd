@@ -87,13 +87,15 @@ func run() -> void:
 	check(Prewarm.generated_on_workers, "image generation ran on workers")
 	check(Prewarm.finalized_on_main, "ImageTexture finalization ran on main")
 	# Cues are synthesised on workers; RunnerAudio.bind() finishes them before a run can start.
-	for kind in [&"boss_intro", &"turn_warning", &"turn_whoosh"]:
-		check(Synth._cache.has(kind), "critical cue warm before gameplay: " + kind)
+	check(Synth._cache.has(&"boss_intro"), "critical cue warm before gameplay: boss_intro")
+	for key in Synth.RECIPES:
+		check(not String(key).contains("turn"), "RECIPES has no seam cue " + String(key))
 	for kind in Synth.PERCUSSIVE:
 		check(Synth._cache.has(kind), "percussive ready: " + kind)
-	for kind in [&"projectile_whoosh", &"turn_whoosh"]:
-		for mask in 8:
-			check(Synth._cache.has(StringName("%s_pan_%d" % [kind, mask])), "panned cue ready")
+	for mask in 8:
+		check(Synth._cache.has(StringName("projectile_whoosh_pan_%d" % mask)), "panned cue ready")
+	for key in Synth._cache:
+		check(not String(key).contains("turn"), "synth cache has no seam cue " + String(key))
 	check(identities(BossForge.maps) == fallback_ids, "early boss fallback cache survives worker completion")
 	check(BossForge.maps.albedo.get_image().get_data() == fallback_pixels, "worker completion preserves fallback pixels")
 	check(identities(EnvironmentForge.cache) == environment_ids, "environment bindings retain texture identities")
@@ -118,12 +120,16 @@ func run() -> void:
 	var expected := {"environment": 9, "materials": 11, "hazards": 4,
 		"hazard_meshes": 16, "pickups": 4, "pickup_templates": 3,
 		"boss": 4, "boss_meshes": 42, "boss_fx": 2, "pursuer": 3,
-		"ui": 1, "audio": 32, "footsteps": 6, "whooshes": 16}
+		"ui": 1, "audio": 35, "footsteps": 6, "whooshes": 8}
 	for package in expected:
 		check(census.has(package), package + " present in census")
 		var count := identities(census.get(package, {})).size()
 		check(count >= expected[package], "%s census populated (%d)" % [package, count])
 		print("PREWARM census %s: %d resources" % [package, count])
+	for key in census.get("whooshes", {}):
+		var whoosh_key := String(key)
+		check(whoosh_key.contains("projectile_whoosh"), "whoosh census is the projectile pan: " + whoosh_key)
+		check(not whoosh_key.contains("turn"), "whoosh census has no seam cue " + whoosh_key)
 	var before := cache_ids()
 	var census_ids := identities(census)
 	var started := Time.get_ticks_usec()

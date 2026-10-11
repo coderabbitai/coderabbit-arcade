@@ -2,8 +2,6 @@ extends CanvasLayer
 const Style = preload("res://scenes/runner/ui/hud_style.gd")
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 const Glyph = preload("res://scenes/runner/ui/hud_glyph.gd")
-const Corridor = preload("res://scenes/runner/environment/corridor.gd")
-const TurnFx = preload("res://scenes/runner/environment/turn_fx.gd")
 const Vignette = preload("res://scenes/runner/shaders/vignette.gdshader")
 const PowerUpDefs = preload("res://scenes/runner/powerups/power_up_defs.gd")
 const Burst = preload("res://scenes/runner/powerups/visuals/hifi/collect_burst.gd")
@@ -11,13 +9,6 @@ const Burst = preload("res://scenes/runner/powerups/visuals/hifi/collect_burst.g
 ## chip never rasterises and uploads new glyphs on the pickup frame.
 const WARM_TEXT := "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 ×\u2014+-:/.,!'"
 const Prompts := preload("res://app/controller_prompts.gd")
-var turn_fx: Node3D
-var turn_panel: PanelContainer
-var turn_label: Label
-var turn_icon: Control
-var warning_age := 0.0
-var warning_seconds := 0.0
-var warning_direction := 0
 var game: Node
 var screen: Control
 var widgets: Control
@@ -61,7 +52,6 @@ var nitro_panel: PanelContainer
 var ready_panel: PanelContainer
 var pursuit_panel: PanelContainer
 var toast_remaining := 0.0
-var turn_alpha := 1.0
 var pulse_clock := 0.0
 var teaching_seen := {}
 var teaching_pending: Array[Dictionary] = []
@@ -168,15 +158,6 @@ func _ready() -> void:
 	screen.add_child(hit_flash)
 	hit_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	hit_flash.color = Color(1, 1, 1, 0)
-	turn_label = Style.label("", 34, Palette.ORANGE)
-	turn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	turn_panel = _back(turn_label, Control.PRESET_CENTER_TOP, Vector2(-180, 536), Vector2(360, 76), Palette.DANGER, 0.94)
-	turn_panel.hide()
-	turn_icon = Style.icon(&"arrow", Palette.ORANGE)
-	turn_label.add_child(turn_icon)
-	turn_icon.position = Vector2(4, 16)
-	turn_icon.size = Vector2(30, 30)
-	turn_icon.pivot_offset = Vector2(15, 15)
 	for kind: StringName in PowerUpDefs.kinds():
 		if kind != &"auto_fix": _chip_for(kind)
 	_warm_fonts()
@@ -230,15 +211,7 @@ func bind(runner: Node) -> void:
 	if game == runner:
 		return
 	game = runner
-	turn_fx = TurnFx.new()
-	for node: Node in game.find_children("*", "Node3D", true, false):
-		if node is Corridor:
-			node.add_child(turn_fx)
-			break
-	if game.has_signal("turn_incoming"): game.turn_incoming.connect(_turn_incoming)
-	if game.has_signal("turn_started"): game.turn_started.connect(_turn_started)
-	if game.has_signal("turn_finished"): game.turn_finished.connect(_turn_finished)
-	if game.has_signal("phase_changed"): game.phase_changed.connect(_turn_phase)
+	if game.has_signal("phase_changed"): game.phase_changed.connect(_phase)
 	if game.has_method("_mount_frontend"):
 		# RunnerGame mounts the sibling alert after binding this HUD.
 		_find_mounted_alert.call_deferred()
@@ -300,9 +273,6 @@ func _process(delta: float) -> void:
 	if toast_remaining <= 0 and not _teaching_blocked() and not teaching_pending.is_empty():
 		var hint: Dictionary = teaching_pending.pop_front()
 		_toast(hint.text, 10, hint.accent, 2.4, true)
-	if turn_panel.visible:
-		warning_age += delta
-		_update_turn_warning()
 	var seconds := float(game.elapsed)
 	time_label.text = "%02d:%04.1f" % [int(seconds) / 60, fmod(seconds, 60)]
 	for kind in chips:
@@ -325,7 +295,7 @@ func _process(delta: float) -> void:
 		get_ready.hide()
 	toast_remaining -= delta
 	toast_age += delta
-	toast_panel.modulate.a = minf(1.0, toast_age / 0.12) * turn_alpha
+	toast_panel.modulate.a = minf(1.0, toast_age / 0.12)
 	if toast_remaining <= 0:
 		toast.text = ""
 		toast_priority = -1
@@ -401,7 +371,6 @@ func _caught() -> void:
 	vignette_material.set_shader_parameter("strength", 1.0)
 
 func _state(value: StringName) -> void:
-	if value != &"running": _turn_finished()
 	var show_ready := value == &"ready" or (value == &"running" and _ready_seen and ready_age < 2.75)
 	get_ready.visible = show_ready
 	ready_panel.visible = show_ready
@@ -413,7 +382,7 @@ func _state(value: StringName) -> void:
 		_gameplay_visible = true
 		widgets.show()
 		for child in widgets.get_children():
-			if child is PanelContainer and child not in [ready_panel, toast_panel, nitro_panel, pursuit_panel, turn_panel]:
+			if child is PanelContainer and child not in [ready_panel, toast_panel, nitro_panel, pursuit_panel]:
 				child.show()
 		widgets.modulate.a = 1.0
 		vignette_material.set_shader_parameter("strength", 0.0)
@@ -571,44 +540,9 @@ func _shield(active: bool) -> void:
 	else:
 		_expire(&"approve_shield")
 
-func _turn_started(_direction: int, _seconds: float) -> void:
-	if is_instance_valid(turn_fx): turn_fx.clear()
-	_dim_turn(0.55)
-
-func _turn_finished() -> void:
-	turn_panel.hide()
-	if is_instance_valid(turn_fx): turn_fx.clear()
-	_dim_turn(1.0)
-
-func _turn_phase(value: StringName) -> void:
+func _phase(value: StringName) -> void:
 	teaching_phase = value
 	if value in [&"boss_intro", &"stage_clear"]: _defer_teaching()
-	if value in [&"idle", &"run"]: _turn_finished()
-	if value != &"turn": _dim_turn(1.0)
-
-func _dim_turn(alpha: float) -> void:
-	turn_alpha = alpha
-	for widget in [time_label.get_parent(), score_label.get_parent().get_parent(), speed_label.get_parent().get_parent(), powerups, toast_panel, nitro_panel]:
-		widget.modulate.a = alpha
-
-func _turn_incoming(direction: int, seconds: float) -> void:
-	ready_panel.hide()
-	get_ready.hide()
-	warning_direction = direction
-	warning_seconds = maxf(seconds, 0.001)
-	warning_age = 0.0
-	turn_fx.announce(direction)
-	turn_panel.show()
-	_update_turn_warning()
-
-func _update_turn_warning() -> void:
-	var tick := maxi(1, ceili(warning_seconds - warning_age))
-	turn_label.text = ("TURN LEFT" if warning_direction < 0 else "TURN RIGHT") + " %d" % tick
-	turn_icon.scale.x = -1.0 if warning_direction < 0 else 1.0
-	turn_label.modulate.a = 0.65 + 0.35 * (1.0 - fposmod(warning_age, 1.0))
-
-func _exit_tree() -> void:
-	if is_instance_valid(turn_fx): turn_fx.queue_free()
 
 func _reset_teaching(_seed: int = 0) -> void:
 	toast_teaching = false

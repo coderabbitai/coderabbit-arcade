@@ -61,9 +61,12 @@ func run() -> void:
 		check(cache.has(kind), "cue cached before play: " + kind)
 	for kind in [&"powerup", &"nitro", &"lgtm", &"auto_fix", &"tool_pickup", &"shield_block"]:
 		check(cache.has(kind), "pickup cue cached before play: " + kind)
-	for kind in [&"projectile_whoosh", &"turn_whoosh"]:
-		for mask in 8:
-			check(cache.has(StringName("%s_pan_%d" % [kind, mask])), "panned %s %d cached" % [kind, mask])
+	for key in Synth.get("RECIPES"):
+		check(not String(key).contains("turn"), "RECIPES has no seam cue " + String(key))
+	for mask in 8:
+		check(cache.has(StringName("projectile_whoosh_pan_%d" % mask)), "panned projectile_whoosh %d cached" % mask)
+	for key in cache:
+		check(not String(key).contains("turn"), "synth cache has no seam cue " + String(key))
 	for surface in 3:
 		for strike in 2:
 			check(cache.has(StringName("footstep_surface_%d_variant_%d" % [surface, strike])), "footstep variant cached")
@@ -135,14 +138,15 @@ func check_boss_scenes_retained(GpuWarmup: Script, context: String) -> void:
 		check(model != null and retained.has(model), "%s retains imported boss model scene: %s" % [context, model_path])
 
 ## The scene at bind time (graybox detached, as run() does), with the live Hoppy dressed and the
-## corridor posed mid-turn, plus every batch the stage mounts. Also the explicit C1/C2/C4 checks.
+## corridor at rest, plus every batch the stage mounts. Also the explicit C1/C2/C4 checks.
 func warm_census(game: Node, GpuWarmup: Script) -> Dictionary:
 	var warmed := {}
 	GpuWarmup.call("_drop_doomed", game)
 	collect(game, warmed)
 	var hoppy: Node3D = GpuWarmup.call("_hoppy", game)
 	var corridor: Node = GpuWarmup.call("_corridor", game)
-	check(hoppy != null and corridor != null, "census finds the live Hoppy and corridor")
+	check(hoppy != null and corridor != null and corridor.has_method("set_phase") and corridor.has_method("set_boss_arena"),
+		"census finds the live Hoppy and the corridor by its phase hooks")
 	var camera := Camera3D.new()
 	root.add_child(camera)
 	var stage: Node3D = GpuWarmup.call("stage_for", game, camera, hoppy.global_position)
@@ -160,7 +164,6 @@ func warm_census(game: Node, GpuWarmup: Script) -> Dictionary:
 	for batch: StringName in GpuWarmup.call("batches"):
 		stage.call("build", batch)
 		if batch == &"characters": GpuWarmup.call("_dress", hoppy, true)
-		if batch == &"canvas": GpuWarmup.call("show_turn", game, corridor, true)
 		collect(game, warmed)
 		for node in stage.find_children("*", "", true, false):
 			if node.get_script() == ProjectileArt: looks[node.get(&"look")] = true
@@ -178,7 +181,6 @@ func warm_census(game: Node, GpuWarmup: Script) -> Dictionary:
 					led_lit = led_lit or (level != null and float(level) > 0.0)
 			if node.name == &"SignatureMarks" and node.is_visible_in_tree() and int(node.get(&"used")) > 0: marks_lit = true
 		if batch == &"characters": GpuWarmup.call("_dress", hoppy, false)
-		if batch == &"canvas": GpuWarmup.call("show_turn", game, corridor, false)
 		stage.call("clear")
 	print("RUNNER WARMUP: stage build of every batch %.0f ms (headless)" % ((Time.get_ticks_usec() - started) / 1000.0))
 	stage.free()

@@ -10,11 +10,6 @@ extends Node3D
 
 const RunnerGame = preload("res://scenes/runner/runner_game.gd")
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
-## Contract §11.10 fallbacks, used only when no config has been supplied yet.
-const DEFAULT_TURN_CAMERA_YAW := 55.0
-const DEFAULT_TURN_CAMERA_BANK := 12.0
-const DEFAULT_TURN_SWING_IN_FRACTION := 0.3
-const DEFAULT_TURN_SWING_OUT_FRACTION := 0.3
 ## Contract 2.6 §11.14 boss shots, one per cinematic mode. The lens is placed off the Boss mount:
 ## `distance` metres back toward the player, `height` metres off the mount (below it is a low angle
 ## looking up), `orbit` degrees of yaw around it. It aims at the visual's cinematic focus (§11.5,
@@ -98,10 +93,6 @@ var trauma_decay := 0.0
 var fov_punch := 0.0
 var fov_punch_decay := 0.0
 var rng := RandomNumberGenerator.new()
-## 0..1 through the cinematic turn; 0 outside one (contract §11.9).
-var turn_progress := 0.0
-## -1 left, +1 right, 0 outside a turn.
-var turn_direction := 0
 ## 0..1 through the boss cinematic and its mode, &"" outside one (contract 2.6 §11.14).
 var boss_progress := 0.0
 var boss_mode: StringName = &""
@@ -112,14 +103,15 @@ var boss_focus := Vector3.ZERO
 
 ## Where the rig wants the camera before shake, refreshed in _physics_process.
 var _rest_position := Vector3(0, 4, 8)
-## The pose _aim() left behind, so the turn swing is applied on top of it and never accumulates.
+## The rest rotation _aim() left behind. Every tick starts from it, so a boss shot blended on top
+## never accumulates.
 var _base_rotation := Vector3.ZERO
 
 func setup(runner: RunnerGame) -> void:
 	game = runner
 	config = runner.config
 	# The authored pose is the fallback resting rotation, so a rig without a config still keeps the
-	# scene's pitch instead of snapping to zero the first time the turn swing resolves.
+	# scene's pitch instead of snapping to zero on its first tick.
 	if camera != null:
 		_base_rotation = camera.rotation
 	if config != null:
@@ -135,8 +127,6 @@ func reset() -> void:
 	trauma_decay = 0.0
 	fov_punch = 0.0
 	fov_punch_decay = 0.0
-	turn_progress = 0.0
-	turn_direction = 0
 	boss_progress = 0.0
 	boss_mode = &""
 	boss_target = Vector3.ZERO
@@ -163,56 +153,8 @@ func _aim(target: Vector3) -> void:
 	camera.rotation = _base_rotation
 	camera.reset_physics_interpolation()
 
-## The cinematic turn swing (contract §11.9). The StageManager calls this every physics tick of the
-## `turn` phase and once with (0, 0) at each end of it; the swing profile is zero at both ends, so
-## at p = 0 and p = 1 the camera sits exactly where the follow left it.
-func set_turn(progress: float, direction: int) -> void:
-	turn_progress = clampf(progress, 0.0, 1.0)
-	turn_direction = signi(direction)
-
-## The ramp-hold-return swing envelope (contract §11.9): a smoothstep up over the first
-## `turn_swing_in_fraction` of the bend, a hold at the peak, a smoothstep back down over the last
-## `turn_swing_out_fraction`. That is what makes the corner read as a committed turn rather than as
-## a wave — the camera is pointed into the corner for the whole middle of the bend.
-##
-## The result is exactly 0 at p = 0 and p = 1 whatever the fractions are, so the camera can never be
-## left displaced: the endpoints are answered before the ramps, which also covers an authored 0/0
-## that would otherwise leave a step at each end. Fractions that together exceed the whole bend are
-## scaled down in proportion, so the hold shrinks to nothing rather than the ramps overlapping.
-func turn_swing_profile(progress: float) -> float:
-	var p := clampf(progress, 0.0, 1.0)
-	if p <= 0.0 or p >= 1.0:
-		return 0.0
-	var rise := clampf(turn_swing_in_fraction(), 0.0, 1.0)
-	var fall := clampf(turn_swing_out_fraction(), 0.0, 1.0)
-	var total := rise + fall
-	if total > 1.0:
-		rise /= total
-		fall /= total
-	if rise > 0.0 and p < rise:
-		return smoothstep(0.0, 1.0, p / rise)
-	if fall > 0.0 and p > 1.0 - fall:
-		return smoothstep(0.0, 1.0, (1.0 - p) / fall)
-	return 1.0
-
-func turn_camera_yaw_degrees() -> float:
-	return float(config.turn_camera_yaw_degrees) if config != null else DEFAULT_TURN_CAMERA_YAW
-
-func turn_camera_bank_degrees() -> float:
-	return float(config.turn_camera_bank_degrees) if config != null else DEFAULT_TURN_CAMERA_BANK
-
-func turn_swing_in_fraction() -> float:
-	if config == null or not (&"turn_swing_in_fraction" in config):
-		return DEFAULT_TURN_SWING_IN_FRACTION
-	return float(config.turn_swing_in_fraction)
-
-func turn_swing_out_fraction() -> float:
-	if config == null or not (&"turn_swing_out_fraction" in config):
-		return DEFAULT_TURN_SWING_OUT_FRACTION
-	return float(config.turn_swing_out_fraction)
-
 ## The boss cinematic shot (contract 2.6 §11.14). The StageManager calls this every physics tick of
-## the `boss` phase, the way it drives set_turn(), and with (0, &"") once the cinematic is over.
+## the `boss` phase, and with (0, &"") once the cinematic is over.
 ## `boss_position` is the Boss mount's global position and `focus_position` the global point the
 ## shot aims at (the mount plus the visual's cinematic focus, §11.5); without one the shot aims at
 ## the mount itself. boss_shot() blends to 0 at p = 0 and p = 1, so the camera hands back to the
@@ -226,8 +168,8 @@ func set_boss_cinematic(progress: float, mode: StringName, boss_position: Vector
 	boss_focus = to_local(focus) if is_inside_tree() else focus
 
 ## Pure shot curve for `mode` at progress `p`: {blend, distance, height, orbit, fov, look_bias} (see
-## BOSS_SHOTS). Like turn_swing_profile, `blend` is exactly 0 at p = 0 and p = 1 — the endpoints are
-## answered before the ramps — and an unknown or empty mode never blends at all.
+## BOSS_SHOTS). `blend` is exactly 0 at p = 0 and p = 1 — the endpoints are answered before the
+## ramps — and an unknown or empty mode never blends at all.
 static func boss_shot(p: float, mode: StringName) -> Dictionary:
 	var progress := clampf(p, 0.0, 1.0)
 	var table: Dictionary = BOSS_SHOTS.get(mode, {})
@@ -305,7 +247,7 @@ func _physics_process(delta: float) -> void:
 		var amount := trauma * trauma * shake_amplitude
 		offset = Vector3(rng.randf_range(-amount, amount), rng.randf_range(-amount, amount), 0.0)
 	camera.position = _rest_position + offset
-	_apply_turn_swing()
+	camera.rotation = _base_rotation
 	var shot := boss_shot(boss_progress, boss_mode)
 	var blend := float(shot["blend"])
 	_apply_boss_shot(shot, blend, offset)
@@ -317,22 +259,6 @@ func _physics_process(delta: float) -> void:
 	var fov := base_fov + fov_punch + speed_boost
 	# The punch rides the shot too, so a defeat explosion still kicks the close-up.
 	camera.fov = lerpf(fov, float(shot["fov"]) + fov_punch, blend) if blend > 0.0 else fov
-
-## Swing the camera around the player and bank it, on top of the follow and shake result. Both
-## angles ride turn_swing_profile(progress), so the bend starts and ends at the resting pose exactly
-## and spends its middle held at the peak.
-func _apply_turn_swing() -> void:
-	var swing := float(turn_direction) * turn_swing_profile(turn_progress)
-	if is_zero_approx(swing):
-		camera.rotation = _base_rotation
-		return
-	var yaw := deg_to_rad(turn_camera_yaw_degrees()) * swing
-	var bank := deg_to_rad(turn_camera_bank_degrees()) * swing
-	var pivot := Vector3.ZERO
-	if game != null and is_instance_valid(game.player):
-		pivot = game.player.position
-	camera.position = pivot + (camera.position - pivot).rotated(Vector3.UP, yaw)
-	camera.rotation = _base_rotation + Vector3(0.0, yaw, bank)
 
 ## Blend the follow pose toward the boss shot (contract 2.6 §11.14): the lens sits off the Boss
 ## mount where the shot says and aims at the visual's focus plus the shot's look_bias, the shake

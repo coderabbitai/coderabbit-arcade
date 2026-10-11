@@ -130,11 +130,3 @@ static func screen_stats(image: Image, region: Rect2i = SCREEN_REGION) -> Dictio
 	result.edge = detail_energy(image, region)
 	result["pass"] = result.p95 >= SCREEN_MIN_P95 and result.edge >= SCREEN_MIN_EDGE
 	return result
-
-# Three unobscured terminator samples, calibrated to the round-6 host capture.
-const END_WALL_REGIONS := [Rect2i(630, 205, 120, 35), Rect2i(630, 285, 140, 25), Rect2i(660, 195, 90, 25)]
-const END_WALL_MIN_MEANS := [14.84, 19.01, 10.69]
-static func end_wall_stats(image: Image, sample_index: int) -> Dictionary:
-	var stats := frame_stats(image, END_WALL_REGIONS[sample_index], END_WALL_MIN_MEANS[sample_index], 0.0)
-	stats["pass"] = stats.mean >= END_WALL_MIN_MEANS[sample_index]
-	return stats

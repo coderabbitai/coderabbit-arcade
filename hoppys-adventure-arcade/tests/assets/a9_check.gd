@@ -3,6 +3,21 @@ const Metrics = preload("res://scenes/runner/ui/dev/post_fx_capture_metrics.gd")
 const PostFX = preload("res://scenes/runner/ui/post_fx.tscn")
 const Preview = preload("res://scenes/runner/ui/dev/post_fx_preview.tscn")
 const PreviewScript = preload("res://scenes/runner/ui/dev/post_fx_preview.gd")
+
+## The preview stub predates the cinematic clock. Post FX reads that clock for the letterbox.
+class CinematicGame extends PreviewScript.StubGame:
+	signal boss_cinematic(kind: StringName, mode: StringName, seconds: float)
+	signal boss_cinematic_skipped(mode: StringName)
+	signal boss_cinematic_ended(mode: StringName)
+	var boss_cinematic_progress := 0.0
+	var boss_time_factor := 1.0
+
+## Title layout reads the encounter clock off its game node.
+class TitleFixture extends Node:
+	var boss_cinematic_progress := 1.0
+	var stage_index := 1
+	var paused := false
+
 var checks := 0
 var failures := 0
 
@@ -32,7 +47,7 @@ func inspect(node: Node) -> void:
 
 func run() -> void:
 	await check_ui_layers()
-	var game := PreviewScript.StubGame.new()
+	var game := CinematicGame.new()
 	root.add_child(game)
 	var fx := PostFX.instantiate()
 	fx.bind(game) # Binding before ready must work, too.
@@ -131,17 +146,19 @@ func run() -> void:
 	game.power_up_expired.emit(&"nitro")
 	step(fx, 0.4)
 	check(value(fx, "bloom_lift") == 0.0, "Nitro expires")
-	game.boss_intro.emit(&"legacy_monolith", "Legacy Monolith", 3.0)
+	game.boss_cinematic_progress = 1.0
+	game.boss_cinematic.emit(&"legacy_monolith", &"intro_full", 3.0)
 	step(fx, 0.2)
 	check(value(fx, "letterbox") == 1.0, "boss bars open")
-	step(fx, 3.1)
-	check(value(fx, "letterbox") == 0.0, "boss bars expire")
+	game.boss_cinematic_ended.emit(&"intro_full")
+	step(fx, 0.3)
+	check(value(fx, "letterbox") == 0.0, "boss bars close")
 	game.stage_cleared.emit(1, 500)
 	step(fx, 0.2)
 	check(value(fx, "letterbox") == 1.0, "clear card bars open")
 	step(fx, 3.0)
 	check(value(fx, "letterbox") == 0.0, "clear card bars close")
-	for phase in [&"run", &"turn", &"idle"]:
+	for phase in [&"run", &"idle"]:
 		game.stage_cleared.emit(1, 500)
 		step(fx, 0.2)
 		game.phase_changed.emit(phase)
@@ -308,7 +325,12 @@ func check_ui_layers() -> void:
 	var clear := (load("res://scenes/runner/ui/stage_clear.tscn") as PackedScene).instantiate()
 	hud.add_child(boss)
 	hud.add_child(clear)
-	boss._intro(&"legacy_monolith", "Legacy Monolith", 3.0)
+	var cinematic := (load("res://scenes/runner/ui/boss_cinematic.tscn") as PackedScene).instantiate()
+	viewport.add_child(cinematic)
+	var fixture := TitleFixture.new()
+	viewport.add_child(fixture)
+	cinematic.game = fixture
+	cinematic._cinematic(&"legacy_monolith", &"intro_full", 3.0)
 	clear.show()
 	clear.title.text = "STAGE 1 CLEAR"
 	clear.subtitle.text = "LEGACY MONOLITH / FIXED"
@@ -319,7 +341,7 @@ func check_ui_layers() -> void:
 	var shader := load("res://scenes/runner/shaders/post_grade.gdshader") as Shader
 	check(shader.code.contains("letterbox * 0.065"), "tested letterbox height matches shader")
 	var bar_height := 720.0 * 0.065 + 1.0
-	for card: Control in [boss.intro_card, clear.panel]:
+	for card: Control in [cinematic.title_group, clear.panel]:
 		var rect := card.get_global_rect()
 		check(effective_layer(card) > post_layer, "card stays above letterbox: " + card.name)
 		check(rect.position.y > bar_height and rect.end.y < 720.0 - bar_height, "bars frame card bounds: " + card.name)

@@ -62,7 +62,7 @@ default. Equivalently: `prev.exit_clear + gap + next.entry_clear ≥ v_eff × ga
 `speed = lerp(base_speed + b, max_speed + b, smoothstep(0, 1, clamp(run_clock / time_to_max_speed, 0, 1)))` with
 `time_to_max_speed 100` (v1 used `elapsed / 165`), the per-stage bonus `b = min(stage_speed_step × (stage_index − 1),
 stage_speed_bonus_max)`, then `+ tail_speed_per_minute` per 60 s of run_clock past the ramp, capped at
-`hard_cap_speed + b`. `run_clock` counts RUN-phase seconds only and is frozen during `turn`, `boss` and
+`hard_cap_speed + b`. `run_clock` counts RUN-phase seconds only and is frozen during `boss` and
 `stage_clear`, so a fight never advances the ramp or the chunk tier; the speed reached holds through those phases.
 Difficulty stays 1.0 in the tail. Nitro multiplies the current speed by `nitro_speed_multiplier` (capped at
 `nitro_speed_cap` 38) and does not advance `run_clock`.
@@ -492,11 +492,11 @@ active → roll, off → nothing. Jump trigger `front_z ≥ −(v × 0.22 + 0.4)
 - The `AppRouter` veil tween must run while paused → `AppRouter.process_mode = ALWAYS` and unpause before switching scenes.
 
 
-## 10. v2 systems — stages, turns, boss fights (systems spec 2.0)
+## 10. v2 systems — stages and boss fights (systems spec 2.0; straight corridor since contract 2.7)
 
 Authoritative tuning and facade live in the contract §11; this section is the implementation spec. Style rules
 unchanged. Two clocks: `elapsed` (total unpaused seconds) and `run_clock` (RUN-phase seconds; drives speed and
-difficulty; frozen in `turn`, `boss`, `stage_clear`).
+difficulty; frozen in `boss` and `stage_clear`).
 
 `runner_game.gd` `FRONTEND_MOUNTS` gains one v2 entry beyond the HUD panels: `World/TurnRig/BossArena` →
 `boss/boss_fx.tscn`, the optional 3D fight effects (telegraphs, tracers, damage numbers). It follows the same rules
@@ -511,43 +511,32 @@ frontend's single full-screen post-processing pass (CanvasLayer 9, PAUSABLE, ide
 ### 10.1 `systems/stage_manager.gd` — phase state machine
 
 Vars: `phase: StringName = &"idle"`, `stage_index := 0`, `stage_distance := 0.0`, `stage_distance_target := 0.0`,
-`run_clock := 0.0`, `next_turn_direction := 0`, `_phase_timer := 0.0`, `_turn_direction := 0`,
-`_turn_announced := false`, `stage_rng := RandomNumberGenerator.new()`
-(seeded `seed ^ 0x5F356495` in `reset(seed)` so a run is reproducible). `reset(seed)` → `idle`; `begin()` (called by
+`run_clock := 0.0`, `_phase_timer := 0.0`, `_draining := false`, `stage_rng := RandomNumberGenerator.new()`
+(seeded `seed ^ 0x5F356495` in `reset(seed)` so the boss's lane rolls are reproducible). `reset(seed)` → `idle`; `begin()` (called by
 `RunnerGame.start_run` after every system reset) → `_enter_run()` with `stage_index = 1`.
 
 Per physics tick (only while `game.state == &"running"` and not paused), in this order:
 
 1. `run`: `run_clock += delta`; `stage_distance += game.speed × delta`; `stage_distance_target =
    min(stage_base_distance + stage_distance_step × (stage_index − 1), stage_distance_max)`. When
-   `stage_distance ≥ target − stage_drain_distance` the drain window opens: `spawner.set_spawning(false)`, and
-   **the turn direction is drawn here**, `next_turn_direction = stage_rng.randi_range(0, 1) × 2 − 1` (mirrored onto
-   the facade), so the warning and the bend can never disagree. Then, once per seam, when
-   `stage_distance ≥ target − pace × turn_warning_seconds` with `pace = max(game.speed, base_for_stage())`, emit
-   `turn_incoming(next_turn_direction, (target − stage_distance) / pace)` — a drain shorter than that window is
-   already inside it when it opens, so the warning lands on the same tick as the drain gate. When `stage_distance ≥ target`
-   and no node in `runner_hazards` with `is_blocking()` has `track_z < stage_clear_line_z`, or `_phase_timer ≥
-   stage_drain_timeout` (then `clear()` every remaining blocking hazard silently, no dodge/bonus), enter `turn`.
-2. `turn`: `_phase_timer += delta`; `progress = clamp(_phase_timer / turn_seconds, 0, 1)`; call
-   `turn_rig.set_turn(progress, dir)` and `camera_rig.set_turn(progress, dir)`; at `progress ≥ 1` emit
-   `turn_finished`, reset both to `(0, 0)`, enter `boss`.
-3. `boss`: delegate to `boss_encounter.tick(delta)`; on `boss_encounter.finished` (defeated or retreated, after the
+   `stage_distance ≥ target − stage_drain_distance` the drain window opens: `spawner.set_spawning(false)`. When
+   `stage_distance ≥ target` and no node in `runner_hazards` with `is_blocking()` has `track_z <
+   stage_clear_line_z`, or `_phase_timer ≥ stage_drain_timeout` (then `clear()` every remaining blocking hazard
+   silently, no dodge/bonus), enter `boss` on that same tick. (Contract 2.0–2.6 put a 2.4 s cinematic turn here;
+   2.7 removed it.)
+2. `boss`: delegate to `boss_encounter.tick(delta)`; on `boss_encounter.finished` (defeated or retreated, after the
    outro) enter `stage_clear`.
-4. `stage_clear`: `_phase_timer += delta`; at `stage_clear_seconds` → `stage_index += 1`, `_enter_run()`.
+3. `stage_clear`: `_phase_timer += delta`; at `stage_clear_seconds` → `stage_index += 1`, `_enter_run()`.
 
 `_enter_run()`: `stage_distance = 0`, `spawner.set_spawning(true)`, `speed_controller.set_stage_bonus(b)` and
 `speed_controller.set_difficulty_floor(StageDefs.difficulty_floor(stage_index, config))` (see 10.2), emit `stage_started(stage_index, StageDefs.boss_name(stage_index), speed_controller.base_for_stage())`.
 Enter/exit helpers emit `phase_changed(phase)` on change only, and forward `set_phase` / `set_boss_arena` to the
-corridor when present (`has_method`). `turn_started(dir, turn_seconds)` is emitted on entering `turn` with
-`dir = next_turn_direction`, the value the drain drew (a seam that somehow reached the bend with none — a
-zero-length stage, a hand-driven test — draws one there rather than turning by 0). `next_turn_direction` goes
-back to 0 with the rig reset at the end of the bend, so it is non-zero exactly from the drain gate to
-`turn_finished`. `stage_cleared(stage_index, bonus)` is emitted on entering
+corridor when present (`has_method`). `stage_cleared(stage_index, bonus)` is emitted on entering
 `stage_clear` with `bonus = stage_clear_bonus_base + stage_clear_bonus_per_stage × (stage_index − 1)` added to the
 score first (`score_manager.add_bonus(bonus, &"stage_clear")`). `caught` → `phase = &"idle"` (emit), boss encounter
 aborted (`boss_encounter.abort()` frees projectiles/tools and the boss without bonuses). The `result` fields
-`stages_cleared`, `stage_reached`, `bosses_defeated`, `bosses_escaped`, `tools_used`, `boss_damage_dealt`,
-`turns_taken` are read from StageManager/BossEncounter counters in `_finish_run`.
+`stages_cleared`, `stage_reached`, `bosses_defeated`, `bosses_escaped`, `tools_used` and `boss_damage_dealt` are read
+from StageManager/BossEncounter counters in `_finish_run`.
 
 `data/stage_defs.gd`: static `boss_slot(i)`, `cycle(i)`, `boss_kind(i)`, `boss_name(i)`, `speed_bonus(i, config)`,
 `difficulty_floor(i, config)`, `distance_target(i, config)`.
@@ -557,7 +546,7 @@ aborted (`boss_encounter.abort()` frees projectiles/tools and the boss without b
 `speed_at(t)` is evaluated at `game.run_clock` (not `elapsed`). New `stage_bonus := 0.0` set by
 `set_stage_bonus(b)`; `base`, `max` and `hard_cap` each add `stage_bonus` inside `speed_at()`; `normalized()` keeps
 `(speed − base_eff) / (max_eff − base_eff)`. `difficulty_at(t) = max(clamp(t / time_to_max_speed, 0, 1),
-difficulty_floor)` with `difficulty_floor` set by `set_difficulty_floor(f)` from StageDefs. During `turn`, `boss`
+difficulty_floor)` with `difficulty_floor` set by `set_difficulty_floor(f)` from StageDefs. During `boss`
 and `stage_clear` the speed holds at the value reached (the treadmill keeps moving at that speed for the corridor
 and projectiles); Nitro still applies. Tests: section 14 re-expresses the terminal-1.0 rule on `run_clock`, adds
 stage bonus cases (b = 0, 3, 6 → caps 26/29/32; Nitro ≤ 38) and the floor rule.
@@ -677,30 +666,15 @@ synchronous free); moves +Z at `game.speed` like chunks (so Nitro raises through
 `despawn_z`. `powerups/tool_defs.gd`: kinds, display names, damage, weights, spawn y (contract §11.7). Visual mount
 `powerups/visuals/<kind>_visual.tscn`; graybox fallback: an ORANGE sphere r 0.35 with a Label3D tag.
 
-### 10.5 `systems/turn_rig.gd` and `camera_rig.set_turn`
+### 10.5 `systems/turn_rig.gd` — static mount
 
-`turn_rig.gd` (Node3D at `World/TurnRig`): `set_turn(progress, direction)`: if the mounted corridor
-`has_method("set_turn")` → forward and keep `rotation.y = 0`; else (graybox) `rotation.y = direction ×
-deg_to_rad(turn_yaw_degrees) × smoothstep(0, 1, progress)`; `(0, 0)` resets. `camera_rig.gd` gains
-`set_turn(progress, direction)` (which only records the pair) and the **ramp–hold–return** envelope
-`turn_swing_profile(p)`, replacing the v1 `sin(PI × p)` wave so the corner reads as a committed turn:
-
-```text
-p ≤ 0 or p ≥ 1                  -> 0                                    (endpoints first, so any fractions are safe)
-p <  in                         -> smoothstep(0, 1, p / in)             ramp up
-in ≤ p ≤ 1 − out                -> 1                                    hold at the peak
-p >  1 − out                    -> smoothstep(0, 1, (1 − p) / out)      return
-in = turn_swing_in_fraction, out = turn_swing_out_fraction, both clamped to 0..1 and scaled by 1/(in + out) when they overlap
-```
-
-`yaw = direction × deg_to_rad(turn_camera_yaw_degrees) × turn_swing_profile(progress)` and
-`bank = direction × deg_to_rad(turn_camera_bank_degrees) × turn_swing_profile(progress)`, applied in
-`_physics_process` on top of the follow/shake result (yaw about the player's position, so the camera ends exactly
-where it started at p = 1). The profile is monotone over each ramp and exactly 0 at both ends, so the camera is
-never left displaced; gameplay is untouched, because only the camera and the corridor bend.
-`RunnerGame.track_z(node) = turn_rig.to_local(node.global_position).z` when the rig exists, else
-`node.global_position.z` (identity today because chunks never sit under the rig); `_track_dodges`,
-`clear_hazards_in_range` and the autopilot entry use it.
+`turn_rig.gd` (Node3D at `World/TurnRig`) is a static mount since contract 2.7: `setup(game)`, `set_corridor(node)`
+(the mounted corridor, which the StageManager forwards `set_phase` / `set_boss_arena` to) and `reset()` (zeroes any
+stray rotation). Nothing rotates it, and the name is kept because every mount path, fixture and capture tool
+addresses `World/TurnRig`. The camera keeps its rest pose outside boss shots: each physics tick it starts from the
+rest rotation and blends a boss shot on top. `RunnerGame.track_z(node) = turn_rig.to_local(node.global_position).z`
+when the rig exists, else `node.global_position.z` (the identity, because the rig sits square at the origin and
+chunks never sit under it); `_track_dodges`, `clear_hazards_in_range` and the autopilot entry use it.
 
 ### 10.6 Spawner and autopilot
 
@@ -714,7 +688,7 @@ stage entry including stage 1. `_clear_road_remaining` is decremented in `_physi
 corridor scrolls on, after the `state` and `game.paused` guards, so a pause holds the window.
 
 1. **Clamp the frontier.** `frontier_z` is only ever re-read from the last active chunk, so a corridor that
-   emptied during the drain, the turn, the boss and the clear card leaves it scrolled to at or behind the player.
+   emptied during the drain, the boss and the clear card leaves it scrolled to at or behind the player.
    When `active.is_empty()`, `frontier_z = min(frontier_z, −ENTRY_CLEAR_DISTANCE)` (6.0, the authored entry
    clearance every chunk carries and the validator's `MIN_CLEAR`). Without this the first `_fill()` of the stage
    parks a chunk at `frontier_z − gap`, i.e. underfoot, and its hazards land while the banner is still up.
@@ -781,10 +755,8 @@ Leaderboard `SCHEMA_VERSION = 2`: version-1 boards are read normally and rewritt
 `runner_logic.gd` new sections: stage machine (targets, drain, timeout clear, phase ordering, one `stage_started`
 per stage, `run_clock` frozen outside `run`); escalation formula at cycles 0–4 hitting floors/caps; boss HP/phase
 transitions and one `boss_phase_changed` per crossing; tool damage incl. resisted phases (`tool_collected(kind, 0)`);
-boss timeout → `boss_retreated` with the partial bonus and never `boss_defeated`; turn state (signals once, rig and
-camera back at zero, no spawn during the bend) plus `turn_incoming` once per seam ahead of `turn_started`, on the
-same direction and with `seconds ∈ [0, turn_warning_seconds + 0.5]`; the camera swing profile (0 at p = 0 and
-p = 1, at the peak across the hold window, monotone through each ramp); `boss_intro` exactly once per fight,
+boss timeout → `boss_retreated` with the partial bonus and never `boss_defeated`; the drain handing straight to
+`boss` with the corridor, the TurnRig and the camera rest pose untouched; `boss_intro` exactly once per fight,
 before `boss_cinematic` and `boss_spawned`, carrying `boss_intro_seconds` on the run's first meeting with that boss and
 `min(boss_intro_short_seconds, boss_intro_seconds)` on a repeat meeting or a checkpoint retry, with no telegraph and no
 tool inside that window (contract 2.6: the cinematic timings themselves are covered by `tests/runner_boss_cinematic.gd`);
@@ -792,7 +764,7 @@ tool inside that window (contract 2.6: the cinematic timings themselves are cove
 to `idle` with `run_finished` once and boss stats in the result; speed with stage bonus and difficulty floor.
 `runner_smoke.gd`: duplicated config `stage_base_distance 260`, `time_to_max_speed 20`, `boss_hp_scale 0.4` (so the
 stage-1 boss opens on 40 hp rather than its authored 100), at the
-existing acceleration: stage 1 → `turn_incoming` ahead of `turn_started`/`turn_finished` → `boss_spawned` → tools damage → `boss_defeated` →
+existing acceleration: stage 1 → drain → `boss_spawned` → tools damage → `boss_defeated` →
 `stage_cleared` → `stage_started(2, …)` within a bounded wall clock with zero projectile hits; a second probe forcing
 PURSUED plus a projectile mid-fight ends the run once with the boss stats present; the kill leaves the arena empty
 (no `runner_tools` node and no blocking projectile two frames later) and raises no engine error.

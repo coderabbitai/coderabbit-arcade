@@ -26,12 +26,11 @@ func run() -> void:
 	var output := ProjectSettings.globalize_path("res://../docs/previews/assets")
 	DirAccess.make_dir_recursive_absolute(output)
 	var failures := 0
-	for view in ["gameplay", "close-up", "turn"]:
+	for view in ["gameplay", "close-up"]:
 		# Freeze a repeatable module phase so the near frame-face ROI cannot drift off hardware.
 		corridor.set_process(false)
 		corridor._offset = 6.4 if view == "close-up" else 0.0
 		corridor._clock = 1.0
-		corridor.set_turn(0.5 if view == "turn" else 0.0, 1)
 		corridor._process(0.0)
 		var eye := Vector3(0, 4, 8)
 		var target := Vector3(0, 1, -8)
@@ -68,13 +67,7 @@ func run() -> void:
 			var ink := Metrics.screen_stats(saved, region)
 			print("ASSET A2 SCREEN-INK: view=%s rect=%s p95=%.3f edge=%.3f %s" % [view, region, ink.p95, ink.edge, "PASS" if ink["pass"] else "FAIL"])
 			if not ink["pass"]: failures += 1
-		if view == "turn" and error == OK:
-			var saved := Image.load_from_file(output + "/a2-turn.png")
-			for sample_index in Metrics.END_WALL_REGIONS.size():
-				var wall := Metrics.end_wall_stats(saved, sample_index)
-				print("ASSET A2 END-WALL: rect=%s mean=%.3f minimum=%.2f %s" % [Metrics.END_WALL_REGIONS[sample_index], wall.mean, Metrics.END_WALL_MIN_MEANS[sample_index], "PASS" if wall["pass"] else "FAIL"])
-				if not wall["pass"]: failures += 1
-		if error != OK or calls > (18 if view == "turn" else 14): failures += 1
+		if error != OK or calls > 14: failures += 1
 
 	await Cleanup.release(self, [corridor, camera])
 	print("ASSET A2 CAPTURE: " + ("PASS" if failures == 0 else "FAIL"))

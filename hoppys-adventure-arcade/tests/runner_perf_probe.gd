@@ -3,7 +3,7 @@ extends SceneTree
 ## Godot --always-on-top --path hoppys-adventure-arcade --script res://tests/runner_perf_probe.gd [-- seconds=60 seed=4242]
 ## Add -- boss_cinematic=true for the opt-in full intro and defeat capture across stages 1-3.
 ## Plays an autopilot run from the runner menu's Play route and attributes every slow frame to what
-## happened on it (pickup, chunk spawn, turn, boss, stage). Writes a throwaway leaderboard only.
+## happened on it (pickup, chunk spawn, boss, stage). Writes a throwaway leaderboard only.
 const HITCH_MS := 25.0
 const BOSS_DRAW_BUDGET := 40
 const BossDefs = preload("res://scenes/runner/boss/boss_defs.gd")
@@ -49,7 +49,9 @@ func run() -> void:
 	game.power_up_collected.connect(func(kind, _d): _note("pickup:" + String(kind)))
 	game.tool_collected.connect(func(kind, _d): _note("tool:" + String(kind)))
 	game.chunk_spawned.connect(func(_c): _note("chunk"))
-	game.turn_started.connect(func(_d, _s): _note("turn"))
+	game.phase_changed.connect(func(phase: StringName) -> void:
+		if phase == &"boss":
+			_note("boss-phase"))
 	game.boss_spawned.connect(func(kind, _h): _note("boss:" + String(kind)))
 	game.stage_started.connect(func(i, _n, _s): _note("stage:%d" % i))
 	game.damage_taken.connect(func(kind, _h): _note("hit:" + String(kind)))
