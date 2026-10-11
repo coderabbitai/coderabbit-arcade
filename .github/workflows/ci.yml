@@ -56,7 +56,9 @@ jobs:
         run: |
           suites=(
             code_city_assets
+            code_city_celebration
             code_city_logic
+            code_city_mini_boss
             code_city_motion
             code_city_smoke
             controller_service
@@ -81,6 +83,8 @@ jobs:
             runner_boss_validator
             runner_chunk_validator
             runner_logic
+            runner_run_intro
+            runner_run_intro_ui
             runner_scaffold_check
             runner_smoke
             runner_visual_smoke
