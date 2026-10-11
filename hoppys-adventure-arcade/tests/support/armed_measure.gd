@@ -143,7 +143,38 @@ static func carry_face_hits(carry: Sprite2D, image: Image, box: Rect2, body_scal
 				hits += 1
 	return hits
 
-## One weapon's four run frames. Packed arrays stay on the object so formatting sees the same values.
+## Cel pixels the grounded feet must travel between adjacent foot registered run frames.
+const RUN_STRIDE_MIN_PX := 4.0
+
+## Run frame count the spec publishes; Heroes stays at 4 and Code City publishes 6.
+static func run_frame_count(spec: Dictionary) -> int:
+	var clips: Variant = spec.get("clips", {})
+	var run: Variant = clips.get("run", {}) if clips is Dictionary else {}
+	var frames: Variant = run.get("frames", []) if run is Dictionary else []
+	return frames.size() if frames is Array and frames.size() > 0 else 4
+
+## Mean x of opaque pixels on the foot rows of one run frame. Foot registered sheets move this
+## from frame to frame because the stance advances instead of the body staying still.
+static func foot_reference_x(body: AnimatedSprite2D, spec: Dictionary, anim_frame: int) -> float:
+	var pivot: Variant = spec.get("pivot", [])
+	if body.sprite_frames == null or not body.sprite_frames.has_animation("run") or not pivot is Array or pivot.size() < 2:
+		return NAN
+	var texture := body.sprite_frames.get_frame_texture("run", anim_frame)
+	var image := texture.get_image() if texture != null else null
+	if image == null:
+		return NAN
+	if image.is_compressed():
+		image.decompress()
+	var sum := 0.0
+	var count := 0
+	for y in range(maxi(0, int(pivot[1]) - 3), mini(image.get_height(), int(pivot[1]) + 1)):
+		for x in image.get_width():
+			if image.get_pixel(x, y).a >= 128.0 / 255.0:
+				sum += float(x)
+				count += 1
+	return sum / float(count) if count > 0 else NAN
+
+## One weapon's run frames (4 for Heroes, 6 for Code City). Packed arrays stay on the object so formatting sees the same values.
 class RunSample:
 	var pose_ok := false
 	var detail := ""
@@ -153,19 +184,21 @@ class RunSample:
 	var limit := 0.0
 	var worst := 0.0
 	var worst_at := "n/a"
+	var foot := false
 
 ## Sheet, clip, offset, and body-x drift across the four run frames.
 static func measure_run_frames(actor, sheet: SpriteFrames, spec: Dictionary, expected_offset: Vector2, facing: float) -> RunSample:
 	var sample := RunSample.new()
 	var frames: SpriteFrames = actor.body.sprite_frames
-	sample.pose_ok = frames == sheet and actor.body.animation == "run" and frames.has_animation("run") and frames.get_frame_count("run") == 4
+	sample.pose_ok = frames == sheet and actor.body.animation == "run" and frames.has_animation("run") and frames.get_frame_count("run") == run_frame_count(spec)
 	sample.detail = "clip %s offset %s expected %s" % [actor.body.animation, actor.body.offset, expected_offset]
 	sample.measured = sample.pose_ok
-	sample.limit = RUN_BODY_LIMIT_PX * float(actor.body.scale.x)
+	sample.foot = spec.get("run_registration", "body") == "foot"
+	sample.limit = (RUN_STRIDE_MIN_PX if sample.foot else RUN_BODY_LIMIT_PX) * float(actor.body.scale.x)
 	if sample.pose_ok:
 		var pivot_x := float(spec.pivot[0])
 		var sign: float = -1.0 if facing < 0.0 else 1.0
-		for f in 4:
+		for f in run_frame_count(spec):
 			actor.body.pause()
 			actor.body.frame = f
 			var frame_ok: bool = actor.body.sprite_frames == sheet and actor.body.animation == "run" and actor.body.offset.is_equal_approx(expected_offset) and actor.body.flip_h == (facing < 0.0)
@@ -174,7 +207,7 @@ static func measure_run_frames(actor, sheet: SpriteFrames, spec: Dictionary, exp
 				sample.measured = false
 				sample.detail = "frame %d clip %s offset %s expected %s flip %s" % [f, actor.body.animation, actor.body.offset, expected_offset, actor.body.flip_h]
 				break
-			var cel := armed_run_cel(actor.body, spec, f)
+			var cel := foot_reference_x(actor.body, spec, f) if sample.foot else armed_run_cel(actor.body, spec, f)
 			if is_nan(cel):
 				sample.measured = false
 				sample.detail = "frame %d has no body pixels behind the paw" % f
@@ -183,7 +216,7 @@ static func measure_run_frames(actor, sheet: SpriteFrames, spec: Dictionary, exp
 			sample.worlds.append((cel - pivot_x) * actor.body.scale.x * sign)
 	else:
 		sample.measured = false
-	if sample.worlds.size() == 4:
+	if sample.worlds.size() == run_frame_count(spec):
 		for i in sample.worlds.size():
 			var nxt := (i + 1) % sample.worlds.size()
 			var step := absf(sample.worlds[nxt] - sample.worlds[i])
@@ -235,7 +268,7 @@ static func check_armed_run_registration(
 			var expected_offset: Vector2 = offset_for.call(weapon, facing)
 			var sample := measure_run_frames(actor, sheet, spec, expected_offset, facing)
 			report.call(sample.pose_ok, "%s facing %d armed run uses the sheet, clip run, and armed offset (%s)" % [weapon, int(facing), sample.detail])
-			report.call(sample.measured and sample.worlds.size() == 4 and sample.worst <= sample.limit, "%s facing %d armed run body stays within %.2f px across run frames (worst %.2f between %s; world x %s; cel x %s)" % [weapon, int(facing), sample.limit, sample.worst, sample.worst_at, fmt_xs(sample.worlds), fmt_xs(sample.cels)])
+			report.call(sample.measured and sample.worlds.size() == run_frame_count(spec) and ((sample.worst >= sample.limit) if sample.foot else (sample.worst <= sample.limit)), "%s facing %d armed run %s %.2f px across run frames (worst %.2f between %s; world x %s; cel x %s)" % [weapon, int(facing), "feet advance by at least" if sample.foot else "body stays within", sample.limit, sample.worst, sample.worst_at, fmt_xs(sample.worlds), fmt_xs(sample.cels)])
 	actor.swing_left = 0
 	actor.visual_weapon = ""
 	if show_held:
