@@ -62,6 +62,9 @@ func run() -> void:
 	_check(game.skip_run_intro(), "skip accepted after title")
 	await _advance_to(duration - 0.2)
 	await capture_frame("full-skip-tail")
+	await _advance_to(duration - 0.05)
+	await capture_frame("full-skip-fade")
+	_check(_ui().countdown.modulate.a < 0.30, "skipped GO fades before hand-back")
 	if real_game:
 		_freeze(false)
 		var deadline := Time.get_ticks_msec() + 2000
@@ -161,11 +164,14 @@ func capture_frame(label: String) -> Image:
 		if label == "full-02-1.20s":
 			_check(visual != null and visual.get("anim_state") == &"victory", "title beat plays Hoppy victory")
 			_check(ui.title_group.visible, "title card is visible with victory")
+		if ui.count_label.text == "GO!" and ui.countdown.visible:
+			_check(not game.can_skip_run_intro() and not ui.skip_button.visible, "GO closes the skip window")
 		if label == "after-intro":
 			_check(not ui.root.visible, "intro overlay clears on hand-back")
 		telemetry.append({"frame": label, "mode": String(game.run_intro_mode),
 			"progress": game.run_intro_progress, "phase": String(game.phase), "beat": ui.count_label.text,
 			"title_visible": ui.title_group.visible, "count_visible": ui.countdown.visible,
+			"count_alpha": ui.countdown.modulate.a, "skip_visible": ui.skip_button.visible,
 			"entry_bulkhead": entry != null, "camera_position": str(camera.global_position),
 			"camera_rotation": str(camera.global_rotation), "player_position": str(game.player.global_position),
 			"visual": String(visual.get("anim_state")) if visual != null else ""})

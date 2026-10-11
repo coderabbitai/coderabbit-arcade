@@ -223,12 +223,15 @@ func _process(_delta: float) -> void:
 		count_label.add_theme_color_override("font_color", Palette.MINT if go else Palette.CREAM)
 		count_hint.text = "LET'S SHIP IT" if go else ("ONE MORE RUN" if mode == &"short" else "GET READY")
 		countdown.scale = Vector2.ONE * lerpf(1.42 if go else 1.28, 1.0, 1.0 - pow(1.0 - clampf(beat_age / 0.20, 0, 1), 3))
-		countdown.modulate.a = (1.0 - smoothstep(0.36, 0.60, beat_age)) if go else (1.0 - smoothstep(0.50, 0.74, beat_age))
+		# A skipped GO has only the remaining tail to finish, which may be configured.
+		var go_fade_end := minf(0.60, maxf(seconds - _beat_at, 0.001)) if skipped else 0.60
+		var go_fade_start := go_fade_end * (0.25 if skipped else 0.60)
+		countdown.modulate.a = (1.0 - smoothstep(go_fade_start, go_fade_end, beat_age)) if go else (1.0 - smoothstep(0.50, 0.74, beat_age))
 		burst.age = beat_age
 		burst.go = go
 		burst.tint = Palette.MINT if go else Palette.ORANGE
 		burst.queue_redraw()
-		flash.color.a = maxf(0, 1.0 - beat_age / 0.12) * 0.20 if go else 0
+		flash.color.a = maxf(0, 1.0 - beat_age / 0.12) * 0.20 * countdown.modulate.a if go else 0
 	else:
 		flash.color.a = 0
 	skip_button.visible = not skipped and game.has_method("can_skip_run_intro") and bool(game.call("can_skip_run_intro"))

@@ -82,6 +82,9 @@ func run() -> void:
 	await run_card_and_beats(&"short", SHORT_LENGTH, SHORT_BEATS)
 	await run_skip_guard()
 	await run_skip_cleanup()
+	await run_skip_go_fade()
+	await run_skip_short_tail()
+	await run_late_skip_rejected()
 	await run_end_cleanup()
 	await run_rebind()
 	await run_pause()
@@ -280,6 +283,91 @@ func run_skip_cleanup() -> void:
 	check(card_text(ui) == "" and count_text(ui) == "", "no card or countdown left after a skip")
 	check(not ui.countdown.visible, "GO burst cleared on end")
 	drop(pair)
+
+## The skipped GO! stays up through the tail and is nearly faded by the time ended fires.
+func run_skip_go_fade() -> void:
+	for mode in [&"full", &"short"]:
+		var pair := make_pair()
+		var game: Node = pair["game"]
+		var ui: Node = pair["ui"]
+		var ended := [0]
+		game.run_intro_ended.connect(func(_mode: StringName = &"") -> void: ended[0] += 1)
+		game.begin_intro(mode)
+		await advance_seconds(game, 1.5 if mode == &"full" else 0.5)
+		check(game.skip_run_intro(), "%s: skip accepted" % mode)
+		await process_frame
+		check(count_text(ui).to_upper().contains("GO"), "%s: GO! visible right after skip" % mode)
+		check(ui.countdown.modulate.a > 0.9, "%s: GO! starts opaque after skip (%.3f)" % [mode, ui.countdown.modulate.a])
+		await advance_seconds(game, SKIP_TAIL * 0.5)
+		check(ended[0] == 0 and ui.countdown.visible, "%s: GO! still visible halfway through the tail" % mode)
+		var halfway: float = ui.countdown.modulate.a
+		check(halfway < 1.0 and halfway > 0.0, "%s: GO! is fading halfway (%.3f)" % [mode, halfway])
+		await advance_seconds(game, SKIP_TAIL * 0.45)
+		check(ended[0] == 0, "%s: still inside the tail" % mode)
+		check(ui.countdown.modulate.a < 0.15, "%s: GO! nearly gone just before ended (%.3f)" % [mode, ui.countdown.modulate.a])
+		check(ui.countdown.modulate.a < halfway, "%s: GO! fades monotonically" % mode)
+		await advance_seconds(game, SKIP_TAIL)
+		check(ended[0] == 1, "%s: ended fires once" % mode)
+		check(not ui.countdown.visible and not active(ui), "%s: GO! cleared at ended" % mode)
+		drop(pair)
+
+## A shorter configured tail: the fade runs over the remaining time, not a fixed 0.4 s.
+func run_skip_short_tail() -> void:
+	for item in [[&"full", 6.0, 4], [&"short", 2.2, 1]]:
+		var mode: StringName = item[0]
+		var length: float = item[1]
+		var tail := 0.2
+		var pair := make_stub_pair()
+		var game: Node = pair["game"]
+		var ui: Node = pair["ui"]
+		game.run_intro_mode = mode
+		stub_set_progress(game, 0.0)
+		game.run_intro.emit(mode, length)
+		stub_set_progress(game, (length - tail) / length)
+		game.run_intro_skipped.emit()
+		game.run_intro_beat.emit(item[2], "GO!")
+		await process_frame
+		var tag := "%s tail %.1fs: " % [mode, tail]
+		check(count_text(ui).to_upper().contains("GO") and ui.countdown.modulate.a > 0.95, tag + "GO! opaque at skip (%.3f)" % ui.countdown.modulate.a)
+		stub_set_progress(game, (length - tail * 0.5) / length)
+		await process_frame
+		var mid: float = ui.countdown.modulate.a
+		check(ui.countdown.visible and mid < 1.0 and mid > 0.1, tag + "GO! mid-fade halfway (%.3f)" % mid)
+		stub_set_progress(game, (length - 0.01) / length)
+		await process_frame
+		check(ui.countdown.modulate.a < 0.15 and ui.countdown.modulate.a < mid, tag + "GO! nearly gone before ended (%.3f)" % ui.countdown.modulate.a)
+		game.run_intro_ended.emit()
+		await process_frame
+		check(not ui.countdown.visible and not active(ui), tag + "cleared at ended")
+		drop(pair)
+
+## Once GO! has been emitted the facade refuses a skip: the prompt is gone and a press changes nothing.
+func run_late_skip_rejected() -> void:
+	for mode in [&"full", &"short"]:
+		var go_at := 5.4 if mode == &"full" else 1.6
+		var pair := make_pair()
+		var game: Node = pair["game"]
+		var ui: Node = pair["ui"]
+		var skipped := [0]
+		var in_signal: Array = []
+		game.run_intro_skipped.connect(func(_mode: StringName = &"") -> void: skipped[0] += 1)
+		game.run_intro_beat.connect(func(_index: int, label: String) -> void:
+			if label.to_upper().begins_with("GO"):
+				in_signal.append(game.can_skip_run_intro()))
+		game.begin_intro(mode)
+		await advance_seconds(game, go_at - 0.1)
+		check(game.can_skip_run_intro() and skip_visible(ui), "%s: skip still offered just before GO!" % mode)
+		await advance_seconds(game, 0.15)
+		check(in_signal.size() == 1 and in_signal[0] == false, "%s: guard already closed when GO! is emitted (%s)" % [mode, in_signal])
+		check(not game.can_skip_run_intro(), "%s: skip refused after GO!" % mode)
+		check(not skip_visible(ui), "%s: skip prompt hidden after GO!" % mode)
+		var label_before := count_text(ui)
+		check(label_before.to_upper().contains("GO"), "%s: GO! showing" % mode)
+		check(not game.skip_run_intro(), "%s: late skip returns false" % mode)
+		await process_frame
+		check(skipped[0] == 0 and not ui.skipped, "%s: late skip does not reach the overlay" % mode)
+		check(count_text(ui) == label_before and ui.countdown.visible, "%s: late skip does not clear GO!" % mode)
+		drop(pair)
 
 func run_end_cleanup() -> void:
 	var pair := make_pair()

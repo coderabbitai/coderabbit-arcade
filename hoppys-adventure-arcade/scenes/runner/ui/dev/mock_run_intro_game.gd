@@ -74,8 +74,9 @@ func advance_intro(delta: float) -> void:
 	var times := [1.0, 1.6] if run_intro_mode == &"short" else [1.0, 3.0, 3.8, 4.6, 5.4]
 	var labels := ["READY", "GO!"] if run_intro_mode == &"short" else ["title", "3", "2", "1", "GO!"]
 	while not skipped and emitted_beats < times.size() and elapsed >= float(times[emitted_beats]):
-		run_intro_beat.emit(emitted_beats, labels[emitted_beats])
+		var index := emitted_beats
 		emitted_beats += 1
+		run_intro_beat.emit(index, labels[index])
 	update_visuals()
 	if elapsed >= seconds:
 		run_intro_mode = &""
@@ -84,7 +85,8 @@ func advance_intro(delta: float) -> void:
 		phase_changed.emit(phase)
 
 func can_skip_run_intro() -> bool:
-	return phase == &"intro" and not paused and not skipped and elapsed >= 0.3 and elapsed < seconds - 0.4
+	var final_index := 1 if run_intro_mode == &"short" else 4
+	return emitted_beats <= final_index and phase == &"intro" and not paused and not skipped and elapsed >= 0.3 and elapsed < seconds - 0.4
 
 func skip_run_intro() -> bool:
 	if not can_skip_run_intro(): return false
@@ -95,8 +97,8 @@ func skip_run_intro() -> bool:
 	run_intro_skipped.emit()
 	var final_index := 1 if run_intro_mode == &"short" else 4
 	if emitted_beats <= final_index:
-		run_intro_beat.emit(final_index, "GO!")
 		emitted_beats = final_index + 1
+		run_intro_beat.emit(final_index, "GO!")
 	update_visuals()
 	return true
 
