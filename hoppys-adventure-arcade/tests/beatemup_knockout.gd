@@ -3,6 +3,8 @@ extends SceneTree
 ## stepped with _physics_process, the same way as stage_flow.gd. The live-path checks
 ## kill Hoppy through a bullet, a ground warning, an enemy and the boss.
 const DT := 1.0/60.0
+## Frames to wait for the last autoload before giving up, so a stuck start fails instead of hanging.
+const READY_FRAMES := 600
 const LENGTH := 2.2
 ## Wall-time contract: .12 s at full speed, .63 s of pose clock at .55x, the rest at full speed,
 ## then the card for .8 s. 0.12+0.63/0.55+(2.2-0.75)+0.8 = 3.515 s, under the 4 s budget.
@@ -170,7 +172,14 @@ func accept_event() -> InputEventAction:
 func run() -> void:
 	# Rendered, SaveService's window-mode call pumps the loop inside its _ready and fires the deferred
 	# run() before the autoloads finish, so wait for the last one.
-	while not (root.has_node("ControllerService") and root.get_node("ControllerService").is_node_ready()): await process_frame
+	var waited := 0
+	while not (root.has_node("ControllerService") and root.get_node("ControllerService").is_node_ready()) and waited < READY_FRAMES:
+		await process_frame
+		waited += 1
+	if not (root.has_node("ControllerService") and root.get_node("ControllerService").is_node_ready()):
+		check(false, "ControllerService is ready within %d frames" % READY_FRAMES)
+		quit(1)
+		return
 	await process_frame
 	await settle_window()
 	await run_mode("res://scenes/beatem_up/code_city_brawl.tscn", false)

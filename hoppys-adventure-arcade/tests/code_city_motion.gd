@@ -6,6 +6,10 @@ const COMBAT_FRAMES = preload("res://Assets/code-city-brawl-player/combat.tres")
 const PLATFORMER_FRAMES = preload("res://Assets/bay-area-blitz-assets-only/bay_area/hoppy/platformer.tres")
 ## The weapon captures' deliberate on-screen caption.
 const CAPTION := "EQUIPPED WEAPON ANIMATION · windup / contact / recovery"
+## Frame caps on the capture's waits (autoloads ready, one viewport draw), so a stuck run fails
+## instead of hanging.
+const READY_FRAMES := 600
+const DRAW_FRAMES := 120
 var game
 var failures := 0
 func _initialize() -> void: call_deferred("run")
@@ -259,16 +263,21 @@ func capture_target() -> String:
 
 ## Resuming inside an autoload's _ready (SaveService pumps frames there) makes add_child fail on
 ## root, so wait until root and every autoload report ready, from a clean frame.
-func autoloads_ready() -> void:
-	while true:
+## Gives up after READY_FRAMES, so a stuck start fails instead of hanging.
+func autoloads_ready() -> bool:
+	for frame in READY_FRAMES:
 		await process_frame
 		var ready := root.is_node_ready()
 		for child in root.get_children():
 			ready = ready and child.is_node_ready()
-		if ready: return
+		if ready: return true
+	return false
 
 func capture_locomotion(path: String) -> void:
-	await autoloads_ready()
+	if not await autoloads_ready():
+		printerr("FAIL: root and its autoloads were not ready within %d frames" % READY_FRAMES)
+		quit(1)
+		return
 	if DisplayServer.get_name()=="headless":
 		printerr("FAIL: --capture-locomotion needs a rendered run, not --headless")
 		quit(1)
@@ -337,8 +346,11 @@ func capture_locomotion(path: String) -> void:
 	viewport.render_target_update_mode=SubViewport.UPDATE_ONCE
 	var rid := viewport.get_viewport_rid()
 	await RenderingServer.frame_post_draw
-	while RenderingServer.viewport_get_update_mode(rid)!=RenderingServer.VIEWPORT_UPDATE_DISABLED:
+	var drawn := 0
+	while RenderingServer.viewport_get_update_mode(rid)!=RenderingServer.VIEWPORT_UPDATE_DISABLED and drawn<DRAW_FRAMES:
 		await RenderingServer.frame_post_draw
+		drawn+=1
+	check(RenderingServer.viewport_get_update_mode(rid)==RenderingServer.VIEWPORT_UPDATE_DISABLED,"The contact sheet viewport draws within %d frames" % DRAW_FRAMES)
 	var image := viewport.get_texture().get_image()
 	var dir := ProjectSettings.globalize_path(path).get_base_dir()
 	DirAccess.make_dir_recursive_absolute(dir)

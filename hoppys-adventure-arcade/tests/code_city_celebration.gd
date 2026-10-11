@@ -12,6 +12,8 @@ const LOOP := "res://Assets/Audio/Beat'em Up/code_city_victory_loop.wav"
 const BOSS_MUSIC := "res://Assets/Audio/Beat'em Up/Boss Fight 2.mp3"
 const CAPTURE_DIR := "/tmp/s3-captures/celebration"
 const DT := 1.0/60.0
+## Frames to wait for the last autoload before giving up, so a stuck start fails instead of hanging.
+const READY_FRAMES := 600
 ## Contract times, seconds on the party clock.
 const JINGLE_AT := .3
 const LOOP_AT := 3.8
@@ -164,7 +166,14 @@ func pose_has_victory(owner) -> bool:
 func run() -> void:
 	# Rendered, SaveService's window-mode call pumps the loop inside its _ready and fires the deferred
 	# run() early, so wait for the last autoload.
-	while not (root.has_node("ControllerService") and root.get_node("ControllerService").is_node_ready()): await process_frame
+	var waited := 0
+	while not (root.has_node("ControllerService") and root.get_node("ControllerService").is_node_ready()) and waited < READY_FRAMES:
+		await process_frame
+		waited += 1
+	if not (root.has_node("ControllerService") and root.get_node("ControllerService").is_node_ready()):
+		check(false, "ControllerService is ready within %d frames" % READY_FRAMES)
+		quit(1)
+		return
 	await process_frame
 	await settle_window()
 	check_asset_clip()
