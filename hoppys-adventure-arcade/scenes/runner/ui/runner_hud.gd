@@ -52,6 +52,9 @@ var nitro_panel: PanelContainer
 var ready_panel: PanelContainer
 var pursuit_panel: PanelContainer
 var toast_remaining := 0.0
+## True while the run intro owns the screen (contract 2.7 §11.15): the widgets and GET READY are
+## hidden until the intro hands over to the run.
+var _intro_hidden := false
 var pulse_clock := 0.0
 var teaching_seen := {}
 var teaching_pending: Array[Dictionary] = []
@@ -407,7 +410,7 @@ func _sync_ready_speed() -> void:
 	if not panel.visible: panel.self_modulate.a = 0.0
 
 func _paused(value: bool) -> void:
-	widgets.modulate.a = 0.35 if value else 1.0
+	widgets.modulate.a = 0.0 if _intro_hidden else (0.35 if value else 1.0)
 	if is_instance_valid(pursuit_alert) and pursuit_alert.get_parent() != widgets:
 		pursuit_alert.modulate.a = widgets.modulate.a
 
@@ -543,6 +546,30 @@ func _shield(active: bool) -> void:
 func _phase(value: StringName) -> void:
 	teaching_phase = value
 	if value in [&"boss_intro", &"stage_clear"]: _defer_teaching()
+	if value == &"intro":
+		_set_intro_hidden(true)
+	elif _intro_hidden:
+		_set_intro_hidden(false)
+		# GET READY and its controls legend open with the run itself, not under the intro's cards.
+		if value == &"run": _open_ready()
+
+## The run intro's title card and countdown own the screen: the gameplay widgets fade out and GET
+## READY waits; both come back when the intro ends.
+func _set_intro_hidden(on: bool) -> void:
+	_intro_hidden = on
+	widgets.modulate.a = 0.0 if on else 1.0
+	if on:
+		ready_panel.hide()
+		get_ready.hide()
+		_sync_ready_speed()
+
+func _open_ready() -> void:
+	if game == null or StringName(game.get(&"state")) != &"running": return
+	ready_age = 0.0
+	ready_panel.modulate.a = 1.0
+	ready_panel.show()
+	get_ready.show()
+	_sync_ready_speed()
 
 func _reset_teaching(_seed: int = 0) -> void:
 	toast_teaching = false

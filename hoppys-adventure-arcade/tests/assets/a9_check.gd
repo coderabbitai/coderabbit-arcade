@@ -310,6 +310,12 @@ func check_ui_layers() -> void:
 	for parent_path in ["HUD", "Overlays"]:
 		for path: String in mounts[parent_path]:
 			if path == "res://scenes/runner/ui/post_fx.tscn": continue
+			# Contract 2.7 §11.15: run_intro.tscn is an optional mount. S5 may not have built it,
+			# and a missing scene must not abort the layer checks for the panels that do exist.
+			if not ResourceLoader.exists(path):
+				check(path == "res://scenes/runner/ui/run_intro.tscn",
+					"only the optional run intro mount may be absent, missing " + path)
+				continue
 			var ui := (load(path) as PackedScene).instantiate()
 			skeleton.get_node(parent_path).add_child(ui)
 			check(effective_layer(ui) > post_layer, "production UI above post: " + path)

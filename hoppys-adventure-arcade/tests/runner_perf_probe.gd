@@ -25,7 +25,22 @@ func _initialize() -> void:
 		if parts.size() == 2 and parts[0] == "seed": run_seed = int(parts[1])
 		if parts.size() == 2 and parts[0] == "boss_cinematic":
 			boss_cinematic_probe = parts[1].to_lower() in ["true", "1", "yes"]
-	call_deferred("run")
+	# call_deferred("run") is flushed by SaveService.apply_display() inside autoload _ready,
+	# and root.add_child then fails because the tree is still setting children up. Wait until
+	# that setup has finished.
+	if root.is_node_ready():
+		call_deferred("run")
+	else:
+		root.ready.connect(run, CONNECT_ONE_SHOT)
+
+## The run intro is on by default. A duplicate keeps the shared .tres intact and opens on `run`.
+func _opt_out_run_intro(game: Node) -> void:
+	var source: Resource = game.config as Resource
+	if source == null:
+		source = load("res://scenes/runner/data/run_config.tres")
+	var config := source.duplicate()
+	config.set(&"run_intro_enabled", false)
+	game.config = config
 
 func _note(what: String) -> void:
 	events.append(what)
@@ -44,7 +59,14 @@ func run() -> void:
 	game = (load("res://scenes/runner/runner_game.tscn") as PackedScene).instantiate()
 	game.autostart = false
 	game.leaderboard_path = OS.get_temp_dir().path_join("runner_perf_probe_leaderboard.cfg")
+	# Frame times are the gameplay run. The intro is a separate suite, and this must not edit the
+	# shared run_config.tres, so the flag lives on a duplicate assigned before _ready.
+	_opt_out_run_intro(game)
 	root.add_child(game)
+	if not game.is_inside_tree():
+		push_error("RUNNER PERF: runner was not added to the tree")
+		quit(1)
+		return
 	print("RUNNER PERF: scene ready in %.0f ms" % ((Time.get_ticks_usec() - load_start) / 1000.0))
 	game.power_up_collected.connect(func(kind, _d): _note("pickup:" + String(kind)))
 	game.tool_collected.connect(func(kind, _d): _note("tool:" + String(kind)))
@@ -102,6 +124,7 @@ func _run_boss_cinematic_probe() -> void:
 	game = (load("res://scenes/runner/runner_game.tscn") as PackedScene).instantiate()
 	game.autostart = false
 	game.leaderboard_path = OS.get_temp_dir().path_join("runner_perf_probe_boss_cinematic_%d.cfg" % Time.get_ticks_msec())
+	_opt_out_run_intro(game)
 	root.add_child(game)
 	await process_frame
 	print("RUNNER PERF BOSS CINEMATIC: scene ready in %.0f ms" % ((Time.get_ticks_usec() - load_start) / 1000.0))

@@ -336,7 +336,7 @@ mouse-hover failures on a clean `main`; the docs validated it on 4.7.1. New runn
 
 ## 10. Change log
 
-- 2.7 (2026-10-10): §11 — the automatic turn is gone and the corridor stays straight. Phases are `run → boss → stage_clear`: the drain at the end of `run` hands straight to `boss` on the tick it ends. Removed: the three turn signals (announcement, start, finish); property `next_turn_direction`; result field `turns_taken`; checkpoint keys `turns_taken` and `next_turn_direction`; the whole RunConfig Turn group (bend length, warning lead, graybox yaw, camera yaw and bank, swing fractions); the corridor's turn hook and the camera swing. `World/TurnRig` keeps its name as a static mount. A boss-checkpoint retry opens straight on the boss.
+- 2.7 (2026-10-10): §11 — the automatic turn is gone and the corridor stays straight. Phases are `run → boss → stage_clear`: the drain at the end of `run` hands straight to `boss` on the tick it ends. Removed: the three turn signals (announcement, start, finish); property `next_turn_direction`; result field `turns_taken`; checkpoint keys `turns_taken` and `next_turn_direction`; the whole RunConfig Turn group (bend length, warning lead, graybox yaw, camera yaw and bank, swing fractions); the corridor's turn hook and the camera swing. `World/TurnRig` keeps its name as a static mount. §11.15 — the run intro: a new `intro` phase opens every run (full 6.0 s on a fresh run from the menu, short 2.2 s on `retry()` and as the boss-checkpoint retry's lead-in, where it replaces the old turn lead-in). New facade signals `run_intro(mode, seconds)`, `run_intro_beat(index, label)`, `run_intro_skipped()`, `run_intro_ended()`; read-only `run_intro_mode`, `run_intro_progress`; methods `can_skip_run_intro()`, `skip_run_intro()`; static `pending_intro_mode`; RunConfig group "Run intro"; `camera_rig.set_run_intro(progress, mode, focus)` reading the frontend's `data/run_intro_shots.gd`; optional HUD mount `ui/run_intro.tscn`. The player is held through the cinematic hold until the GO beat, and a jump / `ui_accept` skips after 0.3 s.
 - 2.6 (2026-10-09): §11.14 — boss cinematics. The intro becomes a camera cinematic: **full** (`boss_intro_seconds` 3.0 → 5.0) the first time a run meets a boss, **short** (`boss_intro_short_seconds` 2.5) on every later meeting and on a checkpoint retry; the kill plays a **defeat** cinematic (`boss_defeat_seconds` 3.6, short 2.0 on a repeat defeat) that holds the boss phase open in place of `boss_outro_seconds`, which now applies to a retreat only. New facade signals `boss_cinematic(kind, mode, seconds)`, `boss_cinematic_skipped(mode)`, `boss_cinematic_ended(mode)`; read-only `boss_cinematic_mode`, `boss_cinematic_progress`, `boss_time_factor`; method `skip_boss_cinematic()` (intros only: jump / `ui_accept` once `boss_cinematic_skip_after` 0.5 s have played, jumping to the last `boss_cinematic_skip_tail` 0.3 s; a defeat is never skippable). While a cinematic holds the player, manual controls are off and the corridor eases to `boss_cinematic_speed_scale` 0.25×. `boss_time_factor` carries the defeat's hit-stop (0.05 for `boss_hitstop_seconds` 0.12) and slow-mo (`boss_slowmo_factor` 0.4 eased back to 1 over `boss_slowmo_seconds` 0.8); `Engine.time_scale` is never touched. `camera_rig.gd` gains `set_boss_cinematic(progress, mode, boss_position, focus_position)` (the lens sits off the mount and aims at the focus; `focus_position` is optional and defaults to the mount) and the pure `boss_shot(p, mode)` (blend 0 at both ends). §11.5 — optional visual hooks `play_cinematic(mode, seconds)` (set-up cue), `set_cinematic_progress(mode, progress)` (every cinematic tick, after a skip, and 1.0 at the end; visuals pose from it) and `set_time_factor(factor)` (ambient motion only), plus `cinematic_focus() -> Vector3` (the camera's aim; default: the centre of the upper third of the rest bounds) and the shared intro timing constants `INTRO_POSE_AT` / `INTRO_HOLD_UNTIL` on `boss_visual_base.gd`. In a run, `play_cinematic(intro_*)` is the only intro cue: `boss_fx` no longer forwards `boss_intro` to `play_intro(seconds)`, which had started visual intros twice. `play_intro` stays an optional hook for standalone and dev fixtures. §11.8 — optional HUD mount `ui/boss_cinematic.tscn`. §11.13 — the checkpoint gains `bosses_met` and `bosses_defeated_kinds`. `boss_intro(kind, name, seconds)` keeps its signature; scoring is unchanged (`boss_defeated` and its bonus land on the same tick as in 2.5).
 - 2.5 (2026-09-30): §11.13 — boss checkpoint retry. Every boss entry snapshots the run into `boss_checkpoint`; a catch mid-fight keeps it and Game Over offers **Retry Boss** (`retry_boss()`), which reloads `runner_game` on the same seed at the turn into that stage's boss with the score, clocks and tallies restored and full HP. New facade properties `boss_checkpoint`, `checkpoint_retry`, static `pending_boss_checkpoint`; StageManager `begin_at_boss(checkpoint)`; result field `checkpoint_retry`.
 - 2.4 (2026-09-28): §11.4/§11.5/§11.6/§11.10/§11.12 — boss signature attacks. Beats may carry a `signature` (boss_defs.gd): Flaky Test Swarm `flaky` (the telegraph alternates two candidate lanes for `boss_flaky_candidate_seconds`, then commits at least `boss_commit_min` before fire) and `scatter` (a half-speed orb down the middle that splits into the two outer lanes at track z −`boss_scatter_split_distance`); Merge Conflict Hydra `branching` (staggered heads, each telegraphed up front on its own lane), `sweep` (the low rebase sweep sliding outer lane → outer lane in flight) and `force_push` (phase 2's fourth head: a fast `wide`, telegraphed 1.6× longer); Legacy Monolith `legacy_wall` (a slow wall of slabs with one gap that shifts once to the next lane), `quake` (full-width ground shockwave, jump only) and `debris` (slabs falling onto floor shadows in 1–2 lanes). New facade signals `boss_attack_planned(attack)` and `boss_attack_committed(lane_mask, kind, seconds)`; `boss_attack_telegraph` now carries the candidate mask for a flaky beat; six new projectile variants (`scatter`, `sweep`, `force_push`, `slab`, `quake`, `debris`), each mapped to a base look for visuals that do not opt in; projectiles expose `boss_kind`, `signature`, `motion`, `age` and the motion API `lane_mask_at(t)` / `y_range_at(t)` / `impact_lane_mask()` (boss/boss_attacks.gd); the autopilot and `runner_boss_validator.gd` plan against that API, and the validator gains **B6**. Beats without a `signature` behave exactly as in 2.3. The Hydra taunt now matches its head count (3 heads, 4 from phase 2).
@@ -360,12 +360,13 @@ straight. Backend detail lives in `docs/endless-runner-systems.md` §10.
 ### 11.1 Run phases
 
 `state` is unchanged (`ready → running → caught → finished`). A new orthogonal read-only property
-`phase: StringName ∈ {idle, run, boss, stage_clear}` is owned by `Systems/StageManager` and emitted through
+`phase: StringName ∈ {idle, intro, run, boss, stage_clear}` is owned by `Systems/StageManager` and emitted through
 `phase_changed(phase)`. `caught` aborts any phase to `idle`.
 
 | Phase | Enters | Ends | Spawner | `run_clock` |
 |---|---|---|---|---|
-| `run` | `start_run()` or after `stage_clear` | `stage_distance` reached **and** no blocking hazard ahead of `stage_clear_line_z` (drain; hard timeout `stage_drain_timeout` then remaining hazards are cleared silently, no bonus) | places chunks until `target − stage_drain_distance`, then only moves/despawns | advances |
+| `intro` | v2.7 (§11.15): `start_run()` when a run intro is due | its length (`run_intro_full_seconds` / `run_intro_short_seconds`), or the skip tail; then `run`, or `boss` on a checkpoint retry | idle | frozen |
+| `run` | `start_run()` (after the intro) or after `stage_clear` | `stage_distance` reached **and** no blocking hazard ahead of `stage_clear_line_z` (drain; hard timeout `stage_drain_timeout` then remaining hazards are cleared silently, no bonus) | places chunks until `target − stage_drain_distance`, then only moves/despawns | advances |
 | `boss` | run drained (on the same tick) | boss HP 0 (`boss_defeated`), then the defeat cinematic (§11.14); or `boss_timeout_seconds` (`boss_retreated`), then `boss_outro_seconds` | idle | frozen |
 | `stage_clear` | boss resolved | `stage_clear_seconds` | idle | frozen |
 
@@ -414,6 +415,7 @@ Systems
 HUD mounts (optional, PAUSABLE, `bind(game)`): ui/pursuit_alert.tscn, ui/boss_hud.tscn,
                                               ui/stage_banner.tscn, ui/stage_clear.tscn,
                                               ui/boss_cinematic.tscn (v2.6, §11.14),
+                                              ui/run_intro.tscn (v2.7, §11.15),
                                               ui/post_fx.tscn (CanvasLayer 9, under the panels)
 ```
 
@@ -442,6 +444,10 @@ Signals (additive; §4.1 unchanged):
 | `boss_attack_committed(lane_mask: int, kind: StringName, seconds: float)` | BossEncounter | v2.4: a flaky telegraph stopped alternating and settled on `lane_mask` (one of its candidates); `seconds` = what is left before it fires, always ≥ `boss_commit_min`. Commits arrive in telegraph order |
 | `boss_projectile_fired(projectile: Area3D, lane_mask: int, kind: StringName, speed: float)` | BossEncounter | at the end of the telegraph, once per projectile; `lane_mask` = the lanes that projectile starts in, `kind` = its variant, `speed` = its own closing speed (a signature beat may scale it) |
 | `boss_defeated(kind: StringName, bonus: int)` / `boss_retreated(kind: StringName, bonus: int)` | BossEncounter | exactly one of the two per fight; `bonus` is already added to the score. v2.6: a defeat is followed on the same tick by its `boss_cinematic`, and `stage_cleared` waits for that cinematic to end |
+| `run_intro(mode: StringName, seconds: float)` | StageManager | v2.7 (§11.15): the run intro opens; `mode` is `&"full"` or `&"short"`; `phase` is already `intro` and the mirrors are set |
+| `run_intro_beat(index: int, label: String)` | StageManager | v2.7: each beat as the intro's clock reaches it, in index order; full `title`, `3`, `2`, `1`, `GO!`, short `READY`, `GO!`; the last beat (GO) hands the player back before it is sent |
+| `run_intro_skipped()` | StageManager | v2.7: the player skipped; the intro jumps to its last `run_intro_skip_tail` seconds, the beats jumped over are never sent and the GO beat follows at once |
+| `run_intro_ended()` | StageManager | v2.7: exactly once per `run_intro`: played out, after a skip's tail, or at once on an abort (a catch, a new run) |
 | `tool_collected(kind: StringName, damage: int)` | BossEncounter | `damage` 0 when the boss's phase resists the tool |
 | `pursuit_alert(kind: StringName, seconds_to_catch: float)` | HitManager | `warn` at pursuit start, `critical` when `recovery_remaining ≤ pursuit_critical_seconds`, `clear` on recovery or catch |
 | `pursuer_distance_changed(normalized: float)` | Pursuer | 0 retreated … 1 catching; epsilon-gated |
@@ -449,7 +455,9 @@ Signals (additive; §4.1 unchanged):
 Read-only properties: `phase`, `stage_index: int`, `stage_name: StringName`, `stage_distance: float`,
 `stage_distance_target: float`, `run_clock: float`, `boss: Node3D` (null outside a fight), `boss_kind`, `boss_hp`,
 `boss_max_hp`, `boss_phase: int`; v2.6 (§11.14) `boss_cinematic_mode: StringName` (`&""` outside a cinematic),
-`boss_cinematic_progress: float` (0..1), `boss_time_factor: float` (1 outside a defeat). Methods: v2.6
+`boss_cinematic_progress: float` (0..1), `boss_time_factor: float` (1 outside a defeat); v2.7 (§11.15)
+`run_intro_mode: StringName` (`&""` outside an intro) and `run_intro_progress: float` (0..1). Methods: v2.7
+`skip_run_intro() -> bool` and `can_skip_run_intro() -> bool`; v2.6
 `skip_boss_cinematic() -> bool` and `can_skip_boss_cinematic() -> bool` (read-only: true while a skip would take, for
 a skip prompt; §11.14), `get_stage_info() -> Dictionary`
 (`index, name, phase, distance, target, speed_bonus, difficulty_floor`), `get_boss_info() -> Dictionary`
@@ -577,6 +585,7 @@ than under `HUD`, and it is the sanctioned home for 3D fight effects, so no pane
 | `ui/stage_banner.tscn` | `STAGE n / <boss name>` banner, raised on `stage_started` unless a boss is on screen. It covers the lanes, so it must be **fully off screen** within `stage_banner_clear_seconds − stage_banner_reaction_seconds` (2.5 s at the defaults) of the `stage_started` that raised it — the backend only holds the corridor clear for `stage_banner_clear_seconds` (§11.1), and the reaction time is the player's, not the banner's | `stage_started`, `boss_intro`, `boss_spawned`, `phase_changed` |
 | `ui/stage_clear.tscn` | stage-clear card (time, tools used, bonus) | `stage_cleared`, `boss_defeated`/`boss_retreated`, `get_stage_info()` |
 | `ui/boss_cinematic.tscn` | v2.6 (§11.14): the boss cinematic overlay (chyron, title card, threat line, hint row, skip prompt, defeat banner). Driven **only** off `boss_cinematic_progress` and `boss_time_factor` — no Tweens or timers of its own — so a pause or a skip can never put it out of step | `boss_cinematic`, `boss_cinematic_skipped`, `boss_cinematic_ended`, `boss_defeated`, the `boss_cinematic_*` properties, `get_boss_info()` |
+| `ui/run_intro.tscn` | v2.7 (§11.15): the run intro overlay (title card, countdown, GO burst, skip prompt). Driven **only** off `run_intro_progress` and the `run_intro_*` signals, no clock of its own; clears on `run_intro_ended`. Hoppy's victory pose under the title is the backend's (the `title` beat calls the player visual's `celebrate()`) | `run_intro`, `run_intro_beat`, `run_intro_skipped`, `run_intro_ended`, `run_intro_mode` / `run_intro_progress`, `can_skip_run_intro()`, `skip_run_intro()` |
 | `ui/post_fx.tscn` | one full-screen post-processing pass: colour grade, film grain, vignette, chromatic aberration on damage and tool hits, letterbox for every boss cinematic and the stage-clear card, speed streaks, Nitro lift. v2.6 (§11.14): the cinematic letterbox comes in with `boss_cinematic`, follows `boss_cinematic_progress`, eases out over the last `boss_cinematic_skip_tail` once skipped, and closes on `boss_cinematic_ended`; its own clock runs at `boss_time_factor` | `run_started`, `damage_taken`, `tool_collected`, `boss_cinematic` / `boss_cinematic_skipped` / `boss_cinematic_ended` with the `boss_cinematic_progress` / `boss_time_factor` properties (v2.6), `stage_cleared`, `phase_changed`, `run_finished`, `caught`, `power_up_collected`/`power_up_expired`, `pursuit_started`/`pursuit_progress`/`pursuit_recovered`, `speed_changed`, `paused_changed` |
 | `boss/boss_fx.tscn` | 3D fight effects: telegraphs, tracers, damage numbers; never touches gameplay nodes | `boss_*` signals, `tool_collected`, `get_boss_info()` |
 
@@ -620,6 +629,10 @@ Stages:    stage_base_distance 900.0, stage_distance_step 250.0, stage_distance_
                                             the player, because the stage banner is covering the lanes (§11.1)
            stage_banner_reaction_seconds 1.0 seconds of travel the nearest blocking hazard is still away the moment
                                             that window ends; must stay below stage_banner_clear_seconds
+Run intro: run_intro_enabled true (tests turn it off on a duplicated config), run_intro_full_seconds 6.0,
+           run_intro_short_seconds 2.2, run_intro_skip_after 0.3, run_intro_skip_tail 0.4,
+           run_intro_full_beats ["title", "3", "2", "1", "GO!"] at run_intro_full_beat_times [1.0, 3.0, 3.8, 4.6, 5.4],
+           run_intro_short_beats ["READY", "GO!"] at run_intro_short_beat_times [1.0, 1.6]   (v2.7, §11.15)
 Boss:      boss_z -14.0, boss_sway_amplitude 2.4, boss_sway_period 3.2, boss_intro_seconds 5.0 (v2.6, was 3.0),
            boss_outro_seconds 1.0 (v2.6: a retreat only), boss_timeout_seconds 55.0, boss_phase_thresholds [1.0, 0.66, 0.33]
            boss_hp_growth 1.35, boss_hp_scale 1.0 (test/tuning multiplier on the base HP), boss_projectile_speed_growth 1.08, boss_projectile_speed_max 34.0
@@ -698,9 +711,10 @@ A catch during the `boss` phase no longer has to throw the run away.
   `mark_met()` and `bosses_defeated_kinds` to `mark_defeated()` (v2.6, so the retried boss plays the short intro, and
   the short defeat when the run had already beaten that kind), applies that stage's speed bonus and
   difficulty floor, re-seeds `stage_rng` to `seed ^ STAGE_SEED_MIX ^ stage_index` (this path only), keeps
-  spawning off and the seam hazard-free, emits `stage_started` once, then enters the boss through the normal
-  `_enter_boss()`, which takes a fresh checkpoint, so a boss can be retried any number of times. (v2.0–2.6 replayed
-  the stage's turn as the lead-in; v2.7 removed it.) The encounter re-seeds `fight_rng` on every
+  spawning off and the seam hazard-free, plays the short run intro as the lead-in (v2.7, §11.15; v2.0–2.6 replayed
+  the stage's turn here), emits `stage_started` once when it ends, then enters the boss through the normal
+  `_enter_boss()`, which takes a fresh checkpoint, so a boss can be retried any number of times. With
+  `run_intro_enabled` off, `stage_started` and the boss follow at once. The encounter re-seeds `fight_rng` on every
   `start(index)` from the run seed, its salt and the stage index alone
   (`(seed ^ RNG_SALT) + index * RNG_STAGE_STEP`), so a stage-N fight draws the same sequence whether it is reached
   by a normal run or by a retry.
@@ -708,7 +722,7 @@ A catch during the `boss` phase no longer has to throw the run away.
   fresh `run_id` (`<unix>-<seed>-boss<stage>-<msec>`) whose score continues from the checkpoint. Its result carries
   `checkpoint_retry: true` (false on every other run).
 - **Verification.** `runner_logic.gd` section 24b (checkpoint on boss entry and kept by the catch, repeated
-  `retry_boss()` reloads straight into the boss with stage/score/`run_clock` intact and full HP, plain Retry from zero, no
+  `retry_boss()` reloads through the short run intro into the boss with stage/score/`run_clock` intact and full HP, plain Retry from zero, no
   checkpoint after a stage clear or a run-phase catch, Game Over button visibility and focus); `runner_smoke.gd`
   boss-catch phase reloads a real `runner_game.tscn` from the checkpoint into the same fight.
 
@@ -796,3 +810,49 @@ on the player and the skip. The frontend draws the cinematic from that clock.
   after with no jump, skip always refused during a defeat, pause freezing progress, the defeat
   holding `stage_clear` for its full or short length, `boss_shot` blend 0 at both ends, the `time_factor` profile, the `cinematic_focus` default and the intro timing constants,
   and an abort mid-cinematic restoring controls and speed.
+
+### 11.15 Run intro (contract 2.7)
+
+Every run now opens on a short in-engine cinematic. The backend owns the clock, the camera, the hold on the player,
+the beats and the skip; the frontend draws the title card and countdown from that clock.
+
+- **When.** `RunnerGame.pending_intro_mode` (static, like `pending_boss_checkpoint`) picks the intro the next
+  `start_run()` opens with and is consumed there (back to `&"full"`). A fresh run from the menu gets **full**
+  (`run_intro_full_seconds` 6.0); `retry()` and `retry_boss()` set **short** (`run_intro_short_seconds` 2.2), and
+  `go_to_menu()` sets full again; `&""` opens the next run with no intro (capture tools use it). `start_run()` hands the mode to `StageManager.begin(intro_mode)` /
+  `begin_at_boss(checkpoint, intro_mode)`; both default to `&""` (no intro) when called directly, and
+  `run_intro_enabled` false skips every intro.
+- **Phase.** `intro` comes before stage 1's `run` (stage 1's `stage_started` goes out when the intro ends, as the
+  run opens), or before the boss on a checkpoint retry (whose `stage_started` also waits for the intro's end).
+  The spawner places nothing in it, and `run_clock` is frozen.
+- **Beats.** `run_intro_beat(index, label)` goes out as the intro's clock reaches each time in
+  `run_intro_*_beat_times` (full `title` 1.0, `3` 3.0, `2` 3.8, `1` 4.6, `GO!` 5.4; short `READY` 1.0, `GO!` 1.6),
+  always in index order. The `title` beat is the title card's cue and plays Hoppy's `victory` clip through
+  `runner_player.gd` → `visual.celebrate()`.
+- **Hold.** From `run_intro` until the **last beat (GO)** the StageManager holds `cinematic_hold`: manual controls
+  are off (autopilot included, through `refresh_player_controls()`) and the corridor eases to
+  `boss_cinematic_speed_scale`. GO hands both back before it is sent. The camera and the mirrors keep following
+  the clock to the end.
+- **Skip.** Jump or `ui_accept` skips once `run_intro_skip_after` (0.3 s) has played and until the last
+  `run_intro_skip_tail` (0.4 s), while running and unpaused (`can_skip_run_intro()`); the press is consumed and
+  never jumps. A skip jumps the clock to the tail, gives control back at once, sends `run_intro_skipped()`, then the
+  GO beat if it had not gone out yet; the beats it jumped over are never sent. The tail still plays, so the camera
+  lands. The autopilot never skips.
+- **Camera.** Every intro tick the StageManager calls `camera_rig.set_run_intro(progress, mode, focus)` with Hoppy's
+  global position as `focus`, and `(0, &"", Vector3.ZERO)` at every exit. The pure static
+  `camera_rig.run_intro_shot(p, mode)` returns `{blend, distance, height, orbit, fov, look_bias}` from the
+  frontend's `res://scenes/runner/data/run_intro_shots.gd` `const SHOTS := {&"full": {cut, ret, keys}, &"short":
+  {...}}` (rows `[p, distance, height, orbit, fov, look_bias]`, smoothstepped like `BOSS_SHOTS`), read once through
+  `ResourceLoader.exists` + `load()` and never preloaded, with a built-in fallback per missing mode. The lens sits
+  `distance` m behind `focus` along +Z, rotated `orbit`° about it and `height` m up, aimed at `focus` + `look_bias`
+  m; the rest pose is `[8.0, 4.0, 0.0, 60.0, 2.5]`. `cut` 0 is a hard cut on frame one (the rig resets the
+  camera's physics interpolation on it); `blend` ramps out over `[ret, 1]` and is exactly 0 at p = 1. Keep `ret`
+  at or below the skip landing (0.933 full, 0.818 short) so a skip never pops the camera.
+- **HUD.** `runner_hud.gd` hides its widgets and GET READY while `phase` is `intro`, and opens GET READY with the
+  run when the intro hands over to `run`. `ui/run_intro.tscn` is an optional HUD mount (§11.8).
+- **Abort.** A catch or a new run closes a live intro with `run_intro_ended()` and releases the hold.
+- **Verification.** `tests/runner_run_intro.gd` covers: full on a fresh run and short after `retry()` and after a
+  checkpoint retry (then the boss), the beats and their order and times, controls held until GO and back on it,
+  the skip window (refused before 0.3 s and in the tail, no jump on the press), the GO beat after a skip, pause
+  freezing the clock, `run_intro_ended` exactly once on every exit path, `run_intro_shot` blend at both ends and the
+  rest pose, and `run_intro_enabled` off going straight to `run`.

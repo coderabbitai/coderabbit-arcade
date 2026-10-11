@@ -29,6 +29,8 @@ func run() -> void:
 	root.add_child(game)
 	game.player_action.connect(_on_action)
 	game.boss_spawned.connect(func(_kind, _hp): _want("boss"))
+	# The stills are gameplay: no run intro in front of them.
+	game.pending_intro_mode = &""
 	game.start_run(RUN_SEED)
 	game.set_autopilot(true)
 	_hide_hud_panels()
@@ -38,6 +40,7 @@ func run() -> void:
 	var deadline := Time.get_ticks_msec() + int(DEADLINE_SECONDS * 1000)
 	while wanted.values().has(false) and Time.get_ticks_msec() < deadline:
 		if game.state != &"running":
+			game.pending_intro_mode = &""
 			game.start_run(RUN_SEED + Time.get_ticks_msec() % 997)
 			game.set_autopilot(true)
 		# A pickup glowing a few metres ahead reads better than the frame after a grab.

@@ -1,8 +1,12 @@
 extends Node
-## The run-phase state machine: run -> (drain) -> boss -> stage_clear -> run (contract §11.1,
-## systems spec §10.1). It owns `phase`, the stage counters and `run_clock`, and it is the only
-## node that drives the boss encounter and the camera's boss shots. The corridor never turns: the
-## drain at the end of `run` empties it and the boss phase follows on the same tick.
+## The run-phase state machine: [intro ->] run -> (drain) -> boss -> stage_clear -> run (contract
+## §11.1, systems spec §10.1). It owns `phase`, the stage counters and `run_clock`, and it is the
+## only node that drives the boss encounter and the camera's boss and run-intro shots. The corridor
+## never turns: the drain at the end of `run` empties it and the boss phase follows on the same tick.
+##
+## The run intro (contract 2.7 §11.15) opens a run: the full one in front of stage 1 on a fresh run,
+## the short one on a retry, and the short one in front of the boss on a checkpoint retry. It holds
+## the player through the same cinematic hold the boss cinematics use until its last (GO) beat.
 ##
 ## `state` (ready/running/caught/finished) stays the facade's; `phase` is orthogonal to it. A catch
 ## aborts whatever phase is live back to `idle`.
@@ -21,9 +25,13 @@ const BossDefs = preload("res://scenes/runner/boss/boss_defs.gd")
 
 ## Contract §11.1 phases.
 const PHASE_IDLE: StringName = &"idle"
+const PHASE_INTRO: StringName = &"intro"
 const PHASE_RUN: StringName = &"run"
 const PHASE_BOSS: StringName = &"boss"
 const PHASE_STAGE_CLEAR: StringName = &"stage_clear"
+## Contract 2.7 §11.15 run intro modes; `run_intro_mode` is &"" outside an intro.
+const INTRO_FULL: StringName = &"full"
+const INTRO_SHORT: StringName = &"short"
 
 ## Mixed into the run seed so the boss's lane rolls are reproducible but never in step with the
 ## spawner's stream.
@@ -38,6 +46,14 @@ const DEFAULT_STAGE_CLEAR_BONUS_PER_STAGE := 150
 const DEFAULT_STAGE_BANNER_CLEAR_SECONDS := 3.5
 const DEFAULT_BOSS_CINEMATIC_SPEED_SCALE := 0.25
 const DEFAULT_BOSS_Z := -14.0
+const DEFAULT_RUN_INTRO_FULL_SECONDS := 6.0
+const DEFAULT_RUN_INTRO_SHORT_SECONDS := 2.2
+const DEFAULT_RUN_INTRO_SKIP_AFTER := 0.3
+const DEFAULT_RUN_INTRO_SKIP_TAIL := 0.4
+const DEFAULT_RUN_INTRO_FULL_BEATS: Array[String] = ["title", "3", "2", "1", "GO!"]
+const DEFAULT_RUN_INTRO_FULL_BEAT_TIMES: Array[float] = [1.0, 3.0, 3.8, 4.6, 5.4]
+const DEFAULT_RUN_INTRO_SHORT_BEATS: Array[String] = ["READY", "GO!"]
+const DEFAULT_RUN_INTRO_SHORT_BEAT_TIMES: Array[float] = [1.0, 1.6]
 ## Contract §11.5: the Boss node's hover height, the camera's fallback target with no boss node.
 const BOSS_CENTER_Y := 2.6
 
@@ -55,9 +71,12 @@ var stage_distance_target := 0.0
 ## RUN-phase seconds only: frozen through boss and stage_clear (contract §11.1).
 var run_clock := 0.0
 ## True from boss_cinematic until that cinematic is skipped, ends, is aborted or the run is caught
-## (contract 2.6 §11.14): manual controls are off and the corridor eases to
-## boss_cinematic_speed_scale for exactly as long as this holds.
+## (contract 2.6 §11.14), and from run_intro until its GO beat or skip (2.7 §11.15): manual controls
+## are off and the corridor eases to boss_cinematic_speed_scale for exactly as long as this holds.
 var cinematic_hold := false
+## Contract 2.7 §11.15, mirrored onto the facade: the intro playing (&"" outside one) and 0..1 through it.
+var run_intro_mode: StringName = &""
+var run_intro_progress := 0.0
 
 # Result counters (contract §11.4). They are tallied from the facade signals, so they survive the
 # boss encounter being freed and are correct whether or not an encounter is mounted at all.
@@ -76,6 +95,19 @@ var _phase_timer := 0.0
 var _boss_active := false
 ## True once the spawner has been told to stop placing for this stage.
 var _draining := false
+## The intro's own clock and length, in seconds; a skip jumps the clock to the tail.
+var _intro_clock := 0.0
+var _intro_seconds := 0.0
+## Index of the next run_intro_beat to send; beats always go out in order.
+var _intro_next_beat := 0
+var _intro_labels: Array[String] = []
+var _intro_times: Array[float] = []
+var _intro_skipped := false
+## True when this intro is a checkpoint retry's lead-in, so it hands over to the boss, not to `run`.
+var _intro_then_boss := false
+## The checkpoint retry's stage_started waits for its intro to end, so the stage banner never sits on
+## top of the intro's own cards.
+var _intro_stage_pending := false
 
 func setup(runner: RunnerGame) -> void:
 	game = runner
@@ -106,6 +138,9 @@ func _connect(runner: RunnerGame) -> void:
 ## Called from RunnerGame.start_run() alongside the other system resets; begin() follows once every
 ## system is back at zero.
 func reset(run_seed: int) -> void:
+	# A restart mid-intro still owes its run_intro_ended (exactly one per run_intro).
+	_end_intro()
+	_intro_stage_pending = false
 	stage_rng.seed = run_seed ^ STAGE_SEED_MIX
 	stage_index = 0
 	stage_name = &""
@@ -129,16 +164,24 @@ func reset(run_seed: int) -> void:
 	_publish()
 
 ## Enter stage 1. RunnerGame calls this after every system reset, so the first stage_started lands
-## with the run already live.
-func begin() -> void:
+## with the run already live. `intro_mode` (&"full" / &"short") opens the run on that run intro first,
+## when run_intro_enabled allows; &"" goes straight to `run`.
+func begin(intro_mode: StringName = &"") -> void:
 	stage_index = 1
+	if _intro_allowed(intro_mode):
+		# Mirrors first, so the intro's listeners already read stage 1 off the facade.
+		stage_distance_target = StageDefs.distance_target(stage_index, config)
+		stage_name = StageDefs.boss_name(stage_index)
+		_enter_intro(intro_mode, false)
+		return
 	_enter_run()
 
 ## Contract §11.13: open a run in front of the boss a checkpoint was taken at, instead of stage 1.
 ## RunnerGame calls this in place of begin() once every system is reset and the facade has restored
-## its own half of the checkpoint. _enter_boss() then runs as normal and takes a fresh checkpoint,
-## so a boss can be retried any number of times.
-func begin_at_boss(checkpoint: Dictionary) -> void:
+## its own half of the checkpoint. With an `intro_mode` the run intro is the lead-in (contract 2.7
+## §11.15); _enter_boss() then runs as normal and takes a fresh checkpoint, so a boss can be retried
+## any number of times.
+func begin_at_boss(checkpoint: Dictionary, intro_mode: StringName = &"") -> void:
 	stage_index = maxi(int(checkpoint.get("stage_index", 1)), 1)
 	# Only this path re-seeds: the lane rolls of a replayed stage depend on the stage and the run seed
 	# alone, never on how many draws the original run had made before it.
@@ -172,6 +215,11 @@ func begin_at_boss(checkpoint: Dictionary) -> void:
 	_clear_blocking_hazards()
 	_draining = true
 	_publish()
+	if _intro_allowed(intro_mode):
+		# stage_started waits for the intro's end (_finish_intro), right before the boss opens.
+		_intro_stage_pending = true
+		_enter_intro(intro_mode, true)
+		return
 	# The HUDs key the stage label and the stage-clear card off stage_started, so it goes out once
 	# here and they read this stage before the fight opens.
 	game.stage_started.emit(stage_index, stage_name, _stage_base_speed())
@@ -258,6 +306,8 @@ func _physics_process(delta: float) -> void:
 	if game.paused or game.state != &"running":
 		return
 	match phase:
+		PHASE_INTRO:
+			_tick_intro(delta)
 		PHASE_RUN:
 			_tick_run(delta)
 		PHASE_BOSS:
@@ -267,6 +317,17 @@ func _physics_process(delta: float) -> void:
 	_publish()
 
 # --- phases ---
+
+## The intro's clock runs in real time (paused with the run), sends each beat as its time is reached
+## and frames the camera on the same tick; the last tick hands over to `run`, or to the boss on a
+## checkpoint retry.
+func _tick_intro(delta: float) -> void:
+	_intro_clock = minf(_intro_clock + maxf(delta, 0.0), _intro_seconds)
+	run_intro_progress = _intro_ratio()
+	_send_due_beats()
+	_apply_intro_camera()
+	if _intro_clock >= _intro_seconds:
+		_finish_intro()
 
 ## Distance accrues at the authoritative speed; the spawner is switched off a drain's worth of
 ## metres early so the corridor is empty by the time the boss arrives.
@@ -308,6 +369,96 @@ func _tick_stage_clear(delta: float) -> void:
 	_enter_run()
 
 # --- transitions ---
+
+## Open the run intro: hazard-free, the player held and the corridor eased down until the GO beat.
+func _enter_intro(mode: StringName, then_boss: bool) -> void:
+	_phase_timer = 0.0
+	run_intro_mode = mode
+	_intro_seconds = _intro_length(mode)
+	_intro_clock = 0.0
+	_intro_next_beat = 0
+	_intro_skipped = false
+	_intro_then_boss = then_boss
+	_intro_labels = _intro_beat_labels(mode)
+	_intro_times = _intro_beat_times(mode, _intro_labels.size())
+	run_intro_progress = 0.0
+	_set_spawning(false)
+	_publish()
+	_set_phase(PHASE_INTRO)
+	_set_cinematic_hold(true, true)
+	# The first frame is framed on the tick the intro opens; the camera hard-cuts in.
+	_apply_intro_camera()
+	game.run_intro.emit(mode, _intro_seconds)
+	# A beat authored at 0 s goes out with the intro rather than a tick late.
+	_send_due_beats()
+
+## The intro has played out (or its skip tail has): close it, then open what it led into.
+func _finish_intro() -> void:
+	var then_boss := _intro_then_boss
+	_end_intro()
+	if then_boss:
+		if _intro_stage_pending:
+			_intro_stage_pending = false
+			game.stage_started.emit(stage_index, stage_name, _stage_base_speed())
+		_enter_boss()
+		return
+	_enter_run()
+
+## Close a live intro on every exit path (played out, skipped tail done, a catch, a new run): the hold
+## and the camera go back and run_intro_ended goes out exactly once. A no-op when none is live.
+func _end_intro() -> void:
+	if run_intro_mode == &"":
+		return
+	run_intro_mode = &""
+	run_intro_progress = 0.0
+	_intro_clock = 0.0
+	_intro_seconds = 0.0
+	_intro_next_beat = 0
+	_intro_skipped = false
+	_intro_then_boss = false
+	_set_cinematic_hold(false)
+	_apply_intro_camera_reset()
+	_publish()
+	if game != null:
+		game.run_intro_ended.emit()
+
+## Every beat whose time has been reached, in order. The last one is GO, which hands the player back
+## before it is announced, so a listener on it already reads live controls.
+func _send_due_beats() -> void:
+	while run_intro_mode != &"" and _intro_next_beat < _intro_labels.size() \
+			and _intro_clock >= minf(_intro_times[_intro_next_beat], _intro_seconds):
+		_send_beat(_intro_next_beat)
+
+func _send_beat(index: int) -> void:
+	_intro_next_beat = index + 1
+	if _intro_next_beat >= _intro_labels.size():
+		_set_cinematic_hold(false)
+		_publish()
+	game.run_intro_beat.emit(index, _intro_labels[index])
+
+## Contract 2.7 §11.15: true once the intro has played run_intro_skip_after seconds, until it is
+## skipped or reaches its last run_intro_skip_tail seconds. The facade adds the running/paused gate.
+func can_skip_run_intro() -> bool:
+	if phase != PHASE_INTRO or run_intro_mode == &"" or _intro_skipped:
+		return false
+	return _intro_clock >= _intro_skip_after() and _intro_clock < _intro_seconds - _intro_skip_tail()
+
+## Jump to the tail: the player gets control back at once, the beats jumped over are never sent, and
+## the GO beat still is, right after run_intro_skipped, so a GO cue plays on every intro.
+func skip_run_intro() -> bool:
+	if not can_skip_run_intro():
+		return false
+	_intro_skipped = true
+	_intro_clock = maxf(_intro_clock, _intro_seconds - _intro_skip_tail())
+	run_intro_progress = _intro_ratio()
+	_set_cinematic_hold(false)
+	_publish()
+	_apply_intro_camera()
+	game.run_intro_skipped.emit()
+	var last := _intro_labels.size() - 1
+	if _intro_next_beat <= last:
+		_send_beat(last)
+	return true
 
 func _enter_run() -> void:
 	_phase_timer = 0.0
@@ -378,6 +529,8 @@ func _enter_stage_clear() -> void:
 func _on_caught() -> void:
 	if phase == PHASE_IDLE:
 		return
+	_end_intro()
+	_intro_stage_pending = false
 	_phase_timer = 0.0
 	_draining = false
 	_abort_boss()
@@ -490,8 +643,9 @@ func _reset_boss() -> void:
 
 ## Contract 2.6 §11.14: while a cinematic holds the player, manual controls are off (the facade owns
 ## that rule, autopilot included) and the corridor eases to boss_cinematic_speed_scale; letting go
-## gives both back. Idempotent, so every exit path can call it.
-func _set_cinematic_hold(on: bool) -> void:
+## gives both back. Idempotent, so every exit path can call it. `snap` sets the speed at once instead
+## of easing it, for an intro that opens a run, which has no running speed to ease down from.
+func _set_cinematic_hold(on: bool, snap := false) -> void:
 	if cinematic_hold == on:
 		return
 	cinematic_hold = on
@@ -501,7 +655,11 @@ func _set_cinematic_hold(on: bool) -> void:
 		game.refresh_player_controls()
 	var controller: Node = game.speed_controller
 	if controller != null and is_instance_valid(controller) and controller.has_method("set_cinematic_scale"):
-		controller.set_cinematic_scale(_cinematic_speed_scale() if on else 1.0)
+		var target := _cinematic_speed_scale() if on else 1.0
+		if snap:
+			controller.set_cinematic_scale(target, 0.0)
+		else:
+			controller.set_cinematic_scale(target)
 
 ## The camera follows the encounter's cinematic clock on every boss tick; outside a cinematic it is
 ## handed (0, &""), which the shot curve never blends.
@@ -522,6 +680,29 @@ func _apply_boss_camera_reset() -> void:
 	var camera: Node = game.camera_rig
 	if camera != null and is_instance_valid(camera) and camera.has_method("set_boss_cinematic"):
 		camera.set_boss_cinematic(0.0, &"", Vector3.ZERO)
+
+## The run intro's shot follows its clock, aimed off Hoppy's feet (contract 2.7 §11.15).
+func _apply_intro_camera() -> void:
+	if game == null or run_intro_mode == &"":
+		return
+	var camera: Node = game.camera_rig
+	if camera == null or not is_instance_valid(camera) or not camera.has_method("set_run_intro"):
+		return
+	camera.set_run_intro(run_intro_progress, run_intro_mode, _intro_focus())
+
+func _apply_intro_camera_reset() -> void:
+	if game == null:
+		return
+	var camera: Node = game.camera_rig
+	if camera != null and is_instance_valid(camera) and camera.has_method("set_run_intro"):
+		camera.set_run_intro(0.0, &"", Vector3.ZERO)
+
+## Hoppy's feet, or the lane origin with no player.
+func _intro_focus() -> Vector3:
+	var player: Node3D = game.player as Node3D if game != null else null
+	if player != null and is_instance_valid(player) and player.is_inside_tree():
+		return player.global_position
+	return Vector3.ZERO
 
 ## The cinematic the encounter is playing, &"" with no encounter or none playing.
 func _cinematic_mode(arena: Node) -> StringName:
@@ -598,6 +779,8 @@ func _publish() -> void:
 	game.stage_distance = stage_distance
 	game.stage_distance_target = stage_distance_target
 	game.run_clock = run_clock
+	game.run_intro_mode = run_intro_mode
+	game.run_intro_progress = run_intro_progress
 	# Contract 2.6 §11.14 read-only mirrors, straight off the encounter's clock.
 	var arena := _boss_encounter()
 	var mode := _cinematic_mode(arena)
@@ -634,6 +817,57 @@ func _stage_clear_seconds() -> float:
 
 func _banner_clear_seconds() -> float:
 	return maxf(_float_config(&"stage_banner_clear_seconds", DEFAULT_STAGE_BANNER_CLEAR_SECONDS), 0.0)
+
+## A mode plays only when the config allows intros and it is one of the two known modes.
+func _intro_allowed(mode: StringName) -> bool:
+	if mode != INTRO_FULL and mode != INTRO_SHORT:
+		return false
+	if config != null and &"run_intro_enabled" in config and not bool(config.get(&"run_intro_enabled")):
+		return false
+	return _intro_length(mode) > 0.0
+
+func _intro_length(mode: StringName) -> float:
+	if mode == INTRO_FULL:
+		return maxf(_float_config(&"run_intro_full_seconds", DEFAULT_RUN_INTRO_FULL_SECONDS), 0.0)
+	return maxf(_float_config(&"run_intro_short_seconds", DEFAULT_RUN_INTRO_SHORT_SECONDS), 0.0)
+
+func _intro_ratio() -> float:
+	return clampf(_intro_clock / _intro_seconds, 0.0, 1.0) if _intro_seconds > 0.0 else 1.0
+
+func _intro_skip_after() -> float:
+	return maxf(_float_config(&"run_intro_skip_after", DEFAULT_RUN_INTRO_SKIP_AFTER), 0.0)
+
+func _intro_skip_tail() -> float:
+	return clampf(_float_config(&"run_intro_skip_tail", DEFAULT_RUN_INTRO_SKIP_TAIL), 0.0, _intro_seconds)
+
+func _intro_beat_labels(mode: StringName) -> Array[String]:
+	var labels: Array[String] = []
+	var key := &"run_intro_full_beats" if mode == INTRO_FULL else &"run_intro_short_beats"
+	var value: Variant = config.get(key) if config != null and key in config else null
+	if value is PackedStringArray or value is Array:
+		for label: Variant in value:
+			labels.append(String(label))
+	else:
+		labels.assign(DEFAULT_RUN_INTRO_FULL_BEATS if mode == INTRO_FULL else DEFAULT_RUN_INTRO_SHORT_BEATS)
+	return labels
+
+## One time per label, never decreasing, so the beats always go out in index order; missing times fall
+## at the end of the intro.
+func _intro_beat_times(mode: StringName, count: int) -> Array[float]:
+	var key := &"run_intro_full_beat_times" if mode == INTRO_FULL else &"run_intro_short_beat_times"
+	var value: Variant = config.get(key) if config != null and key in config else null
+	var source: Array = []
+	if value is PackedFloat32Array or value is PackedFloat64Array or value is Array:
+		source.assign(Array(value))
+	else:
+		source.assign(DEFAULT_RUN_INTRO_FULL_BEAT_TIMES if mode == INTRO_FULL else DEFAULT_RUN_INTRO_SHORT_BEAT_TIMES)
+	var times: Array[float] = []
+	var floor_ := 0.0
+	for index in count:
+		var at := float(source[index]) if index < source.size() else _intro_length(mode)
+		floor_ = maxf(floor_, maxf(at, 0.0))
+		times.append(floor_)
+	return times
 
 func _cinematic_speed_scale() -> float:
 	return clampf(_float_config(&"boss_cinematic_speed_scale", DEFAULT_BOSS_CINEMATIC_SPEED_SCALE), 0.0, 1.0)

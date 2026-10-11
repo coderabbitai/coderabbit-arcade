@@ -8,6 +8,10 @@ class CinematicMock extends Mock:
 	signal boss_cinematic(kind: StringName, mode: StringName, seconds: float)
 	signal boss_cinematic_skipped(mode: StringName)
 	signal boss_cinematic_ended(mode: StringName)
+	signal run_intro(mode: StringName, seconds: float)
+	signal run_intro_beat(index: int, label: String)
+	signal run_intro_skipped
+	signal run_intro_ended
 	var boss_cinematic_progress := 0.0
 	var boss_time_factor := 1.0
 var checks := 0
@@ -73,7 +77,7 @@ func window_metrics(stream: AudioStreamWAV, start: float, end: float) -> Vector2
 	return Vector2(sqrt(energy / maxi(1, last - first)), peak)
 
 func run() -> void:
-	check(Synth.RECIPES.size() == 35, "35 recipes remain once the phase cues are gone")
+	check(Synth.RECIPES.size() == 39, "39 recipes remain once the run-intro cues are in")
 	for kind: StringName in Synth.RECIPES:
 		audio_check(Synth.sound(kind), Synth.RECIPES[kind][0], kind)
 		check(Synth.sound(kind) == Synth.sound(kind), "cached " + kind)
@@ -213,6 +217,20 @@ func run() -> void:
 			mock.boss_cinematic_skipped.emit(mode)
 		mock.boss_cinematic_ended.emit(mode)
 		audio._process(0.15)
+	# Contract 2.7 §11.15: intro_whoosh, intro_title, intro_count and intro_go through the handlers.
+	audio.one_shots.stop()
+	audio.one_shots.play()
+	audio._playback = audio.one_shots.get_stream_playback()
+	audio._voices.clear()
+	audio._voice_kinds.clear()
+	mock.run_intro.emit(&"full", 6.0)
+	mock.run_intro_beat.emit(0, "title")
+	mock.run_intro_beat.emit(1, "3")
+	mock.run_intro_beat.emit(2, "READY")
+	mock.run_intro_beat.emit(4, "GO!")
+	mock.run_intro_skipped.emit()
+	mock.run_intro_ended.emit()
+	audio._process(0.15)
 	for kind: StringName in Synth.RECIPES: check(heard.has(kind), "trigger exercised: " + kind)
 	audio._stop_all()
 	audio.one_shots.play()
@@ -231,7 +249,7 @@ func run() -> void:
 	await create_timer(0.3).timeout
 	check(AudioServer.bus_count == before, "bus teardown")
 	check(AudioServer.get_bus_send(AudioServer.get_bus_index(&"SFX")) == old_send, "send restored")
-	print("A8 AUDIO: 35 recipes; peak=%.6f; checked PCM bytes=%d; draw census=%d; triangles=%d; textures=0" % [maximum, pcm_bytes, budget.x, budget.y])
+	print("A8 AUDIO: 39 recipes; peak=%.6f; checked PCM bytes=%d; draw census=%d; triangles=%d; textures=0" % [maximum, pcm_bytes, budget.x, budget.y])
 	print("ASSET A8: %s (%d checks)" % ["PASS" if failures == 0 else "FAIL", checks])
 	for player in root.get_node("AudioService").get_children():
 		if player is AudioStreamPlayer: player.stop()

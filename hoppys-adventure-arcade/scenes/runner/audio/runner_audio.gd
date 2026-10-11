@@ -30,12 +30,15 @@ var _resolved_played := false
 var _title_played := false
 var _clear_remaining := 0.0
 var _boss_active := false
+## The run intro holds the music ducked until its GO beat (contract 2.7 §11.15).
+var _run_intro_held := false
 var _boss_duck := 0.0
 var _boss_pitch_offset := 0.0
 var _whoosh_mask := 2
 const HIGH_PRIORITY := {
 	&"boss_intro_short": true, &"boss_explosion": true, &"boss_resolved": true, &"boss_skip": true, &"boss_title": true,
 	&"boss_intro": true, &"stage_clear": true, &"boss_defeat": true, &"boss_phase": true, &"tool_fire": true,
+	&"intro_title": true, &"intro_count": true, &"intro_go": true,
 	&"alert_sting": true, &"hit": true, &"caught": true, &"game_over": true, &"shield_block": true,
 	&"pursuit_start": true, &"retreat": true, &"recovered_chime": true, &"powerup": true,
 }
@@ -91,6 +94,8 @@ func bind(game: Node) -> void:
 	_pitch = 1.0
 	_connections = {
 		&"boss_cinematic": _on_cinematic, &"boss_cinematic_skipped": _on_cinematic_skipped, &"boss_cinematic_ended": _on_cinematic_ended,
+		&"run_intro": _on_run_intro, &"run_intro_beat": _on_run_intro_beat,
+		&"run_intro_skipped": _on_run_intro_skipped, &"run_intro_ended": _on_run_intro_ended,
 		&"stage_cleared": _on_stage_clear, &"phase_changed": _on_phase,
 		&"boss_spawned": _on_boss_spawned, &"boss_phase_changed": _on_boss_phase,
 		&"boss_defeated": _on_boss_defeated, &"boss_retreated": _on_boss_retreated,
@@ -396,7 +401,7 @@ func _duck(db: float, seconds: float) -> void:
 		_audio_service.duck_music(db, seconds)
 
 func _set_boss_mix(active: bool) -> void:
-	var target := -18.0 if _cinematic_mode != &"" else -12.0 if _intro_remaining > 0.0 else -10.0 if _clear_remaining > 0.0 else (-4.0 if active else 0.0)
+	var target := -18.0 if _cinematic_mode != &"" else -12.0 if _intro_remaining > 0.0 or _run_intro_held else -10.0 if _clear_remaining > 0.0 else (-4.0 if active else 0.0)
 	_boss_pitch_offset = 0.04 if active else 0.0
 	if is_equal_approx(_boss_duck, target): return
 	# Hold the service's baseline so transient ducks return to the fight level.
@@ -419,6 +424,7 @@ func _end_boss_audio() -> void:
 	for kind in [&"boss_defeat", &"boss_explosion", &"boss_resolved"]: _stop_cue(kind)
 	_intro_remaining = 0.0
 	_boss_active = false
+	_run_intro_held = false
 	_clear_remaining = 0.0
 	_scheduled.clear()
 	_set_boss_mix(false)
@@ -461,6 +467,34 @@ func _on_phase(value: StringName) -> void:
 	if value in [&"idle", &"run"]:
 		_clear_remaining = 0.0
 		_set_boss_mix(false)
+
+## Contract 2.7 §11.15: the music ducks under the intro; the full one opens on the fly-through whoosh.
+func _on_run_intro(mode: StringName, _seconds: float) -> void:
+	_run_intro_held = true
+	_set_boss_mix(_boss_active)
+	if mode == &"full": _play(&"intro_whoosh")
+
+## The title stings, each count ticks, and GO lifts the duck with its chord.
+func _on_run_intro_beat(_index: int, label: String) -> void:
+	if label == "title":
+		_play(&"intro_title")
+	elif label.begins_with("GO"):
+		_run_intro_held = false
+		_set_boss_mix(_boss_active)
+		_play(&"intro_go")
+	else:
+		_play(&"intro_count")
+
+## A skip cuts the long cues; the GO beat that follows it still plays its chord.
+func _on_run_intro_skipped() -> void:
+	_stop_cue(&"intro_whoosh")
+	_stop_cue(&"intro_title")
+
+func _on_run_intro_ended() -> void:
+	_stop_cue(&"intro_whoosh")
+	_stop_cue(&"intro_title")
+	_run_intro_held = false
+	_set_boss_mix(_boss_active)
 
 func _on_cinematic(_kind: StringName, mode: StringName, seconds: float) -> void:
 	_cinematic_mode = mode

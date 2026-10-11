@@ -120,7 +120,7 @@ func run() -> void:
 	var expected := {"environment": 9, "materials": 11, "hazards": 4,
 		"hazard_meshes": 16, "pickups": 4, "pickup_templates": 3,
 		"boss": 4, "boss_meshes": 42, "boss_fx": 2, "pursuer": 3,
-		"ui": 1, "audio": 35, "footsteps": 6, "whooshes": 8}
+		"ui": 1, "audio": 39, "footsteps": 6, "whooshes": 8}
 	for package in expected:
 		check(census.has(package), package + " present in census")
 		var count := identities(census.get(package, {})).size()

@@ -30,6 +30,10 @@ class CinematicAudioGame extends "res://scenes/runner/ui/dev/mock_runner_game.gd
 	signal boss_cinematic(kind: StringName, mode: StringName, seconds: float)
 	signal boss_cinematic_skipped(mode: StringName)
 	signal boss_cinematic_ended(mode: StringName)
+	signal run_intro(mode: StringName, seconds: float)
+	signal run_intro_beat(index: int, label: String)
+	signal run_intro_skipped
+	signal run_intro_ended
 	var boss_cinematic_mode: StringName = &""
 	var boss_cinematic_progress := 0.0
 	var boss_time_factor := 1.0
@@ -45,6 +49,16 @@ func check(condition: bool, message: String) -> void:
 	if not condition:
 		failures += 1
 		print("VISUAL CHECK FAILED: ", message)
+
+## A real RunnerGame loads run_config.tres when config is null. Duplicate first, then turn the run
+## intro off, so a check that is not about the intro still opens on `run` and the .tres stays put.
+func _without_run_intro(game: Node) -> void:
+	var source: Resource = game.config as Resource
+	if source == null:
+		source = load("res://scenes/runner/data/run_config.tres")
+	var config := source.duplicate()
+	config.set(&"run_intro_enabled", false)
+	game.config = config
 
 func frames() -> void:
 	await process_frame
@@ -905,6 +919,7 @@ func check_runner_ui() -> void:
 	var game := scene.instantiate()
 	game.autostart = false
 	game.leaderboard_path = "user://test_runner_visual_smoke_%d.cfg" % OS.get_process_id()
+	_without_run_intro(game)
 	root.add_child(game)
 	game.start_run(4704)
 	game.set_autopilot(true)
@@ -964,7 +979,7 @@ func check_runner_audio() -> void:
 	var service := root.get_node("AudioService")
 	check(service.music.stream.resource_path == audio.MUSIC_PATH and service.music.stream.loop, "runner BGM loaded and looping")
 	check(service.music.volume_db == -12.0, "runner BGM level")
-	check(Synth.RECIPES.size() == 35, "35 recipes remain once the phase cues are gone")
+	check(Synth.RECIPES.size() == 39, "39 recipes remain once the run-intro cues are in")
 	check(audio.HIGH_PRIORITY.has(&"alert_sting"), "alert sting is high priority")
 	for kind: StringName in Synth.RECIPES:
 		check(not String(kind).contains("turn"), "recipe names stay clear of the removed phase: " + kind)
@@ -1017,6 +1032,20 @@ func check_runner_audio() -> void:
 			await process_frame
 		if mode == &"intro_short": mock.boss_cinematic_skipped.emit(mode)
 		mock.boss_cinematic_ended.emit(mode)
+	# Contract 2.7 §11.15: the four new recipes go through the real handlers, not _play.
+	audio.one_shots.stop()
+	audio.one_shots.play()
+	audio._playback = audio.one_shots.get_stream_playback()
+	audio._voices.clear()
+	audio._voice_kinds.clear()
+	mock.run_intro.emit(&"full", 6.0)
+	mock.run_intro_beat.emit(0, "title")
+	mock.run_intro_beat.emit(1, "3")
+	mock.run_intro_beat.emit(2, "READY")
+	mock.run_intro_beat.emit(4, "GO!")
+	mock.run_intro_skipped.emit()
+	mock.run_intro_ended.emit()
+	audio._process(0.15)
 	for kind: StringName in Synth.RECIPES:
 		check(int(counts.get(kind, 0)) > 0, "demo played trigger: " + kind)
 	check(counts.get(&"heartbeat", 0) == 1, "demo heartbeat starts exactly once across low progress ticks")
@@ -1195,7 +1224,7 @@ func check_runner_audio() -> void:
 	mock.paused_changed.emit(false)
 	audio._process(2.0)
 	check(is_equal_approx(service.music_volume_db, -12.0), "stage card releases hold")
-	print("RUNNER AUDIO: 35 recipes/triggers; demo heartbeat starts=1; peak voices=", peak[0], "; AudioService players=", service.get_child_count())
+	print("RUNNER AUDIO: 39 recipes/triggers; demo heartbeat starts=1; peak voices=", peak[0], "; AudioService players=", service.get_child_count())
 	mock.free()
 	await frames()
 	check(is_equal_approx(service.music.pitch_scale, 1.0), "audio teardown resets pitch")
@@ -1209,6 +1238,7 @@ func _isolate_routed_game(node: Node) -> void:
 		return
 	node.autostart = false
 	node.leaderboard_path = loop_board_path
+	_without_run_intro(node)
 	loop_instances += 1
 	node.ready.connect(func() -> void:
 		node.start_run(4706 + loop_instances)
@@ -2048,6 +2078,7 @@ func check_stage_seam() -> void:
 	game.config = game.config.duplicate()
 	game.leaderboard_path = "user://test_runner_stage_seam_%d.cfg" % OS.get_process_id()
 	game.config.stage_base_distance = 260.0
+	game.config.run_intro_enabled = false
 	game.config.time_to_max_speed = 20.0
 	game.config.boss_hp_scale = 0.4
 	root.add_child(game)
@@ -2191,6 +2222,7 @@ func check_boss_intro() -> void:
 	game.autostart = false
 	var board_path := "user://test_runner_boss_intro_%d.cfg" % OS.get_process_id()
 	game.leaderboard_path = board_path
+	_without_run_intro(game)
 	root.add_child(game)
 	# Keep teardown in the caller so a failed check or early return cannot bypass it.
 	_check_boss_intro_game(game)

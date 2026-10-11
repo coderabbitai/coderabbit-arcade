@@ -135,6 +135,8 @@ func _smoke_config() -> RunConfig:
 	config.stage_base_distance = STAGE_DISTANCE
 	# Stage 1 is cycle 0, so the scale alone decides the fight: 100 hp x 0.4 = SMOKE_BOSS_HP.
 	config.boss_hp_scale = BOSS_HP_SCALE
+	# The intro is its own suite. A smoke run has to open in `run` on the first tick.
+	config.run_intro_enabled = false
 	return config
 
 ## Systems spec §10.8: one whole stage seam under the shortened config. Stage 1 runs its 260 m,

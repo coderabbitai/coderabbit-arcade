@@ -506,7 +506,8 @@ must freeze with the pause menu. Giving the effects a home inside the arena is w
 `World`. The `HUD` list also carries one more optional panel after `ui/stage_clear.tscn` — `ui/post_fx.tscn`, the
 frontend's single full-screen post-processing pass (CanvasLayer 9, PAUSABLE, idempotent `has_signal`-guarded
 `bind`, contract §11.8) — tolerated when absent exactly like the others, and asserted at most once by
-`runner_scaffold_check.gd` when the file is on disk.
+`runner_scaffold_check.gd` when the file is on disk. Contract 2.7 adds `ui/run_intro.tscn` after
+`ui/boss_cinematic.tscn` on the same terms.
 
 ### 10.1 `systems/stage_manager.gd` — phase state machine
 
@@ -540,6 +541,20 @@ from StageManager/BossEncounter counters in `_finish_run`.
 
 `data/stage_defs.gd`: static `boss_slot(i)`, `cycle(i)`, `boss_kind(i)`, `boss_name(i)`, `speed_bonus(i, config)`,
 `difficulty_floor(i, config)`, `distance_target(i, config)`.
+
+**Run intro (contract 2.7 §11.15).** `begin(intro_mode := &"")` and `begin_at_boss(checkpoint, intro_mode := &"")`
+open `intro` first when the mode is `&"full"` / `&"short"` and `run_intro_enabled` is on. `_enter_intro(mode,
+then_boss)`: spawning off, phase `intro`, `_set_cinematic_hold(true)`, the camera framed, then `run_intro(mode,
+seconds)` and any beat due at 0 s. `_tick_intro(delta)`: the clock advances (clamped to the length; a pause stops it
+with the rest of the machine), `run_intro_progress` is mirrored, every beat whose time is reached goes out in
+order, the camera follows (`camera_rig.set_run_intro(progress, mode, player.global_position)`), and at the end
+`_finish_intro()` closes the intro and enters `run`, or emits the checkpoint's held-back `stage_started` and enters
+`boss`. The last beat (GO) releases the hold before it is sent. `skip_run_intro()` (guarded by
+`can_skip_run_intro()`: past `run_intro_skip_after`, before the last `run_intro_skip_tail`, not yet skipped) jumps
+the clock to the tail, releases the hold, emits `run_intro_skipped`, then the GO beat if it has not gone out.
+`_end_intro()` is the single exit (natural end, `reset()`, catch): hold off, camera reset `(0, &"")`, mirrors
+cleared, `run_intro_ended` exactly once. Beat times are made non-decreasing per label, so the order holds whatever
+the config says.
 
 ### 10.2 `systems/speed_controller.gd` v2
 

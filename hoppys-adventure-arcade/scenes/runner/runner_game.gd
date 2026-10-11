@@ -39,6 +39,9 @@ const FRONTEND_MOUNTS := {
 		## Contract 2.6 §11.14: the boss cinematic title card / chyron / skip prompt, driven only off
 		## boss_cinematic_progress and boss_time_factor.
 		"res://scenes/runner/ui/boss_cinematic.tscn",
+		## Contract 2.7 §11.15: the run intro's title card, countdown and skip prompt, driven only off
+		## run_intro_progress and the run_intro_* signals.
+		"res://scenes/runner/ui/run_intro.tscn",
 		## Full-screen post-processing pass (colour grade, grain, vignette, letterbox, speed
 		## streaks) on its own layer below the panels; optional like the rest (contract §11.8).
 		"res://scenes/runner/ui/post_fx.tscn"
@@ -110,6 +113,16 @@ signal boss_cinematic(kind: StringName, mode: StringName, seconds: float)
 signal boss_cinematic_skipped(mode: StringName)
 ## It is over (played out, skipped tail done, or aborted by a catch / a new run).
 signal boss_cinematic_ended(mode: StringName)
+## Contract 2.7 §11.15: the run intro of `seconds` opens (`mode` &"full" or &"short"), with phase
+## already &"intro" and the run_intro_* mirrors set.
+signal run_intro(mode: StringName, seconds: float)
+## Each beat as the intro's clock reaches it, in index order: full "title", "3", "2", "1", "GO!";
+## short "READY", "GO!". Controls come back on the last one (GO). Beats a skip jumps over are never sent.
+signal run_intro_beat(index: int, label: String)
+## The player skipped: the intro jumps to its last run_intro_skip_tail seconds and the GO beat follows.
+signal run_intro_skipped
+## Exactly once per run_intro: played out, skipped tail done, or aborted (a catch, a new run).
+signal run_intro_ended
 signal tool_collected(kind: StringName, damage: int)
 signal pursuit_alert(kind: StringName, seconds_to_catch: float)
 signal pursuer_distance_changed(normalized: float)
@@ -169,6 +182,10 @@ var boss_phase := 0
 var boss_cinematic_mode: StringName = &""
 var boss_cinematic_progress := 0.0
 var boss_time_factor := 1.0
+## Contract 2.7 §11.15, mirrored by the StageManager: the run intro playing (&"" when none) and 0..1
+## through it, frozen by a pause and jumped by a skip.
+var run_intro_mode: StringName = &""
+var run_intro_progress := 0.0
 
 ## Boss checkpoint (contract §11.13). The StageManager snapshots the run here on every boss entry
 ## and empties it when the stage clears, so it is non-empty only while a fight is live, or after a
@@ -179,6 +196,11 @@ var checkpoint_retry := false
 ## The checkpoint retry_boss() hands to the next runner_game instance. Static because the retry is
 ## a fresh scene through AppRouter, like retry(); start_run() consumes it and empties it at once.
 static var pending_boss_checkpoint := {}
+## Contract 2.7 §11.15: the run intro the next start_run() opens with. A fresh run from the menu gets
+## the full one; retry() and retry_boss() ask for the short one; &"" opens the next run with no intro
+## (capture tools). Static for the same reason as pending_boss_checkpoint, and consumed (back to full)
+## by start_run().
+static var pending_intro_mode: StringName = &"full"
 
 @onready var systems: Node = $Systems
 @onready var speed_controller: Node = $Systems/SpeedController
@@ -247,6 +269,8 @@ func start_run(run_seed := 0) -> void:
 	# Consumed before anything else, so a checkpoint can never leak into a later run.
 	var checkpoint: Dictionary = pending_boss_checkpoint
 	pending_boss_checkpoint = {}
+	var intro_mode: StringName = pending_intro_mode
+	pending_intro_mode = &"full"
 	checkpoint_retry = not checkpoint.is_empty()
 	boss_checkpoint = {}
 	if checkpoint_retry:
@@ -276,6 +300,8 @@ func start_run(run_seed := 0) -> void:
 	run_clock = 0.0
 	stage_distance = 0.0
 	stage_distance_target = 0.0
+	run_intro_mode = &""
+	run_intro_progress = 0.0
 	_clear_boss_state()
 	for node in [speed_controller, hit_manager, score_manager, effect_manager, autopilot,
 			player, pursuer, camera_rig, turn_rig]:
@@ -296,11 +322,11 @@ func start_run(run_seed := 0) -> void:
 	speed_changed.emit(speed, normalized_speed)
 	# Stage 1 opens only once every system is back at zero and the run is live, so the first
 	# stage_started lands after run_started and the spawner fills against a running phase. A boss
-	# checkpoint opens in front of that stage's boss instead.
+	# checkpoint opens in front of that stage's boss instead. Either way the run intro comes first.
 	if checkpoint_retry and stage_manager != null and stage_manager.has_method("begin_at_boss"):
-		stage_manager.begin_at_boss(checkpoint)
+		stage_manager.begin_at_boss(checkpoint, intro_mode)
 	elif stage_manager != null and stage_manager.has_method("begin"):
-		stage_manager.begin()
+		stage_manager.begin(intro_mode)
 
 ## Put the facade, the ScoreManager and the systems' Game Over tallies back where the checkpoint
 ## left them. HP, running power-up effects and the pursuit are not restored: a checkpoint retry
@@ -374,6 +400,8 @@ func retry() -> void:
 	resume()
 	# A full restart always starts from zero, even after a Retry Boss that never got to route.
 	pending_boss_checkpoint = {}
+	# The player has just seen the full intro; a retry opens on the short lead-in.
+	pending_intro_mode = &"short"
 	_take_route("runner_game")
 
 ## Contract §11.13: a fresh session that opens in front of the boss the checkpoint was taken at,
@@ -386,6 +414,7 @@ func retry_boss() -> void:
 		return
 	resume()
 	pending_boss_checkpoint = boss_checkpoint.duplicate(true)
+	pending_intro_mode = &"short"
 	_take_route("runner_game")
 
 func go_to_menu() -> void:
@@ -393,6 +422,7 @@ func go_to_menu() -> void:
 		return
 	resume()
 	pending_boss_checkpoint = {}
+	pending_intro_mode = &"full"
 	_take_route("runner")
 
 ## The first route asked for wins. AppRouter ignores a go() while its veil is fading, but Game Over
@@ -559,6 +589,22 @@ func _can_skip_boss_cinematic() -> bool:
 		return false
 	return bool(boss_encounter.can_skip_cinematic())
 
+## Contract 2.7 §11.15: skip the run intro playing now. It only takes while running and unpaused, once
+## the intro has played run_intro_skip_after seconds and before its tail; returns true when it did.
+## Jump and ui_accept reach it through _unhandled_input; the autopilot never calls it.
+func skip_run_intro() -> bool:
+	if not can_skip_run_intro():
+		return false
+	return bool(stage_manager.skip_run_intro())
+
+## Contract 2.7 §11.15: true while skip_run_intro() would take. Read-only, for a skip prompt.
+func can_skip_run_intro() -> bool:
+	if state != &"running" or paused:
+		return false
+	if stage_manager == null or not is_instance_valid(stage_manager) or not stage_manager.has_method("can_skip_run_intro"):
+		return false
+	return bool(stage_manager.can_skip_run_intro())
+
 ## Tests and the F7 debug key drive the bot through here. The bot owns the player while it is on,
 ## so manual input is disabled for as long as it runs and comes back when it is switched off —
 ## unless a boss cinematic is holding the player (contract §11.14), which hands it back itself.
@@ -567,9 +613,9 @@ func set_autopilot(enabled: bool) -> void:
 		autopilot.set_enabled(enabled)
 	_apply_player_controls(not enabled)
 
-## Manual controls are live while the run is, the bot is off and no boss cinematic holds the player
-## (contract 2.6 §11.14). The StageManager calls this whenever a cinematic takes or gives back
-## control, so the one rule decides every hand-back.
+## Manual controls are live while the run is, the bot is off and no cinematic holds the player (a boss
+## cinematic, contract 2.6 §11.14, or the run intro up to its GO beat, 2.7 §11.15). The StageManager
+## calls this whenever a cinematic takes or gives back control, so the one rule decides every hand-back.
 func refresh_player_controls() -> void:
 	var bot_on := autopilot != null and is_instance_valid(autopilot) and &"enabled" in autopilot \
 		and bool(autopilot.get(&"enabled"))
@@ -903,10 +949,15 @@ func _instantiate_frontend(path: String) -> Node:
 	return instance
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Contract 2.6 §11.14: jump or confirm skips a boss intro once it may be skipped. The press is
-	# consumed here, and the controls the skip hands back re-sync held input, so it never also lands
-	# as a jump.
-	if (event.is_action_pressed("jump") or event.is_action_pressed("ui_accept")) and _can_skip_boss_cinematic():
+	# Contract 2.6 §11.14 / 2.7 §11.15: jump or confirm skips the run intro or a boss intro once it may
+	# be skipped. The press is consumed here, and the controls the skip hands back re-sync held input,
+	# so it never also lands as a jump.
+	var skip_press := event.is_action_pressed("jump") or event.is_action_pressed("ui_accept")
+	if skip_press and can_skip_run_intro():
+		skip_run_intro()
+		get_viewport().set_input_as_handled()
+		return
+	if skip_press and _can_skip_boss_cinematic():
 		skip_boss_cinematic()
 		get_viewport().set_input_as_handled()
 		return

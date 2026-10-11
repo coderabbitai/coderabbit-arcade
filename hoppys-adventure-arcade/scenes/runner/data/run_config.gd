@@ -117,6 +117,25 @@ extends Resource
 ## hazard is still this much travel away (contract §11.1).
 @export var stage_banner_reaction_seconds := 1.0
 
+@export_group("Run intro")
+## The in-engine cinematic before a run (contract 2.7 §11.15). Tests that drive the run from its first
+## tick turn it off on a duplicated config.
+@export var run_intro_enabled := true
+## The full intro on a fresh run from the menu, and the short lead-in on a retry and a boss-checkpoint
+## retry.
+@export var run_intro_full_seconds := 6.0
+@export var run_intro_short_seconds := 2.2
+## An intro can be skipped once it has played this long; a skip jumps to the last run_intro_skip_tail
+## seconds, so the camera still lands behind Hoppy.
+@export var run_intro_skip_after := 0.3
+@export var run_intro_skip_tail := 0.4
+## run_intro_beat labels and the intro seconds they land at, in order. The last beat is GO: controls
+## (and the corridor's speed) come back on it.
+@export var run_intro_full_beats := PackedStringArray(["title", "3", "2", "1", "GO!"])
+@export var run_intro_full_beat_times := PackedFloat32Array([1.0, 3.0, 3.8, 4.6, 5.4])
+@export var run_intro_short_beats := PackedStringArray(["READY", "GO!"])
+@export var run_intro_short_beat_times := PackedFloat32Array([1.0, 1.6])
+
 @export_group("Boss")
 @export var boss_z := -14.0
 @export var boss_sway_amplitude := 2.4

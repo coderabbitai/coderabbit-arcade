@@ -1047,3 +1047,32 @@ The automatic turn-left/turn-right phase is gone. Phases are `run → boss → s
 - **Boss-checkpoint retry** opens straight in front of the boss.
 - **Main menu:** the fifth runner still is now "JUMP, ROLL, DODGE" (`runner_dodge.png`, a jump over a blocking
   hazard captured by `tests/capture_runner_menu_previews.gd`).
+
+## Contract 2.7: run intro
+
+A fresh run opens with a six-second in-engine cinematic: letterbox bars frame a camera approach through the corridor,
+Hoppy celebrates beneath THE CODEBASE CORRIDOR, and the camera settles behind Hoppy for 3, 2, 1, GO!. Retries and
+boss-checkpoint retries use a 2.2-second READY/GO lead-in. Space or the active controller jump button skips after
+0.3 seconds; the on-screen skip button supports pointer/touch input. Skip retains a brief GO burst and 0.4-second
+exit. Pause freezes the presentation with the run clock. The shot data lives in
+`scenes/runner/data/run_intro_shots.gd`; `ui/run_intro.gd` reads facade progress and beats, and `ui/post_fx.gd` owns
+the letterbox.
+
+Backend hand-off (contract §11.15 is authoritative):
+
+- **Signals and mirrors.** `run_intro(mode, seconds)` (`&"full"` 6.0 s / `&"short"` 2.2 s),
+  `run_intro_beat(index, label)` (full `title` 1.0, `3` 3.0, `2` 3.8, `1` 4.6, `GO!` 5.4; short `READY` 1.0,
+  `GO!` 1.6), `run_intro_skipped()`, `run_intro_ended()` (exactly once per intro, aborts included);
+  `game.run_intro_mode`, `game.run_intro_progress`, `game.can_skip_run_intro()`, `game.skip_run_intro()`.
+- **Who plays it.** `RunnerGame.pending_intro_mode` is full on a fresh run from the menu and set to short by
+  `retry()` and `retry_boss()`. On a checkpoint retry the short intro replaces the old turn lead-in and hands over
+  to the boss (whose own short intro cinematic follows).
+- **Hold.** Controls (autopilot included) and the corridor's speed are held from `run_intro` until the GO beat, or
+  until a skip. The HUD hides its widgets and GET READY for the intro and opens GET READY with the run.
+- **Camera.** `camera_rig.set_run_intro(progress, mode, focus)` places the lens off Hoppy's feet from the frontend
+  `SHOTS` table (fallback shots built in). The rest pose is `[8.0, 4.0, 0.0, 60.0, 2.5]`.
+- **Hoppy.** The `title` beat plays Hoppy's `victory` clip through the player visual's `celebrate()`.
+- **Audio.** `intro_whoosh` under the full intro's fly-through, `intro_title` on the title beat, `intro_count` on
+  each count (and READY), `intro_go` on GO; the music is ducked 12 dB until GO.
+- **Capture.** `Godot --path hoppys-adventure-arcade --always-on-top --script
+  res://scenes/runner/ui/dev/capture_run_intro.gd -- --output=<folder>` (S5's fixture; mock by default).

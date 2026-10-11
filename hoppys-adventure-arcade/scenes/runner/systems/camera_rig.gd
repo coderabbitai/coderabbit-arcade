@@ -74,6 +74,47 @@ const BOSS_SHOTS := {
 	}
 }
 
+## Contract 2.7 §11.15: the run intro's shot table is frontend data. It lives in this script once it
+## exists — `const SHOTS := {&"full": {cut, ret, keys}, &"short": {...}}`, rows in the BOSS_SHOTS
+## layout — and is read through ResourceLoader.exists + load(), never preloaded, so the backend runs
+## without it on the built-in fallback below.
+const RUN_INTRO_SHOTS_PATH := "res://scenes/runner/data/run_intro_shots.gd"
+## The built-in intro shots, used per mode whenever the frontend table is missing or lacks the mode.
+## Unlike a boss shot the lens is placed off Hoppy's feet (`focus`): `distance` metres behind him
+## along +Z, rotated `orbit` degrees around him, so orbit ±180 looks back at him from down the corridor.
+## The rest pose is [8.0, 4.0, 0.0, 60.0, 2.5]: the gameplay camera at (0, 4, 8) aimed 2.5 m above the
+## feet, which is the same line as the follow's look-at (0, 1, -8). Side-on keys stay within 3.4 m of
+## Hoppy so the lens never enters the corridor walls (x ±4.4). `cut` 0 is a hard cut on frame one.
+const RUN_INTRO_FALLBACK_SHOTS := {
+	&"full": {
+		"cut": 0.0,
+		"ret": 0.86,
+		"keys": [
+			# Open 14 m down the corridor looking back at Hoppy, push in for the title card, rise over
+			# his shoulder side-on, then land on the rest pose behind him for the 3-2-1-GO.
+			[0.0, 14.0, 2.2, -180.0, 58.0, 1.2],
+			[0.28, 6.0, 1.6, -180.0, 50.0, 1.1],
+			[0.45, 5.6, 1.7, -175.0, 50.0, 1.1],
+			[0.55, 2.5, 5.0, -90.0, 60.0, 1.5],
+			[0.7, 8.0, 4.0, 0.0, 60.0, 2.5],
+			[1.0, 8.0, 4.0, 0.0, 60.0, 2.5]
+		]
+	},
+	&"short": {
+		"cut": 0.0,
+		"ret": 0.8,
+		"keys": [
+			# A gentle push down onto the rest pose.
+			[0.0, 10.0, 5.0, 0.0, 64.0, 2.6],
+			[0.6, 8.0, 4.0, 0.0, 60.0, 2.5],
+			[1.0, 8.0, 4.0, 0.0, 60.0, 2.5]
+		]
+	}
+}
+## The shot table, read once per session on first use.
+static var _run_intro_shots: Dictionary = {}
+static var _run_intro_shots_read := false
+
 @onready var camera: Camera3D = $Camera
 
 @export var follow_smoothing := 8.0
@@ -100,6 +141,13 @@ var boss_mode: StringName = &""
 var boss_target := Vector3.ZERO
 ## The visual's cinematic focus, in this rig's space, that the lens aims at (contract §11.5).
 var boss_focus := Vector3.ZERO
+## 0..1 through the run intro and its mode, &"" outside one (contract 2.7 §11.15).
+var intro_progress := 0.0
+var intro_mode: StringName = &""
+## Hoppy's feet, in this rig's space, that the intro lens is placed off and aims above.
+var intro_focus := Vector3.ZERO
+## Set when an intro opens; the next tick snaps the interpolated camera onto its first shot.
+var _intro_cut := false
 
 ## Where the rig wants the camera before shake, refreshed in _physics_process.
 var _rest_position := Vector3(0, 4, 8)
@@ -131,6 +179,10 @@ func reset() -> void:
 	boss_mode = &""
 	boss_target = Vector3.ZERO
 	boss_focus = Vector3.ZERO
+	intro_progress = 0.0
+	intro_mode = &""
+	intro_focus = Vector3.ZERO
+	_intro_cut = false
 	_rest_position = base_position
 	if camera != null:
 		camera.position = base_position
@@ -213,6 +265,69 @@ static func _shot_pose(keys: Array, progress: float) -> Array:
 		return pose
 	return keys[keys.size() - 1]
 
+## The run intro shot (contract 2.7 §11.15). The StageManager calls this every physics tick of the
+## `intro` phase and with (0, &"") once the intro is over. `focus` is Hoppy's global position (his
+## feet). A fresh intro hard-cuts in, so the camera never slides over from wherever it was.
+func set_run_intro(progress: float, mode: StringName, focus: Vector3) -> void:
+	if intro_mode == &"" and mode != &"":
+		_intro_cut = true
+	intro_progress = clampf(progress, 0.0, 1.0)
+	intro_mode = mode
+	intro_focus = to_local(focus) if is_inside_tree() else focus
+
+## Pure shot curve for the run intro: {blend, distance, height, orbit, fov, look_bias}, from the
+## frontend table when it has `mode`, else from RUN_INTRO_FALLBACK_SHOTS. `blend` is exactly 0 at
+## p = 1 and for an unknown or empty mode; at p = 0 it is 1 when `cut` is 0 (a hard cut) and 0
+## otherwise, ramping in over [0, cut] and out over [ret, 1] as a boss shot does.
+static func run_intro_shot(p: float, mode: StringName) -> Dictionary:
+	var shot := {"blend": 0.0, "distance": 0.0, "height": 0.0, "orbit": 0.0, "fov": 0.0, "look_bias": 0.0}
+	if mode == &"":
+		return shot
+	var table: Variant = run_intro_shots().get(mode, RUN_INTRO_FALLBACK_SHOTS.get(mode, {}))
+	if not (table is Dictionary):
+		return shot
+	var keys: Variant = table.get("keys", [])
+	if not (keys is Array) or keys.is_empty():
+		return shot
+	var progress := clampf(p, 0.0, 1.0)
+	var pose: Array = _shot_pose(keys, progress)
+	shot["distance"] = float(pose[1])
+	shot["height"] = float(pose[2])
+	shot["orbit"] = float(pose[3])
+	shot["fov"] = float(pose[4])
+	shot["look_bias"] = float(pose[5])
+	if progress >= 1.0:
+		return shot
+	var cut := clampf(float(table.get("cut", 0.0)), 0.0, 1.0)
+	var ret := clampf(float(table.get("ret", 1.0)), cut, 1.0)
+	var blend := 1.0
+	if cut > 0.0 and progress < cut:
+		blend = smoothstep(0.0, 1.0, progress / cut)
+	elif ret < 1.0 and progress > ret:
+		blend = smoothstep(0.0, 1.0, (1.0 - progress) / (1.0 - ret))
+	shot["blend"] = blend
+	return shot
+
+## The frontend's SHOTS table when its script exists, else the built-in one. Read once: the script
+## is loaded only for its constant map and not kept.
+static func run_intro_shots() -> Dictionary:
+	if _run_intro_shots_read:
+		return _run_intro_shots
+	_run_intro_shots_read = true
+	_run_intro_shots = RUN_INTRO_FALLBACK_SHOTS
+	if not ResourceLoader.exists(RUN_INTRO_SHOTS_PATH):
+		return _run_intro_shots
+	var script := load(RUN_INTRO_SHOTS_PATH) as Script
+	if script == null:
+		push_warning("Run intro shots at %s are not a script; using the built-in shots" % RUN_INTRO_SHOTS_PATH)
+		return _run_intro_shots
+	var table: Variant = script.get_script_constant_map().get("SHOTS", null)
+	if table is Dictionary and not table.is_empty():
+		_run_intro_shots = table
+	else:
+		push_warning("Run intro shots at %s have no SHOTS table; using the built-in shots" % RUN_INTRO_SHOTS_PATH)
+	return _run_intro_shots
+
 func shake(strength: float, duration := 0.35) -> void:
 	if duration <= 0.0 or strength <= 0.0:
 		return
@@ -251,6 +366,14 @@ func _physics_process(delta: float) -> void:
 	var shot := boss_shot(boss_progress, boss_mode)
 	var blend := float(shot["blend"])
 	_apply_boss_shot(shot, blend, offset)
+	# The run intro and a boss cinematic never overlap (different phases); the intro, when live,
+	# frames the camera instead.
+	if intro_mode != &"":
+		var intro := run_intro_shot(intro_progress, intro_mode)
+		if float(intro["blend"]) > 0.0:
+			shot = intro
+			blend = float(intro["blend"])
+			_apply_shot(intro_focus, intro_focus, shot, blend, offset)
 	if fov_punch > 0.0:
 		fov_punch = maxf(fov_punch - fov_punch_decay * delta, 0.0)
 	var speed_boost := 0.0
@@ -259,17 +382,26 @@ func _physics_process(delta: float) -> void:
 	var fov := base_fov + fov_punch + speed_boost
 	# The punch rides the shot too, so a defeat explosion still kicks the close-up.
 	camera.fov = lerpf(fov, float(shot["fov"]) + fov_punch, blend) if blend > 0.0 else fov
+	if _intro_cut:
+		# The intro's first frame is a cut, not a move: drop the interpolated previous pose.
+		_intro_cut = false
+		camera.reset_physics_interpolation()
 
 ## Blend the follow pose toward the boss shot (contract 2.6 §11.14): the lens sits off the Boss
 ## mount where the shot says and aims at the visual's focus plus the shot's look_bias, the shake
 ## offset rides along, and position and rotation both mix by `blend`, which is 0 outside a cinematic
 ## and at both of its ends.
 func _apply_boss_shot(shot: Dictionary, blend: float, offset: Vector3) -> void:
+	_apply_shot(boss_target, boss_focus, shot, blend, offset)
+
+## The shared lens placement: `distance` metres from `target` along +Z rotated `orbit` degrees about
+## it, `height` metres up, aimed at `focus` plus `look_bias`, mixed with the follow pose by `blend`.
+func _apply_shot(target: Vector3, focus: Vector3, shot: Dictionary, blend: float, offset: Vector3) -> void:
 	if blend <= 0.0:
 		return
 	var orbit := deg_to_rad(float(shot["orbit"]))
-	var lens := boss_target + Vector3(0.0, float(shot["height"]), float(shot["distance"])).rotated(Vector3.UP, orbit)
-	var aim := boss_focus + Vector3(0.0, float(shot["look_bias"]), 0.0)
+	var lens := target + Vector3(0.0, float(shot["height"]), float(shot["distance"])).rotated(Vector3.UP, orbit)
+	var aim := focus + Vector3(0.0, float(shot["look_bias"]), 0.0)
 	var follow_rotation := camera.quaternion
 	camera.position = camera.position.lerp(lens + offset, blend)
 	var look := aim - lens

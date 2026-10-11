@@ -112,6 +112,9 @@ func run() -> void:
 	temp_paths.append(scratch_leaderboard)
 	note("start")
 	base_config = (load(CONFIG_PATH) as RunConfig).duplicate()
+	# The run intro would sit in front of every facade start_run. These checks are the boss
+	# cinematic, so the duplicate they share opens straight on the fight.
+	base_config.run_intro_enabled = false
 	hit_manager_script = load("res://scenes/runner/systems/hit_manager.gd") as GDScript
 	score_manager_script = load("res://scenes/runner/systems/score_manager.gd") as GDScript
 	effect_manager_script = load("res://scenes/runner/systems/effect_manager.gd") as GDScript

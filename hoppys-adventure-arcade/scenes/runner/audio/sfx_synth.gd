@@ -9,6 +9,11 @@ const RECIPES := {
 	&"boss_explosion": [0.30, 120.0, 25.0, "noise", 0.72],
 	&"boss_resolved": [1.15, 440.0, 880.0, "arpeggio", 0.68],
 	&"boss_skip": [0.25, 1800.0, 180.0, "noise", 0.5],
+	# Contract 2.7 §11.15 run intro: the fly-through, the title sting, the countdown tick and GO.
+	&"intro_whoosh": [2.2, 220.0, 1800.0, "sweep", 0.5],
+	&"intro_title": [0.9, 110.0, 220.0, "detuned", 0.6],
+	&"intro_count": [0.14, 880.0, 880.0, "square", 0.42],
+	&"intro_go": [0.7, 659.25, 1318.5, "chord", 0.62],
 	&"stage_clear": [1.0, 440.0, 880.0, "arpeggio", 0.65],
 	&"telegraph_tick": [0.06, 1600.0, 1600.0, "square", 0.35],
 	&"projectile_whoosh": [0.30, 900.0, 180.0, "noise", 0.45],
@@ -39,7 +44,7 @@ const RECIPES := {
 	&"caught": [0.85, 120.0, 25.0, "noise", 0.78],
 	&"game_over": [1.20, 440.0, 110.0, "chord", 0.65],
 }
-const PERCUSSIVE := {&"boss_title": true, &"boss_explosion": true,&"tool_fire": true, &"hit": true, &"land": true, &"caught": true, &"boss_hit": true, &"roll": true, &"footstep": true, &"telegraph_tick": true, &"lane_left": true, &"lane_right": true}
+const PERCUSSIVE := {&"intro_count": true, &"boss_title": true, &"boss_explosion": true,&"tool_fire": true, &"hit": true, &"land": true, &"caught": true, &"boss_hit": true, &"roll": true, &"footstep": true, &"telegraph_tick": true, &"lane_left": true, &"lane_right": true}
 const ARPEGGIO := [1.0, 1.25, 1.5, 2.0]
 # Authored carrier, detuned body, FM transient, filtered noise, sub.
 const LAYERS := {
@@ -62,7 +67,7 @@ static func family_for(kind: StringName) -> StringName:
 	var waveform := String(RECIPES[kind][3])
 	if waveform in ["sine", "chord", "arpeggio"]: return &"chime"
 	if kind == &"pursuit_drone": return &"drone"
-	if kind in [&"projectile_whoosh", &"nitro", &"retreat", &"boss_skip"]: return &"whoosh"
+	if kind in [&"projectile_whoosh", &"nitro", &"retreat", &"boss_skip", &"intro_whoosh"]: return &"whoosh"
 	return &"alarm"
 
 
@@ -114,6 +119,11 @@ static func render(kind: StringName) -> Dictionary:
 					var impact_envelope := exp(-(progress - 0.8) * 35.0)
 					sample = sample * 0.4 + rng.randf_range(-1.0, 1.0) * 0.6
 					envelope = impact_envelope
+			"sweep":
+				# Rises to the top and falls back, under a noise bed: the camera flying down the corridor.
+				frequency = lerpf(float(recipe[1]), float(recipe[2]), sin(progress * PI))
+				sample = sample * 0.4 + rng.randf_range(-1, 1) * 0.6
+				envelope = sin(progress * PI)
 			"arpeggio":
 				frequency = 440.0 * float(ARPEGGIO[mini(3, int(progress * 4))])
 			"alert":

@@ -103,6 +103,9 @@ func check(condition: bool, message: String) -> void:
 func run() -> void:
 	temp_paths.append(scratch_leaderboard)
 	base_config = (load(CONFIG_PATH) as RunConfig).duplicate()
+	# Contract 2.7 §11.15 plays a run intro in front of every facade start_run. This suite is about
+	# the corridor and the boss machine, so the duplicate it hands out turns that intro off.
+	base_config.run_intro_enabled = false
 	hit_manager_script = load("res://scenes/runner/systems/hit_manager.gd") as GDScript
 	score_manager_script = load("res://scenes/runner/systems/score_manager.gd") as GDScript
 	effect_manager_script = load("res://scenes/runner/systems/effect_manager.gd") as GDScript

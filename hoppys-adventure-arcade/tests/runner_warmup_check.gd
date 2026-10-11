@@ -47,6 +47,8 @@ func run() -> void:
 	var config: Resource = (load(CONFIG_PATH) as Resource).duplicate()
 	config.set(&"stage_base_distance", STAGE_DISTANCE)
 	config.set(&"boss_hp_scale", 0.4)
+	# The scripted run is a draw-state census, not an intro. Open it on `run`.
+	config.set(&"run_intro_enabled", false)
 	game.config = config
 	game.leaderboard_path = OS.get_temp_dir().path_join("runner_warmup_check_leaderboard.cfg")
 	var started := Time.get_ticks_usec()
