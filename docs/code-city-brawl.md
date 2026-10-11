@@ -33,7 +33,7 @@ There are three gated encounters per district. Clear every living combatant, inc
 - **Stage exit and entry.** After the victory hop, Hoppy runs off to the right on his own under a DISTRICT SECURED banner. The screen dips to black while the next district loads, then he runs in under its title banner. The sequence takes about 2–3 seconds; the title banner stays up for 2.8 seconds and fades over the start of combat, and messages raised in that time (such as the encounter counter) wait until it clears. The first room's enemies wait 0.8 seconds before their first telegraph. Retry uses the same run-in.
 - **Boss music** dips, swaps tracks at the bottom and comes back up over 0.6 seconds instead of cutting hard.
 - **Celebration.** After the Force Merge finisher, a 5.2-second celebration plays:
-  - Hoppy's three-frame victory cheer, confetti, a camera push and a MERGE SUCCESSFUL banner.
+  - Hoppy's three-frame victory cheer, confetti, a camera push and a MERGE SUCCESSFUL banner, with the HUD, minimap and control hints hidden until it ends.
   - The boss track ducks, and an original 3.5-second square-wave jingle plays once.
   - Then a 16.552-second F-major victory loop starts and continues through the ending pages and results.
   - Pause freezes the choreography and the jingle. Rebuilding the stage or leaving cancels the celebration.
@@ -92,7 +92,7 @@ Weapons require the pickup action; consumables collect on contact. A successful 
 
 ## District bosses
 
-The first two districts end on a district boss instead of a gate. It is called in when the third encounter's wave is cleared, drops in on the right of the room and takes the boss bar (DISTRICT BOSS · name). The district's stage hazards pause for the fight.
+The first two districts end on a district boss instead of a gate. It is called in when the third encounter's wave is cleared, drops in on the right of the room and takes the boss bar (DISTRICT BOSS · name). The music dips into the district-boss fight track, and the district's stage hazards pause for the fight. The bar and its label clear as soon as the boss falls.
 
 | District | Boss | HP | Adds below half HP |
 |---|---|---:|---|
@@ -127,6 +127,7 @@ A leap commits to the warned destination; it does not follow Hoppy after takeoff
 | CLI/IDE and mode menu | `Zodik - Future Travel.ogg` |
 | Security | `helldrake(extended).ogg` |
 | Git HQ | `kim_lightyear_-_angel_eyes_vision_ii.mp3` |
+| District bosses | `Boss Fight 2.mp3` |
 | Boss | `Kim Lightyear - The Final.mp3` |
 
 Music uses independently duplicated looping streams on the Music bus. Ten reusable positional voices play punch, damage, pickup, jump and fanfare sounds from Juhani Junkala's Essential Retro collection on the SFX bus. Shared imported audio resources are not mutated.
@@ -164,7 +165,11 @@ godot --path hoppys-adventure-arcade --always-on-top --script res://tests/beatem
 godot --path hoppys-adventure-arcade --always-on-top --script res://tests/capture_code_city_bosses.gd
 ```
 
-The logic suite covers combo buffering, turning between swings and on buffered steps, attack deduplication and depth, weapon durability, armor, shields/statuses, hammer target count, soldier splits, zombie revival, gate ownership, pickup rules, hazard warnings, jumping, pause, boss thresholds, Force Merge, retry cleanup and all four music mappings. The smoke suite injects keyboard/gamepad events, traverses all nine encounters with no confirm input between stages, beats both district bosses, verifies bounded pools and one completion, and returns to the menu. `code_city_mini_boss.gd` checks that districts 1 and 2 call in their district boss and district 3 keeps the Grand Merge Conflict; the boss's stagger, enrage and adds; and the hands-free defeat: victory hop, run-off and next district. It also checks pause during the hop and that a retry clears the boss. `stage_flow.gd` checks the director's phase order and durations, a single stage rebuild on black, pause during every phase, the music envelope and boss-music dip, retry, cancellation on game over and return-to-menu, and the 0.5-second menu guard. `hoppy_armed_assets.gd` requires all eleven armed sheets in both modes and checks their frames, clips, pivots, anchors, body height and carry icons. `beatemup_story.gd` checks, for both modes, that each story scene's caption types and its pan moves on the clock, the dips and bars, Next / Skip / the one-press card skip, the pause freeze, and the hands-free hand-off into the first stage. `beatemup_knockout.gd` covers the knockout in both modes:
+The logic suite covers combo buffering, turning between swings and on buffered steps, attack deduplication and depth, weapon durability, armor, shields/statuses, hammer target count, soldier splits, zombie revival, gate ownership, pickup rules, hazard warnings, jumping, pause, boss thresholds, Force Merge, retry cleanup and all four music mappings. The smoke suite injects keyboard/gamepad events, traverses all nine encounters with no confirm input between stages, beats both district bosses, verifies bounded pools and one completion, and returns to the menu. `code_city_mini_boss.gd` checks that districts 1 and 2 call in their district boss and district 3 keeps the Grand Merge Conflict; the boss's stagger, enrage and adds; and the hands-free defeat: victory hop, run-off and next district. It kills both district bosses and the Grand Merge Conflict through real swings, armed and unarmed, and checks that the victory pose holds with the weapon hidden and no i-frame flicker. It also checks:
+- the district-boss fight track and the district track's return;
+- the boss bar's colour, and that it clears after a district boss falls;
+- pause during the hop and during the celebration;
+- that a retry clears the boss. `stage_flow.gd` checks the director's phase order and durations, a single stage rebuild on black, pause during every phase, the music envelope and boss-music dip, retry, cancellation on game over and return-to-menu, and the 0.5-second menu guard. `hoppy_armed_assets.gd` requires all eleven armed sheets in both modes and checks their frames, clips, pivots, anchors, body height and carry icons. `beatemup_story.gd` checks, for both modes, that each story scene's caption types and its pan moves on the clock, the dips and bars, Next / Skip / the one-press card skip, the pause freeze, and the hands-free hand-off into the first stage. `beatemup_knockout.gd` covers the knockout in both modes:
 - Hoppy is knocked out by direct and live hits (bullets, ground warnings, enemy and boss contact).
 - Phase timing: the slow-motion throw, the camera push and letterbox bars, the card, and the menu after about 3.5 seconds (never more than 4).
 - The HUD, minimap and control hints are hidden through the cinematic and restored after it, and the camera is restored on completion or cancellation.
@@ -206,4 +211,6 @@ Godot 4.7.1, on the integrated brawl branch with the armed-locomotion and mini-b
 - the shared suites: `stage_flow`, `beatemup_story`, `beatemup_knockout`, `beatemup_minimap` and `hoppy_armed_assets`;
 - the Heroes vs. Villains suites: logic, smoke, motion and assets.
 
-The rendered smoke run completed all nine encounters through both district bosses and the celebration. It now waits for a graphical start to settle before changing scenes; without that wait the scene change failed. The rendered knockout run passed in both modes. Its frames and the `capture_code_city_bosses.gd` stills were inspected at 1280×720.
+The rendered smoke run completed all nine encounters through both district bosses and the celebration. It now waits for a graphical start to settle before changing scenes; without that wait the scene change failed. The rendered knockout run passed in both modes.
+
+A validator review then found that a boss's last hit, landed by a real swing, lost Hoppy's victory pose. The rest of that player tick re-posed him and re-showed his weapon. The tests had defeated bosses by calling their damage method directly, so they missed it. The player now stops its tick once a swing ends play, and `code_city_mini_boss` kills both district bosses and the Grand Merge Conflict through real swings. The `capture_code_city_bosses.gd` stills were first saved at 1280×752 because the maximized window opened 32 px taller than 720. The script now sizes the window to 1280×720 before capturing. The re-shot stills, including the swing-driven DISTRICT BOSS DOWN hop, were inspected at that size.
