@@ -277,16 +277,16 @@ func check_music_flow() -> void:
 	check(flow.music.stream==boss_stream and flow.music_db<0.0, "the boss track stays ducked under the jingle")
 	run_for(LOOP_AT-JINGLE_AT-.3)
 	check(playing_jingles(owner)<=1 and jingles(owner).size()==1, "the jingle is never doubled")
+	check(flow.music.stream==boss_stream, "the boss track is still the flow's stream just before the loop is due (%.2f s)" % party.clock)
+	# Timed on the party's own clock, so the switch time can't drift from a local counter.
 	var seen_loop := false
 	var swapped_at := -1.0
-	var elapsed := LOOP_AT-.2
-	while party.active() and elapsed<LENGTH:
+	while party.active() and party.clock<LENGTH:
 		party.tick(DT)
-		elapsed += DT
 		if flow.music.stream!=boss_stream and swapped_at<0.0:
-			swapped_at = elapsed
+			swapped_at = party.clock
 			seen_loop = true
-		if elapsed>LOOP_AT+.2: break
+		if party.clock>LOOP_AT+.2: break
 	check(seen_loop and absf(swapped_at-LOOP_AT)<=.25, "the flow's music switches to the loop at about 3.8 s (%.2f)" % swapped_at)
 	check(is_equal_approx(flow.music_db, 0.0), "the duck is lifted once the loop starts")
 	check(flow.music.playing and flow.music_track!=boss_stream, "the loop is playing on the flow's player")

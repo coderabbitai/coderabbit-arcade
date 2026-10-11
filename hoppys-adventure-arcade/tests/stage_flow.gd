@@ -41,15 +41,21 @@ func clear_enemies() -> void:
 	game.enemies.clear()
 ## Room 3 of districts 1 and 2 has no walk-out: its cleared wave calls in the district boss,
 ## whose defeat runs the victory hop and then the exit. Drops the boss in, past its entrance,
-## and lands the killing blow; play stops in boss_victory.
-func defeat_district_boss() -> void:
+## and lands the killing blow; play stops in boss_victory. Without a district boss it fails the
+## suite and returns false, so no caller waits on an exit that cannot come.
+func defeat_district_boss() -> bool:
 	var boss = game.boss
+	if not is_instance_valid(boss) or not game.has_mini_boss():
+		check(false, "Room 3 of district %d has its district boss to defeat" % (game.stage_index+1))
+		quit(1)
+		return false
 	boss.set_physics_process(false)
 	var guard := 0
 	while boss.state=="intro" and guard<200:
 		boss.tick(DT)
 		guard += 1
 	boss.take_hit(999, 0, game.player.position)
+	return true
 ## Right edge sits at room_start()+1280, so exit_x is room_start()+1340 on any viewport.
 func frame_room() -> void:
 	var width: float = game.get_viewport().get_visible_rect().size.x
@@ -171,7 +177,7 @@ func check_exit() -> void:
 	check(game.room==2 and not game.gate_open and game.has_mini_boss() and game.state=="combat", "Clearing room 3 calls in the district boss instead of opening the gate")
 	frame_room()
 	game.player.position = Vector2(game.room_start()+1210, 580)
-	defeat_district_boss()
+	if not defeat_district_boss(): return
 	check(game.state=="boss_victory" and not game.playing, "The district boss's defeat starts the victory hop")
 	game.score = 480
 	var volume_ok := true
@@ -401,7 +407,7 @@ func reach(phase: String) -> void:
 	game._physics_process(DT)
 	frame_room()
 	game.player.position = Vector2(game.room_start()+1210, 580)
-	defeat_district_boss()
+	if not defeat_district_boss(): return
 	guard = 0
 	while not (game.flow.phase==phase and game.flow.clock>=0.1) and guard<400:
 		game._physics_process(DT)
