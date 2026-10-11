@@ -41,7 +41,7 @@ func run() -> void:
 	camera_script = load(CAMERA_SCRIPT_PATH) as GDScript
 	check(facade_script != null and camera_script != null, "facade or camera script failed to load")
 	if facade_script == null or camera_script == null:
-		_finish()
+		await _finish()
 		return
 	_set_mode(&"full")
 	check(_compile_route(), "the route recorder failed to compile")
@@ -53,17 +53,37 @@ func run() -> void:
 	await _test_pause_and_endings()
 	await _test_opt_out_and_direct_begin()
 	_set_mode(&"full")
-	_finish()
+	await _finish()
 
 func _finish() -> void:
 	if paused:
 		paused = false
 	Input.action_release("jump")
 	Input.action_release("ui_accept")
+	# Stop playback and drop the streams before freeing the scenes that started them. One frame
+	# lets the playback objects go before shutdown, matching runner_boss_cinematic.
+	_silence_audio()
+	await process_frame
+	# Route recorders are added beside the games and never go through _close. Anything an early
+	# return also left up is freed here.
+	var leftovers: Array[Node] = []
+	for child in root.get_children():
+		if child.name in ["SaveService", "AudioService", "AppRouter", "ControllerService"]:
+			continue
+		leftovers.append(child)
+	for child in leftovers:
+		_close(child)
 	for suffix in ["", ".tmp", ".bak"]:
 		var path := board + String(suffix)
 		if FileAccess.file_exists(path):
 			DirAccess.remove_absolute(path)
+	var audio := root.get_node_or_null("AudioService")
+	if audio != null and audio.has_method("shutdown"):
+		audio.shutdown()
+	await process_frame
+	await create_timer(0.3).timeout
+	await process_frame
+	await process_frame
 	if failures == 0:
 		print("RUNNER RUN INTRO: PASS (%d checks)" % checks)
 	else:
@@ -482,6 +502,24 @@ func _quiet(node: Node) -> void:
 	node.set_process(false)
 	for child in node.get_children():
 		_quiet(child)
+
+func _silence_audio() -> void:
+	_stop_players(root)
+	var audio := root.get_node_or_null("AudioService")
+	if audio == null:
+		return
+	for key in ["music", "sfx"]:
+		var player := audio.get(key) as AudioStreamPlayer
+		if player == null:
+			continue
+		player.stop()
+		player.stream = null
+
+func _stop_players(node: Node) -> void:
+	if node is AudioStreamPlayer:
+		(node as AudioStreamPlayer).stop()
+	for child in node.get_children():
+		_stop_players(child)
 
 func _close(game: Node) -> void:
 	_release_input()

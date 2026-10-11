@@ -25,7 +25,22 @@ func _initialize() -> void:
 	root.close_requested.connect(func():
 		print("PICKUP HITCH: ABORTED (window close / app quit requested before the gate finished)")
 		quit(2))
-	call_deferred("run")
+	# call_deferred("run") is flushed by SaveService.apply_display() inside autoload _ready,
+	# and root.add_child then fails because the tree is still setting children up.
+	if root.is_node_ready():
+		call_deferred("run")
+	else:
+		root.ready.connect(run, CONNECT_ONE_SHOT)
+
+## The run intro is on by default and holds pickups for longer than the settle loop. A duplicate
+## keeps the shared .tres intact and opens on `run`.
+func _opt_out_run_intro(game: Node) -> void:
+	var source: Resource = game.config as Resource
+	if source == null:
+		source = load("res://scenes/runner/data/run_config.tres")
+	var config := source.duplicate()
+	config.set(&"run_intro_enabled", false)
+	game.config = config
 
 func frame() -> float:
 	await process_frame
@@ -52,6 +67,7 @@ func run() -> void:
 	game = (load("res://scenes/runner/runner_game.tscn") as PackedScene).instantiate()
 	game.autostart = false
 	game.leaderboard_path = OS.get_temp_dir().path_join("runner_pickup_hitch_leaderboard.cfg")
+	_opt_out_run_intro(game)
 	root.add_child(game)
 	game.start_run(777)
 	game.set_autopilot(true)
