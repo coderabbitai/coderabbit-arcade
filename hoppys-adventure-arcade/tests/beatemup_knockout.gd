@@ -195,20 +195,34 @@ func run() -> void:
 	root.get_node("AudioService").shutdown()
 	await create_timer(.4).timeout
 	quit(1 if failures else 0)
-func boot(path: String) -> void:
+## Takes the scene just changed to as `game` once it has built. Without it the suite cannot go
+## on: records a failure, quits 1 and returns false.
+func adopt_scene() -> bool:
+	var loading := 0
+	while (current_scene==null or current_scene.scene_file_path!=scene_path or current_scene.get("player")==null) and loading<READY_FRAMES:
+		await process_frame
+		loading += 1
+	if current_scene==null or current_scene.scene_file_path!=scene_path or current_scene.get("player")==null:
+		check(false, tag("%s loads within %d frames" % [scene_path, READY_FRAMES]))
+		quit(1)
+		return false
+	game = current_scene
+	return true
+func boot(path: String) -> bool:
 	scene_path = path
 	change_scene_to_file(path)
 	await process_frame
 	await process_frame
-	game = current_scene
+	if not await adopt_scene(): return false
 	game.test_mode = true
 	# A covered window can focus-pause before test_mode is set. Physics is re-enabled at ready.
 	paused = false
 	if game.state=="paused": game.resume()
 	freeze()
+	return true
 func run_mode(path: String, is_heroes: bool) -> void:
 	heroes = is_heroes
-	await boot(path)
+	if not await boot(path): return
 	print("--- ", mode(), " ---")
 	check_timeline()
 	check_arc(true)
@@ -627,11 +641,11 @@ func reload_scene() -> void:
 			check(false, tag("AppRouter finishes routing within 5 s"))
 			return
 		await process_frame
-	check(current_scene.name=="BeatemMenu", tag("leave still routes to the Beat'em Up menu"))
+	check(current_scene!=null and current_scene.name=="BeatemMenu", tag("leave still routes to the Beat'em Up menu"))
 	change_scene_to_file(scene_path)
 	await process_frame
 	await process_frame
-	game = current_scene
+	if not await adopt_scene(): return
 	game.test_mode = true
 	paused = false
 	if game.state=="paused": game.resume()
@@ -1165,6 +1179,9 @@ func check_done_once() -> void:
 func check_retry_cleanup() -> void:
 	ready_combat()
 	var cam: Camera2D = game.camera
+	if cam==null:
+		check(false, tag("the game has a camera for the retry cleanup check"))
+		return
 	var zoom0: Vector2 = cam.zoom
 	game.player.position = Vector2(game.room_start()+640.0, 580.0)
 	if not strike(true):

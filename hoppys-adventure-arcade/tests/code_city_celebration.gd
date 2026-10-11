@@ -294,7 +294,7 @@ func check_music_flow() -> void:
 	check(calls==1 and not party.active(), "the party completes once")
 	check(flow.music.playing and flow.music.stream!=boss_stream, "the loop is flow-owned and keeps playing after completion")
 	var looped: AudioStream = flow.music.stream
-	var loops: bool = looped!=null and ("loop_mode" in looped and looped.loop_mode!=AudioStreamWAV.LOOP_DISABLED) or ("loop" in looped and looped.loop)
+	var loops: bool = looped!=null and (("loop_mode" in looped and looped.loop_mode!=AudioStreamWAV.LOOP_DISABLED) or ("loop" in looped and looped.loop))
 	check(loops, "the stream the flow plays loops (without editing the shared asset)")
 	if looped is AudioStreamWAV:
 		var pcm: PackedByteArray = looped.data
@@ -443,6 +443,9 @@ func check_loop_immutable() -> void:
 	if not ResourceLoader.exists(LOOP) or not ResourceLoader.exists(JINGLE): return
 	var loop: AudioStream = load(LOOP)
 	var jingle: AudioStream = load(JINGLE)
+	if loop==null or jingle==null:
+		check(false, "the loop and jingle load as audio streams for the immutability check")
+		return
 	var before := snapshot(loop)
 	var before_jingle := snapshot(jingle)
 	var owner = make_owner()
