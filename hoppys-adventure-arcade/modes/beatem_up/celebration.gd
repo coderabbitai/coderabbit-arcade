@@ -3,6 +3,8 @@ extends RefCounted
 ## opens the ending pages. The flow's music player owns the victory loop after the party ends.
 ## cancel() on stage rebuild or leave also stops that loop, but never a newer stage track.
 ## Owner: player (body, show_pose), ui_layer, flow (StageFlow). camera and player.held are optional.
+## Optional knockout_hud_nodes() returns gameplay chrome, excluding pause, story and results UI.
+## Tick after the owner's HUD refreshes. Visibility is restored before done or on cancel.
 
 const Style = preload("res://scenes/main_menu/menu_style.gd")
 const AUDIO := "res://Assets/Audio/Beat'em Up/"
@@ -32,6 +34,7 @@ var _camera_zoom := Vector2.ONE
 var _body_position := Vector2.ZERO
 var _body_rotation := 0.0
 var _held_visible := false
+var _hud: Array[Dictionary] = []
 
 func active() -> bool:
 	return phase != ""
@@ -46,6 +49,11 @@ func play(owner: Node, done: Callable) -> void:
 	phase = "celebration"
 	_jingle_started = false
 	_loop_started = false
+	if owner.has_method("knockout_hud_nodes"):
+		for item in owner.knockout_hud_nodes():
+			if is_instance_valid(item) and item is CanvasItem:
+				_hud.append({"node":item,"visible":item.visible})
+	_hide_hud()
 	_body_position = player.body.position
 	_body_rotation = player.body.rotation
 	player.body.rotation = 0.0
@@ -126,6 +134,9 @@ func _stop_jingle() -> void:
 	jingle = null
 
 func _clear_visuals() -> void:
+	for item in _hud:
+		if is_instance_valid(item.node): item.node.visible = item.visible
+	_hud.clear()
 	if is_instance_valid(root):
 		root.hide()
 		root.queue_free()
@@ -143,6 +154,7 @@ func _clear_visuals() -> void:
 	_camera = null
 
 func _apply() -> void:
+	_hide_hud()
 	var pop := smoothstep(.15,.65,clock)
 	var fade := smoothstep(0.0,.35,LENGTH-clock)
 	root.modulate.a = fade
@@ -162,6 +174,11 @@ func _apply() -> void:
 		if _camera.get_parent() is Node2D:
 			focus = (_camera.get_parent() as Node2D).to_local(focus)
 		_camera.position = _camera_position.lerp(focus,push*.8)
+
+func _hide_hud() -> void:
+	# The owner may refresh minimap/toast visibility each physics tick, even outside combat.
+	for item in _hud:
+		if is_instance_valid(item.node): item.node.hide()
 
 func _build_ui(layer: CanvasLayer) -> void:
 	root = Control.new()
