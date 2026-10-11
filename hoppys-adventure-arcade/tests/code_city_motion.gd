@@ -405,15 +405,16 @@ func finish_capture() -> void:
 	quit(1 if failures else 0)
 
 ## Torso registration at runtime. The player ticks at the physics rate (move_and_slide steps by the
-## physics delta) while the sprite animates on the engine clock. The drawn shirt x comes from the
+## physics delta) and the paused sprite advances on that same clock. The drawn shirt x comes from the
 ## body's own transform, mirrored inside the texture when flipped, so an offset or scale bug shows.
 ## Side runs read the shirt back edge + 6, every other pose the shirt centroid.
 const RUN_PX_PER_S := 240.0
 const RUN_FPS := 13.0
-## The animation clock and the physics ticks are independent, so a frame boundary can land a tick
-## either side of its ideal time: up to 8.5 px at 240 px/s. This only widens the per-animation-frame
-## step; each physics tick is held to 240 * dt within TORSO_TICK_SLACK, and whole cycles to 1 px.
-const TORSO_STEP_SLACK := 8.5
+## step_player advances the animation on the physics clock, so a frame boundary lands on a whole
+## tick. 13 fps over 60 Hz ticks is 4.6 ticks per frame, so a step is 4 or 5 ticks (16 or 20 px
+## against 18.5): never more than 2.5 px off. Each physics tick is held to 240 * dt within
+## TORSO_TICK_SLACK, and whole cycles to 1 px.
+const TORSO_STEP_SLACK := 3.0
 const TORSO_TICK_SLACK := 1.0
 ## Shirt x within 2 cel px of the node, times the 1.55 body scale, plus rounding.
 const TORSO_POSE_SLACK := 3.2
@@ -447,12 +448,46 @@ func hold_move(action: String, strength := 1.0) -> void:
 		Input.action_release(name)
 	if action!="": Input.action_press(action,strength)
 
-## One physics tick: the sprite animates on the real clock, the player steps by the physics delta.
+## One physics tick on a deterministic clock. The body never animates on the engine's wall clock:
+## it is paused before the wait, the player ticks (which may switch clips and sets speed_scale), and
+## the sprite then advances by exactly this tick's dt, so animation and movement share one timeline.
 func step_player(actor) -> float:
+	actor.body.pause()
 	await physics_frame
 	var dt := 1.0/float(Engine.physics_ticks_per_second)
 	actor.tick(dt)
+	# tick() calls play(), which resumes autoplay; stop it before the engine can advance a frame.
+	actor.body.pause()
+	advance_body(actor.body,dt)
 	return dt
+
+## Advances the paused body like the engine would: frame time is dt * speed_scale * the clip's fps,
+## measured in the clip's relative frame durations. State lives in body.frame and frame_progress,
+## so a clip or resource switch (play() resets both) is respected without extra bookkeeping.
+func advance_body(body: AnimatedSprite2D, dt: float) -> void:
+	var frames := body.sprite_frames
+	var clip := body.animation
+	if frames==null or not frames.has_animation(clip): return
+	var count := frames.get_frame_count(clip)
+	if count<=1: return
+	var loops := frames.get_animation_loop(clip)
+	var remaining := dt*absf(body.speed_scale)*frames.get_animation_speed(clip)
+	var frame := body.frame
+	var progress := body.frame_progress
+	while remaining>0.0:
+		var duration := frames.get_frame_duration(clip,frame)
+		var left := (1.0-progress)*duration
+		if remaining<left:
+			progress+=remaining/duration
+			break
+		remaining-=left
+		progress=0.0
+		if frame+1<count: frame+=1
+		elif loops: frame=0
+		else:
+			progress=1.0-1e-9
+			break
+	body.set_frame_and_progress(frame,progress)
 
 func sample_of(actor, clock: float) -> Dictionary:
 	return {"t":clock,"x":drawn_torso(actor),"clip":actor.body.animation,"frame":actor.body.frame,"pos":actor.position.x}

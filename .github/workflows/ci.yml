@@ -87,6 +87,7 @@ jobs:
             runner_run_intro_ui
             runner_scaffold_check
             runner_smoke
+            runner_synth_threads
             runner_visual_smoke
             runner_warmup_check
           )
