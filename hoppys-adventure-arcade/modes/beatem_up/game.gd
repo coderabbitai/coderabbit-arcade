@@ -709,6 +709,8 @@ func celebrate() -> void:
 func start_ending() -> void:
 	if state not in ["finisher","celebration"]: return
 	state = "ending"
+	# The celebration restores the chrome it hid just before calling this; the minimap goes at once.
+	_refresh_minimap(0.0)
 	story_pages = "ENDING"
 	intro_page = 0
 	intro_clock = 0
