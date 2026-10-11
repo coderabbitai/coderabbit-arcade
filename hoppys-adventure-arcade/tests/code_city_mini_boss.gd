@@ -203,6 +203,7 @@ func down_and_off(from_stage: int, pause_hop: bool) -> void:
 	check(boss.dead and boss.state == "defeat" and not boss.melee_reaches(Vector2(40, 0), 1, 110, 46), "Defeat removes the boss as a target")
 	check_pose(boss, "defeat", "Defeat")
 	check(game.state == "boss_victory" and not game.playing, "Defeat starts the victory hop")
+	check(not game.boss_bar.visible and not game.boss_text.visible, "Defeat hides the district-boss bar and label")
 	check(game.score == score+500, "Defeat scores 500")
 	check(game.gate_open and not game.gate.visible, "Defeat opens the gate and hides it")
 	check(not game.player.held.visible, "Defeat hides what Hoppy was holding")
@@ -236,6 +237,7 @@ func down_and_off(from_stage: int, pause_hop: bool) -> void:
 	check(is_equal_approx(game.player.body.position.y, 0.0), "The hop returns to the ground")
 	check(faded, "The district boss fades during the victory")
 	check(game.state == "stage_exit" and game.flow.phase == "exit_run", "The hop runs Hoppy off with no input")
+	check(not game.boss_bar.visible and not game.boss_text.visible, "The district-boss bar stays hidden through the run-off")
 	var ran := false
 	guard = 0
 	var want := from_stage+1
@@ -249,6 +251,193 @@ func down_and_off(from_stage: int, pause_hop: bool) -> void:
 	freeze()
 	check(ran, "Hoppy's exit run moves right")
 	check(game.state == "combat" and game.playing and game.stage_index == want, "District %d leads into district %d with no input" % [from_stage+1, want+1])
+	check(game.flow.music_track == Catalog.MUSIC[want], "District %d plays its own track again" % [want+1])
+## The boss-music dip is 0.6s. A direct tick finishes it without stepping the fight.
+func finish_dip() -> void:
+	game.flow.tick(0.65, game.player)
+func music_loops(track) -> bool:
+	var stream = game.music.stream
+	if stream == null or stream == track: return false
+	if stream is AudioStreamMP3: return (stream as AudioStreamMP3).loop
+	if stream is AudioStreamOggVorbis: return (stream as AudioStreamOggVorbis).loop
+	return false
+func check_fight_track(track, who: String) -> void:
+	check(game.flow.music_track == track, "%s fights to its own track" % who)
+	check(music_loops(track), "%s plays a looping copy, not the shared file" % who)
+func check_bar_style() -> void:
+	var fill: StyleBox = game.boss_bar.get_theme_stylebox("fill")
+	var back: StyleBox = game.boss_bar.get_theme_stylebox("background")
+	check(fill is StyleBoxFlat and (fill as StyleBoxFlat).bg_color == Color("ffc66c"), "The boss bar fill is amber")
+	check(back is StyleBoxFlat, "The boss bar background is a flat style")
+## Park Hoppy in reach of a boss that is already chasing, then swing with his own tick.
+func arm_swing(boss, weapon: String, invulnerable: float) -> void:
+	var p = game.player
+	p.position = boss.position-Vector2(80, 0)
+	p.facing = 1
+	p.steer = 0
+	p.knock = Vector2.ZERO
+	p.velocity = Vector2.ZERO
+	p.height = 0
+	p.rise = 0
+	p.swing_left = 0
+	p.queued = false
+	p.combo = 0
+	p.combo_window = 0
+	p.effects = {}
+	p.shield = false
+	p.controlled = false
+	p.input_lock = 0
+	p.hp = 3
+	if weapon == "":
+		p.weapon = ""
+		p.visual_weapon = ""
+		p.durability = 0
+		p.held.hide()
+	else:
+		p.equip(weapon)
+		p.pickup_time = 0
+		p.held.show()
+	p.invulnerable = invulnerable
+	boss.hp = 1
+	boss.hits = 0
+	boss.state = "chase"
+	game.clear_threats()
+	game.playing = true
+	game.state = "combat"
+func swing_to(p, goal: String) -> void:
+	p.start_attack()
+	var guard := 0
+	while game.state != goal and guard < 80:
+		p.tick(DT)
+		guard += 1
+	if game.state != goal:
+		var hp := -1.0
+		if is_instance_valid(game.boss): hp = game.boss.hp
+		print("SWING stuck state=%s guard=%d playing=%s swing_left=%s facing=%s hp=%s" % [game.state, guard, game.playing, p.swing_left, p.facing, hp])
+	check(game.state == goal, "A swing reaches %s after %d ticks" % [goal, guard])
+func check_cheer(p, label: String, iframes: bool) -> void:
+	check(p.body.animation == "victory", "%s leaves Hoppy in the victory pose" % label)
+	check(p.body.sprite_frames == p.COMBAT_FRAMES, "%s draws the combat sheet, not an armed one" % label)
+	check(not p.held.visible, "%s keeps the weapon hidden" % label)
+	check(is_equal_approx(p.body.modulate.a, 1.0), "%s holds Hoppy at full opacity" % label)
+	if iframes: check(p.invulnerable > 0, "%s still has i-frames, so the opacity check is real" % label)
+	check(is_equal_approx(p.swing_left, 0.0) and not p.queued, "%s clears the swing and its queue" % label)
+func check_swing_kills() -> void:
+	await boot(0)
+	game.enter_room(2)
+	freeze()
+	if not summon(): return
+	finish_dip()
+	check(Catalog.MINI_BOSS_MUSIC != Catalog.BOSS_MUSIC, "The district-boss track is not the Grand Merge Conflict's")
+	check_fight_track(Catalog.MINI_BOSS_MUSIC, "Stack Overflow")
+	var boss = game.boss
+	game.retry_stage()
+	await process_frame
+	await process_frame
+	freeze()
+	game.begin_play()
+	check(game.boss == null and game.flow.music_track == Catalog.MUSIC[0], "A mid-fight retry returns to the district track")
+	game.flow.banner("", "", 0)
+	game.hide_toast()
+	game.enter_room(2)
+	freeze()
+	if not summon(): return
+	boss = game.boss
+	leave_intro(boss)
+	arm_swing(boss, "", 0.0)
+	var p = game.player
+	swing_to(p, "boss_victory")
+	check_cheer(p, "An unarmed swing kill", false)
+	check(not game.boss_bar.visible and not game.boss_text.visible, "A swing kill hides the district-boss bar")
+	game._physics_process(DT)
+	check_cheer(p, "The next victory tick", false)
+	game.retry_stage()
+	await process_frame
+	await process_frame
+	freeze()
+	game.begin_play()
+	game.flow.banner("", "", 0)
+	game.hide_toast()
+	game.enter_room(2)
+	freeze()
+	if not summon(): return
+	boss = game.boss
+	leave_intro(boss)
+	arm_swing(boss, "linter_staff", 1.0)
+	p = game.player
+	swing_to(p, "boss_victory")
+	check_cheer(p, "An armed swing kill", true)
+	game._physics_process(DT)
+	check_cheer(p, "The armed victory's next tick", true)
+func swing_grand() -> void:
+	var boss = game.boss
+	boss.vulnerable = true
+	boss.hp = 1
+	var p = game.player
+	p.position = boss.position-Vector2(70, 0)
+	p.facing = 1
+	p.steer = 0
+	p.knock = Vector2.ZERO
+	p.velocity = Vector2.ZERO
+	p.height = 0
+	p.rise = 0
+	p.swing_left = 0
+	p.queued = false
+	p.combo = 0
+	p.combo_window = 0
+	p.effects = {}
+	p.shield = false
+	p.controlled = false
+	p.input_lock = 0
+	p.hp = 3
+	p.equip("linter_staff")
+	p.pickup_time = 0
+	p.held.show()
+	game.clear_threats()
+	game.playing = true
+	game.state = "combat"
+	swing_to(p, "finisher")
+	check(not p.held.visible, "The finisher hides the weapon on the killing swing")
+	check(game.boss_bar.visible, "The Grand Merge Conflict bar stays up into the finisher")
+	game._physics_process(DT)
+	var armed = Art.armed("linter_staff")
+	check(armed != null and p.body.sprite_frames != armed and not p.held.visible, "The finisher's next tick does not draw the armed sheet")
+	# celebrate() runs inside this frame, after the flag that decides whether the party ticks.
+	game.merge_slammed = true
+	game.finish_clock = 4.0-DT*0.5
+	game._physics_process(DT)
+	check(game.state == "celebration" and game.party.active() and is_equal_approx(game.party.clock, 0.0), "The frame that starts the celebration does not tick it")
+func check_celebration_pause() -> void:
+	game.toast("still up", 2)
+	game.state = "finisher"
+	game.celebrate()
+	check(game.state == "celebration" and game.party.active(), "celebrate() starts the celebration")
+	check(is_equal_approx(game.party.clock, 0.0) and game.toast_left <= 0, "celebrate() hides the toast and waits for the next tick")
+	var party_ticks := 0
+	while game.state == "celebration" and game.party.clock < 1.0 and party_ticks < 120:
+		game._physics_process(DT)
+		party_ticks += 1
+	check(game.party.clock >= 1.0 and is_instance_valid(game.party.jingle), "The jingle is playing by one second")
+	var held_clock: float = game.party.clock
+	game.pause("x")
+	check(paused and game.state == "paused", "Pause from the celebration")
+	game._physics_process(1.0)
+	await process_frame
+	await process_frame
+	await process_frame
+	check(is_equal_approx(game.party.clock, held_clock), "Pause freezes the celebration clock")
+	check(is_instance_valid(game.party.jingle) and not game.party.jingle.can_process() and game.party.jingle.stream_paused, "Pause freezes the victory jingle")
+	game.resume()
+	check(game.state == "celebration", "Resume restores the celebration")
+	var resumed: float = game.party.clock
+	game._physics_process(DT)
+	party_ticks += 1
+	check(game.party.clock > resumed, "Resume advances the celebration clock")
+	while game.state == "celebration" and party_ticks < 600:
+		game._physics_process(DT)
+		party_ticks += 1
+	check(game.state == "ending" and game.story_pages == "ENDING" and not game.party.active(), "The celebration hands off to the ending (%d ticks)" % party_ticks)
+	check(absi(party_ticks-int(ceil(game.Celebration.LENGTH/DT))) <= 2, "The celebration lasts %ss" % game.Celebration.LENGTH)
 func check_grand() -> void:
 	game.flow.banner("", "", 0)
 	game.hide_toast()
@@ -266,6 +455,9 @@ func check_grand() -> void:
 	var still := ""
 	if is_instance_valid(game.boss): still = game.boss.get_script().resource_path
 	check(not game.gate_open and not game.has_mini_boss() and still.ends_with("boss.gd"), "Clearing room 3 of district 3 does not call a district boss")
+	finish_dip()
+	check_fight_track(Catalog.BOSS_MUSIC, "The Grand Merge Conflict")
+	swing_grand()
 func check_ignored(boss) -> void:
 	var hp: float = boss.hp
 	for blocked in ["knockout", "boss_victory", "celebration", "finisher", "ending", "won"]:
@@ -330,9 +522,12 @@ func run() -> void:
 	check(is_equal_approx(float(Catalog.FLOW.boss_victory), 1.4) and is_equal_approx(float(Catalog.FLOW.boss_hop), 36.0), "The victory hop is 1.4s and 36px")
 	check("boss_victory" in game.PAUSABLE and "celebration" in game.PAUSABLE, "boss_victory and celebration are pausable")
 	check("boss_victory" in game.MINIMAP_STATES, "boss_victory keeps the minimap state")
+	check_bar_style()
 	await boot(0)
 	walk_to_last_room()
 	if summon() and expect_mini("stack_overflow", "STACK OVERFLOW", 14, "linter_enforcer", "armored_idle"):
+		finish_dip()
+		check_fight_track(Catalog.MINI_BOSS_MUSIC, "Stack Overflow")
 		see_minimap()
 		var boss = game.boss
 		leave_intro(boss)
@@ -345,6 +540,8 @@ func run() -> void:
 		game.enter_room(2)
 		freeze()
 		if summon() and expect_mini("zero_day", "ZERO-DAY", 18, "force_push_bandit", "idle"):
+			finish_dip()
+			check_fight_track(Catalog.MINI_BOSS_MUSIC, "Zero-Day")
 			see_minimap()
 			var boss = game.boss
 			leave_intro(boss)
@@ -352,16 +549,9 @@ func run() -> void:
 			down_and_off(1, false)
 	if game.stage_index == 2 and game.state == "combat": check_grand()
 	await check_retry()
+	await check_swing_kills()
 	# The Force Merge hands off to the celebration, which hands off to the ending once.
-	game.state = "finisher"
-	game.celebrate()
-	check(game.state == "celebration" and game.party.active(), "celebrate() starts the celebration")
-	var party_ticks := 0
-	while game.state == "celebration" and party_ticks < 600:
-		game._physics_process(DT)
-		party_ticks += 1
-	check(game.state == "ending" and game.story_pages == "ENDING" and not game.party.active(), "The celebration hands off to the ending (%d ticks)" % party_ticks)
-	check(absi(party_ticks-int(ceil(game.Celebration.LENGTH/DT))) <= 2, "The celebration lasts %ss" % game.Celebration.LENGTH)
+	await check_celebration_pause()
 	print("Code City mini-boss failures: ", failures)
 	if is_instance_valid(game): game.queue_free()
 	root.get_node("AudioService").shutdown()
