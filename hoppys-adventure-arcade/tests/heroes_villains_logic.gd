@@ -1,5 +1,7 @@
 extends SceneTree
 const Catalog = preload("res://modes/beatem_up/reinvent/catalog.gd")
+const DT := 1.0/60.0
+const Facing = preload("res://tests/support/facing_checks.gd")
 var game
 var failures := 0
 
@@ -101,6 +103,7 @@ func run() -> void:
 	p.swing_left=.1;p.request_attack();p.tick(.11)
 	check(p.combo==3,"Third attack reaches finisher")
 	p.swing_left=0;p.combo_window=0;p.start_attack();check(p.combo==1,"Expired combo resets")
+	Facing.check_facing(p,check,enemy,"hallucinated_api_gremlin",clear_enemies)
 	p.swing_left=0;p.combo_window=0
 	var a=enemy("hallucinated_api_gremlin",Vector2(475,550))
 	var b=enemy("hallucinated_api_gremlin",Vector2(475,640))

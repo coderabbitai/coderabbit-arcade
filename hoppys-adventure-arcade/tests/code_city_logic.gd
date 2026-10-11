@@ -1,6 +1,8 @@
 extends SceneTree
 var Game
 const Catalog = preload("res://modes/beatem_up/catalog.gd")
+const DT := 1.0/60.0
+const Facing = preload("res://tests/support/facing_checks.gd")
 var failures := 0
 var game
 func _initialize() -> void: call_deferred("run")
@@ -15,7 +17,7 @@ func clear_enemies() -> void:
 	game.enemies.clear()
 func enemy(kind: String, pos: Vector2, split := false):
 	var e=game.spawn_enemy(kind,pos,split)
-	e.set_physics_process(false)
+	if e!=null: e.set_physics_process(false)
 	return e
 func freeze() -> void:
 	game.set_physics_process(false)
@@ -66,6 +68,7 @@ func run() -> void:
 	check(p.queued,"Late input buffers the next combo step")
 	p.tick(.11)
 	check(p.combo==2 and not p.queued,"Buffered step is consumed exactly once")
+	Facing.check_facing(p,check,enemy,"syntax_error_sprite",clear_enemies)
 	p.swing_left=0;p.queued=false;p.combo=1;p.facing=1
 	var a=enemy("syntax_error_sprite",Vector2(470,550))
 	var b=enemy("syntax_error_sprite",Vector2(470,640))
@@ -197,8 +200,10 @@ func run() -> void:
 	boss.vulnerable=true;boss.take_hit(6,0,Vector2.ZERO,true)
 	check(game.state=="finisher" and game.bullets.is_empty() and game.warnings.is_empty(),"Boss defeat cancels threats and begins Force Merge")
 	game._physics_process(4.1)
-	game._physics_process(4.1)
-	check(game.state=="ending" and game.completion_count==0 and game.story_pages=="ENDING","Force Merge leads into the victory epilogue, not straight to the results")
+	check(game.state=="celebration" and game.party.active(),"Force Merge hands off to the celebration")
+	game._physics_process(5.3)
+	check(game.state=="ending" and game.completion_count==0 and game.story_pages=="ENDING","The celebration leads into the victory epilogue, not straight to the results")
+	check(game.flow.music_track!=null and game.flow.music_track.resource_path.ends_with("code_city_victory_loop.wav") and game.music.playing,"The victory loop plays into the epilogue")
 	var epilogue_guard:=0
 	while game.state=="ending" and epilogue_guard<40:
 		game._physics_process(1.0);epilogue_guard+=1
