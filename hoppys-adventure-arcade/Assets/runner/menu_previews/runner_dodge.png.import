@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://d1rd4vigxgnpj"
-path="res://.godot/imported/runner_turn.png-df8d557867ae5e2c2df6ed0e44c3cfc8.ctex"
+uid="uid://bipt005l6ywj2"
+path="res://.godot/imported/runner_dodge.png-e2b355f055264e4a8670b51c80490a3a.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Assets/runner/menu_previews/runner_turn.png"
-dest_files=["res://.godot/imported/runner_turn.png-df8d557867ae5e2c2df6ed0e44c3cfc8.ctex"]
+source_file="res://Assets/runner/menu_previews/runner_dodge.png"
+dest_files=["res://.godot/imported/runner_dodge.png-e2b355f055264e4a8670b51c80490a3a.ctex"]
 
 [params]
 

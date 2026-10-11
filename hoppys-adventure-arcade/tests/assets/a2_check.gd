@@ -43,6 +43,19 @@ func census(node: Node) -> Vector2i:
 			result.y += triangles(child.draw_pass_1) * child.amount
 	return result
 
+func _straight_modules(corridor: Node3D) -> bool:
+	corridor._update_pillars()
+	for i in 12:
+		var data: Color = corridor._rack_data[i]
+		if not is_zero_approx(data.g) or not is_equal_approx(data.b, 1.0):
+			return false
+		if not corridor._rack_poses[i].basis.is_equal_approx(Basis.IDENTITY):
+			return false
+	for i in 24:
+		if not corridor._pillars.get_instance_transform(i).basis.is_equal_approx(Basis.IDENTITY):
+			return false
+	return true
+
 func run() -> void:
 	# Dummy rendering keeps the original get_image() snapshot after set_image().
 	# Exercise the full lazy path for pixel/mipmap assertions; prewarm_check covers
@@ -83,40 +96,16 @@ func run() -> void:
 	check(Textures.maps()["normal_map"] == Textures.maps()["normal_map"], "procedural map cache")
 	var rest := census(corridor)
 	var peak := rest
-	for direction in [-1, 1]:
-		corridor.set_turn(0.0, direction)
-		corridor._process(0.0)
-		var pose: Transform3D = corridor.transform
-		var racks: Transform3D = corridor._rack_poses[0]
-		for p in [0.15, 0.3, 0.5, 0.7, 0.85, 1.0]:
-			corridor.set_turn(p, direction)
-			corridor._process(0.0)
-			check(is_zero_approx(corridor._corner_material.get_shader_parameter("bend")), "B7 no shader bend on panel")
-			check(corridor._turn_chevron.get_parent() == corridor._corner, "B7 shared panel pose")
-			var relative: Vector3 = corridor._corner.to_local(corridor._turn_chevron.global_position)
-			check(relative.is_equal_approx(Vector3(corridor.bend * 18.0 * 18.0 - corridor._corner.position.x, 0.5, 6.0)), "B7 label follows curve center in front of wall")
-			var label: Label3D = corridor._turn_chevron
-			var width: float = label.font.get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, label.font_size).x * label.pixel_size
-			var sight_clear := true
-			var sign_center: Vector3 = corridor._corner.position + relative
-			for z in range(-23, 8):
-				var ratio := (8.0 - float(z)) / (8.0 - sign_center.z)
-				var center_x: float = corridor.bend * pow(maxf(0.0, -float(z) - 6.0), 2)
-				for edge_x in [sign_center.x - width * 0.5, sign_center.x + width * 0.5]:
-					if absf(edge_x * ratio - center_x) > 3.6: sight_clear = false
-			check(sight_clear, "R5 TURN text and arrow sightlines clear near rack envelope")
-			check(width < 6.0 and label.text.contains("TURN"), "B7 complete text fits clear corridor width")
-			check(label.font.has_char(0x25BA) and label.font.has_char(0x25C4), "B7 font supports both chevrons")
-			if p == 0.5:
-				check(not corridor._rack_poses[5].basis.is_equal_approx(Basis.IDENTITY), "rack module tangent yaw")
-			var now := census(corridor)
-			peak = Vector2i(maxi(peak.x, now.x), maxi(peak.y, now.y))
-			if p >= 0.3 and p <= 0.7: check(is_equal_approx(absf(corridor.rotation_degrees.y), 55), "55 degree hold")
-		check(corridor.transform == pose and corridor._rack_poses[0] == racks, "identical turn endpoints")
+	check(corridor.rotation == Vector3.ZERO and _straight_modules(corridor), "corridor, racks and pillars stay square")
+	var bulkhead := corridor.starship.get_node_or_null("EntryBulkhead") as MeshInstance3D
+	check(bulkhead != null and bulkhead.get_node_or_null("EntryDoorGlow") != null, "entry bulkhead closes the near end")
 	for speed in [0.0, 12.0, 24.0, 32.0]:
 		corridor.set_scroll_speed(speed)
 		corridor._offset = 95.99
 		corridor._process(0.02)
+		check(corridor.rotation == Vector3.ZERO and _straight_modules(corridor), "scroll leaves the corridor square")
+		var scrolled := census(corridor)
+		peak = Vector2i(maxi(peak.x, scrolled.x), maxi(peak.y, scrolled.y))
 		check(corridor._offset >= 0 and corridor._offset < 96, "scroll wrap")
 		for i in 11:
 			var a: float = corridor._rack_poses[i].origin.z
@@ -139,7 +128,7 @@ func run() -> void:
 	paused = false
 	corridor.set_process(false)
 	var paths := ["res://scenes/runner/environment/hifi/rack_metal.gdshader"]
-	for name in ["floor_grid", "code_wall", "code_wall_fade", "far_glow", "hologram"]:
+	for name in ["floor_grid", "code_wall", "far_glow", "hologram"]:
 		paths.append("res://scenes/runner/shaders/" + name + ".gdshader")
 	var regex := RegEx.new()
 	regex.compile("\\bTIME\\b")
@@ -151,7 +140,7 @@ func run() -> void:
 		check(texture.get_width() <= 1024 and texture.get_height() <= 1024, "texture size")
 	# check_walls measures every map and both atlases against the 8 x 1024² area budget.
 	check(rest.x <= 14 and peak.x <= 18 and peak.y <= 60000, "draw and triangle budgets")
-	print("ASSET A2 CENSUS: rest=%d turn=%d triangles=%d textures=8 (7 maps + shared wall/particle atlas)" % [rest.x, peak.x, peak.y])
+	print("ASSET A2 CENSUS: rest=%d straight=%d triangles=%d textures=8 (7 maps + shared wall/particle atlas)" % [rest.x, peak.x, peak.y])
 	corridor.free()
 	check(is_equal_approx(root.scaling_3d_scale, baseline), "viewport ownership restored")
 	var camera := Camera3D.new()
@@ -201,7 +190,7 @@ func check_round_two(corridor: Node3D) -> void:
 	check(key.light_color == preload("res://scenes/runner/environment/runner_palette.gd").MINT, "B3 palette key light")
 	check(key.omni_range < 3.5 and key.light_energy <= 0.65 and key.position.y < key.omni_range, "B3 light reaches floor but not walls")
 	check(float(corridor.get_node("Floor").material_override.get_shader_parameter("grid_strength")) >= 0.45, "B4 readable grid strength")
-	for path in ["res://scenes/runner/shaders/floor_grid.gdshader", "res://scenes/runner/shaders/code_wall.gdshader", "res://scenes/runner/shaders/code_wall_fade.gdshader", "res://scenes/runner/environment/hifi/rack_metal.gdshader"]:
+	for path in ["res://scenes/runner/shaders/floor_grid.gdshader", "res://scenes/runner/shaders/code_wall.gdshader", "res://scenes/runner/environment/hifi/rack_metal.gdshader"]:
 		var tabs_only := true
 		for line in FileAccess.get_file_as_string(path).split("\n"):
 			if line.begins_with(" "): tabs_only = false
@@ -238,8 +227,17 @@ func check_round_three(corridor: Node3D) -> void:
 	check(float(corridor.get_node("WallR").material_override.get_shader_parameter("panel_period")) == 8.0, "R3 B2 corridor opts into eight-meter panels")
 	corridor._process(0.1)
 	check(corridor.get_node("LaneGlow").material_override.get_shader_parameter("clock") == corridor._clock, "lane glow receives pause-safe clock")
-	check(not corridor._scroll_materials.has(material) and not corridor._frame_materials.has(material) and corridor._metal_bend_materials.has(material), "metal receives only supported uniforms")
-	check(corridor._clock_materials.size() == 8, "persistent complete clock targets")
+	check(not corridor._scroll_materials.has(material) and not corridor._frame_materials.has(material) and corridor._rack_materials.has(material), "metal receives only supported uniforms")
+	# Scroll surfaces, the far glow, the pillars, the lane, and every rack. The corner material is gone.
+	var clock_targets: int = corridor._scroll_materials.size() + corridor._rack_materials.size() + 3
+	check(corridor._clock_materials.size() == clock_targets, "persistent complete clock targets (%d)" % corridor._clock_materials.size())
+	for listed in corridor._scroll_materials:
+		check(corridor._clock_materials.has(listed), "clock list keeps scroll material")
+	for listed in corridor._rack_materials:
+		check(corridor._clock_materials.has(listed), "clock list keeps rack material")
+	check(corridor._clock_materials.has(corridor._far_material), "clock list keeps far glow")
+	check(corridor._clock_materials.has(corridor._pillar_material), "clock list keeps pillars")
+	check(corridor._clock_materials.has(corridor.get_node("LaneGlow").material_override), "clock list keeps lane glow")
 	check(float(corridor.get_node("Ceiling").material_override.get_shader_parameter("intensity")) <= 0.15, "ceiling emission controlled")
 	var metrics := preload("res://scenes/runner/environment/hifi/capture_metrics.gd")
 	var test_image := Image.create(16, 16, false, Image.FORMAT_RGB8)
@@ -330,7 +328,6 @@ func check_round_five(corridor: Node3D) -> void:
 	check(float(ceiling.get_shader_parameter("baked_gain")) >= 0.12 and float(ceiling.get_shader_parameter("intensity")) >= 0.05, "R5 B2 ceiling depth cue restored")
 	var wall: ShaderMaterial = corridor.get_node("WallR").material_override
 	check(wall.shader.code.contains("front*1.35+middle*0.48+rear*0.24+listing"), "R5 B2 full glyph ink restored")
-	check(corridor._turn_chevron.pixel_size >= 0.014 and corridor._turn_chevron.position.z >= 6.0, "R5 larger forward TURN sign")
 
 func check_round_six(corridor: Node3D) -> void:
 	var metrics := preload("res://scenes/runner/environment/hifi/capture_metrics.gd")
@@ -375,7 +372,7 @@ func check_walls(corridor: Node3D) -> void:
 	check(atlas.RAIN_LAYERS == 3, "walls three rain layers")
 	var wall: ShaderMaterial = corridor.get_node("WallR").material_override
 	check(wall.get_shader_parameter("wall_atlas") == texture, "walls new atlas bound")
-	for shader_name in ["code_wall", "code_wall_fade"]:
+	for shader_name in ["code_wall"]:
 		var source := FileAccess.get_file_as_string("res://scenes/runner/shaders/" + shader_name + ".gdshader")
 		check(source.count("= rain(") == atlas.RAIN_LAYERS and source.contains("float listing ="), "walls rain and persistent listing " + shader_name)
 	check(Prewarm._census.wall_atlas["texture[]"] == texture, "walls new atlas prewarmed and counted")
@@ -492,16 +489,6 @@ func check_round_nine(corridor: Node3D) -> void:
 				var value: float = 0.15 + float(x) * 0.003 + (amplitude if (x + y) % 2 == 0 else -amplitude)
 				patch.set_pixel(x, y, Color(value, value, value))
 		check((metrics.wall_stats(patch, region).detail >= metrics.WALL_MIN_DETAIL) == (factor > 1.0), "R9 detail component brackets configured threshold independently of exposure")
-	check(corridor._corner_material.get_shader_parameter("full_face") == true, "R9 end wall full face opt-in")
-	var corner_source: String = corridor._corner_material.shader.code
-	check(corner_source.contains("if (full_face) { screen = UV; variant = 0.0; }"), "R9 terminator aperture follows full quad")
-	var canvas := Image.create(1280, 720, false, Image.FORMAT_RGB8)
-	canvas.fill(Color.BLACK)
-	for i in metrics.END_WALL_REGIONS.size():
-		check(not metrics.end_wall_stats(canvas, i)["pass"], "R9 black terminator fails sample %d" % i)
-	canvas.fill(Color(0.1, 0.1, 0.1))
-	for i in metrics.END_WALL_REGIONS.size():
-		check(metrics.end_wall_stats(canvas, i)["pass"], "R9 visible terminator passes sample %d" % i)
 	var peak := brush_correlation_peak(Textures.maps().albedo_map.get_image())
 	check(peak < 0.4, "R9 generated plating has no dominant brush period")
 	var periodic := Image.create(1024, 1024, false, Image.FORMAT_R8)
@@ -525,7 +512,6 @@ func check_round_nine(corridor: Node3D) -> void:
 	check(triangles(corridor._rack_batches[0].mesh) == triangles(racks.mesh(0)), "R9 delta layout adds no triangles")
 	check(corridor._rack_batches.size() == 3 and census(corridor).x <= 13, "R9 one draw of rest headroom")
 	var saved_offset: float = corridor._offset
-	var saved_bend: float = corridor.bend
 	var tags: Array[float] = []
 	for offset in [0.0, 95.99, 96.0]:
 		corridor._offset = offset
@@ -534,6 +520,7 @@ func check_round_nine(corridor: Node3D) -> void:
 		for i in 12:
 			var batch_index: int = racks.BATCH_FOR_VARIANT[racks.PATTERN[i]]
 			var data: Color = corridor._rack_data[i] # Dummy renderer does not retain MultiMesh buffer readback.
+			check(is_zero_approx(data.g) and is_equal_approx(data.b, 1.0), "R9 racks stay straight across wrap")
 			check(is_equal_approx(data.a, racks.instance_tag(i)), "R9 stable per-instance wear tag across wrap")
 			if offset == 0.0: tags.append(data.a)
 			slot[batch_index] += 1
@@ -541,11 +528,10 @@ func check_round_nine(corridor: Node3D) -> void:
 	# Shader inverse yaw uses reconstructed sine, never the repurposed tag channel.
 	check(material.shader.code.contains("origin_s*p.z") and not material.shader.code.contains("INSTANCE_CUSTOM.w*p.z"), "R9 tag is not interpreted as yaw")
 	corridor._offset = saved_offset
-	corridor.bend = saved_bend
 	corridor._update_pillars()
 	var streak: ShaderMaterial = corridor._speed_lines.draw_pass_1.material
 	check(streak.shader.code.contains("screen_alpha = 0.035") and streak.shader.code.contains("corridor_frame"), "R9 screen-adjacent streak attenuation in corridor frame")
-	print("ASSET A2 R9: brush_autocorrelation_peak=%.4f (<0.4); merged_batches=%d; full_face=true" % [peak, corridor._rack_batches.size()])
+	print("ASSET A2 R9: brush_autocorrelation_peak=%.4f (<0.4); merged_batches=%d; racks_straight" % [peak, corridor._rack_batches.size()])
 
 # Guard discrimination only. No CPU image claims to predict GPU convergence.
 func check_round_eleven(corridor: Node3D) -> void:

@@ -32,7 +32,7 @@ func capture() -> void:
 	camera.fov = 60
 	var output := ProjectSettings.globalize_path("res://../docs/previews/starship")
 	DirAccess.make_dir_recursive_absolute(output)
-	for view in ["run","architecture","boss","turn"]:
+	for view in ["run","architecture","boss","entry"]:
 		camera.position = Vector3(0,4,8)
 		camera.look_at(Vector3(0,1,-8))
 		if view == "architecture":
@@ -40,7 +40,7 @@ func capture() -> void:
 			camera.look_at(Vector3(-1.8,3.2,-9))
 		if view == "boss":
 			corridor.set_boss_arena(true)
-			corridor.starship.sync(5.0,1.0,0.0,corridor.global_transform,true,2.0)
+			corridor.starship.sync(5.0,1.0,corridor.global_transform,true,2.0)
 			var mount := Node3D.new()
 			mount.position = Vector3(0,2.6,-14)
 			world.add_child(mount)
@@ -52,14 +52,14 @@ func capture() -> void:
 			boss._process(1.4)
 			boss.set_process(false)
 			mount.name = "BossFixture"
-		if view == "turn":
+		if view == "entry":
+			# The run intro's reverse angle: down the corridor, looking back past Hoppy at the sealed
+			# entry bulkhead that closes the near end.
 			world.get_node("BossFixture").queue_free()
 			corridor.set_boss_arena(false)
-			corridor.set_turn(0.5,1)
 			corridor._process(2.0)
-			camera.position = corridor.transform * Vector3(0,4,8)
-			camera.look_at(corridor.transform * Vector3(0,1,-8))
-			hero.visible = false
+			camera.position = corridor.transform * Vector3(0,2.4,-6.0)
+			camera.look_at(corridor.transform * Vector3(0,1.6,8.0))
 		await create_timer(0.8).timeout
 		await RenderingServer.frame_post_draw
 		var error := root.get_texture().get_image().save_png(output+"/starship-"+view+".png")

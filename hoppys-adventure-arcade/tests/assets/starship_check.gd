@@ -35,7 +35,7 @@ func run() -> void:
 		for vertex: Vector3 in mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]:
 			if absf(vertex.x) < 3.1 and vertex.y < 3.0: lane_clear = false
 		check(lane_clear, "architectural dressing stays outside playable lane clearance")
-	for node in [corridor.starship.get_node("ArmouredDeck"),corridor.starship.get_node("FarBulkhead")] + corridor.starship.reactor_dock.get_children():
+	for node in [corridor.starship.get_node("ArmouredDeck"), corridor.starship.get_node("FarBulkhead"), corridor.starship.get_node("EntryBulkhead"), corridor.starship.get_node("EntryBulkhead/EntryDoorGlow")] + corridor.starship.reactor_dock.get_children():
 		var arrays: Array = node.mesh.surface_get_arrays(0)
 		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
 		extra_triangles += (indices.size() if not indices.is_empty() else arrays[Mesh.ARRAY_VERTEX].size()) / 3
@@ -48,12 +48,30 @@ func run() -> void:
 	corridor.set_scroll_speed(32)
 	corridor._process(3.0)
 	check(is_zero_approx(corridor._offset), "maximum-speed 96m wrap has no drift")
-	for direction in [-1,1]:
-		corridor.set_turn(0.5,direction)
-		corridor._process(0.0)
-		check(is_equal_approx(corridor.bend,0.01*direction), "retained turn profile")
-		for material in corridor.starship.materials:
-			check(is_equal_approx(material.get_shader_parameter("bend"),corridor.bend), "all starship surfaces share bend")
+	check(corridor.rotation == Vector3.ZERO, "the corridor stays square")
+	var bulkhead: MeshInstance3D = corridor.starship.get_node("EntryBulkhead")
+	var hull: ShaderMaterial = bulkhead.material_override
+	check(bulkhead.get_node_or_null("EntryDoorGlow") != null, "entry door has its glow child")
+	check(is_equal_approx(float(hull.get_shader_parameter("metallic")), 0.68)
+		and not bool(hull.get_shader_parameter("window_mode"))
+		and is_zero_approx(float(hull.get_shader_parameter("glow")))
+		and not hull.shader.code.contains("blend_"),
+		"entry bulkhead is opaque hull")
+	var beyond := false
+	var sleeve := false
+	var z_min := 1000.0
+	var z_max := -1000.0
+	for vertex in bulkhead.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]:
+		z_min = minf(z_min, vertex.z)
+		z_max = maxf(z_max, vertex.z)
+		beyond = beyond or vertex.z > 24.0
+		sleeve = sleeve or (vertex.z < 24.0 and vertex.z >= 11.0)
+	check(beyond and z_max > 24.0, "entry door sits beyond z +24 (max %.2f)" % z_max)
+	check(sleeve and z_min > 10.0 and z_min < 12.5, "entry sleeve reaches back over the near modules (min %.2f)" % z_min)
+	for material in corridor.starship.materials:
+		var bend_value: Variant = material.get_shader_parameter("bend")
+		# An unset uniform keeps the shader default, which is square.
+		check(bend_value == null or is_zero_approx(float(bend_value)), "starship surfaces stay unbent")
 	corridor.set_boss_arena(true)
 	corridor._process(2.0)
 	check(corridor.starship.reactor_dock.visible, "boss reactor_dock appears")
@@ -75,7 +93,7 @@ func run() -> void:
 	check(is_equal_approx(root.scaling_3d_scale,0.85), "newest viewport owner retains quality scale")
 	await Cleanup.release(self,[second])
 	check(is_equal_approx(root.scaling_3d_scale,original_scale), "viewport quality restores after exit")
-	print("STARSHIP TOTAL: %d triangles including deck, far bulkhead and reactor dock" % (triangles + extra_triangles))
+	print("STARSHIP TOTAL: %d triangles including deck, far bulkhead, entry bulkhead and reactor dock" % (triangles + extra_triangles))
 	print("STARSHIP GEOMETRY: repeated modules=%d triangles; 6 batches; 1 shared 256x256 texture" % triangles)
 	print("STARSHIP CHECK: %s (%d checks, %d failures)" % ["PASS" if failures == 0 else "FAIL",checks,failures])
 	quit(0 if failures == 0 else 1)

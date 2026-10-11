@@ -1,13 +1,16 @@
 extends SceneTree
 ## Captures the Endless Runner stills the main menu showcases (graphical run only):
 ## Godot --always-on-top --path hoppys-adventure-arcade --script res://tests/capture_runner_menu_previews.gd
-## Plays a real autopilot run with every 2D layer hidden, fast-forwards the stage to its corner
-## (which is followed by the boss) and writes res://Assets/runner/menu_previews/runner_{gameplay,powerup,turn,boss}.png.
+## Plays a real autopilot run with every 2D layer hidden, catches the bot jumping a blocking hazard,
+## fast-forwards the stage to its boss and writes
+## res://Assets/runner/menu_previews/runner_{gameplay,powerup,dodge,boss}.png.
 const OUT_DIR := "res://Assets/runner/menu_previews/"
 const RUN_SEED := 4242
 const DEADLINE_SECONDS := 240.0
 var game: Node
-var wanted := {"powerup": false, "turn": false, "boss": false}
+var wanted := {"powerup": false, "dodge": false, "boss": false}
+## A jump only counts as a dodge when a blocking hazard is this close ahead (track z).
+const DODGE_REACH := 9.0
 var pending: Array[String] = []
 
 func _initialize() -> void:
@@ -24,8 +27,10 @@ func run() -> void:
 	game.autostart = false
 	game.leaderboard_path = OS.get_temp_dir().path_join("runner_menu_capture_leaderboard.cfg")
 	root.add_child(game)
-	game.turn_started.connect(func(_direction, _seconds): _want("turn"))
+	game.player_action.connect(_on_action)
 	game.boss_spawned.connect(func(_kind, _hp): _want("boss"))
+	# The stills are gameplay: no run intro in front of them.
+	game.pending_intro_mode = &""
 	game.start_run(RUN_SEED)
 	game.set_autopilot(true)
 	_hide_hud_panels()
@@ -35,6 +40,7 @@ func run() -> void:
 	var deadline := Time.get_ticks_msec() + int(DEADLINE_SECONDS * 1000)
 	while wanted.values().has(false) and Time.get_ticks_msec() < deadline:
 		if game.state != &"running":
+			game.pending_intro_mode = &""
 			game.start_run(RUN_SEED + Time.get_ticks_msec() % 997)
 			game.set_autopilot(true)
 		# A pickup glowing a few metres ahead reads better than the frame after a grab.
@@ -43,13 +49,14 @@ func run() -> void:
 				if pickup.is_visible_in_tree() and pickup.global_position.z > -11.0 and pickup.global_position.z < -7.0:
 					_want("powerup")
 					break
-		if wanted.powerup and not wanted.turn and game.phase == &"run":
+		if wanted.powerup and wanted.dodge and not wanted.boss and game.phase == &"run":
 			var stages = game.stage_manager
 			stages.stage_distance = maxf(stages.stage_distance, stages.stage_distance_target - 40.0)
 		if not pending.is_empty():
 			var shot: String = pending.pop_front()
-			# Let the moment develop: the turn is mid-swing and the boss has closed in after its intro.
-			await create_timer({"powerup": 0.0, "turn": 0.6, "boss": 4.5}[shot]).timeout
+			# Let the moment develop: Hoppy is at the top of the jump and the boss has closed in after
+			# its intro.
+			await create_timer({"powerup": 0.0, "dodge": 0.15, "boss": 4.5}[shot]).timeout
 			_hide_hud_panels()
 			failures += await _capture(shot)
 			wanted[shot] = true
@@ -62,6 +69,18 @@ func run() -> void:
 	game.queue_free()
 	await create_timer(0.3).timeout
 	quit(failures)
+
+## The bot jumped: keep it as the dodge still only when a blocking hazard is right in front of it.
+func _on_action(action: StringName) -> void:
+	if action != &"jump" or wanted.dodge:
+		return
+	for hazard: Node3D in get_nodes_in_group(&"runner_hazards"):
+		if not hazard.has_method("is_blocking") or not hazard.is_blocking():
+			continue
+		var z: float = game.track_z(hazard)
+		if z < 0.0 and z > -DODGE_REACH:
+			_want("dodge")
+			return
 
 func _want(shot: String) -> void:
 	if not wanted.get(shot, true) and not pending.has(shot):

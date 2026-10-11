@@ -73,25 +73,20 @@ func run() -> void:
 				failures += 1
 		hud_preview.free()
 		await process_frame
-	# Deterministic F10 cards. Capture is deliberately graphical-only.
-	for fixture in ["turn-warning", "boss-intro"]:
+	# Deterministic F10 card. Capture is deliberately graphical-only.
+	for fixture in ["boss-intro"]:
 		var preview := hud_scene.instantiate()
 		preview.autoplay = false
 		root.add_child(preview)
 		preview.start_run()
 		preview.hud.ready_panel.hide()
 		preview.stage_banner.hide()
-		if fixture == "turn-warning":
-			preview.turn_incoming.emit(-1, 3.0)
-			preview.hud.warning_age = 0.4
-			preview.hud._update_turn_warning()
-		else:
-			preview.boss_hp = 140
-			preview.mount_demo_boss()
-			preview.boss_intro.emit(preview.boss_kind, "Merge Conflict Hydra", 3.0)
-			preview.boss_spawned.emit(preview.boss_kind, 140)
-			preview.boss_overlay._process(1.2)
-			preview.boss.get_child(0)._process(1.2)
+		preview.boss_hp = 140
+		preview.mount_demo_boss()
+		preview.boss_intro.emit(preview.boss_kind, "Merge Conflict Hydra", 3.0)
+		preview.boss_spawned.emit(preview.boss_kind, 140)
+		preview.boss_overlay._process(1.2)
+		preview.boss.get_child(0)._process(1.2)
 		preview.hud.set_process(false)
 		preview.boss_overlay.set_process(false)
 		for visual in preview.boss.get_children(): visual.set_process(false)
@@ -118,21 +113,6 @@ func run() -> void:
 		print("BOSS GALLERY DRAW BUDGET: ", calls, " / 184")
 		if error != OK or calls > 184: failures += 1
 	bosses.free()
-	await process_frame
-	var turn := preload("res://scenes/runner/environment/dev/turn_preview.tscn").instantiate()
-	root.add_child(turn)
-	turn.progress = 0.5
-	turn.corridor.set_turn(0.5, 1)
-	for child in turn.get_children():
-		if child is CanvasLayer: child.hide()
-	await create_timer(0.3).timeout
-	await RenderingServer.frame_post_draw
-	var turn_calls := root.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
-	var turn_error := root.get_texture().get_image().save_png(ProjectSettings.globalize_path("res://../docs/previews/endless-runner-turn.png"))
-	print("CAPTURE: turn error=", turn_error, " draw_calls=", turn_calls)
-	print("TURN DRAW BUDGET: ", turn_calls, " / 18 (preview UI hidden)")
-	if turn_error != OK or turn_calls > 18: failures += 1
-	turn.free()
 	await process_frame
 	var clear := (load("res://scenes/runner/ui/dev/hud_preview.tscn") as PackedScene).instantiate()
 	clear.autoplay = false
