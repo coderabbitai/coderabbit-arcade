@@ -670,11 +670,20 @@ func capture_running(path: String) -> void:
 	viewport.render_target_update_mode=SubViewport.UPDATE_ONCE
 	var rid := viewport.get_viewport_rid()
 	await RenderingServer.frame_post_draw
-	while RenderingServer.viewport_get_update_mode(rid)!=RenderingServer.VIEWPORT_UPDATE_DISABLED:
+	var drawn := 0
+	while RenderingServer.viewport_get_update_mode(rid)!=RenderingServer.VIEWPORT_UPDATE_DISABLED and drawn<DRAW_FRAMES:
 		await RenderingServer.frame_post_draw
-	var image := viewport.get_texture().get_image()
-	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path).get_base_dir())
-	check(image.save_png(ProjectSettings.globalize_path(path))==OK,"Running world-space sheet saved with %d rows to %s" % [rows,path])
+		drawn+=1
+	var drew: bool=RenderingServer.viewport_get_update_mode(rid)==RenderingServer.VIEWPORT_UPDATE_DISABLED
+	check(drew,"The running world-space viewport draws within %d frames" % DRAW_FRAMES)
+	if drew:
+		var viewport_texture := viewport.get_texture()
+		var image: Image=viewport_texture.get_image() if viewport_texture!=null else null
+		if image==null:
+			check(false,"The running world-space viewport produced an image")
+		else:
+			DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path).get_base_dir())
+			check(image.save_png(ProjectSettings.globalize_path(path))==OK,"Running world-space sheet saved with %d rows to %s" % [rows,path])
 	viewport.queue_free()
 	await finish_capture()
 
@@ -683,7 +692,10 @@ func run() -> void:
 	if target!="":
 		await capture_locomotion(target)
 		return
-	if running_target()!="": await autoloads_ready()
+	if running_target()!="" and not await autoloads_ready():
+		printerr("FAIL: root and its autoloads were not ready within %d frames" % READY_FRAMES)
+		quit(1)
+		return
 	change_scene_to_file("res://scenes/beatem_up/code_city_brawl.tscn")
 	await process_frame;await process_frame
 	game=current_scene

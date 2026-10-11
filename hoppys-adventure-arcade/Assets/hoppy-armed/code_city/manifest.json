@@ -1133,7 +1133,11 @@
             119
           ]
         ],
-        "fps": 13,
+        "cadence_fps": {
+          "run": 13,
+          "walk_up": 9,
+          "walk_down": 9
+        },
         "body_scale": 1.55
       },
       "unused_legacy_cells": [
@@ -2140,7 +2144,11 @@
             120
           ]
         ],
-        "fps": 13,
+        "cadence_fps": {
+          "run": 13,
+          "walk_up": 9,
+          "walk_down": 9
+        },
         "body_scale": 1.55
       },
       "unused_legacy_cells": [
@@ -3152,7 +3160,11 @@
             120
           ]
         ],
-        "fps": 13,
+        "cadence_fps": {
+          "run": 13,
+          "walk_up": 9,
+          "walk_down": 9
+        },
         "body_scale": 1.55
       },
       "unused_legacy_cells": [
@@ -4208,7 +4220,11 @@
             120
           ]
         ],
-        "fps": 13,
+        "cadence_fps": {
+          "run": 13,
+          "walk_up": 9,
+          "walk_down": 9
+        },
         "body_scale": 1.55
       },
       "unused_legacy_cells": [
@@ -5220,7 +5236,11 @@
             119
           ]
         ],
-        "fps": 13,
+        "cadence_fps": {
+          "run": 13,
+          "walk_up": 9,
+          "walk_down": 9
+        },
         "body_scale": 1.55
       },
       "unused_legacy_cells": [
@@ -6232,7 +6252,11 @@
             120
           ]
         ],
-        "fps": 13,
+        "cadence_fps": {
+          "run": 13,
+          "walk_up": 9,
+          "walk_down": 9
+        },
         "body_scale": 1.55
       },
       "unused_legacy_cells": [

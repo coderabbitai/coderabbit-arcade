@@ -485,7 +485,10 @@ def locomotion_frames(pack: Path, mode: Mode, weapon: str) -> tuple[list[FramePl
         "source_component_bounds": source_bounds, "source_scale": scale,
         "relative_scales": relative_scales,
         "fragment_attachments": fragments, "hand": hands, "foot": feet,
-        "visible_bounds": bounds, "fps": 13, "body_scale": 1.55,
+        "visible_bounds": bounds,
+        "cadence_fps": {name: clip["fps"] for name, clip in clip_metadata(mode).items()
+                        if name in ("run", "walk_up", "walk_down")},
+        "body_scale": 1.55,
     }
 
 
