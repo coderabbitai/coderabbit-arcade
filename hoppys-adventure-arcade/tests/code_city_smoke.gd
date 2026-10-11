@@ -79,6 +79,8 @@ func run() -> void:
 	var combat_starts := 0
 	var combat_from_enter := true
 	var first_enter_step := -1
+	var mini_bosses := {}
+	var boss_victories := {}
 	# This bot tests reachability/cleanup with invulnerability, not game balance.
 	# 24000 steps covers the 13.5s intro plus about 2.1s for each of the two transitions.
 	Engine.physics_ticks_per_second = 240
@@ -95,7 +97,7 @@ func run() -> void:
 		if step%120==0:
 			# Stage previews show combat, not the intro or the run-in (stage_banner covers that).
 			if game.room==0 and game.playing and not game.flow.banner_panel.visible: await capture("stage_%d" % (game.stage_index+1))
-			if is_instance_valid(game.boss): await capture("boss_phase_%d" % game.boss.phase)
+			if is_instance_valid(game.boss) and not game.has_mini_boss(): await capture("boss_phase_%d" % game.boss.phase)
 		if game.playing:
 			var target=null
 			var best=INF
@@ -118,7 +120,10 @@ func run() -> void:
 				if is_instance_valid(e): e.tick(1.0/60.0)
 			if is_instance_valid(game.boss): game.boss.tick(1.0/60.0)
 		var prev: String = game.state
+		if game.has_mini_boss(): mini_bosses[game.stage_index] = true
 		game._physics_process(1.0/60.0)
+		# The bot's own swing can land the last hit before prev is read; note the stage instead.
+		if game.state=="boss_victory": boss_victories[game.stage_index] = true
 		# The intro preview is the first story scene once its caption is typed (it opens on black).
 		if game.state=="intro" and game.intro_page==0 and game.intro_clock>=3.0: await capture("intro")
 		# The minimap mid-room with enemies about, and in the boss room under the boss bar, once the
@@ -126,6 +131,9 @@ func run() -> void:
 		var framed: bool=absf(game.camera.position.x-(game.room_start()+640))<4
 		if framed and game.state=="combat" and game.minimap.visible and game.stage_index==1 and game.room==1 and game.minimap.enemy_dots.size()>=2: await capture("minimap")
 		if framed and game.state=="combat" and game.minimap.visible and game.stage_index==2 and is_instance_valid(game.boss) and game.boss_bar.visible and game.minimap.boss_dots.size()>=1: await capture("minimap_boss")
+		# Each district boss winding up a move (its tell ring is up), and the victory hop at its peak.
+		if framed and game.state=="combat" and game.has_mini_boss() and game.boss.state=="tell": await capture("mini_boss_%d" % (game.stage_index+1))
+		if game.state=="boss_victory" and game.victory_clock>=float(game.Catalog.FLOW.boss_victory)*.5: await capture("district_boss_down")
 		# The epilogue's middle page, once its caption is typed.
 		if game.state=="ending" and game.intro_page==1 and game.intro_clock>=3.5: await capture("ending")
 		if game.state=="stage_exit" and prev!="stage_exit": stage_exits += 1
@@ -147,6 +155,7 @@ func run() -> void:
 	check(max_enemies<=12 and max_bullets<=32,"Combat pools remain bounded")
 	check(game.completion_count==1,"Full run reports one completion")
 	check(stage_exits==2 and stage_enters==3,"Passed through stage_exit twice and stage_enter three times")
+	check(mini_bosses.keys()==[0,1] and boss_victories.keys()==[0,1],"Districts 1 and 2 each end on their district boss and a victory hop (bosses in %s, hops in %s)" % [mini_bosses.keys(),boss_victories.keys()])
 	check(combat_starts==3 and combat_from_enter,"Every combat start was preceded by stage_enter")
 	check(first_enter_step>=780,"No confirm input; intro auto-advanced into stage_enter")
 	if game.state=="won":
