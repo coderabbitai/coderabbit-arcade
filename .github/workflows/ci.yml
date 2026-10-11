@@ -111,9 +111,9 @@ jobs:
             exit 1
           fi
 
-      # Quits from the hub, fights, the Code City celebration and the runner intro with their
-      # audio playing. Godot prints its exit-leak lines only after the script is gone, so the
-      # wrapper runs tests/exit_leak.gd once per scenario and fails on them.
+      # Quits from the hub, fights, the Code City celebration, the runner intro and mid-transition
+      # with their audio playing. Godot prints its exit-leak lines only after the script is gone,
+      # so the wrapper runs tests/exit_leak.gd once per scenario, fails on them and times the exit.
       - name: Exit leaks
         run: python3 tools/checks/exit_leak.py --godot ~/godot/godot
 

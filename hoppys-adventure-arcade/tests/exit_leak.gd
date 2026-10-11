@@ -4,8 +4,13 @@ extends SceneTree
 ## tools/checks/exit_leak.py runs one scenario per process and fails on "leaked at exit" or
 ## "still in use at exit". Run with --path <project> --script res://tests/exit_leak.gd
 ## -- --scenario=<name>. Scenarios: hub, hub_quit (a bare quit(), as the suites end), code_city,
-## mini_boss, celebration, heroes_knockout, runner_intro.
-const SCENARIOS := ["hub", "hub_quit", "code_city", "mini_boss", "celebration", "heroes_knockout", "runner_intro"]
+## mini_boss, celebration, heroes_knockout, runner_intro, and route_leaving / route_arriving:
+## closed mid-transition, while AppRouter is busy, so quit_game(true) quits at once.
+## It prints "EXIT_LEAK closing" just before the close; the wrapper times the exit from there.
+const SCENARIOS := ["hub", "hub_quit", "code_city", "mini_boss", "celebration", "heroes_knockout",
+	"runner_intro", "route_leaving", "route_arriving"]
+## Closed while the router fades out of the hub or into Code City, before go() has finished.
+const MID_ROUTE := ["route_leaving", "route_arriving"]
 const HUB := "res://scenes/main_menu/main_menu.tscn"
 const CODE_CITY := "res://scenes/beatem_up/code_city_brawl.tscn"
 const HEROES := "res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn"
@@ -13,6 +18,11 @@ const RUNNER_MENU := "res://scenes/runner/runner_menu.tscn"
 const RUNNER := "res://scenes/runner/runner_game.tscn"
 ## Wall-clock seconds the screen plays before the quit, with its music and effects running.
 const HOLD := 1.5
+## The close must end the process by then: AppRouter's fade is 1 s, AudioService waits <= 0.5 s.
+const CLOSE_LIMIT := 5.0
+## With no mix this long, the environment has no running mixer and stopped voices can't be
+## released, so the leak lines say nothing about the game (see tools/checks/exit_leak.py).
+const MIXER_IDLE := .25
 var scenario := "hub"
 var game: Node
 
@@ -75,13 +85,24 @@ func run() -> void:
 	if not reached:
 		fail("never reached the screen")
 		return
-	await wait(HOLD)
+	if scenario not in MID_ROUTE: await wait(HOLD)
+	elif not router().busy:
+		fail("the route finished before the close")
+		return
 	print("EXIT_LEAK reached ", scenario)
+	if AudioServer.get_time_since_last_mix() > MIXER_IDLE: print("EXIT_LEAK mixer idle")
+	# A plain connection, not an await: a coroutine left pending at exit would itself leak.
+	create_timer(CLOSE_LIMIT).timeout.connect(_still_running)
+	print("EXIT_LEAK closing busy=", router().busy)
 	if scenario == "hub_quit":
 		quit()
 	else:
-		# What a window close (or Cmd+Q) delivers: AppRouter fades out and quits.
+		# What a window close (or Cmd+Q) delivers: AppRouter fades out and quits, or quits at
+		# once when it is mid-transition.
 		root.propagate_notification(Node.NOTIFICATION_WM_CLOSE_REQUEST)
+
+func _still_running() -> void:
+	fail("still running %.0f s after the close" % CLOSE_LIMIT)
 
 func reach() -> bool:
 	match scenario:
@@ -122,4 +143,13 @@ func reach() -> bool:
 			if not await route("runner_game", RUNNER): return false
 			if bool(game.paused): game.resume()
 			return await wait_until(func() -> bool: return game.run_intro_mode != &"", 5.0)
+		"route_leaving":
+			# The hub's track is playing and go() is awaiting the fade to black.
+			router().go("code_city_brawl")
+			return await wait_until(func() -> bool: return router().busy and router().veil.modulate.a > 0.0, 2.0)
+		"route_arriving":
+			# Code City's stage track has just started and go() is awaiting the fade back in.
+			router().go("code_city_brawl")
+			return await wait_until(func() -> bool:
+				return router().busy and current_scene != null and current_scene.scene_file_path == CODE_CITY, 10.0)
 	return false
