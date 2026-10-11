@@ -17,6 +17,8 @@ const JINGLE_AT := .3
 const LOOP_AT := 3.8
 const LENGTH := 5.2
 const WALL_MAX := 6.0
+const HUD_COLOR := Color(1.0, 0.0, 1.0)
+const MENU_COLOR := Color(0.0, 1.0, 1.0)
 
 class StubPlayer extends Node2D:
 	var body := AnimatedSprite2D.new()
@@ -38,6 +40,11 @@ class StubOwner extends Node2D:
 	var music := AudioStreamPlayer.new()
 	var shake := 0.0
 	func sound(_key: String, _at: Vector2 = Vector2.ZERO) -> void: pass
+
+## An owner with the optional knockout_hud_nodes() hook, as the real games have.
+class StubHudOwner extends StubOwner:
+	var hud_nodes: Array[CanvasItem] = []
+	func knockout_hud_nodes() -> Array[CanvasItem]: return hud_nodes
 
 class StubNoCamera extends Node2D:
 	var player: StubPlayer
@@ -63,8 +70,8 @@ func check(ok: bool, message: String) -> void:
 func done() -> void: calls += 1
 
 ## A fresh stub owner in the tree with its flow and boss music playing, like the finisher's start.
-func make_owner(with_camera := true):
-	var owner = StubOwner.new() if with_camera else StubNoCamera.new()
+func make_owner(with_camera := true, hud := false):
+	var owner = StubHudOwner.new() if hud else StubOwner.new() if with_camera else StubNoCamera.new()
 	owner.player = StubPlayer.new()
 	owner.add_child(owner.player)
 	owner.add_child(owner.ui_layer)
@@ -77,6 +84,7 @@ func make_owner(with_camera := true):
 	owner.add_child(flow)
 	flow.setup(owner.ui_layer, owner.music, {})
 	owner.flow = flow
+	if hud: add_hud_fixtures(owner)
 	root.add_child(owner)
 	boss_stream = load(BOSS_MUSIC)
 	flow.play_music(boss_stream)
@@ -86,6 +94,45 @@ func make_owner(with_camera := true):
 	calls = 0
 	return owner
 
+## HUD chrome in loud magenta so a leak is unmistakable in a capture: a top strip with the score,
+## a bottom controls strip, a boss-name plate and a minimap, plus a node that was already hidden.
+## `menu` is the pause/menu overlay: it is NOT in the hook's list and must always stay visible.
+func add_hud_fixtures(owner) -> void:
+	var make := func(name: String, rect: Rect2, text: String) -> ColorRect:
+		var panel := ColorRect.new()
+		panel.name = name
+		panel.color = HUD_COLOR
+		panel.position = rect.position
+		panel.size = rect.size
+		var label := Label.new()
+		label.text = text
+		label.add_theme_font_size_override("font_size", 22)
+		label.position = Vector2(14, 8)
+		panel.add_child(label)
+		owner.ui_layer.add_child(panel)
+		return panel
+	var top: ColorRect = make.call("HudTop", Rect2(0, 0, 1280, 60), "HOPPY  ♥ ♥ ♥     SCORE 01234     CLI / IDE DISTRICT · 3/3")
+	var bottom: ColorRect = make.call("HudControls", Rect2(0, 668, 1280, 44), "WASD · Move    Space · Jump    J, X · Combo    E · Pickup    Esc · Pause")
+	var boss: ColorRect = make.call("HudBoss", Rect2(380, 70, 520, 34), "GRAND MERGE CONFLICT")
+	var minimap: ColorRect = make.call("HudMinimap", Rect2(1020, 320, 240, 90), "MINIMAP")
+	var prior: ColorRect = make.call("HudPriorHidden", Rect2(0, 600, 200, 40), "HIDDEN")
+	prior.visible = false
+	var menu := ColorRect.new()
+	menu.name = "PauseMenu"
+	menu.color = MENU_COLOR
+	menu.position = Vector2(20, 560)
+	menu.size = Vector2(160, 60)
+	owner.ui_layer.add_child(menu)
+	owner.hud_nodes.assign([top, bottom, boss, minimap, prior])
+	owner.set_meta("menu", menu)
+func hud_states(owner) -> Array:
+	var states := []
+	for n in owner.hud_nodes: states.append(is_instance_valid(n) and n.visible)
+	return states
+## What a game does before each party tick: its minimap, toast and HUD refresh show themselves.
+func owner_refresh(owner) -> void:
+	for n in owner.hud_nodes:
+		if is_instance_valid(n): n.visible = true
 func run_for(seconds: float, dt := DT) -> void:
 	var left := seconds
 	while left>1e-6 and party.active():
@@ -119,6 +166,7 @@ func run() -> void:
 	# run() early, so wait for the last autoload.
 	while not (root.has_node("ControllerService") and root.get_node("ControllerService").is_node_ready()): await process_frame
 	await process_frame
+	await settle_window()
 	check_asset_clip()
 	check_music_assets()
 	check_clock_and_poses()
@@ -130,7 +178,12 @@ func run() -> void:
 	check_replay_and_callbacks()
 	check_coarse_steps()
 	check_loop_immutable()
+	check_pause_clock()
+	check_hud_hidden()
+	check_hud_restore()
+	check_hud_edge_cases()
 	await check_capture()
+	await check_real_game()
 	print("Celebration passes: ", passes, " failures: ", failures)
 	if is_instance_valid(stage): stage.free()
 	root.get_node("AudioService").shutdown()
@@ -399,7 +452,7 @@ func snapshot(stream: AudioStream) -> Array:
 ## Rendered only: the banner and confetti at three moments, saved as PNGs for review.
 func check_capture() -> void:
 	if DisplayServer.get_name()=="headless" or not RenderingServer.render_loop_enabled: return
-	var owner = make_owner()
+	var owner = make_owner(true, true)
 	var backdrop := ColorRect.new()
 	backdrop.color = Color(.16, .2, .3)
 	backdrop.size = Vector2(1280, 720)
@@ -411,26 +464,64 @@ func check_capture() -> void:
 	DirAccess.make_dir_recursive_absolute(CAPTURE_DIR)
 	await process_frame
 	await RenderingServer.frame_post_draw
+	# Before the party the HUD is on screen: the magenta fixtures prove the capture can see a leak.
+	var before: Image = root.get_texture().get_image()
+	check(image_ok_save(before, "celebration_hud_before"), "the pre-party capture with HUD chrome is saved")
+	var hud_before := count_color(before, HUD_COLOR, .12)
+	check(hud_before>20000, "the HUD fixtures are plainly visible before the party (%d magenta px)" % hud_before)
+	check(count_color(before, MENU_COLOR, .12)>1000, "the menu fixture is visible before the party")
+	for n in owner.hud_nodes: n.hide()
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
 	var plain: Image = root.get_texture().get_image()
+	owner_refresh(owner)
+	owner.hud_nodes[4].hide()
 	party.play(owner, done)
 	var shots := {1.0:"celebration_start", 2.5:"celebration_mid", 4.6:"celebration_end"}
 	var clock := 0.0
 	for at in shots:
 		while clock<float(at) and party.active():
+			owner_refresh(owner)
 			party.tick(DT)
 			clock += DT
 		await RenderingServer.frame_post_draw
 		await RenderingServer.frame_post_draw
 		var image: Image = root.get_texture().get_image()
-		check(image.save_png("%s/%s.png" % [CAPTURE_DIR, shots[at]])==OK, "capture %s saved" % shots[at])
+		check(frame_ok(image), "capture %s is 1280x720 (%dx%d)" % [shots[at], image.get_width(), image.get_height()])
+		check(image_ok_save(image, shots[at]), "capture %s saved" % shots[at])
 		check(changed_pixels(plain, image)>2000, "capture %s differs from the bare stage (%d px)" % [shots[at], changed_pixels(plain, image)])
 		# A gray or empty frame must fail: Hoppy's orange, the gold title and the dark banner strip must all be drawn.
 		check(count_color(image, Color(1.0, .33, .0), .18)>1200, "capture %s draws Hoppy (%d orange px)" % [shots[at], count_color(image, Color(1.0, .33, .0), .18)])
 		check(count_color(image, Color("ffd36b"), .12)>400, "capture %s draws the gold MERGE SUCCESSFUL title (%d px)" % [shots[at], count_color(image, Color("ffd36b"), .12)])
 		check(not is_flat(image), "capture %s is not a single flat color" % shots[at])
+		var leak := count_color(image, HUD_COLOR, .12)
+		check(leak==0, "capture %s shows none of the HUD chrome: no top strip, controls, boss plate or minimap (%d magenta px)" % [shots[at], leak])
+		check(count_color(image, MENU_COLOR, .12)>1000, "capture %s keeps the excluded menu overlay visible" % shots[at])
 	run_for(2.0)
 	check(calls==1, "the rendered party also completes once")
+	check(hud_states(owner)==[true, true, true, true, false], "the HUD is back after the rendered party (%s)" % str(hud_states(owner)))
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	check(count_color(root.get_texture().get_image(), HUD_COLOR, .12)>20000, "the HUD fixtures are drawn again after completion")
 	backdrop.queue_free()
+## Rendered only: let the window-mode change settle, then pin the viewport to 1280x720 so every
+## capture has the same size. Gives up after 120 process frames and the captures refuse a wrong size.
+const FRAME := Vector2i(1280, 720)
+func settle_window() -> void:
+	if DisplayServer.get_name()=="headless" or not RenderingServer.render_loop_enabled: return
+	await create_timer(.5).timeout
+	DisplayServer.window_set_size(FRAME)
+	root.size = FRAME
+	var frames := 0
+	while Vector2i(root.get_texture().get_size())!=FRAME and frames<120:
+		await process_frame
+		frames += 1
+	print("window settled at ", root.get_texture().get_size(), " after ", frames, " frames")
+func frame_ok(image: Image) -> bool:
+	return Vector2i(image.get_width(), image.get_height())==FRAME
+func image_ok_save(image: Image, name: String) -> bool:
+	if not frame_ok(image): return false
+	return image.save_png("%s/%s.png" % [CAPTURE_DIR, name])==OK
 func changed_pixels(a: Image, b: Image) -> int:
 	var count := 0
 	var w := mini(a.get_width(), b.get_width())
@@ -454,3 +545,276 @@ func is_flat(image: Image) -> bool:
 		for x in range(0, image.get_width(), 8):
 			if image.get_pixel(x, y)!=first: return false
 	return true
+
+## Pause freezes the party clock, the confetti and the jingle's progress; only unpaused ticks count.
+func check_pause_clock() -> void:
+	var owner = make_owner()
+	party.play(owner, done)
+	run_for(1.0)
+	var clock: float = party.clock
+	check(clock>.9 and clock<1.1, "the party clock is about 1 s after 1 s of ticks (%.3f)" % clock)
+	paused = true
+	for _i in 180: party.tick(DT)
+	party.tick(5.0)
+	var frozen: bool = is_equal_approx(party.clock, clock) and party.active() and calls==0
+	paused = false
+	check(frozen, "a paused tree freezes the party clock, even for a huge dt, and calls no done (clock %.3f)" % party.clock)
+	run_for(.5)
+	check(party.clock>clock+.45 and party.clock<clock+.55, "unpausing resumes from where it froze (%.3f)" % party.clock)
+	paused = true
+	run_for(10.0)
+	check(party.active() and calls==0, "pausing at any point leaves the party running but unfinished")
+	paused = false
+	run_for(LENGTH+1.0)
+	check(calls==1 and not party.active(), "the party still completes once after the pauses")
+
+## Every hook node is hidden at play(), stays hidden while the owner re-shows it each frame, and the
+## menu overlay (not in the hook) is never touched. Without the hook nothing is hidden.
+func check_hud_hidden() -> void:
+	var owner = make_owner(true, true)
+	var menu: Control = owner.get_meta("menu")
+	check(hud_states(owner)==[true, true, true, true, false], "the HUD fixtures start visible with one already hidden")
+	party.play(owner, done)
+	check(hud_states(owner)==[false, false, false, false, false], "play() hides every HUD node immediately (%s)" % str(hud_states(owner)))
+	var leaked := false
+	var menu_hidden := false
+	var guard := 0
+	while party.active() and guard<600:
+		owner_refresh(owner)
+		party.tick(DT)
+		if party.active() and hud_states(owner)!=[false, false, false, false, false]: leaked = true
+		if not menu.visible: menu_hidden = true
+		guard += 1
+	check(not leaked, "the HUD stays hidden on every tick even when the owner re-shows it first")
+	check(not menu_hidden and menu.visible, "the pause/menu overlay outside the hook is never hidden")
+	# Paused: the owner's refresh still happens, and the pause menu must stay usable.
+	owner = make_owner(true, true)
+	menu = owner.get_meta("menu")
+	party.play(owner, done)
+	run_for(1.0)
+	paused = true
+	party.tick(DT)
+	check(hud_states(owner)==[false, false, false, false, false] and menu.visible, "while paused the hidden snapshot stays hidden and the menu overlay stays visible")
+	paused = false
+	owner_refresh(owner)
+	party.tick(DT)
+	check(hud_states(owner)==[false, false, false, false, false] and menu.visible, "after resume the next tick hides the HUD again and the menu stays")
+	party.cancel()
+	# No hook: nothing is hidden and nothing throws.
+	owner = make_owner()
+	check(not owner.has_method("knockout_hud_nodes"), "the plain stub owner has no knockout_hud_nodes() hook")
+	var extra := ColorRect.new()
+	owner.ui_layer.add_child(extra)
+	party.play(owner, done)
+	run_for(1.0)
+	check(extra.visible and party.active(), "without the hook the owner's UI is left alone and the party runs")
+	run_for(LENGTH+1.0)
+	check(calls==1, "a hookless owner still completes once")
+
+## Restore is exact: visible nodes come back, the prior-hidden one stays hidden, and on completion it
+## happens before done is called.
+func check_hud_restore() -> void:
+	var owner = make_owner(true, true)
+	var seen := []
+	var at_done := func():
+		calls += 1
+		seen.append(hud_states(owner))
+	party.play(owner, at_done)
+	run_for(LENGTH+1.0)
+	check(calls==1 and seen.size()==1 and seen[0]==[true, true, true, true, false], "completion restores the HUD before done is called (%s)" % str(seen))
+	check(hud_states(owner)==[true, true, true, true, false], "the prior-hidden node stays hidden and the rest are visible after completion")
+	# cancel mid-party
+	calls = 0
+	party.play(owner, done)
+	run_for(2.0)
+	check(hud_states(owner)==[false, false, false, false, false], "the HUD is hidden mid-party")
+	party.cancel()
+	check(hud_states(owner)==[true, true, true, true, false] and calls==0, "cancel() restores the HUD exactly and suppresses done")
+	# cancel idempotence: the owner may hide things itself afterwards; a second cancel must not re-show
+	owner.hud_nodes[0].visible = false
+	party.cancel()
+	party.cancel()
+	check(hud_states(owner)==[false, true, true, true, false], "repeated cancel() never re-applies the snapshot")
+	owner.hud_nodes[0].visible = true
+	# a cancel after completion is also quiet
+	party.play(owner, done)
+	run_for(LENGTH+1.0)
+	owner.hud_nodes[1].visible = false
+	party.cancel()
+	check(hud_states(owner)==[true, false, true, true, false], "cancel() after completion does not touch the HUD")
+	owner.hud_nodes[1].visible = true
+	# coarse step completion restores too
+	calls = 0
+	party.play(owner, done)
+	for _i in 20: party.tick(1.0)
+	check(calls==1 and hud_states(owner)==[true, true, true, true, false], "a coarse-step completion restores the HUD")
+
+func check_hud_edge_cases() -> void:
+	var owner = make_owner(true, true)
+	# Replay while running: the second play must snapshot the restored (visible) state.
+	party.play(owner, done)
+	run_for(1.0)
+	party.play(owner, done)
+	check(hud_states(owner)==[false, false, false, false, false], "a replay hides the HUD again")
+	party.cancel()
+	check(hud_states(owner)==[true, true, true, true, false], "a replay captured the original visibility, not the hidden one (%s)" % str(hud_states(owner)))
+	# A node freed mid-party is skipped quietly, on tick, cancel and completion.
+	calls = 0
+	party.play(owner, done)
+	run_for(1.0)
+	var doomed: CanvasItem = owner.hud_nodes[2]
+	owner.hud_nodes.remove_at(2)
+	doomed.free()
+	run_for(LENGTH+1.0)
+	check(calls==1 and not party.active(), "a freed HUD node does not break the party or its completion")
+	check(hud_states(owner)==[true, true, true, false], "the surviving nodes are restored (%s)" % str(hud_states(owner)))
+	party.play(owner, done)
+	run_for(1.0)
+	var second: CanvasItem = owner.hud_nodes[0]
+	owner.hud_nodes.remove_at(0)
+	second.free()
+	party.cancel()
+	check(hud_states(owner)==[true, true, false], "cancel() after a node was freed restores the rest")
+	# A duplicate or invalid entry from the hook is tolerated.
+	owner.hud_nodes.append(owner.hud_nodes[0])
+	party.play(owner, done)
+	run_for(.5)
+	party.cancel()
+	check(hud_states(owner)[0]==true, "a node listed twice is restored to its original visibility")
+	# The hook may return different nodes on the next play: each party snapshots anew.
+	var fresh := ColorRect.new()
+	owner.ui_layer.add_child(fresh)
+	owner.hud_nodes.assign([fresh])
+	party.play(owner, done)
+	check(not fresh.visible, "a node added to the hook list before play() is hidden")
+	party.cancel()
+	check(fresh.visible, "and restored on cancel")
+
+## Optional, real game: finisher -> celebration -> ending -> results through _physics_process, so the
+## game's own tick order, minimap refresh and toasts run against the party. Skipped on a game
+## without celebrate(), so an older base still passes. The game's physics is frozen and stepped by hand.
+const CODE_CITY := "res://scenes/beatem_up/code_city_brawl.tscn"
+var game
+func real_step() -> void:
+	game._physics_process(DT)
+func hud_visible(nodes: Array) -> int:
+	var count := 0
+	for n in nodes:
+		if is_instance_valid(n) and n.is_visible_in_tree(): count += 1
+	return count
+func real_freeze() -> void:
+	game.set_physics_process(false)
+	if is_instance_valid(game.player):
+		game.player.set_physics_process(false)
+		game.player.controlled = false
+	for e in game.enemies:
+		if is_instance_valid(e): e.set_physics_process(false)
+	if is_instance_valid(game.boss): game.boss.set_physics_process(false)
+func real_settle() -> void:
+	game.reset_physics_interpolation()
+func real_capture(name: String) -> void:
+	if DisplayServer.get_name()=="headless" or not RenderingServer.render_loop_enabled: return
+	real_settle()
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	var image: Image = root.get_texture().get_image()
+	DirAccess.make_dir_recursive_absolute(CAPTURE_DIR)
+	check(frame_ok(image), "real-game capture %s is 1280x720 (%dx%d)" % [name, image.get_width(), image.get_height()])
+	check(image_ok_save(image, name), "real-game capture %s saved" % name)
+	check(not is_flat(image), "real-game capture %s is not a flat frame" % name)
+func check_real_game() -> void:
+	if is_instance_valid(stage): stage.free()
+	stage = null
+	change_scene_to_file(CODE_CITY)
+	await process_frame
+	await process_frame
+	game = current_scene
+	if game==null or not game.has_method("celebrate"):
+		print("real-game celebration check skipped: this game has no celebrate()")
+		if is_instance_valid(current_scene): current_scene.queue_free()
+		await process_frame
+		return
+	print("--- real game ---")
+	game.test_mode = true
+	paused = false
+	if game.state=="paused": game.resume()
+	game.start_stage(2)
+	real_freeze()
+	var guard := 0
+	while game.state!="combat" and guard<400:
+		real_step()
+		guard += 1
+	real_freeze()
+	game.enter_room(2)
+	real_freeze()
+	game.playing = true
+	check(is_instance_valid(game.boss), "the real game has its final boss in room 3")
+	var nodes: Array = game.knockout_hud_nodes() if game.has_method("knockout_hud_nodes") else []
+	check(nodes.size()>0, "the real game lists HUD nodes for the party")
+	game.player.hp = 3
+	# The genuine final-boss path: three exposed hits take it through its phases to the resolved core,
+	# so the finisher plays on the right sheet.
+	for damage in [12, 6, 6]:
+		game.boss.vulnerable = true
+		game.boss.take_hit(damage, 0, Vector2.ZERO, true)
+	check(game.state=="finisher", "the final boss's last hit starts the finisher")
+	guard = 0
+	while game.state=="finisher" and guard<600:
+		real_step()
+		guard += 1
+	check(game.state=="celebration" and game.get("party")!=null and game.party.active(), "the finisher hands over to the celebration (state %s)" % game.state)
+	# The very tick that enters the celebration must already have hidden the chrome, not the next one.
+	check(hud_visible(nodes)==0, "every HUD node is hidden on the tick that enters the celebration (%d visible)" % hud_visible(nodes))
+	check(game.party.clock<=DT*2.0+.001, "the celebration entry is on its first tick (clock %.3f)" % game.party.clock)
+	var leaked := 0
+	var refreshed := 0
+	guard = 0
+	var shot := false
+	while game.state=="celebration" and guard<900:
+		# The game's own refreshes: its minimap and toast show themselves, then the physics tick runs.
+		if game.has_method("_refresh_minimap"): game._refresh_minimap(DT)
+		game.toast("CELEBRATION CHATTER", .5)
+		refreshed += 1
+		real_step()
+		if game.state=="celebration": leaked += hud_visible(nodes)
+		if not shot and game.party.clock>=2.5:
+			shot = true
+			await real_capture("real_celebration")
+			if game.state!="celebration": break
+		if game.state=="celebration" and guard==120:
+			game.pause("x")
+			check(game.state=="paused" and game.overlay.visible, "pause during the real celebration shows the overlay")
+			var frozen: float = game.party.clock
+			for _i in 30: real_step()
+			check(is_equal_approx(game.party.clock, frozen), "the party clock is frozen while the real game is paused")
+			game.resume()
+			check(game.state=="celebration", "resume returns to the celebration")
+		guard += 1
+	check(refreshed>60, "the real celebration ran for many refreshed ticks (%d)" % refreshed)
+	check(leaked==0, "no HUD, minimap or toast node was visible on any celebration tick (%d leaks)" % leaked)
+	check(game.state=="ending" and game.story.visible, "completion moves to the ending with the story visible (state %s)" % game.state)
+	check(not game.party.active() and not is_instance_valid(game.party.root), "the party's chrome is gone once the ending starts")
+	# The ending opens on its black fade; let the page come up before the capture.
+	guard = 0
+	while game.state=="ending" and game.intro_clock<.75 and guard<240:
+		real_step()
+		guard += 1
+	check(game.intro_clock>=.75 or game.state!="ending", "the ending page has faded in before its capture (clock %.2f)" % game.intro_clock)
+	await real_capture("real_ending")
+	game.show_victory()
+	check(game.state=="won" and game.victory.visible, "the results screen shows")
+	check(not game.party.active() and not is_instance_valid(game.party.root), "no celebration chrome is left on the results screen")
+	check(not game.story.visible and not game.overlay.visible, "the results screen shows neither the story nor the menu overlay")
+	var back: ColorRect = game.victory.backdrop
+	var full: bool = back.is_visible_in_tree() and is_equal_approx(back.color.a, 1.0) and is_equal_approx(back.modulate.a, 1.0)
+	check(full, "the results backdrop is fully opaque (alpha %.2f, modulate %.2f)" % [back.color.a, back.modulate.a])
+	var covered: Rect2 = back.get_global_rect()
+	var view := Rect2(Vector2.ZERO, game.get_viewport().get_visible_rect().size)
+	check(covered.encloses(view), "the results backdrop covers the whole viewport (%s vs %s)" % [str(covered), str(view)])
+	guard = 0
+	while not game.victory.landed and guard<600:
+		real_step()
+		guard += 1
+	check(game.victory.landed, "the results screen has landed before its capture")
+	await real_capture("real_results")
+	if is_instance_valid(current_scene): current_scene.queue_free()

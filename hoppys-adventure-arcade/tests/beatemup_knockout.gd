@@ -172,6 +172,7 @@ func run() -> void:
 	# run() before the autoloads finish, so wait for the last one.
 	while not (root.has_node("ControllerService") and root.get_node("ControllerService").is_node_ready()): await process_frame
 	await process_frame
+	await settle_window()
 	await run_mode("res://scenes/beatem_up/code_city_brawl.tscn", false)
 	await run_mode("res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn", true)
 	print("Knockout passes: ", passes, " failures: ", failures)
@@ -956,7 +957,25 @@ func count_near(image: Image, rect: Rect2, target: Color, tol: float) -> int:
 			var db := px.b-target.b
 			if dr*dr+dg*dg+db*db<=tol2: hits += 1
 	return hits
+## Rendered only: let the window-mode change settle, then pin the viewport to 1280x720 so every
+## capture has the same size. Gives up after 120 process frames and the captures refuse a wrong size.
+const FRAME := Vector2i(1280, 720)
+func settle_window() -> void:
+	if DisplayServer.get_name()=="headless" or not RenderingServer.render_loop_enabled: return
+	await create_timer(.5).timeout
+	DisplayServer.window_set_size(FRAME)
+	root.size = FRAME
+	var frames := 0
+	while Vector2i(root.get_texture().get_size())!=FRAME and frames<120:
+		await process_frame
+		frames += 1
+	print("window settled at ", root.get_texture().get_size(), " after ", frames, " frames")
+func frame_ok(image: Image) -> bool:
+	return Vector2i(image.get_width(), image.get_height())==FRAME
 func save_capture(image: Image, name: String) -> bool:
+	if not frame_ok(image):
+		print(tag("capture %s refused: frame is %dx%d, not 1280x720" % [name, image.get_width(), image.get_height()]))
+		return false
 	var folder := "heroes-villains" if heroes else "code-city"
 	var dir := "%s/%s" % [CAPTURE_DIR, folder]
 	DirAccess.make_dir_recursive_absolute(dir)
