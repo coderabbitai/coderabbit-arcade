@@ -1,4 +1,7 @@
 extends Node
+## Longest the exit waits for the mixer to release stopped voices (see _exit_tree). Two mixes take
+## about 25 ms with a sound card and about 140 ms headless.
+const RELEASE_MSEC := 500
 var music := AudioStreamPlayer.new()
 var sfx := AudioStreamPlayer.new()
 var tones: Array[AudioStreamWAV] = []
@@ -93,5 +96,27 @@ func shutdown() -> void:
 	music.stream = null
 	sfx.stream = null
 
+## The autoload only leaves the tree when the app exits, after the current scene has left it.
+## A voice the mixer still holds when the engine shuts down is reported as leaked ("ObjectDB
+## instances were leaked", "resources still in use"), and a stopped voice is let go only by the
+## next mix. So, whichever way the app quit, stop every player (the scene's and ours) and let the
+## mixer run twice: the first mix to start after the stops has then finished.
 func _exit_tree() -> void:
+	_stop_players(get_parent())
 	shutdown()
+	var stopped := Time.get_ticks_usec()
+	var deadline := stopped+RELEASE_MSEC*1000
+	var mixes := 0
+	var last_mix := stopped
+	while mixes < 2 and Time.get_ticks_usec() < deadline:
+		OS.delay_usec(500)
+		var mixed := Time.get_ticks_usec()-int(AudioServer.get_time_since_last_mix()*1000000.0)
+		# A new mix starts at least a buffer (several ms) after the last; 1 ms absorbs rounding.
+		if mixed > last_mix+1000:
+			mixes += 1
+			last_mix = mixed
+
+static func _stop_players(top: Node) -> void:
+	for node in top.find_children("*", "", true, false):
+		if node is AudioStreamPlayer or node is AudioStreamPlayer2D or node is AudioStreamPlayer3D:
+			node.stop()

@@ -23,6 +23,7 @@ Arrow keys, Tab, D-pad, or left stick navigate; Enter / gamepad A activates; Esc
 - AudioService owns a single looping music player and one UI sound player. Music and SFX independently feed Master. Supplied `Assets/Audio/happy_adveture.mp3` is used unchanged; synthesized UI blips are generated in code. MP3 repeat is enabled; musical seamlessness at the track boundary still needs listening review.
 - SaveService stores validated volume and fullscreen values in `user://settings.cfg`. Sliders apply immediately; closing settings persists them. Save failures appear in the UI.
 - Quit asks for confirmation and fades to black for 1 second.
+- At exit, however the app quits, AudioService stops every audio player, the current scene's included, and waits up to 0.5 s for two audio mixes (about 25 ms with a sound card). Godot frees a stopped voice only after the mixer has run, and reports any voice it still holds at shutdown as "ObjectDB instances were leaked" / "resources still in use". `tools/checks/exit_leak.py` covers this in CI.
 
 ## Art and replacement points
 
