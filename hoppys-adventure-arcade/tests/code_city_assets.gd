@@ -4,6 +4,20 @@ const BASE = "res://Assets/code-city-brawl-assets-only/"
 var manifest: Dictionary
 var stage: Node2D
 var failures := 0
+## Mini-bosses face left and stand about 1.6x a linter_enforcer.
+const MINI_BOSSES := ["stack_overflow", "zero_day"]
+## clip name: [frames, fps, loop]. Each mini-boss has 16 populated cells in a 256 square cell.
+const MINI_BOSS_CLIPS := {
+	"idle": [[0, 1], 3, true],
+	"walk": [[2, 3, 4, 5], 6, true],
+	"slam_warning": [[6, 7], 5, false],
+	"slam": [[8, 9], 10, false],
+	"dash_warning": [[10], 1, false],
+	"dash": [[11, 12], 10, false],
+	"recover": [[13], 1, false],
+	"hurt": [[14], 1, false],
+	"defeat": [[15], 1, false],
+}
 
 func check(condition: bool, context: String) -> void:
 	if not condition:
@@ -39,16 +53,18 @@ func run() -> void:
 				check(image != null and image.get_used_rect().has_area(), clip.name + " nonempty")
 				check(image.detect_alpha() != Image.ALPHA_NONE, clip.name + " alpha")
 			clip_count += 1
-		frame_count += spec.frames.size()
+		if not MINI_BOSSES.has(key):
+			frame_count += spec.frames.size()
 	for bg in manifest.backgrounds.values():
 		var texture := load(BASE + "code_city/" + bg.file) as Texture2D
 		check(texture != null and texture.get_size() == Vector2(1280,720), bg.file)
-	check(frame_count == 200, "200 source frames")
-	check(manifest.atlases.size() == 19 and manifest.backgrounds.size() == 3, "resource coverage")
+	check(frame_count == 200, "200 source frames outside the mini-boss atlases")
+	check_mini_bosses()
+	check(manifest.atlases.size() == 19 + MINI_BOSSES.size() and manifest.backgrounds.size() == 3, "resource coverage")
 	if failures > 0:
 		await finish(1)
 		return
-	print("PASS: Code City Brawl — ", frame_count, " frames, ", clip_count, " states, 19 SpriteFrames resources, 3 panoramas.")
+	print("PASS: Code City Brawl — ", frame_count, " frames, ", clip_count, " states, 21 SpriteFrames resources, 3 panoramas.")
 	if DisplayServer.get_name() != "headless":
 		root.size = Vector2i(1280,720)
 		for theme in ["district", "security", "hq"]:
@@ -62,6 +78,52 @@ func run() -> void:
 			stage.queue_free()
 			await process_frame
 	await finish(0 if failures == 0 else 1)
+
+func standing_height(key: String, clip_name: String) -> float:
+	var spec: Dictionary = manifest.atlases[key]
+	for clip in spec.clips:
+		if clip.name == clip_name:
+			var bounds: Array = spec.frames[int(clip.frames[0])].visible_bounds
+			return float(bounds[3] - bounds[1])
+	return 0.0
+
+func check_mini_bosses() -> void:
+	var reference := standing_height("linter_enforcer", "armored_idle")
+	check(reference > 0.0, "linter_enforcer reference height measured")
+	for key in MINI_BOSSES:
+		check(manifest.atlases.has(key), key + " atlas is in the manifest")
+		if not manifest.atlases.has(key):
+			continue
+		var spec: Dictionary = manifest.atlases[key]
+		check(spec.get("facing", "") == "left", key + " faces left")
+		check(Vector2i(int(spec.cell[0]), int(spec.cell[1])) == Vector2i(256, 256) and Vector2i(int(spec.pivot[0]), int(spec.pivot[1])) == Vector2i(128, 230), key + " keeps the 256 square cell and (128, 230) pivot")
+		check(spec.frames.size() == 16, key + " has 16 populated cells")
+		var names := []
+		for clip in spec.clips:
+			names.append(clip.name)
+		var wanted: Array = MINI_BOSS_CLIPS.keys()
+		wanted.sort()
+		var got := names.duplicate()
+		got.sort()
+		check(got == wanted, key + " clips are exactly " + ", ".join(MINI_BOSS_CLIPS.keys()) + " (got " + ", ".join(names) + ")")
+		for clip in spec.clips:
+			if not MINI_BOSS_CLIPS.has(clip.name):
+				continue
+			var contract: Array = MINI_BOSS_CLIPS[clip.name]
+			var listed := []
+			for index in clip.frames:
+				listed.append(int(index))
+			check(listed == contract[0], key + "/" + clip.name + " frames " + str(listed) + " should be " + str(contract[0]))
+			check(is_equal_approx(float(clip.fps), float(contract[1])), key + "/" + clip.name + " fps")
+			check(clip.loop == contract[2], key + "/" + clip.name + " loop flag")
+			for index in clip.frames:
+				var b: Array = spec.frames[int(index)].visible_bounds
+				check(int(b[0]) >= 0 and int(b[1]) >= 0 and int(b[2]) <= int(spec.cell[0]) and int(b[3]) <= int(spec.cell[1]), key + "/" + clip.name + " art fits its cell")
+				check(int(b[3]) <= int(spec.pivot[1]) + 2, key + "/" + clip.name + " does not sink below the foot pivot")
+		var stand := standing_height(key, "idle")
+		check(stand >= 85.0 and stand <= 110.0, key + " idle stands about 98 px (got %.0f)" % stand)
+		var ratio := standing_height(key, "idle") / maxf(reference, 1.0)
+		check(ratio >= 1.35 and ratio <= 1.85, key + " idle stands about 1.6x a linter_enforcer (ratio %.2f)" % ratio)
 
 func build_preview(theme: String) -> void:
 	var bg := Sprite2D.new()

@@ -2,7 +2,7 @@
 from pathlib import Path
 import json, shutil
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 # Reviewed source-coordinate gutters exclude disconnected pixels belonging to
 # neighboring poses. These only constrain extraction; masters are untouched.
@@ -64,12 +64,24 @@ ROOT = Path(__file__).resolve().parents[1]
 PACK = ROOT / 'hoppys-adventure-arcade/Assets/code-city-brawl-assets-only'
 OUT = PACK / 'code_city'
 GEN = json.loads((PACK / 'generation.json').read_text())
+MINI_GENERATION = json.loads((PACK / 'mini_boss_generation.json').read_text())
+MINI_BOSSES = ('stack_overflow', 'zero_day')
+for key, prompt in MINI_GENERATION['prompts'].items():
+    GEN['specs'][key] = dict(rows=4, cell=256, prompt=prompt)
+    GEN['sources'][key] = f'sources/{key}.png'
 
 def clip(name, frames, fps=6, loop=False):
     return dict(name=name, frames=frames, fps=fps, loop=loop)
 
 def states(names):
     return [clip(n,[i],1,n.endswith('idle') or n.endswith('intact')) for i,n in enumerate(names.split())]
+
+
+def mini_boss_clips():
+    return [clip('idle', [0, 1], 3, True), clip('walk', [2, 3, 4, 5], 6, True),
+            clip('slam_warning', [6, 7], 5), clip('slam', [8, 9], 10),
+            clip('dash_warning', [10], 1), clip('dash', [11, 12], 10),
+            clip('recover', [13], 1), clip('hurt', [14], 1), clip('defeat', [15], 1)]
 
 ROSTERS = {
  'district_enemies': ['cli_gremlin','syntax_error_sprite','linter_enforcer'],
@@ -119,7 +131,7 @@ for name,spec in GEN['specs'].items():
         for i,actor in enumerate(ROSTERS[name]):
             extractions[actor]=(name,cuts[i*8:(i+1)*8],128,True)
     else:
-        extractions[name]=(name,cuts,spec['cell'],name in BOSSES or name=='linter_bare')
+        extractions[name]=(name,cuts,spec['cell'],name in BOSSES or name in MINI_BOSSES or name=='linter_bare')
 
 boss_scales={}
 for name in BOSSES:
@@ -135,6 +147,10 @@ for name,(source,cuts,cell,actor) in extractions.items():
     rows=(len(cuts)+3)//4
     scale=min(cell*.88/max(c.width for c,_ in cuts),cell*.80/max(c.height for c,_ in cuts))
     if name in BOSSES: scale=boss_height/boss_scales[name][1]
+    if name in MINI_BOSSES:
+        neutral = cuts[0][0].getchannel('A').point(lambda v: 255 if v > 128 else 0).getbbox()
+        linter = manifest['atlases']['linter_enforcer']['frames'][0]['visible_bounds']
+        scale = (linter[3] - linter[1]) * 1.6 / (neutral[3] - neutral[1])
     if name=='linter_bare':
         b=manifest['atlases']['linter_enforcer']['frames'][5]['visible_bounds']
         neutral=cuts[0][0].getchannel('A').point(lambda v:255 if v>128 else 0).getbbox()
@@ -142,18 +158,27 @@ for name,(source,cuts,cell,actor) in extractions.items():
     atlas=Image.new('RGBA',(cell*4,cell*rows))
     frames=[];fd=[]
     for i,(crop,rect) in enumerate(cuts):
+        # Generated walk B faces right. Normalize those two whole poses while
+        # preserving the immutable master and the published facing:left contract.
+        if name == 'zero_day' and i in (4, 5):
+            crop = crop.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
         strong=crop.getchannel('A').point(lambda v:255 if v>128 else 0).getbbox()
         resized=crop.resize((max(1,round(crop.width*scale)),max(1,round(crop.height*scale))),Image.Resampling.NEAREST)
         x=round((cell-resized.width)/2)
         y=round(cell*.90-strong[3]*scale) if actor else round((cell-resized.height)/2)
+        if name in MINI_BOSSES:
+            # Use the sampled sole, not the pre-resize box, to avoid a rounding
+            # texel below the foot pivot. A consistent origin prevents bobbing.
+            sampled = resized.getchannel('A').point(lambda v: 255 if v > 128 else 0).getbbox()
+            y = round(cell * .9) - sampled[3] + 1
         assert x>=0 and y>=0 and x+resized.width<=cell and y+resized.height<=cell,(name,i,'overflow')
         frame=Image.new('RGBA',(cell,cell));frame.alpha_composite(resized,(x,y))
         atlas.alpha_composite(frame,((i%4)*cell,(i//4)*cell));frames.append(frame)
         d=PACK/'frames'/name;d.mkdir(exist_ok=True);frame.save(d/f'{i:02}.png')
         fd.append(dict(index=i,rect=[i%4*cell,i//4*cell,cell,cell],visible_bounds=list(frame.getchannel('A').point(lambda v:255 if v>128 else 0).getbbox()),source_rect_ltrb=list(rect)))
-    clips=states(NAMES[name])
-    assert len(clips)==len(frames),(name,'state count')
-    if actor and name not in BOSSES and name!='linter_enforcer':
+    clips=mini_boss_clips() if name in MINI_BOSSES else states(NAMES[name])
+    assert (len(frames) == 16 if name in MINI_BOSSES else len(clips)==len(frames)),(name,'state count')
+    if actor and name not in BOSSES and name not in MINI_BOSSES and name!='linter_enforcer':
         motion='hover' if name=='injection_attack_drone' else 'drift' if name=='syntax_error_sprite' else 'walk'
         clips.append(clip(motion,[1,2],6,True))
     if name=='conflict_spawner':clips.append(clip('idle',[0,1],3,True))
@@ -163,6 +188,19 @@ for name,(source,cuts,cell,actor) in extractions.items():
     atlas.save(OUT/f'{name}.png')
     pivot=[cell//2,round(cell*.9)] if actor else [cell//2,cell//2]
     manifest['atlases'][name]=dict(file=f'{name}.png',resource=f'{name}.tres',cell=[cell,cell],grid=[4,rows],pivot=pivot,facing='mixed' if name in BOSSES else 'left' if actor else 'fixed',source=source,source_scale=scale,frames=fd,clips=clips)
+    if name in MINI_BOSSES:
+        manifest['atlases'][name]['source_flip_h'] = [4, 5] if name == 'zero_day' else []
+        manifest['atlases'][name]['standing_height_ratio'] = 1.6
+        manifest['atlases'][name]['display_name'] = 'STACK OVERFLOW' if name == 'stack_overflow' else 'ZERO-DAY'
+        preview = Image.new('RGBA', (cell * 4, len(clips) * (cell + 24)), '#11192d')
+        draw = ImageDraw.Draw(preview)
+        for row, c in enumerate(clips):
+            top = row * (cell + 24)
+            draw.text((8, top + 4), f"{name} / {c['name']} / {c['fps']} fps", fill='#e1edfa')
+            for column, index in enumerate(c['frames']):
+                preview.alpha_composite(frames[index], (column * cell, top + 24))
+                draw.line((column * cell, top + 24 + pivot[1], (column + 1) * cell - 1, top + 24 + pivot[1]), fill='#61ecd3')
+        preview.save(PACK / f'{name}_preview.png')
     lines=[f'[gd_resource type="SpriteFrames" load_steps={len(frames)+2} format=3]',f'\n[ext_resource type="Texture2D" path="{name}.png" id="1"]']
     for i in range(len(frames)):
         lines += [f'\n[sub_resource type="AtlasTexture" id="Frame_{i}"]','atlas = ExtResource("1")',f'region = Rect2({i%4*cell}, {i//4*cell}, {cell}, {cell})']
@@ -180,7 +218,7 @@ for name,(source,cuts,cell,actor) in extractions.items():
     (OUT/f'{name}.tres').write_text('\n'.join(lines)+'\n')
 
 (OUT/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
-(PACK/'PROMPTS.md').write_text('# Code City Brawl generation prompts\n\nBuilt-in image generation, October 2, 2026. Phase sheets reference the original boss design. Sources preserve generated alpha; packing only slices, registers, and scales artwork.\n\n'+'\n\n'.join('## '+n+'\n\n'+s['prompt'] for n,s in GEN['specs'].items())+'\n')
+(PACK/'PROMPTS.md').write_text('# Code City Brawl generation prompts\n\nBuilt-in image generation, October 2, 2026; mini-boss additions October 10, 2026. Phase sheets reference the original boss design. Sources preserve generated alpha; packing only slices, registers, and scales artwork.\n\n'+'\n\n'.join('## '+n+'\n\n'+s['prompt'] for n,s in GEN['specs'].items())+'\n\n## Stack Overflow refinement\n\n'+(PACK/'stack-refinement.txt').read_text()+'\n\nZero-day source cells 5 and 6 face right; the builder mirrors those complete poses before packing to enforce facing left. Original generated sources are preserved. Final mini-boss cells are 256 square with pivot (128,230), allowing the full dash cloak at about 98px standing height.\n')
 template=(ROOT/'tools/code_city_gallery.html').read_text()
 (PACK/'preview.html').write_text(template.replace('MANIFEST_DATA',json.dumps(manifest)))
 print('Packed',sum(len(a['frames']) for a in manifest['atlases'].values()),'frames,',sum(len(a['clips']) for a in manifest['atlases'].values()),'states,',len(manifest['atlases']),'resources.')

@@ -56,6 +56,33 @@ const FACE_BOX := {
 }
 const FACE_PIVOT := Vector2(48,86)
 
+## The armed clip the player routes `pose` to, or "" while the player (or the sheet) has no such clip.
+## Read from the player script's ARMED_CLIPS, so the same test holds before and after S1 maps
+## walk_up and walk_down, and it never guesses from the body's current frame.
+func armed_clip_for(actor, pose: String) -> String:
+	var constants: Dictionary=actor.get_script().get_script_constant_map()
+	var map: Variant=constants.get("ARMED_CLIPS",{})
+	var sheet := Art.armed(actor.weapon)
+	if not map is Dictionary or sheet==null or not map.has(pose): return ""
+	var clip: String=map[pose]
+	return clip if sheet.has_animation(clip) else ""
+
+## A mapped armed pose must play the armed sheet's own clip and show no carry icon or legacy cel.
+## Returns true when the pose is mapped, so callers skip the carry icon checks that no longer apply.
+func check_armed_pose(actor, pose: String) -> bool:
+	var clip := armed_clip_for(actor,pose)
+	if clip=="": return false
+	var sheet := Art.armed(actor.weapon)
+	var label := "%s %s facing %d" % [actor.weapon,pose,int(actor.facing)]
+	check(actor.body.sprite_frames==sheet and actor.body.animation==clip,label+" plays the armed %s clip (got %s)" % [clip,actor.body.animation])
+	if pose=="walk_up" or pose=="walk_down":
+		check(sheet.get_frame_count(clip)==4 and sheet.get_animation_loop(clip),label+" armed clip is a 4 frame loop")
+	check(not actor.held.carry.visible and not actor.held.sprite.visible,label+" hides the carry icon and legacy cel on the armed clip")
+	# The next tick animates the rig again with no attack active; it must not paste the icon back.
+	actor.held.animate(actor.weapon,1,0.0,false,Vector2.ZERO,0.0,0.0)
+	check(actor.body.sprite_frames==sheet and actor.body.animation==clip and not actor.held.carry.visible and not actor.held.sprite.visible,label+" keeps the carry hidden after the rig animates again")
+	return true
+
 func carry_should_behind(kind: String, pose: String) -> bool:
 	if pose=="walk_up" or pose=="jump": return true
 	if pose=="walk_down": return kind=="firewall_shield"
@@ -72,6 +99,7 @@ func check_carry_faces(players: Array) -> void:
 			for face in [1,-1]:
 				actor.facing=face
 				actor.show_pose(pose)
+				if check_armed_pose(actor,pose): continue
 				actor.body.frame=0
 				actor.held.scale=Vector2(face,1)
 				actor.held.animate(weapon,1,0.0,false,Vector2.ZERO,0.0,0.0)
@@ -183,7 +211,152 @@ func check_armed_run_registration(actor) -> void:
 	var show_held := true
 	ArmedMeasure.check_armed_run_registration(actor, Catalog.WEAPONS, check, sheet_for, spec_for, offset_for, "debug_stick", game.flow, require_cell, show_held)
 
+## Run is a 6 frame cycle and the vertical walks are 4 frame loops on every Code City armed sheet.
+## This reads only the sheets and manifest, so it holds before player.gd plays walk_up or walk_down.
+func check_armed_locomotion_clips() -> void:
+	var contract := {"run": 6, "walk_up": 4, "walk_down": 4}
+	for weapon in Catalog.WEAPONS:
+		var sheet := Art.armed(weapon)
+		var spec := Art.armed_spec(weapon)
+		check(sheet != null and not spec.is_empty(), weapon+" has an armed sheet and manifest entry")
+		if sheet == null or spec.is_empty(): continue
+		var pivot := Vector2(spec.pivot[0],spec.pivot[1])
+		check(Vector2(spec.cell[0],spec.cell[1])==Vector2(192,128) and pivot==Vector2(72,118),weapon+" keeps the 192x128 cell and (72,118) pivot")
+		for clip in contract:
+			var count: int=contract[clip]
+			check(sheet.has_animation(clip) and sheet.get_frame_count(clip)==count and sheet.get_animation_loop(clip),weapon+" "+clip+" loops over "+str(count)+" frames")
+			var listed: Array=spec.clips.get(clip,{}).get("frames",[])
+			check(listed.size()==count,weapon+" manifest lists "+str(count)+" "+clip+" frames")
+			if not sheet.has_animation(clip): continue
+			var fps := sheet.get_animation_speed(clip)
+			check(fps>=(12.0 if clip=="run" else 8.0) and fps<=(15.0 if clip=="run" else 10.0),weapon+" "+clip+" fps %.1f is in range" % fps)
+			var hands: Dictionary=spec.anchors.get("hand",{})
+			for i in sheet.get_frame_count(clip):
+				var image := sheet.get_frame_texture(clip,i).get_image()
+				var used := image.get_used_rect()
+				check(used.has_area() and used.end.y>=pivot.y-3 and used.end.y<=pivot.y+3,weapon+" "+clip+" frame "+str(i)+" stands on the foot pivot row")
+				if i<listed.size(): check(hands.has(str(int(listed[i]))),weapon+" "+clip+" frame "+str(i)+" has a hand anchor")
+		# Vertical walks keep every pre-existing cell: attack and idle clips still sit in cells 0 to 15.
+		for clip in ["hold_idle","run","step1","step2","step3","equip","hurt","walk_up","walk_down"]:
+			check(spec.clips.has(clip),weapon+" manifest keeps clip "+clip)
+
+## `-- --capture-locomotion [--capture-path=<png>]` renders every armed sheet's locomotion frames
+## through the engine and quits without running the suite. Rows per weapon: run facing right, run
+## facing left (flipped like the player), walk_up, walk_down. Frames are selected explicitly, so
+## this does not depend on the player routing walk_up or walk_down. Launch with --always-on-top.
+const CAPTURE_PATH := "res://../docs/previews/code-city-motion/locomotion_contact_sheet.png"
+const CAPTURE_CELL := Vector2i(192,128)
+const CAPTURE_COLUMNS := 6
+const CAPTURE_ROWS := [["run",false,"run right"],["run",true,"run left"],["walk_up",false,"walk up"],["walk_down",false,"walk down"]]
+
+func capture_target() -> String:
+	var args := OS.get_cmdline_user_args()
+	if not args.has("--capture-locomotion"): return ""
+	for i in args.size():
+		if args[i].begins_with("--capture-path="): return args[i].trim_prefix("--capture-path=")
+		if args[i]=="--capture-path" and i+1<args.size(): return args[i+1]
+	return CAPTURE_PATH
+
+## Resuming inside an autoload's _ready (SaveService pumps frames there) makes add_child fail on
+## root, so wait until root and every autoload report ready, from a clean frame.
+func autoloads_ready() -> void:
+	while true:
+		await process_frame
+		var ready := root.is_node_ready()
+		for child in root.get_children():
+			ready = ready and child.is_node_ready()
+		if ready: return
+
+func capture_locomotion(path: String) -> void:
+	await autoloads_ready()
+	if DisplayServer.get_name()=="headless":
+		printerr("FAIL: --capture-locomotion needs a rendered run, not --headless")
+		quit(1)
+		return
+	var weapons: Array=Catalog.WEAPONS.keys()
+	var columns := 2
+	var block_h := CAPTURE_ROWS.size()*CAPTURE_CELL.y
+	var rows_per_column := int(ceil(float(weapons.size())/columns))
+	var size := Vector2i(columns*CAPTURE_COLUMNS*CAPTURE_CELL.x,rows_per_column*block_h)
+	var viewport := SubViewport.new()
+	viewport.size=size
+	viewport.transparent_bg=false
+	viewport.render_target_update_mode=SubViewport.UPDATE_DISABLED
+	var stage := Node2D.new()
+	stage.texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
+	viewport.add_child(stage)
+	root.add_child(viewport)
+	var backdrop := ColorRect.new()
+	backdrop.color=Color(.18,.2,.24)
+	backdrop.size=Vector2(size)
+	stage.add_child(backdrop)
+	var count := 0
+	for w in weapons.size():
+		var weapon: String=weapons[w]
+		var sheet := Art.armed(weapon)
+		if sheet==null:
+			printerr("FAIL: no armed sheet for "+weapon)
+			failures+=1
+			continue
+		var origin := Vector2i((w/rows_per_column)*CAPTURE_COLUMNS*CAPTURE_CELL.x,(w%rows_per_column)*block_h)
+		var label := Label.new()
+		label.text=weapon
+		label.position=Vector2(origin)+Vector2(4,2)
+		stage.add_child(label)
+		for r in CAPTURE_ROWS.size():
+			var row: Array=CAPTURE_ROWS[r]
+			if not sheet.has_animation(row[0]):
+				printerr("FAIL: "+weapon+" has no "+row[0]+" clip")
+				failures+=1
+				continue
+			for f in sheet.get_frame_count(row[0]):
+				var cell_origin := Vector2(origin)+Vector2(f*CAPTURE_CELL.x,r*CAPTURE_CELL.y)
+				var ground := ColorRect.new()
+				ground.color=Color(.3,.33,.38)
+				ground.position=cell_origin+Vector2(0,Art.armed_spec(weapon).pivot[1])
+				ground.size=Vector2(CAPTURE_CELL.x,1)
+				stage.add_child(ground)
+				var sprite := AnimatedSprite2D.new()
+				sprite.sprite_frames=sheet
+				sprite.animation=row[0]
+				sprite.frame=f
+				sprite.pause()
+				sprite.flip_h=row[1]
+				var offset: Vector2=Art.armed_offset(weapon)
+				sprite.offset=Vector2(-offset.x if row[1] else offset.x,offset.y)
+				# The offset moves the texture so the foot pivot lands on the sprite position.
+				var pivot: Array=Art.armed_spec(weapon).pivot
+				sprite.position=cell_origin+Vector2(pivot[0],pivot[1])
+				stage.add_child(sprite)
+				count+=1
+			var tag := Label.new()
+			tag.text=row[2]
+			tag.position=Vector2(origin)+Vector2(4,r*CAPTURE_CELL.y+18)
+			stage.add_child(tag)
+	# One explicit update. The renderer's own mode drops back to disabled once the viewport has drawn.
+	viewport.render_target_update_mode=SubViewport.UPDATE_ONCE
+	var rid := viewport.get_viewport_rid()
+	await RenderingServer.frame_post_draw
+	while RenderingServer.viewport_get_update_mode(rid)!=RenderingServer.VIEWPORT_UPDATE_DISABLED:
+		await RenderingServer.frame_post_draw
+	var image := viewport.get_texture().get_image()
+	var dir := ProjectSettings.globalize_path(path).get_base_dir()
+	DirAccess.make_dir_recursive_absolute(dir)
+	var saved := image.save_png(ProjectSettings.globalize_path(path))
+	check(saved==OK and count>0,"Locomotion contact sheet saved with %d frames to %s" % [count,path])
+	viewport.queue_free()
+	await finish_capture()
+
+func finish_capture() -> void:
+	if root.has_node("AudioService"): root.get_node("AudioService").shutdown()
+	await create_timer(.2).timeout
+	quit(1 if failures else 0)
+
 func run() -> void:
+	var target := capture_target()
+	if target!="":
+		await capture_locomotion(target)
+		return
 	change_scene_to_file("res://scenes/beatem_up/code_city_brawl.tscn")
 	await process_frame;await process_frame
 	game=current_scene
@@ -193,6 +366,7 @@ func run() -> void:
 	if game.state=="paused": game.resume()
 	game.begin_play()
 	game.set_physics_process(false)
+	check_armed_locomotion_clips()
 	var p=game.player
 	p.set_physics_process(false);p.controlled=false
 	for e in game.enemies: e.queue_free()
@@ -278,6 +452,7 @@ func run() -> void:
 	if carrier!=null:
 		for pose in ["walk_up","walk_down","jump"]:
 			carrier.show_pose(pose)
+			if check_armed_pose(carrier,pose): continue
 			carrier.held.animate(carrier.weapon,1,0.0,false,Vector2.ZERO,0.0,0.0)
 			# Jump draws behind with the back view. Toward the camera only the shield reaches the cheek.
 			var behind: bool=pose=="walk_up" or pose=="jump" or (pose=="walk_down" and carrier.weapon=="firewall_shield")
@@ -290,6 +465,7 @@ func run() -> void:
 	var whip_actor=players.filter(func(a): return a.weapon=="api_key_whip")[0]
 	for pose in ["walk_up","walk_down","jump"]:
 		whip_actor.show_pose(pose)
+		if check_armed_pose(whip_actor,pose): continue
 		whip_actor.held.animate(whip_actor.weapon,1,0.0,false,Vector2.ZERO,0.0,0.0)
 		check(whip_actor.held.carry.visible and whip_actor.held.carry.offset==-Vector2(8,24),"Whip carry on "+pose+" is gripped at texel (8, 24)")
 	var whip_icon: Image=Art.carry("api_key_whip").get_image()
@@ -307,6 +483,7 @@ func run() -> void:
 	var hammer_actor=players.filter(func(a): return a.weapon=="refactor_hammer")[0]
 	for pose in ["walk_up","walk_down","jump"]:
 		hammer_actor.show_pose(pose)
+		if check_armed_pose(hammer_actor,pose): continue
 		hammer_actor.held.animate(hammer_actor.weapon,1,0.0,false,Vector2.ZERO,0.0,0.0)
 		check(hammer_actor.held.carry.visible and hammer_actor.held.carry.offset==-Vector2(8,38),"Hammer carry on "+pose+" is gripped at texel (8, 38)")
 	var hammer_icon: Image=Art.carry("refactor_hammer").get_image()

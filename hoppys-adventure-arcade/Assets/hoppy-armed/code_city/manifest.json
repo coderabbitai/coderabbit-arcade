@@ -146,7 +146,7 @@
       ],
       "grid": [
         4,
-        4
+        8
       ],
       "pivot": [
         72,
@@ -255,7 +255,7 @@
         ]
       ],
       "fragment_attachments": [],
-      "foot_anchor_semantics": "Ground midpoint for registration validation; it can lie between painted feet and is not an effect anchor. Body-registered run frames keep their feet on the pivot row, not on pivot x.",
+      "foot_anchor_semantics": "Original cells retain their original foot anchors. Run cells 16-21 use the painted support sole at x84,72,60 repeated and y118; the stance travels backward to cancel world motion. Vertical walks use a ground midpoint between the legs.",
       "clips": {
         "hold_idle": {
           "frames": [
@@ -266,12 +266,14 @@
         },
         "run": {
           "frames": [
-            1,
-            2,
-            3,
-            4
+            16,
+            17,
+            18,
+            19,
+            20,
+            21
           ],
-          "fps": 12,
+          "fps": 13,
           "loop": true
         },
         "step1": {
@@ -314,6 +316,26 @@
           ],
           "fps": 1,
           "loop": false
+        },
+        "walk_up": {
+          "frames": [
+            22,
+            23,
+            24,
+            25
+          ],
+          "fps": 9,
+          "loop": true
+        },
+        "walk_down": {
+          "frames": [
+            26,
+            27,
+            28,
+            29
+          ],
+          "fps": 9,
+          "loop": true
         }
       },
       "anchors": {
@@ -381,6 +403,62 @@
           "15": [
             83,
             96
+          ],
+          "16": [
+            81,
+            101
+          ],
+          "17": [
+            86,
+            101
+          ],
+          "18": [
+            81,
+            100
+          ],
+          "19": [
+            113,
+            101
+          ],
+          "20": [
+            78,
+            100
+          ],
+          "21": [
+            83,
+            99
+          ],
+          "22": [
+            82,
+            104
+          ],
+          "23": [
+            76,
+            104
+          ],
+          "24": [
+            83,
+            105
+          ],
+          "25": [
+            81,
+            104
+          ],
+          "26": [
+            78,
+            97
+          ],
+          "27": [
+            79,
+            97
+          ],
+          "28": [
+            82,
+            96
+          ],
+          "29": [
+            76,
+            104
           ]
         },
         "tip": {
@@ -461,10 +539,424 @@
           "15": [
             72,
             118
+          ],
+          "16": [
+            84,
+            118
+          ],
+          "17": [
+            72,
+            118
+          ],
+          "18": [
+            60,
+            118
+          ],
+          "19": [
+            84,
+            118
+          ],
+          "20": [
+            72,
+            118
+          ],
+          "21": [
+            60,
+            118
+          ],
+          "22": [
+            72,
+            118
+          ],
+          "23": [
+            72,
+            118
+          ],
+          "24": [
+            72,
+            118
+          ],
+          "25": [
+            72,
+            118
+          ],
+          "26": [
+            72,
+            118
+          ],
+          "27": [
+            72,
+            118
+          ],
+          "28": [
+            72,
+            118
+          ],
+          "29": [
+            72,
+            118
           ]
         }
       },
-      "run_registration": "body"
+      "run_registration": "foot",
+      "locomotion": {
+        "sources": [
+          "debug_stick-locomotion.png",
+          "debug_stick-locomotion.png",
+          "debug_stick-locomotion.png",
+          "debug_stick-locomotion.png",
+          "debug_stick-locomotion.png",
+          "debug_stick-locomotion.png",
+          "debug_stick-locomotion.png",
+          "debug_stick-locomotion.png",
+          "debug_stick-locomotion.png",
+          "debug_stick-locomotion.png",
+          "debug_stick-locomotion.png",
+          "debug_stick-locomotion.png",
+          "debug_stick-locomotion.png",
+          "debug_stick-locomotion.png"
+        ],
+        "source_frames": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13
+        ],
+        "source_component_bounds": [
+          [
+            48,
+            62,
+            297,
+            289
+          ],
+          [
+            393,
+            62,
+            613,
+            292
+          ],
+          [
+            695,
+            59,
+            916,
+            292
+          ],
+          [
+            1002,
+            63,
+            1252,
+            291
+          ],
+          [
+            71,
+            379,
+            301,
+            613
+          ],
+          [
+            393,
+            365,
+            613,
+            609
+          ],
+          [
+            717,
+            374,
+            910,
+            616
+          ],
+          [
+            1032,
+            374,
+            1220,
+            616
+          ],
+          [
+            86,
+            671,
+            281,
+            909
+          ],
+          [
+            407,
+            671,
+            596,
+            914
+          ],
+          [
+            722,
+            663,
+            909,
+            914
+          ],
+          [
+            1032,
+            665,
+            1216,
+            916
+          ],
+          [
+            95,
+            961,
+            280,
+            1211
+          ],
+          [
+            413,
+            961,
+            596,
+            1211
+          ]
+        ],
+        "source_scale": 0.2695035460992908,
+        "relative_scales": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "fragment_attachments": [],
+        "hand": {
+          "16": [
+            81,
+            101
+          ],
+          "17": [
+            86,
+            101
+          ],
+          "18": [
+            81,
+            100
+          ],
+          "19": [
+            113,
+            101
+          ],
+          "20": [
+            78,
+            100
+          ],
+          "21": [
+            83,
+            99
+          ],
+          "22": [
+            82,
+            104
+          ],
+          "23": [
+            76,
+            104
+          ],
+          "24": [
+            83,
+            105
+          ],
+          "25": [
+            81,
+            104
+          ],
+          "26": [
+            78,
+            97
+          ],
+          "27": [
+            79,
+            97
+          ],
+          "28": [
+            82,
+            96
+          ],
+          "29": [
+            76,
+            104
+          ]
+        },
+        "foot": {
+          "16": [
+            84,
+            118
+          ],
+          "17": [
+            72,
+            118
+          ],
+          "18": [
+            60,
+            118
+          ],
+          "19": [
+            84,
+            118
+          ],
+          "20": [
+            72,
+            118
+          ],
+          "21": [
+            60,
+            118
+          ],
+          "22": [
+            72,
+            118
+          ],
+          "23": [
+            72,
+            118
+          ],
+          "24": [
+            72,
+            118
+          ],
+          "25": [
+            72,
+            118
+          ],
+          "26": [
+            72,
+            118
+          ],
+          "27": [
+            72,
+            118
+          ],
+          "28": [
+            72,
+            118
+          ],
+          "29": [
+            72,
+            118
+          ]
+        },
+        "visible_bounds": [
+          [
+            45,
+            59,
+            112,
+            120
+          ],
+          [
+            55,
+            58,
+            114,
+            120
+          ],
+          [
+            49,
+            58,
+            109,
+            120
+          ],
+          [
+            77,
+            59,
+            144,
+            119
+          ],
+          [
+            45,
+            57,
+            107,
+            120
+          ],
+          [
+            52,
+            54,
+            111,
+            120
+          ],
+          [
+            57,
+            55,
+            109,
+            120
+          ],
+          [
+            50,
+            55,
+            101,
+            120
+          ],
+          [
+            58,
+            56,
+            110,
+            120
+          ],
+          [
+            56,
+            55,
+            107,
+            120
+          ],
+          [
+            54,
+            52,
+            103,
+            120
+          ],
+          [
+            53,
+            52,
+            103,
+            120
+          ],
+          [
+            58,
+            53,
+            108,
+            119
+          ],
+          [
+            54,
+            53,
+            103,
+            119
+          ]
+        ],
+        "stance_x": [
+          84,
+          72,
+          60,
+          84,
+          72,
+          60
+        ],
+        "stance_step_px": 12,
+        "fps": 13,
+        "body_scale": 1.55,
+        "matched_world_speed": 241.8
+      },
+      "unused_legacy_cells": [
+        1,
+        2,
+        3,
+        4
+      ]
     },
     "linter_staff": {
       "weapon": "linter_staff",
@@ -476,7 +968,7 @@
       ],
       "grid": [
         4,
-        4
+        8
       ],
       "pivot": [
         72,
@@ -585,7 +1077,7 @@
         ]
       ],
       "fragment_attachments": [],
-      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden. Body-registered run frames keep their feet on the pivot row, not on pivot x.",
+      "foot_anchor_semantics": "Original cells retain their original foot anchors. Run cells 16-21 use the painted support sole at x84,72,60 repeated and y118; the stance travels backward to cancel world motion. Vertical walks use a ground midpoint between the legs.",
       "clips": {
         "hold_idle": {
           "frames": [
@@ -596,12 +1088,14 @@
         },
         "run": {
           "frames": [
-            1,
-            2,
-            3,
-            4
+            16,
+            17,
+            18,
+            19,
+            20,
+            21
           ],
-          "fps": 12,
+          "fps": 13,
           "loop": true
         },
         "step1": {
@@ -644,6 +1138,26 @@
           ],
           "fps": 1,
           "loop": false
+        },
+        "walk_up": {
+          "frames": [
+            22,
+            23,
+            24,
+            25
+          ],
+          "fps": 9,
+          "loop": true
+        },
+        "walk_down": {
+          "frames": [
+            26,
+            27,
+            28,
+            29
+          ],
+          "fps": 9,
+          "loop": true
         }
       },
       "anchors": {
@@ -711,6 +1225,62 @@
           "15": [
             69,
             107
+          ],
+          "16": [
+            81,
+            99
+          ],
+          "17": [
+            80,
+            100
+          ],
+          "18": [
+            65,
+            99
+          ],
+          "19": [
+            84,
+            100
+          ],
+          "20": [
+            76,
+            100
+          ],
+          "21": [
+            68,
+            100
+          ],
+          "22": [
+            76,
+            102
+          ],
+          "23": [
+            77,
+            100
+          ],
+          "24": [
+            83,
+            100
+          ],
+          "25": [
+            84,
+            102
+          ],
+          "26": [
+            81,
+            96
+          ],
+          "27": [
+            83,
+            96
+          ],
+          "28": [
+            87,
+            96
+          ],
+          "29": [
+            81,
+            97
           ]
         },
         "tip": {
@@ -791,12 +1361,426 @@
           "15": [
             72,
             118
+          ],
+          "16": [
+            84,
+            118
+          ],
+          "17": [
+            72,
+            118
+          ],
+          "18": [
+            60,
+            118
+          ],
+          "19": [
+            84,
+            118
+          ],
+          "20": [
+            72,
+            118
+          ],
+          "21": [
+            60,
+            118
+          ],
+          "22": [
+            72,
+            118
+          ],
+          "23": [
+            72,
+            118
+          ],
+          "24": [
+            72,
+            118
+          ],
+          "25": [
+            72,
+            118
+          ],
+          "26": [
+            72,
+            118
+          ],
+          "27": [
+            72,
+            118
+          ],
+          "28": [
+            72,
+            118
+          ],
+          "29": [
+            72,
+            118
           ]
         }
       },
-      "run_registration": "body",
+      "run_registration": "foot",
+      "locomotion": {
+        "sources": [
+          "linter_staff-locomotion.png",
+          "linter_staff-locomotion.png",
+          "linter_staff-locomotion.png",
+          "linter_staff-locomotion.png",
+          "linter_staff-locomotion.png",
+          "linter_staff-locomotion.png",
+          "linter_staff-locomotion.png",
+          "linter_staff-locomotion.png",
+          "linter_staff-locomotion.png",
+          "linter_staff-locomotion.png",
+          "linter_staff-locomotion.png",
+          "linter_staff-locomotion.png",
+          "linter_staff-locomotion.png",
+          "linter_staff-locomotion.png"
+        ],
+        "source_frames": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13
+        ],
+        "source_component_bounds": [
+          [
+            84,
+            111,
+            300,
+            291
+          ],
+          [
+            410,
+            111,
+            613,
+            291
+          ],
+          [
+            687,
+            111,
+            902,
+            296
+          ],
+          [
+            979,
+            111,
+            1199,
+            295
+          ],
+          [
+            79,
+            395,
+            302,
+            575
+          ],
+          [
+            397,
+            395,
+            614,
+            575
+          ],
+          [
+            709,
+            388,
+            896,
+            578
+          ],
+          [
+            1018,
+            388,
+            1200,
+            586
+          ],
+          [
+            105,
+            668,
+            294,
+            870
+          ],
+          [
+            415,
+            668,
+            601,
+            862
+          ],
+          [
+            709,
+            666,
+            892,
+            870
+          ],
+          [
+            1019,
+            665,
+            1199,
+            870
+          ],
+          [
+            109,
+            953,
+            292,
+            1154
+          ],
+          [
+            419,
+            951,
+            604,
+            1150
+          ]
+        ],
+        "source_scale": 0.35625,
+        "relative_scales": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "fragment_attachments": [],
+        "hand": {
+          "16": [
+            81,
+            99
+          ],
+          "17": [
+            80,
+            100
+          ],
+          "18": [
+            65,
+            99
+          ],
+          "19": [
+            84,
+            100
+          ],
+          "20": [
+            76,
+            100
+          ],
+          "21": [
+            68,
+            100
+          ],
+          "22": [
+            76,
+            102
+          ],
+          "23": [
+            77,
+            100
+          ],
+          "24": [
+            83,
+            100
+          ],
+          "25": [
+            84,
+            102
+          ],
+          "26": [
+            81,
+            96
+          ],
+          "27": [
+            83,
+            96
+          ],
+          "28": [
+            87,
+            96
+          ],
+          "29": [
+            81,
+            97
+          ]
+        },
+        "foot": {
+          "16": [
+            84,
+            118
+          ],
+          "17": [
+            72,
+            118
+          ],
+          "18": [
+            60,
+            118
+          ],
+          "19": [
+            84,
+            118
+          ],
+          "20": [
+            72,
+            118
+          ],
+          "21": [
+            60,
+            118
+          ],
+          "22": [
+            72,
+            118
+          ],
+          "23": [
+            72,
+            118
+          ],
+          "24": [
+            72,
+            118
+          ],
+          "25": [
+            72,
+            118
+          ],
+          "26": [
+            72,
+            118
+          ],
+          "27": [
+            72,
+            118
+          ],
+          "28": [
+            72,
+            118
+          ],
+          "29": [
+            72,
+            118
+          ]
+        },
+        "visible_bounds": [
+          [
+            40,
+            56,
+            117,
+            120
+          ],
+          [
+            44,
+            56,
+            116,
+            120
+          ],
+          [
+            25,
+            54,
+            102,
+            120
+          ],
+          [
+            43,
+            54,
+            121,
+            120
+          ],
+          [
+            34,
+            56,
+            113,
+            120
+          ],
+          [
+            27,
+            56,
+            104,
+            120
+          ],
+          [
+            47,
+            52,
+            114,
+            120
+          ],
+          [
+            49,
+            49,
+            114,
+            120
+          ],
+          [
+            54,
+            48,
+            121,
+            120
+          ],
+          [
+            56,
+            51,
+            122,
+            120
+          ],
+          [
+            51,
+            47,
+            116,
+            120
+          ],
+          [
+            54,
+            47,
+            118,
+            120
+          ],
+          [
+            58,
+            48,
+            123,
+            120
+          ],
+          [
+            52,
+            49,
+            118,
+            120
+          ]
+        ],
+        "stance_x": [
+          84,
+          72,
+          60,
+          84,
+          72,
+          60
+        ],
+        "stance_step_px": 12,
+        "fps": 13,
+        "body_scale": 1.55,
+        "matched_world_speed": 241.8
+      },
+      "unused_legacy_cells": [
+        1,
+        2,
+        3,
+        4
+      ],
       "foot_planting": {
-        "default": "idle, equip, and hurt use the foot centre; run frames hold the body steady; attack frames use the rear foot.",
+        "default": "Legacy cells 0-15 preserve original registration. Locomotion cells 16-29 use separately generated poses with sole registration; see locomotion for stance and source provenance.",
         "overrides": {},
         "note": ""
       }
@@ -811,7 +1795,7 @@
       ],
       "grid": [
         4,
-        4
+        8
       ],
       "pivot": [
         72,
@@ -920,7 +1904,7 @@
         ]
       ],
       "fragment_attachments": [],
-      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden. Body-registered run frames keep their feet on the pivot row, not on pivot x.",
+      "foot_anchor_semantics": "Original cells retain their original foot anchors. Run cells 16-21 use the painted support sole at x84,72,60 repeated and y118; the stance travels backward to cancel world motion. Vertical walks use a ground midpoint between the legs.",
       "clips": {
         "hold_idle": {
           "frames": [
@@ -931,12 +1915,14 @@
         },
         "run": {
           "frames": [
-            1,
-            2,
-            3,
-            4
+            16,
+            17,
+            18,
+            19,
+            20,
+            21
           ],
-          "fps": 12,
+          "fps": 13,
           "loop": true
         },
         "step1": {
@@ -979,6 +1965,26 @@
           ],
           "fps": 1,
           "loop": false
+        },
+        "walk_up": {
+          "frames": [
+            22,
+            23,
+            24,
+            25
+          ],
+          "fps": 9,
+          "loop": true
+        },
+        "walk_down": {
+          "frames": [
+            26,
+            27,
+            28,
+            29
+          ],
+          "fps": 9,
+          "loop": true
         }
       },
       "anchors": {
@@ -1046,6 +2052,62 @@
           "15": [
             90,
             98
+          ],
+          "16": [
+            79,
+            100
+          ],
+          "17": [
+            86,
+            100
+          ],
+          "18": [
+            87,
+            100
+          ],
+          "19": [
+            115,
+            100
+          ],
+          "20": [
+            83,
+            101
+          ],
+          "21": [
+            89,
+            100
+          ],
+          "22": [
+            84,
+            102
+          ],
+          "23": [
+            74,
+            102
+          ],
+          "24": [
+            82,
+            102
+          ],
+          "25": [
+            82,
+            103
+          ],
+          "26": [
+            75,
+            102
+          ],
+          "27": [
+            74,
+            102
+          ],
+          "28": [
+            79,
+            103
+          ],
+          "29": [
+            74,
+            102
           ]
         },
         "tip": {
@@ -1126,10 +2188,424 @@
           "15": [
             72,
             118
+          ],
+          "16": [
+            84,
+            118
+          ],
+          "17": [
+            72,
+            118
+          ],
+          "18": [
+            60,
+            118
+          ],
+          "19": [
+            84,
+            118
+          ],
+          "20": [
+            72,
+            118
+          ],
+          "21": [
+            60,
+            118
+          ],
+          "22": [
+            72,
+            118
+          ],
+          "23": [
+            72,
+            118
+          ],
+          "24": [
+            72,
+            118
+          ],
+          "25": [
+            72,
+            118
+          ],
+          "26": [
+            72,
+            118
+          ],
+          "27": [
+            72,
+            118
+          ],
+          "28": [
+            72,
+            118
+          ],
+          "29": [
+            72,
+            118
           ]
         }
       },
-      "run_registration": "body",
+      "run_registration": "foot",
+      "locomotion": {
+        "sources": [
+          "api_key_whip-locomotion.png",
+          "api_key_whip-locomotion.png",
+          "api_key_whip-locomotion.png",
+          "api_key_whip-locomotion.png",
+          "api_key_whip-locomotion.png",
+          "api_key_whip-locomotion.png",
+          "api_key_whip-locomotion.png",
+          "api_key_whip-locomotion.png",
+          "api_key_whip-locomotion.png",
+          "api_key_whip-locomotion.png",
+          "api_key_whip-locomotion.png",
+          "api_key_whip-locomotion.png",
+          "api_key_whip-locomotion.png",
+          "api_key_whip-locomotion.png"
+        ],
+        "source_frames": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13
+        ],
+        "source_component_bounds": [
+          [
+            60,
+            61,
+            292,
+            284
+          ],
+          [
+            393,
+            61,
+            603,
+            282
+          ],
+          [
+            685,
+            61,
+            915,
+            282
+          ],
+          [
+            994,
+            61,
+            1230,
+            284
+          ],
+          [
+            79,
+            380,
+            292,
+            593
+          ],
+          [
+            373,
+            372,
+            603,
+            593
+          ],
+          [
+            691,
+            361,
+            885,
+            601
+          ],
+          [
+            1014,
+            362,
+            1209,
+            602
+          ],
+          [
+            70,
+            660,
+            266,
+            906
+          ],
+          [
+            395,
+            659,
+            586,
+            898
+          ],
+          [
+            693,
+            661,
+            879,
+            906
+          ],
+          [
+            1030,
+            659,
+            1214,
+            905
+          ],
+          [
+            91,
+            955,
+            275,
+            1198
+          ],
+          [
+            400,
+            955,
+            590,
+            1202
+          ]
+        ],
+        "source_scale": 0.285,
+        "relative_scales": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "fragment_attachments": [],
+        "hand": {
+          "16": [
+            79,
+            100
+          ],
+          "17": [
+            86,
+            100
+          ],
+          "18": [
+            87,
+            100
+          ],
+          "19": [
+            115,
+            100
+          ],
+          "20": [
+            83,
+            101
+          ],
+          "21": [
+            89,
+            100
+          ],
+          "22": [
+            84,
+            102
+          ],
+          "23": [
+            74,
+            102
+          ],
+          "24": [
+            82,
+            102
+          ],
+          "25": [
+            82,
+            103
+          ],
+          "26": [
+            75,
+            102
+          ],
+          "27": [
+            74,
+            102
+          ],
+          "28": [
+            79,
+            103
+          ],
+          "29": [
+            74,
+            102
+          ]
+        },
+        "foot": {
+          "16": [
+            84,
+            118
+          ],
+          "17": [
+            72,
+            118
+          ],
+          "18": [
+            60,
+            118
+          ],
+          "19": [
+            84,
+            118
+          ],
+          "20": [
+            72,
+            118
+          ],
+          "21": [
+            60,
+            118
+          ],
+          "22": [
+            72,
+            118
+          ],
+          "23": [
+            72,
+            118
+          ],
+          "24": [
+            72,
+            118
+          ],
+          "25": [
+            72,
+            118
+          ],
+          "26": [
+            72,
+            118
+          ],
+          "27": [
+            72,
+            118
+          ],
+          "28": [
+            72,
+            118
+          ],
+          "29": [
+            72,
+            118
+          ]
+        },
+        "visible_bounds": [
+          [
+            43,
+            57,
+            109,
+            120
+          ],
+          [
+            54,
+            57,
+            114,
+            120
+          ],
+          [
+            52,
+            57,
+            118,
+            120
+          ],
+          [
+            78,
+            56,
+            145,
+            120
+          ],
+          [
+            51,
+            59,
+            112,
+            120
+          ],
+          [
+            53,
+            57,
+            119,
+            120
+          ],
+          [
+            58,
+            52,
+            113,
+            120
+          ],
+          [
+            47,
+            52,
+            103,
+            120
+          ],
+          [
+            55,
+            51,
+            111,
+            120
+          ],
+          [
+            56,
+            52,
+            109,
+            120
+          ],
+          [
+            50,
+            50,
+            103,
+            119
+          ],
+          [
+            52,
+            50,
+            104,
+            120
+          ],
+          [
+            57,
+            51,
+            109,
+            120
+          ],
+          [
+            52,
+            50,
+            105,
+            120
+          ]
+        ],
+        "stance_x": [
+          84,
+          72,
+          60,
+          84,
+          72,
+          60
+        ],
+        "stance_step_px": 12,
+        "fps": 13,
+        "body_scale": 1.55,
+        "matched_world_speed": 241.8
+      },
+      "unused_legacy_cells": [
+        1,
+        2,
+        3,
+        4
+      ],
       "source_order": [
         0,
         1,
@@ -1149,7 +2625,7 @@
         15
       ],
       "foot_planting": {
-        "default": "idle, equip, and hurt use the foot centre; run frames hold the body steady; attack frames use the rear foot.",
+        "default": "Legacy cells 0-15 preserve original registration. Locomotion cells 16-29 use separately generated poses with sole registration; see locomotion for stance and source provenance.",
         "overrides": {},
         "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot, including step3 contact and step3 follow (the reused step1 follow cel), so the foot stays planted through the recoil. Idle, run, and equip plant the body foot named by body_foot_targets, which already holds the run body steady; hurt uses the foot centre.",
         "body_foot_targets": {
@@ -1190,7 +2666,7 @@
       ],
       "grid": [
         4,
-        4
+        8
       ],
       "pivot": [
         72,
@@ -1299,7 +2775,7 @@
         ]
       ],
       "fragment_attachments": [],
-      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden. Body-registered run frames keep their feet on the pivot row, not on pivot x.",
+      "foot_anchor_semantics": "Original cells retain their original foot anchors. Run cells 16-21 use the painted support sole at x84,72,60 repeated and y118; the stance travels backward to cancel world motion. Vertical walks use a ground midpoint between the legs.",
       "clips": {
         "hold_idle": {
           "frames": [
@@ -1310,12 +2786,14 @@
         },
         "run": {
           "frames": [
-            1,
-            2,
-            3,
-            4
+            16,
+            17,
+            18,
+            19,
+            20,
+            21
           ],
-          "fps": 12,
+          "fps": 13,
           "loop": true
         },
         "step1": {
@@ -1358,6 +2836,26 @@
           ],
           "fps": 1,
           "loop": false
+        },
+        "walk_up": {
+          "frames": [
+            22,
+            23,
+            24,
+            25
+          ],
+          "fps": 9,
+          "loop": true
+        },
+        "walk_down": {
+          "frames": [
+            26,
+            27,
+            28,
+            29
+          ],
+          "fps": 9,
+          "loop": true
         }
       },
       "anchors": {
@@ -1424,6 +2922,62 @@
           ],
           "15": [
             75,
+            98
+          ],
+          "16": [
+            105,
+            100
+          ],
+          "17": [
+            97,
+            100
+          ],
+          "18": [
+            66,
+            100
+          ],
+          "19": [
+            88,
+            100
+          ],
+          "20": [
+            79,
+            100
+          ],
+          "21": [
+            90,
+            100
+          ],
+          "22": [
+            88,
+            100
+          ],
+          "23": [
+            78,
+            102
+          ],
+          "24": [
+            81,
+            99
+          ],
+          "25": [
+            89,
+            99
+          ],
+          "26": [
+            79,
+            98
+          ],
+          "27": [
+            80,
+            97
+          ],
+          "28": [
+            79,
+            98
+          ],
+          "29": [
+            79,
             98
           ]
         },
@@ -1505,12 +3059,426 @@
           "15": [
             72,
             118
+          ],
+          "16": [
+            84,
+            118
+          ],
+          "17": [
+            72,
+            118
+          ],
+          "18": [
+            60,
+            118
+          ],
+          "19": [
+            84,
+            118
+          ],
+          "20": [
+            72,
+            118
+          ],
+          "21": [
+            60,
+            118
+          ],
+          "22": [
+            72,
+            118
+          ],
+          "23": [
+            72,
+            118
+          ],
+          "24": [
+            72,
+            118
+          ],
+          "25": [
+            72,
+            118
+          ],
+          "26": [
+            72,
+            118
+          ],
+          "27": [
+            72,
+            118
+          ],
+          "28": [
+            72,
+            118
+          ],
+          "29": [
+            72,
+            118
           ]
         }
       },
-      "run_registration": "body",
+      "run_registration": "foot",
+      "locomotion": {
+        "sources": [
+          "git_branch-locomotion.png",
+          "git_branch-locomotion.png",
+          "git_branch-locomotion.png",
+          "git_branch-locomotion.png",
+          "git_branch-locomotion.png",
+          "git_branch-locomotion.png",
+          "git_branch-locomotion.png",
+          "git_branch-locomotion.png",
+          "git_branch-locomotion.png",
+          "git_branch-locomotion.png",
+          "git_branch-locomotion.png",
+          "git_branch-locomotion.png",
+          "git_branch-locomotion-generation0.png",
+          "git_branch-locomotion-generation0.png"
+        ],
+        "source_frames": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          8,
+          9
+        ],
+        "source_component_bounds": [
+          [
+            79,
+            98,
+            292,
+            296
+          ],
+          [
+            378,
+            98,
+            604,
+            295
+          ],
+          [
+            680,
+            97,
+            918,
+            294
+          ],
+          [
+            988,
+            96,
+            1212,
+            294
+          ],
+          [
+            62,
+            397,
+            303,
+            595
+          ],
+          [
+            391,
+            394,
+            622,
+            595
+          ],
+          [
+            694,
+            391,
+            914,
+            597
+          ],
+          [
+            1006,
+            392,
+            1215,
+            602
+          ],
+          [
+            88,
+            692,
+            298,
+            903
+          ],
+          [
+            400,
+            691,
+            615,
+            904
+          ],
+          [
+            701,
+            692,
+            913,
+            907
+          ],
+          [
+            1012,
+            691,
+            1225,
+            908
+          ],
+          [
+            73,
+            693,
+            305,
+            923
+          ],
+          [
+            390,
+            691,
+            614,
+            926
+          ]
+        ],
+        "source_scale": 0.3220338983050847,
+        "relative_scales": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.9391304347826087,
+          0.9191489361702128
+        ],
+        "fragment_attachments": [],
+        "hand": {
+          "16": [
+            105,
+            100
+          ],
+          "17": [
+            97,
+            100
+          ],
+          "18": [
+            66,
+            100
+          ],
+          "19": [
+            88,
+            100
+          ],
+          "20": [
+            79,
+            100
+          ],
+          "21": [
+            90,
+            100
+          ],
+          "22": [
+            88,
+            100
+          ],
+          "23": [
+            78,
+            102
+          ],
+          "24": [
+            81,
+            99
+          ],
+          "25": [
+            89,
+            99
+          ],
+          "26": [
+            79,
+            98
+          ],
+          "27": [
+            80,
+            97
+          ],
+          "28": [
+            79,
+            98
+          ],
+          "29": [
+            79,
+            98
+          ]
+        },
+        "foot": {
+          "16": [
+            84,
+            118
+          ],
+          "17": [
+            72,
+            118
+          ],
+          "18": [
+            60,
+            118
+          ],
+          "19": [
+            84,
+            118
+          ],
+          "20": [
+            72,
+            118
+          ],
+          "21": [
+            60,
+            118
+          ],
+          "22": [
+            72,
+            118
+          ],
+          "23": [
+            72,
+            118
+          ],
+          "24": [
+            72,
+            118
+          ],
+          "25": [
+            72,
+            118
+          ],
+          "26": [
+            72,
+            118
+          ],
+          "27": [
+            72,
+            118
+          ],
+          "28": [
+            72,
+            118
+          ],
+          "29": [
+            72,
+            118
+          ]
+        },
+        "visible_bounds": [
+          [
+            72,
+            56,
+            141,
+            120
+          ],
+          [
+            63,
+            57,
+            136,
+            120
+          ],
+          [
+            27,
+            57,
+            104,
+            120
+          ],
+          [
+            51,
+            56,
+            123,
+            120
+          ],
+          [
+            38,
+            56,
+            116,
+            120
+          ],
+          [
+            52,
+            55,
+            126,
+            120
+          ],
+          [
+            55,
+            54,
+            126,
+            120
+          ],
+          [
+            49,
+            52,
+            116,
+            120
+          ],
+          [
+            48,
+            52,
+            116,
+            120
+          ],
+          [
+            56,
+            51,
+            125,
+            120
+          ],
+          [
+            50,
+            51,
+            118,
+            120
+          ],
+          [
+            50,
+            50,
+            119,
+            120
+          ],
+          [
+            49,
+            50,
+            119,
+            120
+          ],
+          [
+            50,
+            50,
+            116,
+            120
+          ]
+        ],
+        "stance_x": [
+          84,
+          72,
+          60,
+          84,
+          72,
+          60
+        ],
+        "stance_step_px": 12,
+        "fps": 13,
+        "body_scale": 1.55,
+        "matched_world_speed": 241.8
+      },
+      "unused_legacy_cells": [
+        1,
+        2,
+        3,
+        4
+      ],
       "foot_planting": {
-        "default": "idle, equip, and hurt use the foot centre; run frames hold the body steady; attack frames use the rear foot.",
+        "default": "Legacy cells 0-15 preserve original registration. Locomotion cells 16-29 use separately generated poses with sole registration; see locomotion for stance and source provenance.",
         "overrides": {},
         "note": ""
       }
@@ -1525,7 +3493,7 @@
       ],
       "grid": [
         4,
-        4
+        8
       ],
       "pivot": [
         72,
@@ -1634,7 +3602,7 @@
         ]
       ],
       "fragment_attachments": [],
-      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden. Body-registered run frames keep their feet on the pivot row, not on pivot x.",
+      "foot_anchor_semantics": "Original cells retain their original foot anchors. Run cells 16-21 use the painted support sole at x84,72,60 repeated and y118; the stance travels backward to cancel world motion. Vertical walks use a ground midpoint between the legs.",
       "clips": {
         "hold_idle": {
           "frames": [
@@ -1645,12 +3613,14 @@
         },
         "run": {
           "frames": [
-            1,
-            2,
-            3,
-            4
+            16,
+            17,
+            18,
+            19,
+            20,
+            21
           ],
-          "fps": 12,
+          "fps": 13,
           "loop": true
         },
         "step1": {
@@ -1693,6 +3663,26 @@
           ],
           "fps": 1,
           "loop": false
+        },
+        "walk_up": {
+          "frames": [
+            22,
+            23,
+            24,
+            25
+          ],
+          "fps": 9,
+          "loop": true
+        },
+        "walk_down": {
+          "frames": [
+            26,
+            27,
+            28,
+            29
+          ],
+          "fps": 9,
+          "loop": true
         }
       },
       "anchors": {
@@ -1760,6 +3750,62 @@
           "15": [
             94,
             91
+          ],
+          "16": [
+            87,
+            101
+          ],
+          "17": [
+            87,
+            102
+          ],
+          "18": [
+            69,
+            101
+          ],
+          "19": [
+            81,
+            101
+          ],
+          "20": [
+            78,
+            100
+          ],
+          "21": [
+            85,
+            97
+          ],
+          "22": [
+            77,
+            101
+          ],
+          "23": [
+            74,
+            102
+          ],
+          "24": [
+            76,
+            101
+          ],
+          "25": [
+            83,
+            102
+          ],
+          "26": [
+            77,
+            97
+          ],
+          "27": [
+            76,
+            98
+          ],
+          "28": [
+            83,
+            98
+          ],
+          "29": [
+            86,
+            99
           ]
         },
         "tip": {
@@ -1840,12 +3886,426 @@
           "15": [
             72,
             118
+          ],
+          "16": [
+            84,
+            118
+          ],
+          "17": [
+            72,
+            118
+          ],
+          "18": [
+            60,
+            118
+          ],
+          "19": [
+            84,
+            118
+          ],
+          "20": [
+            72,
+            118
+          ],
+          "21": [
+            60,
+            118
+          ],
+          "22": [
+            72,
+            118
+          ],
+          "23": [
+            72,
+            118
+          ],
+          "24": [
+            72,
+            118
+          ],
+          "25": [
+            72,
+            118
+          ],
+          "26": [
+            72,
+            118
+          ],
+          "27": [
+            72,
+            118
+          ],
+          "28": [
+            72,
+            118
+          ],
+          "29": [
+            72,
+            118
           ]
         }
       },
-      "run_registration": "body",
+      "run_registration": "foot",
+      "locomotion": {
+        "sources": [
+          "refactor_hammer-locomotion.png",
+          "refactor_hammer-locomotion.png",
+          "refactor_hammer-locomotion.png",
+          "refactor_hammer-locomotion.png",
+          "refactor_hammer-locomotion.png",
+          "refactor_hammer-locomotion.png",
+          "refactor_hammer-locomotion.png",
+          "refactor_hammer-locomotion.png",
+          "refactor_hammer-locomotion.png",
+          "refactor_hammer-locomotion.png",
+          "refactor_hammer-locomotion.png",
+          "refactor_hammer-locomotion.png",
+          "refactor_hammer-locomotion.png",
+          "refactor_hammer-locomotion.png"
+        ],
+        "source_frames": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13
+        ],
+        "source_component_bounds": [
+          [
+            9,
+            46,
+            309,
+            272
+          ],
+          [
+            354,
+            53,
+            623,
+            266
+          ],
+          [
+            658,
+            42,
+            937,
+            268
+          ],
+          [
+            976,
+            46,
+            1251,
+            269
+          ],
+          [
+            20,
+            347,
+            315,
+            579
+          ],
+          [
+            371,
+            343,
+            626,
+            580
+          ],
+          [
+            689,
+            336,
+            918,
+            587
+          ],
+          [
+            1019,
+            336,
+            1240,
+            587
+          ],
+          [
+            59,
+            643,
+            291,
+            898
+          ],
+          [
+            383,
+            643,
+            611,
+            897
+          ],
+          [
+            702,
+            636,
+            931,
+            902
+          ],
+          [
+            1024,
+            636,
+            1242,
+            899
+          ],
+          [
+            76,
+            948,
+            289,
+            1202
+          ],
+          [
+            391,
+            948,
+            613,
+            1199
+          ]
+        ],
+        "source_scale": 0.2753623188405797,
+        "relative_scales": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "fragment_attachments": [],
+        "hand": {
+          "16": [
+            87,
+            101
+          ],
+          "17": [
+            87,
+            102
+          ],
+          "18": [
+            69,
+            101
+          ],
+          "19": [
+            81,
+            101
+          ],
+          "20": [
+            78,
+            100
+          ],
+          "21": [
+            85,
+            97
+          ],
+          "22": [
+            77,
+            101
+          ],
+          "23": [
+            74,
+            102
+          ],
+          "24": [
+            76,
+            101
+          ],
+          "25": [
+            83,
+            102
+          ],
+          "26": [
+            77,
+            97
+          ],
+          "27": [
+            76,
+            98
+          ],
+          "28": [
+            83,
+            98
+          ],
+          "29": [
+            86,
+            99
+          ]
+        },
+        "foot": {
+          "16": [
+            84,
+            118
+          ],
+          "17": [
+            72,
+            118
+          ],
+          "18": [
+            60,
+            118
+          ],
+          "19": [
+            84,
+            118
+          ],
+          "20": [
+            72,
+            118
+          ],
+          "21": [
+            60,
+            118
+          ],
+          "22": [
+            72,
+            118
+          ],
+          "23": [
+            72,
+            118
+          ],
+          "24": [
+            72,
+            118
+          ],
+          "25": [
+            72,
+            118
+          ],
+          "26": [
+            72,
+            118
+          ],
+          "27": [
+            72,
+            118
+          ],
+          "28": [
+            72,
+            118
+          ],
+          "29": [
+            72,
+            118
+          ]
+        },
+        "visible_bounds": [
+          [
+            42,
+            58,
+            125,
+            120
+          ],
+          [
+            48,
+            61,
+            122,
+            120
+          ],
+          [
+            28,
+            58,
+            105,
+            120
+          ],
+          [
+            42,
+            59,
+            118,
+            120
+          ],
+          [
+            35,
+            56,
+            116,
+            120
+          ],
+          [
+            48,
+            55,
+            118,
+            120
+          ],
+          [
+            48,
+            51,
+            111,
+            120
+          ],
+          [
+            48,
+            52,
+            109,
+            120
+          ],
+          [
+            47,
+            50,
+            110,
+            120
+          ],
+          [
+            56,
+            50,
+            119,
+            120
+          ],
+          [
+            50,
+            47,
+            113,
+            120
+          ],
+          [
+            50,
+            48,
+            110,
+            120
+          ],
+          [
+            57,
+            50,
+            116,
+            120
+          ],
+          [
+            59,
+            51,
+            120,
+            119
+          ]
+        ],
+        "stance_x": [
+          84,
+          72,
+          60,
+          84,
+          72,
+          60
+        ],
+        "stance_step_px": 12,
+        "fps": 13,
+        "body_scale": 1.55,
+        "matched_world_speed": 241.8
+      },
+      "unused_legacy_cells": [
+        1,
+        2,
+        3,
+        4
+      ],
       "foot_planting": {
-        "default": "idle, equip, and hurt use the foot centre; run frames hold the body steady; attack frames use the rear foot.",
+        "default": "Legacy cells 0-15 preserve original registration. Locomotion cells 16-29 use separately generated poses with sole registration; see locomotion for stance and source provenance.",
         "overrides": {},
         "note": "Attack frames (step1-step3: windup, contact, follow) plant the rear foot; run frames hold the body steady; idle, equip, and hurt use the foot centre."
       }
@@ -1860,7 +4320,7 @@
       ],
       "grid": [
         4,
-        4
+        8
       ],
       "pivot": [
         72,
@@ -1969,7 +4429,7 @@
         ]
       ],
       "fragment_attachments": [],
-      "foot_anchor_semantics": "Per-frame planted foot for registration validation; attacks use the rear foot unless overridden. Body-registered run frames keep their feet on the pivot row, not on pivot x.",
+      "foot_anchor_semantics": "Original cells retain their original foot anchors. Run cells 16-21 use the painted support sole at x84,72,60 repeated and y118; the stance travels backward to cancel world motion. Vertical walks use a ground midpoint between the legs.",
       "clips": {
         "hold_idle": {
           "frames": [
@@ -1980,12 +4440,14 @@
         },
         "run": {
           "frames": [
-            1,
-            2,
-            3,
-            4
+            16,
+            17,
+            18,
+            19,
+            20,
+            21
           ],
-          "fps": 12,
+          "fps": 13,
           "loop": true
         },
         "step1": {
@@ -2028,6 +4490,26 @@
           ],
           "fps": 1,
           "loop": false
+        },
+        "walk_up": {
+          "frames": [
+            22,
+            23,
+            24,
+            25
+          ],
+          "fps": 9,
+          "loop": true
+        },
+        "walk_down": {
+          "frames": [
+            26,
+            27,
+            28,
+            29
+          ],
+          "fps": 9,
+          "loop": true
         }
       },
       "anchors": {
@@ -2095,6 +4577,62 @@
           "15": [
             90,
             106
+          ],
+          "16": [
+            85,
+            100
+          ],
+          "17": [
+            88,
+            100
+          ],
+          "18": [
+            63,
+            98
+          ],
+          "19": [
+            81,
+            99
+          ],
+          "20": [
+            101,
+            97
+          ],
+          "21": [
+            91,
+            98
+          ],
+          "22": [
+            73,
+            104
+          ],
+          "23": [
+            81,
+            102
+          ],
+          "24": [
+            74,
+            102
+          ],
+          "25": [
+            73,
+            101
+          ],
+          "26": [
+            75,
+            99
+          ],
+          "27": [
+            81,
+            99
+          ],
+          "28": [
+            77,
+            98
+          ],
+          "29": [
+            75,
+            99
           ]
         },
         "tip": {
@@ -2175,12 +4713,426 @@
           "15": [
             72,
             118
+          ],
+          "16": [
+            84,
+            118
+          ],
+          "17": [
+            72,
+            118
+          ],
+          "18": [
+            60,
+            118
+          ],
+          "19": [
+            84,
+            118
+          ],
+          "20": [
+            72,
+            118
+          ],
+          "21": [
+            60,
+            118
+          ],
+          "22": [
+            72,
+            118
+          ],
+          "23": [
+            72,
+            118
+          ],
+          "24": [
+            72,
+            118
+          ],
+          "25": [
+            72,
+            118
+          ],
+          "26": [
+            72,
+            118
+          ],
+          "27": [
+            72,
+            118
+          ],
+          "28": [
+            72,
+            118
+          ],
+          "29": [
+            72,
+            118
           ]
         }
       },
-      "run_registration": "body",
+      "run_registration": "foot",
+      "locomotion": {
+        "sources": [
+          "firewall_shield-locomotion.png",
+          "firewall_shield-locomotion.png",
+          "firewall_shield-locomotion.png",
+          "firewall_shield-locomotion.png",
+          "firewall_shield-locomotion.png",
+          "firewall_shield-locomotion.png",
+          "firewall_shield-locomotion.png",
+          "firewall_shield-locomotion.png",
+          "firewall_shield-locomotion.png",
+          "firewall_shield-locomotion.png",
+          "firewall_shield-locomotion.png",
+          "firewall_shield-locomotion.png",
+          "firewall_shield-locomotion.png",
+          "firewall_shield-locomotion.png"
+        ],
+        "source_frames": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13
+        ],
+        "source_component_bounds": [
+          [
+            76,
+            96,
+            299,
+            294
+          ],
+          [
+            399,
+            98,
+            606,
+            294
+          ],
+          [
+            675,
+            97,
+            902,
+            300
+          ],
+          [
+            980,
+            96,
+            1207,
+            295
+          ],
+          [
+            81,
+            382,
+            299,
+            587
+          ],
+          [
+            398,
+            385,
+            611,
+            584
+          ],
+          [
+            708,
+            382,
+            893,
+            588
+          ],
+          [
+            1023,
+            383,
+            1204,
+            594
+          ],
+          [
+            97,
+            670,
+            289,
+            884
+          ],
+          [
+            409,
+            668,
+            604,
+            887
+          ],
+          [
+            706,
+            669,
+            885,
+            885
+          ],
+          [
+            1025,
+            666,
+            1205,
+            881
+          ],
+          [
+            102,
+            951,
+            286,
+            1171
+          ],
+          [
+            413,
+            951,
+            598,
+            1168
+          ]
+        ],
+        "source_scale": 0.31666666666666665,
+        "relative_scales": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "fragment_attachments": [],
+        "hand": {
+          "16": [
+            85,
+            100
+          ],
+          "17": [
+            88,
+            100
+          ],
+          "18": [
+            63,
+            98
+          ],
+          "19": [
+            81,
+            99
+          ],
+          "20": [
+            101,
+            97
+          ],
+          "21": [
+            91,
+            98
+          ],
+          "22": [
+            73,
+            104
+          ],
+          "23": [
+            81,
+            102
+          ],
+          "24": [
+            74,
+            102
+          ],
+          "25": [
+            73,
+            101
+          ],
+          "26": [
+            75,
+            99
+          ],
+          "27": [
+            81,
+            99
+          ],
+          "28": [
+            77,
+            98
+          ],
+          "29": [
+            75,
+            99
+          ]
+        },
+        "foot": {
+          "16": [
+            84,
+            118
+          ],
+          "17": [
+            72,
+            118
+          ],
+          "18": [
+            60,
+            118
+          ],
+          "19": [
+            84,
+            118
+          ],
+          "20": [
+            72,
+            118
+          ],
+          "21": [
+            60,
+            118
+          ],
+          "22": [
+            72,
+            118
+          ],
+          "23": [
+            72,
+            118
+          ],
+          "24": [
+            72,
+            118
+          ],
+          "25": [
+            72,
+            118
+          ],
+          "26": [
+            72,
+            118
+          ],
+          "27": [
+            72,
+            118
+          ],
+          "28": [
+            72,
+            118
+          ],
+          "29": [
+            72,
+            118
+          ]
+        },
+        "visible_bounds": [
+          [
+            46,
+            57,
+            117,
+            120
+          ],
+          [
+            53,
+            58,
+            119,
+            120
+          ],
+          [
+            27,
+            56,
+            98,
+            120
+          ],
+          [
+            44,
+            57,
+            116,
+            120
+          ],
+          [
+            63,
+            55,
+            132,
+            120
+          ],
+          [
+            55,
+            57,
+            122,
+            120
+          ],
+          [
+            44,
+            55,
+            103,
+            120
+          ],
+          [
+            53,
+            53,
+            110,
+            120
+          ],
+          [
+            44,
+            52,
+            105,
+            120
+          ],
+          [
+            44,
+            51,
+            106,
+            120
+          ],
+          [
+            50,
+            52,
+            107,
+            120
+          ],
+          [
+            56,
+            52,
+            113,
+            120
+          ],
+          [
+            52,
+            50,
+            110,
+            120
+          ],
+          [
+            50,
+            51,
+            109,
+            120
+          ]
+        ],
+        "stance_x": [
+          84,
+          72,
+          60,
+          84,
+          72,
+          60
+        ],
+        "stance_step_px": 12,
+        "fps": 13,
+        "body_scale": 1.55,
+        "matched_world_speed": 241.8
+      },
+      "unused_legacy_cells": [
+        1,
+        2,
+        3,
+        4
+      ],
       "foot_planting": {
-        "default": "idle, equip, and hurt use the foot centre; run frames hold the body steady; attack frames use the rear foot.",
+        "default": "Legacy cells 0-15 preserve original registration. Locomotion cells 16-29 use separately generated poses with sole registration; see locomotion for stance and source provenance.",
         "overrides": {},
         "note": ""
       }
