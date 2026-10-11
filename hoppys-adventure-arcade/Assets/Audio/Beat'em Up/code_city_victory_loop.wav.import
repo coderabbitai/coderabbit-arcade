@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://cd2jdes6c8xf6"
+path="res://.godot/imported/code_city_victory_loop.wav-bebb8b2ebccacc89b0aa5432014e2e16.sample"
+
+[deps]
+
+source_file="res://Assets/Audio/Beat'em Up/code_city_victory_loop.wav"
+dest_files=["res://.godot/imported/code_city_victory_loop.wav-bebb8b2ebccacc89b0aa5432014e2e16.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=0

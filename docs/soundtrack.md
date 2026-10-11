@@ -119,12 +119,27 @@ Shared settings: Instrumental on, Variety Off. The lyrics field holds section ta
 | **Heroes vs. Villains: The Agentic Core** | Stage 3 | 1:30+ loop | `tense techno-chiptune, 116 BPM, pulsing square-wave bass, cold FM leads, scanning arpeggios, inverted three-note motif, loopable` |
 | **Villain boss theme** (shared, as the GDD specifies) | All Heroes vs. Villains bosses | 1:00+ loop, strong hit in the first second | `Saturday-morning cartoon villain battle, 16-bit FM chiptune, 232 BPM double-time feel, minor key, campy menace, orchestra-hit stabs, chromatic runs, motif in minor, huge downbeat in the first second, loopable` |
 | **Opening fanfare** | Heroes vs. Villains intro | 10–15 s, hard stop | Not 8-bit: the theme's chorus and gang shout, cut from track A. |
-| **MERGE SUCCESSFUL** | Win results | 3–4 s, one-shot | Studio **Sounds**, One-Shot, 116 BPM, key: `8-bit victory jingle, rising three-note motif resolving to the tonic, bright square lead` |
+| **MERGE SUCCESSFUL** | Code City finale, ending and results | 3.5 s one-shot, then a 16.552 s loop | Delivered: original F-major square-wave synthesis at 116 BPM; rising F-A-C motif resolving to F. See the reproducible build below. |
 | **BUILD FAILED** | Lose results | 2–3 s, one-shot | Sounds, One-Shot: `8-bit comic fail sting, three-note motif descending in minor, wobbly square lead` |
 | **Capability unlocked** (×4) | REVIEW / TRIAGE / CHANGE STACK / SECURITY cards | 1–2 s, one-shot | Sounds, One-Shot: `chiptune power-up chime, three-note glockenspiel-like square arpeggio` (one take per capability, rising in pitch) |
 | **BOSS DOWN!** | Boss defeat | about 2 s | Keep Juhani Junkala's CC0 `fanfare3`, or a Sounds one-shot of the motif. |
 
 The results screens pause the game, so their stinger player needs `process_mode = PROCESS_MODE_ALWAYS`.
+
+### Delivered: Code City victory music
+
+`python3 tools/build_code_city_victory_music.py` builds the following original mono 44.1 kHz, 16-bit PCM files in `hoppys-adventure-arcade/Assets/Audio/Beat'em Up/`:
+
+| File | Duration | Role |
+|---|---|---|
+| `code_city_victory_jingle.wav` | 3.500 s | Once after the Force Merge finisher: the F-A-C figure rises to F, then a dominant phrase resolves to the tonic. |
+| `code_city_victory_loop.wav` | 16.551723 s | Eight bars at 116 BPM. Square lead, pulsing arpeggios and an octave-hopping bass carry the ending pages and results. |
+
+The builder is deterministic and uses only Python's standard library. These are original compositions and recordings with no third-party samples or Suno source. Both are dedicated to the public domain under CC0 1.0. The square voices use smoothed discontinuities, short note attack/release envelopes and a gentle output low-pass. An 8 ms cosine taper at each outer boundary lands the loop at exact zero samples, avoiding a seam discontinuity. The final dominant bar returns to the first tonic bar.
+
+The celebration lasts 5.2 s. It ducks the boss track by 18 dB, starts the jingle at 0.3 s and switches the stage-flow music player to the loop at 3.8 s. The loop survives the celebration callback and plays through the epilogue and results. Cancelling for a stage rebuild or leaving stops only the celebration's own track. The jingle follows the music bus and pauses with the game; all visual timing follows the same unpaused owner clock. Loop settings are applied to a private resource copy, leaving the imported WAV unchanged. These short procedural WAV cues are an intentional exception to the OGG delivery target below.
+
+To verify a rebuild without touching game assets, pass `--out <directory>` and compare the WAV bytes. The loop's first and last PCM samples are zero.
 
 ### C. Level music (instrumental, outside the theme family)
 
