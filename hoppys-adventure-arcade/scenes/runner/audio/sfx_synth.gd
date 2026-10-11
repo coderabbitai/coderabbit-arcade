@@ -3,14 +3,17 @@ extends RefCounted
 const RATE := 22050
 # seconds, start Hz, end Hz, waveform, gain
 const RECIPES := {
-	&"turn_warning": [3.0, 700.0, 1400.0, "warning", 0.6],
 	&"boss_intro": [1.6, 35.0, 150.0, "intro", 0.7],
 	&"boss_intro_short": [0.6, 55.0, 180.0, "detuned", 0.65],
 	&"boss_title": [0.28, 160.0, 35.0, "fm", 0.72],
 	&"boss_explosion": [0.30, 120.0, 25.0, "noise", 0.72],
 	&"boss_resolved": [1.15, 440.0, 880.0, "arpeggio", 0.68],
 	&"boss_skip": [0.25, 1800.0, 180.0, "noise", 0.5],
-	&"turn_whoosh": [2.4, 300.0, 2400.0, "turn", 0.6],
+	# Contract 2.7 §11.15 run intro: the fly-through, the title sting, the countdown tick and GO.
+	&"intro_whoosh": [2.2, 220.0, 1800.0, "sweep", 0.5],
+	&"intro_title": [0.9, 110.0, 220.0, "detuned", 0.6],
+	&"intro_count": [0.14, 880.0, 880.0, "square", 0.42],
+	&"intro_go": [0.7, 659.25, 1318.5, "chord", 0.62],
 	&"stage_clear": [1.0, 440.0, 880.0, "arpeggio", 0.65],
 	&"telegraph_tick": [0.06, 1600.0, 1600.0, "square", 0.35],
 	&"projectile_whoosh": [0.30, 900.0, 180.0, "noise", 0.45],
@@ -41,7 +44,7 @@ const RECIPES := {
 	&"caught": [0.85, 120.0, 25.0, "noise", 0.78],
 	&"game_over": [1.20, 440.0, 110.0, "chord", 0.65],
 }
-const PERCUSSIVE := {&"boss_title": true, &"boss_explosion": true,&"tool_fire": true, &"hit": true, &"land": true, &"caught": true, &"boss_hit": true, &"roll": true, &"footstep": true, &"telegraph_tick": true, &"lane_left": true, &"lane_right": true}
+const PERCUSSIVE := {&"intro_count": true, &"boss_title": true, &"boss_explosion": true,&"tool_fire": true, &"hit": true, &"land": true, &"caught": true, &"boss_hit": true, &"roll": true, &"footstep": true, &"telegraph_tick": true, &"lane_left": true, &"lane_right": true}
 const ARPEGGIO := [1.0, 1.25, 1.5, 2.0]
 # Authored carrier, detuned body, FM transient, filtered noise, sub.
 const LAYERS := {
@@ -54,6 +57,9 @@ const LAYERS := {
 	&"alarm": [0.42, 0.22, 0.08, 0.04, 0.24],
 }
 const FOOTSTEP_SOFTNESS := [0.85, 0.38, 0.16]
+## LAYERS' drone weights, typed for drone_sample(), which runs once per sample. Built when the
+## script compiles, on the thread that loads it, before any worker can read it.
+static var _drone_weights := PackedFloat64Array(LAYERS[&"drone"])
 static var _cache: Dictionary = {}
 static var raw_peaks: Dictionary = {}
 
@@ -64,7 +70,7 @@ static func family_for(kind: StringName) -> StringName:
 	var waveform := String(RECIPES[kind][3])
 	if waveform in ["sine", "chord", "arpeggio"]: return &"chime"
 	if kind == &"pursuit_drone": return &"drone"
-	if kind in [&"turn_whoosh", &"projectile_whoosh", &"nitro", &"retreat", &"boss_skip"]: return &"whoosh"
+	if kind in [&"projectile_whoosh", &"nitro", &"retreat", &"boss_skip", &"intro_whoosh"]: return &"whoosh"
 	return &"alarm"
 
 
@@ -76,7 +82,8 @@ static func sound(kind: StringName) -> AudioStreamWAV:
 	return install(kind, render(kind))
 
 ## Pure PCM synthesis: reads only constants and allocates no resources, so prewarm can run it on
-## WorkerThreadPool. install() turns the result into the cached stream on the main thread.
+## WorkerThreadPool. install() turns the result into the cached stream on the main thread. Keep
+## every operand typed here and in the helpers it calls (see `weights`).
 static func render(kind: StringName) -> Dictionary:
 	var recipe: Array = RECIPES[kind]
 	var seconds := float(recipe[0])
@@ -94,7 +101,11 @@ static func render(kind: StringName) -> Dictionary:
 	samples.resize(count * channels)
 	var waveform := String(recipe[3])
 	var family := family_for(kind)
-	var weights: Array = LAYERS[family]
+	# Typed, so the mixing line below compiles to validated float operators. Prewarm runs every
+	# recipe here at once on workers. An untyped `a * b` caches its evaluator in the shared bytecode
+	# on first run, without synchronisation, and threads arriving together could call a null one
+	# (tests/runner_synth_threads.gd).
+	var weights := PackedFloat64Array(LAYERS[family])
 	var directional := kind == &"lane_left" or kind == &"lane_right"
 	var left_pan := kind == &"lane_left"
 	var intro := kind == &"boss_intro"
@@ -109,10 +120,6 @@ static func render(kind: StringName) -> Dictionary:
 		var envelope := _envelope(family, t, seconds)
 		var sample := sin(phase)
 		match waveform:
-			"warning":
-				frequency = 700.0 * pow(1.3, floor(t))
-				var beat := fposmod(t, 1.0)
-				envelope = sin(PI * beat / 0.12) if beat < 0.12 else 0.0
 			"intro":
 				sample = (sin(phase) + sin(phase * 1.012)) * 0.5
 				envelope = smoothstep(0.0, 0.7, progress) * (1.0 - smoothstep(0.8, 1.0, progress))
@@ -120,14 +127,11 @@ static func render(kind: StringName) -> Dictionary:
 					var impact_envelope := exp(-(progress - 0.8) * 35.0)
 					sample = sample * 0.4 + rng.randf_range(-1.0, 1.0) * 0.6
 					envelope = impact_envelope
-			"turn":
-				frequency = lerpf(300.0, 2400.0, sin(progress * PI))
+			"sweep":
+				# Rises to the top and falls back, under a noise bed: the camera flying down the corridor.
+				frequency = lerpf(float(recipe[1]), float(recipe[2]), sin(progress * PI))
 				sample = sample * 0.4 + rng.randf_range(-1, 1) * 0.6
 				envelope = sin(progress * PI)
-				# Snap at the camera hold boundary, inside the same voice.
-				if progress >= 0.3 and progress < 0.34:
-					sample = rng.randf_range(-1.0, 1.0)
-					envelope = 1.0 - (progress - 0.3) / 0.04
 			"arpeggio":
 				frequency = 440.0 * float(ARPEGGIO[mini(3, int(progress * 4))])
 			"alert":
@@ -163,7 +167,7 @@ static func render(kind: StringName) -> Dictionary:
 			sample = sample * 0.78 + sin(phase * 2.0 + 0.3 * sin(phase * 3.0)) * 0.16
 		if not looping:
 			sample = sample * weights[0] + body * weights[1] + transient * weights[2] + low_noise * weights[3] + sub * weights[4]
-		# Keep authored radar gaps, warning ticks and heartbeat handover precise.
+		# Keep authored radar gaps and heartbeat handover precise.
 		var edge := 1.0 if looping else minf(t / 0.002, 1.0) * minf((seconds - t - 1.0 / RATE) / 0.006, 1.0)
 		for channel in channels:
 			var side := sin(phase * 1.007) * width * (1.0 if channel == 0 else -1.0) if stereo else 0.0
@@ -276,8 +280,7 @@ static func sting_sub(t: float, duration: float, intro: bool) -> float:
 
 ## Integral cycles for every layer, with no artificial seam fade.
 static func drone_sample(t: float) -> float:
-	var weights: Array = LAYERS[&"drone"]
-	return sin(TAU * 55.0 * t) * weights[0] + sin(TAU * 57.0 * t) * weights[1] + sin(TAU * 27.5 * t) * weights[4]
+	return sin(TAU * 55.0 * t) * _drone_weights[0] + sin(TAU * 57.0 * t) * _drone_weights[1] + sin(TAU * 27.5 * t) * _drone_weights[4]
 
 ## Surface and strike variation are independent cache/seed axes.
 static func footstep(surface: int, variant: int = 0) -> AudioStreamWAV:
@@ -319,7 +322,7 @@ static func footstep_pcm(source: PackedByteArray, material: int, strike: int) ->
 static func render_family(kind: StringName) -> Dictionary:
 	var rendered := render(kind)
 	var variants := {}
-	if kind in [&"projectile_whoosh", &"turn_whoosh"]:
+	if kind == &"projectile_whoosh":
 		for mask in 8: variants[mask] = panned_pcm(rendered.data, rendered.stereo, mask)
 	elif kind == &"footstep":
 		for surface in 3:

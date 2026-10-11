@@ -124,10 +124,6 @@ static func run(host: Node, camera: Camera3D = null) -> bool:
 		stage.build(batch)
 		build_ms += (Time.get_ticks_usec() - started) / 1000.0
 		started = Time.get_ticks_usec()
-		# The corridor's turn corner, chevron and streaks only show mid-turn, the HUD's floor
-		# chevrons only once a turn is announced.
-		var turn: bool = corridor != null and batch == &"canvas"
-		if turn: show_turn(host, corridor, true)
 		# The live Hoppy's auras and shield, under its own lights (restored below; a run opens bare).
 		if hoppy != null and batch == &"characters": _dress(hoppy, true)
 		_sync_transforms(host)
@@ -135,7 +131,6 @@ static func run(host: Node, camera: Camera3D = null) -> bool:
 			stage._light.visible = lit
 			for i in FRAMES: RenderingServer.force_draw(false, 1.0 / 60.0)
 		if hoppy != null and batch == &"characters": _dress(hoppy, false)
-		if turn: show_turn(host, corridor, false)
 		draw_ms += (Time.get_ticks_usec() - started) / 1000.0
 		retain(stage)
 		labels._copy_labels(stage._group, [])
@@ -259,26 +254,11 @@ static func _dress(hoppy: Node3D, on: bool) -> void:
 	# The orbit glyphs follow the aura from the visual's next _process; apply it now, as play would.
 	hoppy.notification(Node.NOTIFICATION_PROCESS)
 
-## The mounted corridor, found by its public turn hook rather than by path.
+## The mounted corridor, found by its public StageManager hooks rather than by path.
 static func _corridor(host: Node) -> Node:
 	for node in host.find_children("*", "Node3D", true, false):
-		if node.has_method(&"set_turn") and node.has_method(&"set_boss_arena"): return node
+		if node.has_method(&"set_phase") and node.has_method(&"set_boss_arena"): return node
 	return null
-
-## Mid-turn pose plus the announced floor chevrons (runner_hud.gd's turn_fx.gd, found by its
-## announce/clear hooks); `on` false restores the straight corridor and hides the chevrons.
-static func show_turn(host: Node, corridor: Node, on: bool) -> void:
-	_pose_turn(corridor, 0.5 if on else 0.0)
-	for node in host.find_children("*", "MultiMeshInstance3D", true, false):
-		if node.has_method(&"announce") and node.has_method(&"clear"):
-			if on: node.call(&"announce", 1)
-			else: node.call(&"clear")
-
-## set_turn() is the StageManager's public hook; one process notification applies the pose the
-## way the next frame would. Progress 0 restores the straight corridor.
-static func _pose_turn(corridor: Node, progress: float) -> void:
-	corridor.call(&"set_turn", progress, 1 if progress > 0.0 else 0)
-	corridor.notification(Node.NOTIFICATION_PROCESS)
 
 ## Builds an empty stage under `host`, oriented like `camera`, with the (hidden) warm omni light.
 ## `focus` is where Hoppy stands; without one the near copy goes 6 m ahead of the camera.
@@ -596,4 +576,29 @@ func _canvas() -> void:
 			rect.material = material
 			rect.size = Vector2(64, 64)
 			layer.add_child(rect)
+	_warm_run_intro_fonts(layer)
 	_place(layer, "canvas")
+
+## Contract 2.7 §11.15: the run intro's title card and countdown draw in their own emboldened
+## FontVariation at roughly 50 and 150 px, so their glyphs would otherwise be rasterised on the
+## intro's first title and count frames. Copies of the mounted labels (the same font resource, size
+## and outline) draw once here, invisibly, like the HUD's own font warm. A no-op without the mount.
+func _warm_run_intro_fonts(layer: CanvasLayer) -> void:
+	var host := get_parent()
+	var ui: Node = host.get_node_or_null(^"HUD/RunIntro") if host != null else null
+	if ui == null:
+		return
+	for entry: Array in [[&"title", "THE CODEBASE CORRIDOR"], [&"count_label", "READY 3 2 1 GO!"]]:
+		var source: Label = ui.get(entry[0]) as Label if entry[0] in ui else null
+		if source == null:
+			continue
+		var copy := Label.new()
+		copy.text = source.text if not source.text.is_empty() else String(entry[1])
+		if entry[0] == &"count_label":
+			copy.text = String(entry[1])
+		copy.add_theme_font_override("font", source.get_theme_font("font"))
+		copy.add_theme_font_size_override("font_size", source.get_theme_font_size("font_size"))
+		copy.add_theme_constant_override("outline_size", source.get_theme_constant("outline_size"))
+		copy.add_theme_color_override("font_outline_color", source.get_theme_color("font_outline_color"))
+		copy.modulate.a = 0.0
+		layer.add_child(copy)

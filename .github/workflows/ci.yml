@@ -56,7 +56,9 @@ jobs:
         run: |
           suites=(
             code_city_assets
+            code_city_celebration
             code_city_logic
+            code_city_mini_boss
             code_city_motion
             code_city_smoke
             controller_service
@@ -81,8 +83,11 @@ jobs:
             runner_boss_validator
             runner_chunk_validator
             runner_logic
+            runner_run_intro
+            runner_run_intro_ui
             runner_scaffold_check
             runner_smoke
+            runner_synth_threads
             runner_visual_smoke
             runner_warmup_check
           )
@@ -106,6 +111,12 @@ jobs:
             echo "Failed suites: ${failed[*]}"
             exit 1
           fi
+
+      # Quits from the hub, fights, the Code City celebration, the runner intro and mid-transition
+      # with their audio playing. Godot prints its exit-leak lines only after the script is gone,
+      # so the wrapper runs tests/exit_leak.gd once per scenario, fails on them and times the exit.
+      - name: Exit leaks
+        run: python3 tools/checks/exit_leak.py --godot ~/godot/godot
 
   lint:
     name: lint

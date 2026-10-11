@@ -38,7 +38,7 @@ const MODES: Array[StringName] = [&"intro_full", &"intro_short", &"defeat_full",
 const GAME_SOURCE := "extends \"res://scenes/runner/runner_game.gd\"\nfunc _ready() -> void:\n\tpass\n"
 const HAZARD_SOURCE := "extends Node3D\nvar kind: StringName = &\"pr_backlog_low\"\nvar blocking := true\nfunc is_blocking() -> bool:\n\treturn blocking\nfunc clear() -> void:\n\tblocking = false\n"
 const SPAWNER_SOURCE := "extends Node\nvar spawn_calls: Array = []\nfunc set_spawning(on: bool) -> void:\n\tspawn_calls.append(on)\nfunc begin_clear_road(_seconds: float) -> void:\n\tpass\nfunc clear_hazards_in_range() -> int:\n\treturn 0\n"
-const RIG_SOURCE := "extends Node3D\nvar turns: Array = []\nfunc set_turn(progress: float, direction: int) -> void:\n\tturns.append([progress, direction])\nfunc shake(_strength: float, _duration := 0.35) -> void:\n\tpass\n"
+const RIG_SOURCE := "extends Node3D\nfunc shake(_strength: float, _duration := 0.35) -> void:\n\tpass\n"
 ## The slice of the player the hold touches: controls_enabled plus the setter refresh_player_controls
 ## calls (contract §11.14). CharacterBody3D because runner_game.player is typed as one.
 const CONTROLS_SOURCE := "extends CharacterBody3D\nvar controls_enabled := true\nfunc set_controls_enabled(enabled: bool) -> void:\n\tcontrols_enabled = enabled\n"
@@ -65,7 +65,7 @@ const RECORDER_SOURCE := (
 ## Overrides the default focus with a fixed local point (contract §11.5).
 const FOCUS_SOURCE := "extends \"res://scenes/runner/boss/boss_visual_base.gd\"\nfunc cinematic_focus() -> Vector3:\n\treturn Vector3(1.5, 2.5, -0.5)\n"
 ## Records every set_boss_cinematic, including the optional focus argument (contract §11.14).
-const CAMERA_FEED_SOURCE := "extends Node3D\nvar calls: Array = []\nfunc set_boss_cinematic(progress: float, mode: StringName, boss_position: Vector3, focus_position: Variant = null) -> void:\n\tcalls.append([progress, mode, boss_position, focus_position])\nfunc set_turn(_progress: float, _direction: int) -> void:\n\tpass\nfunc shake(_strength: float, _duration := 0.35) -> void:\n\tpass\n"
+const CAMERA_FEED_SOURCE := "extends Node3D\nvar calls: Array = []\nfunc set_boss_cinematic(progress: float, mode: StringName, boss_position: Vector3, focus_position: Variant = null) -> void:\n\tcalls.append([progress, mode, boss_position, focus_position])\nfunc shake(_strength: float, _duration := 0.35) -> void:\n\tpass\n"
 
 var failures := 0
 var checks := 0
@@ -112,6 +112,9 @@ func run() -> void:
 	temp_paths.append(scratch_leaderboard)
 	note("start")
 	base_config = (load(CONFIG_PATH) as RunConfig).duplicate()
+	# The run intro would sit in front of every facade start_run. These checks are the boss
+	# cinematic, so the duplicate they share opens straight on the fight.
+	base_config.run_intro_enabled = false
 	hit_manager_script = load("res://scenes/runner/systems/hit_manager.gd") as GDScript
 	score_manager_script = load("res://scenes/runner/systems/score_manager.gd") as GDScript
 	effect_manager_script = load("res://scenes/runner/systems/effect_manager.gd") as GDScript
@@ -2310,7 +2313,6 @@ func _overrides(extra: Dictionary) -> Dictionary:
 		"stage_distance_step": 0.0,
 		"stage_drain_distance": 4.0,
 		"stage_drain_timeout": 0.15,
-		"turn_seconds": 0.15,
 		"stage_clear_seconds": 0.2,
 	}
 	for key in extra:

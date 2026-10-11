@@ -8,11 +8,7 @@ const GameOver = preload("res://scenes/runner/ui/game_over.tscn")
 const Leaderboard = preload("res://scenes/runner/systems/runner_leaderboard.gd")
 signal stage_started(index: int, name: StringName, speed: float)
 signal stage_cleared(index: int, bonus: int)
-signal turn_incoming(direction: int, seconds: float)
 signal boss_intro(kind: StringName, name: String, seconds: float)
-var next_turn_direction := 0
-signal turn_started(direction: int, seconds: float)
-signal turn_finished
 signal phase_changed(phase: StringName)
 var phase: StringName = &"idle"
 var stage_index := 1
@@ -212,19 +208,11 @@ func advance_demo(delta: float) -> void:
 				health_changed.emit(hp, hp)
 				pursuit_recovered.emit(&"timer")
 				pursuit_alert.emit(&"clear", 0.0)
-	for at in [3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 12.0, 14.0, 15.0, 17.4, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 30.0, 34.0, 38.4, 40.0]:
+	for at in [3.0, 4.0, 5.0, 6.0, 7.0, 9.0, 14.0, 17.4, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 30.0, 34.0, 38.4, 40.0]:
 		if demo_time >= at and not _events.has(at):
 			_events[at] = true
 			match at:
-				12.0:
-					next_turn_direction = 1
-					turn_incoming.emit(next_turn_direction, 3.0)
-				15.0:
-					set_demo_phase(&"turn")
-					turn_started.emit(next_turn_direction, 2.4)
 				17.4:
-					next_turn_direction = 0
-					turn_finished.emit()
 					set_demo_phase(&"boss")
 				27.0:
 					set_demo_phase(&"stage_clear")

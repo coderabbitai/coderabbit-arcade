@@ -5,8 +5,11 @@ const BASE_FRAMES = preload("res://Assets/bay-area-blitz-assets-only/bay_area/ho
 const COMBAT_FRAMES = preload("res://Assets/code-city-brawl-player/combat.tres")
 const WeaponRig = preload("res://modes/beatem_up/weapon_rig.gd")
 const BODY_OFFSET := Vector2(0,-38)
-## Poses with a baked armed clip. The three attack poses become step1..3 by combo.
-const ARMED_CLIPS := {"idle":"hold_idle","run":"run","pickup":"equip","hurt":"hurt"}
+## Walking speed in px/s; the armed run's foot cadence is calibrated for it.
+const RUN_SPEED := 240.0
+## Poses with a baked armed clip. The three attack poses become step1..3 by combo. A sheet
+## without one of these clips (walk_up and walk_down are newer) falls back to the unarmed pose.
+const ARMED_CLIPS := {"idle":"hold_idle","run":"run","pickup":"equip","hurt":"hurt","walk_up":"walk_up","walk_down":"walk_down"}
 const ATTACK_POSES := ["jab","swing","kick"]
 var arena: Node2D
 var body: AnimatedSprite2D
@@ -15,6 +18,9 @@ var visual_weapon := ""
 var block_time := 0.0
 var hp := 3
 var facing := 1.0
+## The way the stick last pointed past the deadzone. A swing keeps its facing, so a turn asked
+## for mid-swing waits here for the swing's end or the next step; 0 once idle with no input.
+var steer := 0.0
 var height := 0.0
 var rise := 0.0
 var invulnerable := 0.0
@@ -71,7 +77,8 @@ func tick(dt: float) -> void:
 	if controlled and input_lock <= 0 and stagger <= 0:
 		movement = Input.get_vector("move_left","move_right","move_up","move_down")
 		if effects.has("confused"): movement = -movement
-		if absf(movement.x) > .15 and swing_left<=0: facing = signf(movement.x)
+		if absf(movement.x) > .15: steer = signf(movement.x)
+		if steer != 0 and swing_left <= 0: facing = steer
 		if Input.is_action_just_pressed("brawl_jump"): jump()
 		if Input.is_action_just_pressed("brawl_attack"): request_attack()
 		if Input.is_action_just_pressed("brawl_pickup") and swing_left <= 0 and height < 20:
@@ -81,12 +88,17 @@ func tick(dt: float) -> void:
 		if not swing_fired and swing_left <= swing_duration * .56:
 			swing_fired = true
 			arena.resolve_swing(self)
+			# A swing that stops play (a boss's last hit) hands Hoppy to a scripted sequence; the rest
+			# of this tick would overwrite its pose, weapon and flicker.
+			if not arena.playing: return
 		if swing_left <= 0:
 			combo_window = .48
+			if steer != 0: facing = steer
 			if queued:
 				queued = false
 				start_attack()
-	var speed := 240.0
+	elif absf(movement.x) <= .15: steer = 0.0
+	var speed := RUN_SPEED
 	if effects.has("speed_boost"): speed *= 1.4
 	if effects.has("slow"): speed *= .6
 	if swing_left > 0: speed *= .3
@@ -116,6 +128,8 @@ func tick(dt: float) -> void:
 			pose = "run"
 			base = true
 	show_pose(pose,base)
+	# The stride keeps pace with travel under analog input and speed effects, so feet don't slide.
+	body.speed_scale = movement.length()*speed/RUN_SPEED if pose in ["run","walk_up","walk_down"] else 1.0
 	var attacking := swing_left>0
 	var progress := clampf(1.0-swing_left/swing_duration,0,1)
 	body.position.x=0
@@ -143,6 +157,8 @@ func armed_sheet() -> SpriteFrames:
 	return Art.armed(kind) if kind != "" and held.visible else null
 
 func show_pose(pose: String, base := false) -> void:
+	# Until the combat sheet has its victory cheer, the jump pose stands in.
+	if pose=="victory" and not COMBAT_FRAMES.has_animation("victory"): pose = "jump"
 	var sheet := armed_sheet()
 	var clip: String = ARMED_CLIPS.get(pose,"")
 	if swing_left > 0 and pose in ATTACK_POSES: clip = "step%d" % combo
@@ -182,6 +198,8 @@ func attack_pose() -> String:
 	return ["jab","swing","kick"][maxi(0,combo-1)]
 
 func start_attack() -> void:
+	# Each swing starts facing the way the stick last asked, so a buffered step can turn.
+	if steer != 0: facing = steer
 	combo = combo%3+1 if combo_window > 0 else 1
 	attack_weapon = weapon if weapon != "firewall_shield" else ""
 	visual_weapon = weapon

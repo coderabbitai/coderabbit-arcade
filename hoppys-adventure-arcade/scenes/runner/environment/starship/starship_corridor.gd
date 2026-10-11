@@ -39,20 +39,21 @@ func _ready() -> void:
 	key.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	add_child(key)
 	set_pursuit(_pursuit)
-	starship.sync(_offset,_clock,bend,global_transform,boss_arena,0.0)
+	starship.sync(_offset,_clock,global_transform,boss_arena,0.0)
 
 func _process(delta: float) -> void:
 	super._process(delta)
 	if is_instance_valid(starship):
-		starship.sync(_offset,_clock,bend,global_transform,boss_arena,delta)
+		starship.sync(_offset,_clock,global_transform,boss_arena,delta)
 
-func _apply_turn() -> void:
-	super._apply_turn()
-	if is_instance_valid(_corner): _corner.visible = false
-	if is_instance_valid(_rain):
+## The starship keeps the legacy glyph rain and speed streaks hidden; only a visible emitter is
+## touched, so a frame that finds them already off writes nothing.
+func _refresh_dressing() -> void:
+	super._refresh_dressing()
+	if is_instance_valid(_rain) and (_rain.visible or _rain.emitting):
 		_rain.visible = false
 		_rain.emitting = false
-	if is_instance_valid(_speed_lines):
+	if is_instance_valid(_speed_lines) and (_speed_lines.visible or _speed_lines.emitting):
 		_speed_lines.visible = false
 		_speed_lines.emitting = false
 

@@ -18,6 +18,8 @@ const ROLL_HINTS: Array[StringName] = [&"ROLL", &"ROLL_OR_JUMP"]
 const VISUAL_MOVES: Array[StringName] = [&"lane_left", &"lane_right", &"land"]
 ## damage_blocked reason that means the Approve Shield popped (hit_manager.gd REASON_SHIELD).
 const SHIELD_BLOCK_REASON := &"shield"
+## The run_intro_beat label the title card plays on; Hoppy celebrates under it.
+const RUN_INTRO_TITLE_BEAT := "title"
 ## How long the hurt pose holds before the normal state selection takes over again.
 const HURT_ANIM_SECONDS := 0.25
 ## Small downward bias while grounded so move_and_slide keeps floor contact.
@@ -493,6 +495,9 @@ func _connect_visual_events() -> void:
 		[game.player_action, _forward_action], [game.damage_blocked, _forward_blocked],
 		[game.power_up_collected, _forward_power_up], [game.power_up_expired, _forward_power_up_end],
 		[game.stage_cleared, _forward_stage_cleared], [game.boss_defeated, _forward_boss_defeated]]
+	# Contract 2.7 §11.15: optional, so a facade fixture without the run intro still binds.
+	if game.has_signal(&"run_intro_beat"):
+		links.append([Signal(game, &"run_intro_beat"), _forward_run_intro_beat])
 	for link: Array in links:
 		var event: Signal = link[0]
 		if not event.is_connected(link[1]):
@@ -523,6 +528,11 @@ func _forward_stage_cleared(_index: int, _bonus: int) -> void:
 
 func _forward_boss_defeated(_kind: StringName, _bonus: int) -> void:
 	if _has_visual_hook(&"celebrate"):
+		visual.celebrate()
+
+## The run intro's title card plays under Hoppy's victory pose (contract 2.7 §11.15).
+func _forward_run_intro_beat(_index: int, label: String) -> void:
+	if label == RUN_INTRO_TITLE_BEAT and _has_visual_hook(&"celebrate"):
 		visual.celebrate()
 
 # --- visual mount -------------------------------------------------------------------------------

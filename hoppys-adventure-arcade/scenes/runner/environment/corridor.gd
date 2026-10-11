@@ -13,19 +13,8 @@ var _rack_batches: Array[MultiMesh] = []
 var _racks: MultiMesh
 const Atlas = preload("res://scenes/runner/environment/hifi/wall_atlas.gd")
 @export_range(0.25, 1.0, 0.05) var retro_scale := 0.5
-# Mirror RunConfig defaults. Keep these fractions and yaw in sync with the backend camera.
-const TURN_SWING_IN := 0.3
-const TURN_SWING_OUT := 0.3
-const TURN_YAW := 55.0
-var turn_progress := 0.0
-var turn_direction := 0
-var bend := 0.0
 var phase: StringName = &"idle"
 var boss_arena := false
-signal turn_applied(progress: float, direction: int)
-var _corner: MeshInstance3D
-var _turn_chevron: Label3D
-var _corner_material: ShaderMaterial
 var _dust: GPUParticles3D
 var _speed := 0.0
 var _offset := 0.0
@@ -39,7 +28,7 @@ var _sun: DirectionalLight3D
 var _scroll_materials: Array[ShaderMaterial] = []
 var _clock_materials: Array[ShaderMaterial] = []
 var _frame_materials: Array[ShaderMaterial] = []
-var _metal_bend_materials: Array[ShaderMaterial] = []
+var _rack_materials: Array[ShaderMaterial] = []
 var _pillar_z := PackedFloat32Array()
 var _pillars: MultiMesh
 var _rain: GPUParticles3D
@@ -48,15 +37,10 @@ var _far_material: ShaderMaterial
 ## The spawner of the bound run, if any. While one is bound the scroll is read off the same physics
 ## ticks that move the chunks, so floor markers and hazards can never swim against each other.
 var _spawner: Node = null
-## Signed turn wave (direction x profile) and progress at the previous and latest physics tick that
-## called set_turn(), so the bend is drawn between ticks exactly like the interpolated camera swing.
-var _turn_wave_from := 0.0
-var _turn_wave_to := 0.0
-var _turn_progress_from := 0.0
-var _turn_direction_from := 0
-## Physics frame of the latest in-tick set_turn(); -1 when the last call came from outside physics
-## (fixtures, menus), which snaps instead of interpolating.
-var _turn_tick := -1
+## The corridor frame last written to the frame-space shaders. The corridor never turns, so it only
+## changes when a fixture moves the node; until then nothing is re-uploaded.
+var _dressing_frame := Transform3D()
+var _dressing_frame_written := false
 ## Speed the particle process materials were last written for; -1 forces the first write.
 var _particle_speed := -1.0
 ## Rain drift and streak velocity only need to track the speed to a few cm/s.
@@ -121,22 +105,6 @@ func _ready() -> void:
 	_quad("LaneGlow", Vector2(6, 8), Vector3(0, 0.012, 0), Vector3(-PI / 2, 0, 0), lane)
 	_far_material = _shader(preload("res://scenes/runner/shaders/far_glow.gdshader"))
 	_quad("FarGlow", Vector2(8, 8), Vector3(0, 3, -88), Vector3.ZERO, _far_material)
-	_corner_material = _shader(preload("res://scenes/runner/shaders/code_wall_fade.gdshader"))
-	_corner_material.set_shader_parameter("atlas", Atlas.texture())
-	_corner_material.set_shader_parameter("wall_atlas", Atlas.texture())
-	_corner_material.set_shader_parameter("horizontal_axis", Vector3.RIGHT)
-	_corner_material.set_shader_parameter("intensity", 0.4)
-	_corner_material.set_shader_parameter("panel_period", 8.0)
-	_corner_material.set_shader_parameter("full_face", true)
-	_quad("CornerWall", Vector2(18, 8), Vector3(0, 3, -30), Vector3.ZERO, _corner_material)
-	_corner = get_node("CornerWall") as MeshInstance3D
-	var sign := Materials.label(self, "TURN ►", 104, Palette.MINT)
-	_turn_chevron = sign
-	sign.name = "TurnChevron"
-	sign.reparent(_corner, false)
-	sign.position = Vector3(0, 0.5, 6.0)
-	sign.pixel_size = 0.014
-	sign.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 	_build_pillars()
 	_build_racks()
 	_rain = Materials.glyph_particles(64, Vector3(3.9, 0.2, 45))
@@ -145,6 +113,7 @@ func _ready() -> void:
 	_rain.position = Vector3(0, 6.2, -44)
 	# Particle AABBs are local to the emitter; global Z coverage is -96..+12.
 	_rain.visibility_aabb = AABB(Vector3(-5, -8, -52), Vector3(10, 10, 108))
+	_rain.amount_ratio = 0.55
 	add_child(_rain)
 	_speed_lines = _simple_particles("SpeedLines", 64, Vector2(0.018, 0.75), 0.18)
 	_speed_lines.emitting = false
@@ -156,14 +125,14 @@ func _ready() -> void:
 	dust_process.initial_velocity_max = 0.3
 	# Persistent capability lists avoid temporary arrays and dead uniform sets per frame.
 	_clock_materials.assign(_scroll_materials)
-	_clock_materials.append_array([_corner_material, _far_material, _pillar_material, lane])
-	_clock_materials.append_array(_metal_bend_materials)
+	_clock_materials.append_array([_far_material, _pillar_material, lane])
+	_clock_materials.append_array(_rack_materials)
 	_frame_materials.assign(_scroll_materials)
 	_frame_materials.append(_far_material)
 	_configure_cosmetics(self)
 	set_scroll_speed(_speed)
 	set_pursuit(_pursuit)
-	_apply_turn()
+	_refresh_dressing()
 	_update_pillars()
 
 func _shader(shader: Shader) -> ShaderMaterial:
@@ -223,7 +192,7 @@ func _metal() -> ShaderMaterial:
 func _build_racks() -> void:
 	var material := _metal()
 	material.set_shader_parameter("module_mode", true)
-	_metal_bend_materials.append(material)
+	_rack_materials.append(material)
 	for batch_index in Racks.BATCH_COUNT:
 		var batch := MultiMesh.new()
 		batch.transform_format = MultiMesh.TRANSFORM_3D
@@ -255,14 +224,12 @@ func _update_pillars() -> void:
 		var slots := [0, 0, 0]
 		for i in 12:
 			var z := 12.0 - fposmod(float(i) * 8.0 - _offset, 96.0)
-			var d := maxf(0.0, -z - 6.0)
-			var yaw := -atan(2.0 * bend * d)
-			var x := bend * d * d
-			_rack_poses[i] = Transform3D(Basis(Vector3.UP, yaw), Vector3(x, 0, z))
+			_rack_poses[i] = Transform3D(Basis.IDENTITY, Vector3(0, 0, z))
 			var variant: int = Racks.PATTERN[i]
 			var batch_index: int = Racks.BATCH_FOR_VARIANT[variant]
 			var batch := _rack_batches[batch_index]
-			_rack_data[i] = Color(z, x, cos(yaw), Racks.instance_tag(i))
+			# Custom data is (z, x offset, cos yaw, tag); the corridor is straight, so x is 0 and cos 1.
+			_rack_data[i] = Color(z, 0.0, 1.0, Racks.instance_tag(i))
 			batch.set_instance_custom_data(slots[batch_index], _rack_data[i])
 			batch.set_instance_transform(slots[batch_index], _rack_poses[i])
 			slots[batch_index] += 1
@@ -270,7 +237,7 @@ func _update_pillars() -> void:
 		var z := 8.0 - fposmod(float(i % 12) * 8.0 - _offset, 96.0)
 		_pillar_z[i] = z
 		var x := -3.92 if i < 12 else 3.92
-		_pillars.set_instance_transform(i, Transform3D(Basis(Vector3.UP, -atan(2.0 * bend * maxf(0.0, -z - 6.0))), Vector3(x + bend * pow(maxf(0.0, -z - 6.0), 2), 3, z)))
+		_pillars.set_instance_transform(i, Transform3D(Basis.IDENTITY, Vector3(x, 3, z)))
 
 func _simple_particles(node_name: String, count: int, size_: Vector2, alpha: float) -> GPUParticles3D:
 	var particles := Materials.glyph_particles(count, Vector3(3.8, 2.5, 45))
@@ -310,7 +277,7 @@ func set_scroll_speed(speed: float) -> void:
 	var velocity := Vector2(1.8, _speed * 0.12).length()
 	rain_process.initial_velocity_min = velocity * 0.8
 	rain_process.initial_velocity_max = velocity * 1.2
-	# Emission is decided in _apply_turn() alone; a second writer here made the streaks sputter.
+	# Emission is decided in _refresh_dressing() alone; a second writer here made the streaks sputter.
 	var lines_process := _speed_lines.process_material as ParticleProcessMaterial
 	lines_process.direction = Vector3.BACK
 	lines_process.initial_velocity_min = _speed * 0.7
@@ -325,7 +292,7 @@ func set_pursuit(t: float) -> void:
 	_far_material.set_shader_parameter("color", Color(Palette.MATRIX.lerp(Palette.DANGER, _pursuit), 0.3))
 
 func _process(delta: float) -> void:
-	_apply_turn()
+	_refresh_dressing()
 	# 96 is a common period of the 2 m grid, wall glyph seed, and 8 m pillars.
 	var travel := _bound_travel()
 	_offset = fposmod(travel if not is_nan(travel) else _offset + _speed * delta, 96.0)
@@ -390,87 +357,29 @@ func _exit_tree() -> void:
 		_scaling_owners.erase(viewport_id)
 	_scaling_registered = false
 
-func set_turn(progress: float, direction: int) -> void:
-	var clamped := clampf(progress, 0.0, 1.0)
-	var sign_ := signi(direction)
-	if Engine.is_in_physics_frame():
-		# First call of this tick: the latest tick's pose becomes the one to interpolate from.
-		var tick := Engine.get_physics_frames()
-		if tick != _turn_tick:
-			_turn_tick = tick
-			_turn_wave_from = _turn_wave_to
-			_turn_progress_from = turn_progress
-			_turn_direction_from = turn_direction
-	else:
-		_turn_tick = -1
-	turn_progress = clamped
-	turn_direction = sign_
-	_turn_wave_to = float(sign_) * turn_profile(clamped) if sign_ != 0 else 0.0
-	turn_applied.emit(turn_progress, turn_direction)
-
-func _apply_turn() -> void:
-	# The StageManager advances the turn on physics ticks and the camera swing is interpolated
-	# between them, so the bend is drawn at the same point between the same two ticks.
-	var signed := _turn_wave_to
-	var progress := turn_progress
-	var direction := turn_direction
-	if _turn_tick >= 0 and _turn_tick == Engine.get_physics_frames() and _interpolating():
-		var fraction := Engine.get_physics_interpolation_fraction()
-		signed = lerpf(_turn_wave_from, _turn_wave_to, fraction)
-		if _turn_direction_from == turn_direction:
-			progress = lerpf(_turn_progress_from, turn_progress, fraction)
-		elif direction == 0:
-			direction = _turn_direction_from
-	var wave := absf(signed)
-	bend = 0.010 * signed
-	rotation.y = deg_to_rad(TURN_YAW) * signed
+## Per-frame dressing: the corridor frame the frame-space shaders read (written only when the node
+## has moved), and the speed-line emission.
+func _refresh_dressing() -> void:
 	if _far_material == null: return
-	for material in _frame_materials:
-		material.set_shader_parameter("bend", bend)
-		material.set_shader_parameter("bend_frame", global_transform)
-	for material in _metal_bend_materials:
-		material.set_shader_parameter("bend", bend)
-	_speed_lines.draw_pass_1.material.set_shader_parameter("corridor_frame", global_transform)
-	var sweep := float(direction) * progress * 48.0 if wave > 0.0 else 0.0
-	_scroll_materials[2].set_shader_parameter("lateral_scroll", sweep)
-	var blend := wave
-	_far_material.set_shader_parameter("opacity", 1.0 - blend)
-	_corner_material.set_shader_parameter("opacity", blend)
-	_corner_material.set_shader_parameter("lateral_scroll", sweep)
-	# Panel transform owns the bend once; its child sign inherits the exact pose.
-	_corner_material.set_shader_parameter("bend", 0.0)
-	_corner.visible = blend > 0.0
-	_corner.position.x = bend * 24.0 * 24.0
-	_corner.rotation.y = 0.0
-	_turn_chevron.visible = blend > 0.0
-	_turn_chevron.modulate.a = blend
-	_turn_chevron.text = "◄ TURN" if direction < 0 else "TURN ►"
-	_turn_chevron.position.x = bend * pow(24.0 - _turn_chevron.position.z, 2) - _corner.position.x
-	_turn_chevron.rotation.y = 0.0
-	_rain.amount_ratio = lerpf(0.55, 1.0, wave)
-	_dust.amount_ratio = 1.0
+	if not _dressing_frame_written or global_transform != _dressing_frame:
+		_dressing_frame = global_transform
+		_dressing_frame_written = true
+		for material in _frame_materials:
+			material.set_shader_parameter("bend_frame", _dressing_frame)
+		_speed_lines.draw_pass_1.material.set_shader_parameter("corridor_frame", _dressing_frame)
 	# Single writer for emission, and only on a change: a hidden emitter (the starship corridor hides
 	# the legacy streaks) is never switched on just to be switched off again in the same frame.
-	var streaks := _speed_lines.visible and (wave > 0.95 or clampf((_speed - 12.0) / 12.0, 0.0, 1.0) > 0.6)
+	var streaks := _speed_lines.visible and clampf((_speed - 12.0) / 12.0, 0.0, 1.0) > 0.6
 	if _speed_lines.emitting != streaks:
 		_speed_lines.emitting = streaks
-	_speed_lines.speed_scale = 1.0 + wave
-	_rain.speed_scale = 1.0 + wave * 1.5
 
 func set_phase(value: StringName) -> void:
 	phase = value
-	if value != &"turn": set_turn(0.0, 0)
 
 func set_boss_arena(active: bool) -> void:
 	boss_arena = active
 	if _far_material != null:
 		_far_material.set_shader_parameter("arena", 0.45 if active else 1.0)
-
-static func turn_profile(p: float) -> float:
-	if p <= 0.0 or p >= 1.0: return 0.0
-	if p < TURN_SWING_IN: return smoothstep(0.0, 1.0, p / TURN_SWING_IN)
-	if p > 1.0 - TURN_SWING_OUT: return smoothstep(0.0, 1.0, (1.0 - p) / TURN_SWING_OUT)
-	return 1.0
 
 func _configure_cosmetics(node: Node) -> void:
 	for child in node.get_children():

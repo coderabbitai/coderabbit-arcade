@@ -43,8 +43,13 @@ class PortraitArt extends Control:
 		portrait_font.changed.connect(queue_redraw)
 		queue_redraw()
 		_refresh_font.call_deferred()
+	## One frame later, through a one-shot connection rather than an await: when the alert is freed
+	## inside that frame (a scene change, a test tearing its run down) the connection goes with it,
+	## so nothing resumes on a freed instance.
 	func _refresh_font() -> void:
-		await get_tree().process_frame
+		if not is_inside_tree(): return
+		get_tree().process_frame.connect(_redraw_after_frame, CONNECT_ONE_SHOT)
+	func _redraw_after_frame() -> void:
 		if not is_inside_tree(): return
 		deferred_redraws += 1
 		queue_redraw()

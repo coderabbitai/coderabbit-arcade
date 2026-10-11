@@ -36,7 +36,7 @@ godot --headless --path hoppys-adventure-arcade --script res://tests/runner_logi
 godot --headless --path hoppys-adventure-arcade --script res://tests/platformer_smoke.gd
 ```
 
-CI runs every headless suite listed in `.github/workflows/ci.yml`. Add a focused regression test when you change behavior. Some suites capture screenshots when run without `--headless`; include those in the PR for visual changes. On macOS, pass `--always-on-top` for graphical runs so the capture doesn't stall when the window is covered.
+CI runs every headless suite listed in `.github/workflows/ci.yml`. It also runs `python3 tools/checks/exit_leak.py --godot <godot>`, which quits from screens with audio playing and fails on Godot's "leaked at exit" lines. Add a focused regression test when you change behavior. Some suites capture screenshots when run without `--headless`; include those in the PR for visual changes. On macOS, pass `--always-on-top` for graphical runs so the capture doesn't stall when the window is covered.
 
 Per-mode notes and test details live in [`docs/`](docs/).
 

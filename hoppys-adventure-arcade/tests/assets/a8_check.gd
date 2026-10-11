@@ -2,6 +2,18 @@ extends SceneTree
 const Synth = preload("res://scenes/runner/audio/sfx_synth.gd")
 const Scene = preload("res://scenes/runner/audio/runner_audio.tscn")
 const Mock = preload("res://scenes/runner/ui/dev/mock_runner_game.gd")
+
+## The facade timeline has no encounter clock. These signals are what RunnerAudio binds.
+class CinematicMock extends Mock:
+	signal boss_cinematic(kind: StringName, mode: StringName, seconds: float)
+	signal boss_cinematic_skipped(mode: StringName)
+	signal boss_cinematic_ended(mode: StringName)
+	signal run_intro(mode: StringName, seconds: float)
+	signal run_intro_beat(index: int, label: String)
+	signal run_intro_skipped
+	signal run_intro_ended
+	var boss_cinematic_progress := 0.0
+	var boss_time_factor := 1.0
 var checks := 0
 var failures := 0
 var pcm_bytes := 0
@@ -65,7 +77,7 @@ func window_metrics(stream: AudioStreamWAV, start: float, end: float) -> Vector2
 	return Vector2(sqrt(energy / maxi(1, last - first)), peak)
 
 func run() -> void:
-	check(Synth.RECIPES.size() == 32, "32 recipes")
+	check(Synth.RECIPES.size() == 39, "39 recipes remain once the run-intro cues are in")
 	for kind: StringName in Synth.RECIPES:
 		audio_check(Synth.sound(kind), Synth.RECIPES[kind][0], kind)
 		check(Synth.sound(kind) == Synth.sound(kind), "cached " + kind)
@@ -103,15 +115,17 @@ func run() -> void:
 	check(window_metrics(fire, 0.0, 0.015).y >= window_metrics(fire, 0.0, 0.18).y * 0.8, "launch rendered attack within 15 ms")
 	check(Synth._envelope(Synth.family_for(&"jump"), 0.12, 0.22) < 0.15, "jump has a tonal decay")
 	check(Synth._envelope(Synth.family_for(&"pursuit_start"), 0.45, 0.75) > Synth._envelope(Synth.family_for(&"pursuit_start"), 0.15, 0.75) * 2.0, "pursuit second stage rises")
-	for kind in [&"turn_whoosh", &"projectile_whoosh"]:
-		var original := Synth.sound(kind).data
-		var center := Synth.panned_whoosh(2, kind).data
-		check(original == center, "center whoosh preserves stereo channels " + kind)
-		var left := Synth.panned_whoosh(1, kind).data
-		var right := Synth.panned_whoosh(4, kind).data
-		for i in range(0, original.size(), 400):
-			check(left.decode_s16(i) == original.decode_s16(i), "left whoosh preserves near channel")
-			check(right.decode_s16(i + 2) == original.decode_s16(i + 2), "right whoosh preserves near channel")
+	for key in Synth.RECIPES:
+		check(not String(key).contains("turn"), "RECIPES has no seam cue " + String(key))
+	var whoosh_kind := &"projectile_whoosh"
+	var original := Synth.sound(whoosh_kind).data
+	var center := Synth.panned_whoosh(2, whoosh_kind).data
+	check(original == center, "center whoosh preserves stereo channels")
+	var left := Synth.panned_whoosh(1, whoosh_kind).data
+	var right := Synth.panned_whoosh(4, whoosh_kind).data
+	for i in range(0, original.size(), 400):
+		check(left.decode_s16(i) == original.decode_s16(i), "left whoosh preserves near channel")
+		check(right.decode_s16(i + 2) == original.decode_s16(i + 2), "right whoosh preserves near channel")
 	check(Synth._envelope(&"chime", 0.1, 0.65) > 0.5, "chime retains ring")
 	for kind in [&"lgtm", &"recovered_chime", &"stage_clear", &"tool_pickup", &"powerup"]:
 		check(Synth.LAYERS[Synth.family_for(kind)][3] == 0.0, "clean tonal noise weight " + kind)
@@ -127,14 +141,14 @@ func run() -> void:
 	var source := FileAccess.get_file_as_string("res://scenes/runner/audio/sfx_synth.gd")
 	var sample_loop := source.get_slice("for i in count:", 1).get_slice("# Remove DC", 0)
 	check(not sample_loop.contains("kind in [") and not sample_loop.contains("float(["), "no per-sample recipe arrays")
-	for kind in [&"turn_whoosh", &"projectile_whoosh"]:
-		for mask in 8: audio_check(Synth.panned_whoosh(mask, kind), Synth.RECIPES[kind][0], "%s mask %d" % [kind, mask])
+	for mask in 8:
+		audio_check(Synth.panned_whoosh(mask, whoosh_kind), Synth.RECIPES[whoosh_kind][0], "projectile_whoosh mask %d" % mask)
 	check(Synth.ui_click() == Synth.sound(&"telegraph_tick"), "UI tick reuse")
 	for path in ["sfx_synth.gd", "runner_audio.gd", "hifi/bus_chain.gd"]:
 		check(not FileAccess.get_file_as_string("res://scenes/runner/audio/" + path).contains("TIME"), "no shader TIME: " + path)
 	var before := AudioServer.bus_count
 	var old_send := AudioServer.get_bus_send(AudioServer.get_bus_index(&"SFX"))
-	var mock := Mock.new()
+	var mock := CinematicMock.new()
 	mock.autoplay = false
 	root.add_child(mock)
 	var audio := Scene.instantiate()
@@ -170,7 +184,7 @@ func run() -> void:
 	audio.play_ui_click()
 	var heard := {}
 	audio.sound_played.connect(func(kind: StringName, _stream: AudioStream) -> void: heard[kind] = true)
-	# The mock timeline exercises all 32 signal-triggered recipes. Run it until it finishes, so the
+	# The mock timeline exercises the signal-triggered recipes. Run it until it finishes, so the
 	# Game Over sting still fires when config.caught_sequence_seconds changes (#61 made it 3.0 s).
 	var ticks := 0
 	while mock.state != &"finished" and ticks < 600:
@@ -184,6 +198,39 @@ func run() -> void:
 		audio._process(0.1)
 		check(audio.active_voice_count() <= 10, "voice cap")
 	check(mock.state == &"finished", "demo timeline reaches Game Over (%d ticks)" % ticks)
+	# Cinematic cues follow the encounter clock. Drive each mode through the audio handlers.
+	mock.state_changed.emit(&"running")
+	for mode in [&"intro_full", &"intro_short", &"defeat_full"]:
+		mock.boss_cinematic_progress = 0.0
+		mock.boss_time_factor = 1.0
+		mock.boss_cinematic.emit(&"merge_conflict_hydra", mode, 5.0)
+		for step in 20:
+			audio.one_shots.stop()
+			audio.one_shots.play()
+			audio._playback = audio.one_shots.get_stream_playback()
+			audio._voices.clear()
+			audio._voice_kinds.clear()
+			mock.boss_cinematic_progress = float(step) / 20.0
+			audio._process(0.15)
+			check(audio.active_voice_count() <= 10, "voice cap")
+		if mode == &"intro_short":
+			mock.boss_cinematic_skipped.emit(mode)
+		mock.boss_cinematic_ended.emit(mode)
+		audio._process(0.15)
+	# Contract 2.7 §11.15: intro_whoosh, intro_title, intro_count and intro_go through the handlers.
+	audio.one_shots.stop()
+	audio.one_shots.play()
+	audio._playback = audio.one_shots.get_stream_playback()
+	audio._voices.clear()
+	audio._voice_kinds.clear()
+	mock.run_intro.emit(&"full", 6.0)
+	mock.run_intro_beat.emit(0, "title")
+	mock.run_intro_beat.emit(1, "3")
+	mock.run_intro_beat.emit(2, "READY")
+	mock.run_intro_beat.emit(4, "GO!")
+	mock.run_intro_skipped.emit()
+	mock.run_intro_ended.emit()
+	audio._process(0.15)
 	for kind: StringName in Synth.RECIPES: check(heard.has(kind), "trigger exercised: " + kind)
 	audio._stop_all()
 	audio.one_shots.play()
@@ -202,7 +249,7 @@ func run() -> void:
 	await create_timer(0.3).timeout
 	check(AudioServer.bus_count == before, "bus teardown")
 	check(AudioServer.get_bus_send(AudioServer.get_bus_index(&"SFX")) == old_send, "send restored")
-	print("A8 AUDIO: 32 recipes; peak=%.6f; checked PCM bytes=%d; draw census=%d; triangles=%d; textures=0" % [maximum, pcm_bytes, budget.x, budget.y])
+	print("A8 AUDIO: 39 recipes; peak=%.6f; checked PCM bytes=%d; draw census=%d; triangles=%d; textures=0" % [maximum, pcm_bytes, budget.x, budget.y])
 	print("ASSET A8: %s (%d checks)" % ["PASS" if failures == 0 else "FAIL", checks])
 	for player in root.get_node("AudioService").get_children():
 		if player is AudioStreamPlayer: player.stop()

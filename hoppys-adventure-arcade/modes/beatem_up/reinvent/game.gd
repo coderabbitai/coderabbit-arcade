@@ -56,6 +56,9 @@ var toast_left := 0.0
 var held_toast := ""
 var held_toast_seconds := 2.0
 var ui_layer: CanvasLayer
+## The HUD bar's backing strip and the control hints along the bottom (knockout_hud_nodes).
+var hud_strip: ColorRect
+var controls_hint: Label
 var prompt: Label
 var overlay: ColorRect
 var panel: VBoxContainer
@@ -629,6 +632,13 @@ func toast(message: String, seconds := 2.0) -> void:
 	toast_label.show()
 	toast_left = seconds
 
+## The gameplay chrome the knockout cinematic hides and then restores (knockout.gd): the HUD
+## strip and its labels, both boss bars, the capability line, toast, prompt, control hints and
+## minimap. Cards, menus, the results screen and the screen shader are not chrome.
+func knockout_hud_nodes() -> Array[CanvasItem]:
+	var nodes: Array[CanvasItem] = [hud_strip,hud,objective,capability_hud,boss_text,boss_bar,second_boss_text,second_boss_bar,toast_label,prompt,controls_hint,minimap]
+	return nodes
+
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
 	ui_layer=layer
@@ -646,6 +656,7 @@ func _build_ui() -> void:
 	ui.theme = Style.theme()
 	layer.add_child(ui)
 	var top := ColorRect.new()
+	hud_strip = top
 	top.color = Color(.035,.025,.025,.94)
 	top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	top.offset_bottom = 139
@@ -684,6 +695,7 @@ func _build_ui() -> void:
 	prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ui.add_child(prompt)
 	var controls := Style.label("",13)
+	controls_hint = controls
 	Prompts.track(controls, func() -> String:
 		return "%s · Move   %s · Jump   %s · Combo   %s · Pickup   Hold %s · REVIEW   %s · Pause" % [
 			Prompts.keys_or_pad("WASD", Prompts.if_pad("stick")),

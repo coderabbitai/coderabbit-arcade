@@ -53,12 +53,11 @@ func _base(extent: Vector2) -> VBoxContainer:
 	return box
 
 var pending: Dictionary = {}
-var turning := false
 var boss_visible := false
 var rules: Array[ColorRect] = []
 
 func _ready() -> void:
-	connections = {&"boss_intro": _intro, &"turn_incoming": _turn, &"stage_started": _stage, &"turn_started": _turn, &"turn_finished": _finish_turn, &"boss_spawned": _boss, &"phase_changed": _phase}
+	connections = {&"boss_intro": _intro, &"stage_started": _stage, &"boss_spawned": _boss, &"phase_changed": _phase}
 	var box := _base(Vector2(820, 180))
 	title = Style.label("S T A G E  1", 30, Palette.MINT)
 	subtitle = Style.label("", 52)
@@ -74,7 +73,7 @@ func _ready() -> void:
 
 func _stage(index: int, boss_name: StringName, _speed: float) -> void:
 	pending = {"index": index, "name": boss_name}
-	if not turning and not boss_visible: _show_pending()
+	if not boss_visible: _show_pending()
 
 func _show_pending() -> void:
 	if pending.is_empty() or boss_visible: return
@@ -86,14 +85,6 @@ func _show_pending() -> void:
 	_process(0.0)
 	opened.emit()
 
-func _turn(_direction: int, _seconds: float) -> void:
-	turning = true
-	_close()
-
-func _finish_turn() -> void:
-	turning = false
-	_show_pending()
-
 func _boss(_kind: StringName, _hp: int) -> void:
 	boss_visible = true
 	_close()
@@ -103,7 +94,6 @@ func _phase(value: StringName) -> void:
 	if value == &"run": boss_visible = false
 	if value == &"idle":
 		pending.clear()
-		turning = false
 		boss_visible = false
 
 func _process(delta: float) -> void:

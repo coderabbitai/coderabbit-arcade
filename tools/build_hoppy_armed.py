@@ -17,6 +17,7 @@ import argparse
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from statistics import median
 from typing import Iterable
 
 from PIL import Image, ImageDraw
@@ -377,6 +378,225 @@ CLIPS = {
     "hurt": ([15], 1, False),
 }
 
+# Attack cells stay byte-identical; the old four shuffle cells are archived in
+# the atlas but are no longer used by a Code City clip.
+CODE_CITY_CLIPS = {
+    **CLIPS,
+    "run": (list(range(16, 22)), 13, True),
+    "walk_up": (list(range(22, 26)), 9, True),
+    "walk_down": (list(range(26, 30)), 9, True),
+}
+
+
+def clips_for_mode(mode: Mode) -> dict:
+    return CODE_CITY_CLIPS if mode.directory == "code_city" else CLIPS
+
+
+def frame_count_for_mode(mode: Mode) -> int:
+    return 1 + max(index for frames, _, _ in clips_for_mode(mode).values() for index in frames)
+
+
+def locomotion_frames(pack: Path, mode: Mode, weapon: str) -> tuple[list[FramePlacement], dict]:
+    """Slice generated leg poses; body registration follows the initial sole alignment."""
+    source = pack / "sources" / f"{weapon}-locomotion.png"
+    master = Image.open(source).convert("RGBA")
+    components, fragments = master_components(master)
+    tiles = [component_image(master, components[index]) for index in range(16)]
+    source_names = [source.name] * 14
+    source_indices = list(range(14))
+    source_bounds = [list(components[index].bbox) for index in range(14)]
+    relative_scales = [1.0] * 14
+    if weapon == "git_branch":
+        # The generation-zero sheet had four good front poses but only two back
+        # poses. The refined master supplies the missing back views unchanged.
+        front_source = pack / "sources" / "git_branch-locomotion-generation0.png"
+        front_master = Image.open(front_source).convert("RGBA")
+        front_components, _ = master_components(front_master, required_cells={8, 9})
+        for target, index in zip(range(12, 14), range(8, 10)):
+            front_tile = component_image(front_master, front_components[index])
+            relative_scales[target] = median(visible_height(t) for t in tiles[10:12]) / visible_height(front_tile)
+            tiles[target] = front_tile
+            source_names[target] = front_source.name
+            source_indices[target] = index
+            source_bounds[target] = list(front_components[index].bbox)
+
+    def orange_points(im: Image.Image) -> list[tuple[int, int]]:
+        points = [(x, y) for y in range(im.height) for x in range(im.width)
+                if (lambda p: p[3] >= 128 and p[0] > 220 and 50 < p[1] < 150
+                    and p[0] - p[1] > 125 and p[1] - p[2] > 40)(im.getpixel((x, y)))]
+        # The gold whip key contains orange shading. Restrict the foot search
+        # to the rabbit beneath its head, never the hanging weapon beyond it.
+        head_right = max(x for x, y in points if y < im.height * .52)
+        return [(x, y) for x, y in points if x <= head_right + im.height * .08]
+
+    body_heights = []
+    for tile in tiles[:6]:
+        orange = orange_points(tile)
+        body_heights.append(max(y for _, y in orange) - min(y for _, y in orange) + 1)
+    scale = (mode.idle_height - 2) / median(body_heights)
+    result = []
+    hands = {}
+    feet = {}
+    bounds = []
+    for index, tile in enumerate(tiles[:14]):
+        resized = tile.resize(nearest_size(tile.width, tile.height, scale * relative_scales[index]), Image.Resampling.NEAREST)
+        orange = orange_points(resized)
+        sole_orange_y = max(y for _, y in orange)
+        sole_xs = [x for x, y in orange if y >= sole_orange_y - 1]
+        # On contact frames both feet may touch; the forward foot starts the stance.
+        foot_x = max(sole_xs) - 2 if index < 6 and index % 3 == 0 else round(median(sole_xs))
+        foot_y = sole_orange_y
+        alpha = resized.getchannel("A")
+        leg_xs = [x for x, y in orange if y > resized.height * .78]
+        left, right = max(0, min(leg_xs) - 2), min(resized.width - 1, max(leg_xs) + 2)
+        # Front/back poses expose dark-brown soles below the orange ankle. Follow
+        # their opaque outline as well, within the legs' span, excluding weapons.
+        for y in range(sole_orange_y, min(resized.height, sole_orange_y + 8)):
+            if any(alpha.getpixel((x, y)) >= 128 for x in range(left, right + 1)):
+                foot_y = y
+        grounded_xs = [x for x in range(left, right + 1) if alpha.getpixel((x, foot_y)) >= 128]
+        foot_x = min(grounded_xs, key=lambda x: abs(x - foot_x))
+        target_x = mode.pivot[0]
+        # Vertical walks use the centre of the two legs. Their alternating raised
+        # soles remain drawn by the source, not synthesized by translation.
+        if index >= 6:
+            foot_x = round(median(leg_xs))
+        dx, dy = target_x - foot_x, mode.pivot[1] - foot_y
+        if dx < 0 or dy < 0 or dx + resized.width > mode.cell[0] or dy + resized.height > mode.cell[1]:
+            raise ValueError(f"{weapon} locomotion {index}: cropped by destination cell {dx=}, {dy=}, size={resized.size}, foot={(foot_x, foot_y)}")
+        frame = Image.new("RGBA", mode.cell)
+        frame.alpha_composite(resized, (dx, dy))
+        sole_y = lowest_sole_row(frame, target_x)
+        if abs(sole_y - mode.pivot[1]) > 1:
+            raise ValueError(
+                f"{mode.directory}/{weapon}: locomotion sole misses the pivot at cell {index + 16}: {sole_y}"
+            )
+        # Choose a painted paw near the centre-right grip, below the muzzle.
+        hand_target = (resized.width * (.53 if index < 6 else .43), resized.height * .69)
+        paw = min((p for p in orange if resized.height * .48 < p[1] < resized.height * .82),
+                  key=lambda p: (p[0] - hand_target[0]) ** 2 + (p[1] - hand_target[1]) ** 2)
+        hands[str(index + 16)] = [paw[0] + dx, paw[1] + dy]
+        feet[str(index + 16)] = [target_x, mode.pivot[1]]
+        result.append(FramePlacement(frame, (dx, dy), (target_x, mode.pivot[1]),
+                                     (foot_x, foot_y), sole_y, target_x))
+        bounds.append(list(frame.getchannel("A").getbbox()))
+    return result, {
+        "sources": source_names, "source_frames": source_indices,
+        "source_component_bounds": source_bounds, "source_scale": scale,
+        "relative_scales": relative_scales,
+        "fragment_attachments": fragments, "hand": hands, "foot": feet,
+        "visible_bounds": bounds,
+        "cadence_fps": {name: clip["fps"] for name, clip in clip_metadata(mode).items()
+                        if name in ("run", "walk_up", "walk_down")},
+        "body_scale": 1.55,
+    }
+
+
+def largest_color_component(points: set[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Find a painted region, ignoring disconnected weapon highlights and outlines."""
+    largest: list[tuple[int, int]] = []
+    while points:
+        seed = min(points, key=lambda p: (p[1], p[0]))
+        points.remove(seed)
+        region, pending = [seed], [seed]
+        while pending:
+            x, y = pending.pop()
+            for neighbor in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if neighbor in points:
+                    points.remove(neighbor)
+                    region.append(neighbor)
+                    pending.append(neighbor)
+        if len(region) > len(largest):
+            largest = region
+    if not largest:
+        raise ValueError("no painted body component")
+    return largest
+
+
+def body_landmarks(frame: Image.Image, side_run: bool = False) -> tuple[float, float, float]:
+    """Measure the shirt independently of anchors, feet, and forward weapon pixels.
+
+    A side runner's forearm hides different amounts of shirt each frame. Its back
+    edge follows the spine, whereas the visible shirt centroid follows the arm.
+    Six texels inward gives the torso axis. Front/back carries use the shirt centre.
+    The orange head centroid is a second check against a bad component selection.
+    """
+    pixels = frame.load()
+    head = largest_color_component({
+        (x, y) for y in range(frame.height) for x in range(frame.width)
+        if (lambda p: p[3] >= 128 and p[0] > 200 and 40 < p[1] < 170 and p[2] < 100
+            and p[0] - p[1] > 70 and p[1] - p[2] > 25)(pixels[x, y])
+    })
+    head_x = sum(x for x, _ in head) / len(head)
+    head_bottom = max(y for _, y in head)
+    shirt = largest_color_component({
+        (x, y) for y in range(max(0, head_bottom - 2), min(frame.height, head_bottom + 21))
+        for x in range(frame.width) if abs(x - head_x) < 18
+        and (lambda p: p[3] >= 128 and min(p[:3]) >= 20 and max(p[:3]) < 85
+             and max(p[:3]) - min(p[:3]) < 22)(pixels[x, y])
+    })
+    if len(shirt) < 20:
+        raise ValueError(f"shirt region too small to register: {len(shirt)} pixels")
+    torso_x = min(x for x, _ in shirt) + 6 if side_run else sum(x for x, _ in shirt) / len(shirt)
+    return torso_x, sum(y for _, y in shirt) / len(shirt), head_x
+
+
+def register_code_city_body(mode: Mode, weapon: str, placements: list[FramePlacement],
+                            frame_anchors: dict, movement: dict) -> dict:
+    """Give ready poses and walking a common torso axis without changing attack art."""
+    indices = [0, 14, 15, *range(16, 30)]
+    before = {i: body_landmarks(placements[i].image, 16 <= i < 22) for i in indices}
+    bob_centers = {}
+    for clip in ("run", "walk_up", "walk_down"):
+        frames = CODE_CITY_CLIPS[clip][0]
+        ys = [before[i][1] for i in frames]
+        for i in frames:
+            bob_centers[i] = (min(ys) + max(ys)) / 2
+    measured, offsets = {}, {}
+    for index in indices:
+        original = placements[index]
+        torso_x, torso_y, _ = before[index]
+        dx, dy = round(mode.pivot[0] - torso_x), 0
+        if index >= 16:
+            bob_center = bob_centers[index]
+            target_y = max(bob_center - .75, min(bob_center + .75, torso_y))
+            dy = round(target_y - torso_y)
+        frame = translate_frame(original.image, (dx, dy), mode, index)
+        foot = (original.foot[0] + dx, original.foot[1] + dy)
+        sole = lowest_sole_row(frame, foot[0])
+        if abs(sole - foot[1]) > 1 or (index >= 16 and abs(sole - mode.pivot[1]) > 3):
+            raise ValueError(f"{weapon} cell {index}: body registration moved sole beyond the ground tolerance")
+        placements[index] = FramePlacement(
+            frame, (original.offset[0] + dx, original.offset[1] + dy), foot,
+            original.selected_foot_before_registration, sole, original.same_foot_x + dx,
+        )
+        for kind in ("hand", "foot"):
+            old = frame_anchors[kind][str(index)]
+            frame_anchors[kind][str(index)] = [old[0] + dx, old[1] + dy]
+            if index >= 16:
+                movement[kind][str(index)] = frame_anchors[kind][str(index)]
+        if index >= 16:
+            movement["visible_bounds"][index - 16] = list(frame.getchannel("A").getbbox())
+        measured[index] = body_landmarks(frame, 16 <= index < 22)
+        offsets[str(index)] = [dx, dy]
+    for index, (x, _, _) in measured.items():
+        if abs(x - mode.pivot[0]) > 2:
+            raise ValueError(f"{weapon} cell {index}: torso misses common axis: {x}")
+    for clip in ("run", "walk_up", "walk_down"):
+        values = [measured[i] for i in CODE_CITY_CLIPS[clip][0]]
+        for current, following in zip(values, values[1:] + values[:1]):
+            if abs(current[0] - following[0]) > 3:
+                raise ValueError(f"{weapon} {clip}: torso pops between frames: {values}")
+        if max(v[1] for v in values) - min(v[1] for v in values) > 3:
+            raise ValueError(f"{weapon} {clip}: torso bob exceeds 3 pixels")
+    run_heads = [measured[i][2] for i in range(16, 22)]
+    if max(run_heads) - min(run_heads) > 4:
+        raise ValueError(f"{weapon}: run head moves more than 2 pixels either side of its centre")
+    return {"method": "shirt back edge + 6px for run, shirt centroid for other ready poses",
+            "torso_x": mode.pivot[0], "frame_offsets": offsets,
+            "landmarks": {str(i): {"torso": [round(v[0], 4), round(v[1], 4)], "head_x": round(v[2], 4)}
+                          for i, v in measured.items()}}
+
 
 def pilot_weapon(mode: Mode) -> Weapon:
     """Expose the historic one-pilot fields through the additive weapon model."""
@@ -418,7 +638,7 @@ def visible_height(image: Image.Image) -> int:
     return box[3] - box[1]
 
 
-def master_components(master: Image.Image) -> tuple[dict[int, SourceComponent], list[dict[str, object]]]:
+def master_components(master: Image.Image, required_cells: set[int] | None = None) -> tuple[dict[int, SourceComponent], list[dict[str, object]]]:
     """Recover sprites across grid gutters without modifying the master.
 
     Generated poses sometimes overhang a nominal one-quarter boundary.  The
@@ -532,9 +752,9 @@ def master_components(master: Image.Image) -> tuple[dict[int, SourceComponent], 
         top = min(y for _, y in pixels)
         right = max(x for x, _ in pixels) + 1
         bottom = max(y for _, y in pixels) + 1
-        if left == 0 or top == 0 or right == width or bottom == height:
-            raise ValueError(f"component {component_id + 1} touches the master crop edge")
         cell = cell_for_component[component_id]
+        if (required_cells is None or cell in required_cells) and (left == 0 or top == 0 or right == width or bottom == height):
+            raise ValueError(f"component {component_id + 1} touches the master crop edge")
         if cell in result:
             raise ValueError(f"duplicate component assigned to cell {cell + 1}")
         result[cell] = SourceComponent(cell, (left, top, right, bottom), tuple(sorted(pixels)))
@@ -850,7 +1070,7 @@ def pilot_scale(master: Image.Image, components: dict[int, SourceComponent], mod
 
 def clip_metadata(mode: Mode) -> dict[str, dict[str, object]]:
     result: dict[str, dict[str, object]] = {}
-    for name, (frames, speed, loop) in CLIPS.items():
+    for name, (frames, speed, loop) in clips_for_mode(mode).items():
         result[name] = {"frames": frames, "fps": mode.run_fps if speed is None else speed, "loop": loop}
     return result
 
@@ -900,12 +1120,13 @@ def anchors(mode: Mode, weapon: Weapon, placements: list[FramePlacement]) -> dic
 
 
 def tres_text(sheet_name: str, mode: Mode) -> str:
+    frame_count = frame_count_for_mode(mode)
     lines = [
-        "[gd_resource type=\"SpriteFrames\" load_steps=18 format=3]",
+        f"[gd_resource type=\"SpriteFrames\" load_steps={frame_count + 2} format=3]",
         "",
         f"[ext_resource type=\"Texture2D\" path=\"{sheet_name}.png\" id=\"1\"]",
     ]
-    for index in range(16):
+    for index in range(frame_count):
         x = (index % 4) * mode.cell[0]
         y = (index // 4) * mode.cell[1]
         lines.extend(
@@ -917,7 +1138,7 @@ def tres_text(sheet_name: str, mode: Mode) -> str:
             )
         )
     animations = []
-    for name, (indices, speed, loop) in CLIPS.items():
+    for name, (indices, speed, loop) in clips_for_mode(mode).items():
         refs = ", ".join(
             '{"duration": 1.0, "texture": SubResource("Frame_%d")}' % index for index in indices
         )
@@ -1056,10 +1277,11 @@ def render_preview(mode: Mode, sheet: Image.Image, weapon: str | None = None) ->
     scale = 2
     card_width = mode.cell[0] * scale
     card_height = mode.cell[1] * scale
-    preview = Image.new("RGBA", (card_width * 4 + 28, card_height * 5 + 64), (12, 17, 28, 255))
+    count = frame_count_for_mode(mode)
+    preview = Image.new("RGBA", (card_width * 4 + 28, card_height * ((count + 4) // 4) + 64), (12, 17, 28, 255))
     title = ImageDraw.Draw(preview)
     weapon_name = mode.pilot if weapon is None else weapon
-    title.text((14, 14), f"{mode.directory}: {weapon_name} pilot | unarmed idle + 16 armed cells", fill=(231, 238, 249, 255))
+    title.text((14, 14), f"{mode.directory}: {weapon_name} pilot | unarmed idle + {count} armed cells", fill=(231, 238, 249, 255))
     # Unarmed idle first, at the same origin contract as the armed grid.
     idle_frame = Image.new("RGBA", mode.cell)
     idle_scale = mode.idle_height / max(1, visible_height(idle))
@@ -1069,7 +1291,7 @@ def render_preview(mode: Mode, sheet: Image.Image, weapon: str | None = None) ->
         idle_resized,
         (mode.pivot[0] - round(reference_pivot_x * idle_scale), mode.pivot[1] - round(reference_pivot_y * idle_scale)),
     )
-    cells = [idle_frame] + [sheet.crop((index % 4 * mode.cell[0], index // 4 * mode.cell[1], (index % 4 + 1) * mode.cell[0], (index // 4 + 1) * mode.cell[1])) for index in range(16)]
+    cells = [idle_frame] + [sheet.crop((index % 4 * mode.cell[0], index // 4 * mode.cell[1], (index % 4 + 1) * mode.cell[0], (index // 4 + 1) * mode.cell[1])) for index in range(count)]
     for index, cell in enumerate(cells):
         row, column = divmod(index, 4)
         enlarged = cell.resize((card_width, card_height), Image.Resampling.NEAREST)
@@ -1083,15 +1305,16 @@ def render_preview(mode: Mode, sheet: Image.Image, weapon: str | None = None) ->
 def render_clip_preview(mode: Mode, frames: list[Image.Image]) -> Image.Image:
     """Draw a ground-lined frame strip for every runtime clip."""
     scale = 2
-    max_frames = max(len(indices) for indices, _, _ in CLIPS.values())
+    clips = clips_for_mode(mode)
+    max_frames = max(len(indices) for indices, _, _ in clips.values())
     gutter = 92
     row_height = mode.cell[1] * scale + 34
     width = gutter + mode.cell[0] * scale * max_frames + 24
-    height = 28 + row_height * len(CLIPS)
+    height = 28 + row_height * len(clips)
     preview = Image.new("RGBA", (width, height), (12, 17, 28, 255))
     draw = ImageDraw.Draw(preview)
     draw.text((12, 8), f"{mode.directory}: runtime clips | ground = foot pivot", fill=(231, 238, 249, 255))
-    for row, (name, (indices, _, _)) in enumerate(CLIPS.items()):
+    for row, (name, (indices, _, _)) in enumerate(clips.items()):
         top = 28 + row * row_height
         draw.text((8, top + 8), name, fill=(255, 202, 99, 255))
         ground_y = top + mode.pivot[1] * scale
@@ -1104,6 +1327,29 @@ def render_clip_preview(mode: Mode, frames: list[Image.Image]) -> Image.Image:
             paste_with_checker(preview, enlarged, (x, top))
             draw.line((x, ground_y, x + mode.cell[0] * scale - 1, ground_y), fill=(93, 238, 176, 255), width=2)
     return preview
+
+
+def render_locomotion(mode: Mode, packed: dict[str, PackedWeapon]) -> Image.Image:
+    """Four directional strips for every weapon, using the runtime flip for left."""
+    frame_width, row_height, label_width = 154, 124, 164
+    canvas = Image.new("RGBA", (label_width + 6 * frame_width, 44 + len(packed) * 4 * row_height), "#0c111c")
+    draw = ImageDraw.Draw(canvas)
+    draw.text((12, 12), "CODE CITY | armed locomotion | run 13 fps / walk 9 fps | green line = ground", fill="#e7eef9")
+    for weapon_index, (weapon, item) in enumerate(packed.items()):
+        for direction_index, (direction, clip) in enumerate((("right", "run"), ("left", "run"), ("up", "walk_up"), ("down", "walk_down"))):
+            y = 44 + (weapon_index * 4 + direction_index) * row_height
+            draw.text((10, y + 32), weapon, fill="#ffca63")
+            draw.text((10, y + 50), direction, fill="#e7eef9")
+            for column, index in enumerate(CODE_CITY_CLIPS[clip][0]):
+                frame = item.frames[index].image
+                crop = frame.crop((16, 40, 154, 128))
+                if direction == "left":
+                    crop = crop.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+                x = label_width + column * frame_width
+                paste_with_checker(canvas, crop, (x, y + 20))
+                draw.line((x, y + 98, x + 138, y + 98), fill="#5deeb0")
+                draw.text((x + 4, y + 4), str(column + 1), fill="#a9b5c9")
+    return canvas
 
 
 def prompts_text(pack: Path, mode: Mode) -> str:
@@ -1158,6 +1404,16 @@ def prompts_text(pack: Path, mode: Mode) -> str:
             "### Refinements\n\n",
             f"Regenerations: {regenerations}. {change}\n",
         ))
+    if mode.directory == "code_city":
+        movement = json.loads((pack / "locomotion.json").read_text())
+        sections.append("\n## Locomotion masters: October 10, 2026\n\nBuilt-in image generation. Six run, four back walk and four front walk poses per weapon. Original combat masters are preserved. New movement occupies cells 16-29; idle, equip and hurt are body-registered alongside it.\n")
+        for weapon, prompt in movement["prompts"].items():
+            sections.extend((f"\n### {weapon}: locomotion\n\n", prompt + "\n"))
+        sections.append("\n### Layout and gutter refinements\n\n")
+        sections.append((pack / "locomotion-refinement.txt").read_text() + "\n\n")
+        sections.append((pack / "locomotion-gutters.txt").read_text() + "\n\n")
+        sections.append("\n### Whip carry clearance refinement\n\n" + (pack / "locomotion-whip-refinement.txt").read_text() + "\n\n")
+        sections.append("The gutter refinement applies to linter_staff, firewall_shield and git_branch. Their earlier masters are retained. Git branch uses the refined master for run and back views; two front steps come from generation-zero cells 9 and 10, rescaled to match the refined source. No atlas is painted.\n\nBody registration keeps the torso near pivot x72 in ready poses and every locomotion frame. The run uses the shirt back edge, avoiding the moving forearm; a separate head measurement limits head sway. Vertical bob is limited to 3px. Run remains 13 fps and vertical walks 9 fps; feet cycle inside the cell instead of shifting the whole body to hold a planted foot. Generated masters are unchanged, and the builder records every registration offset and measured landmark.\n")
     return "".join(sections)
 
 
@@ -1194,8 +1450,17 @@ def pack_mode(mode: Mode) -> None:
         )
         run_body = check_run_body(mode, weapon, placements)
         run_bodies[weapon.weapon] = run_body
+        frame_anchors = anchors(mode, weapon, placements)
+        movement = None
+        if mode.directory == "code_city":
+            movement_frames, movement = locomotion_frames(pack, mode, weapon.weapon)
+            placements.extend(movement_frames)
+            frame_anchors["hand"].update(movement["hand"])
+            frame_anchors["foot"].update(movement["foot"])
+            body_registration = register_code_city_body(mode, weapon.weapon, placements, frame_anchors, movement)
         frames = [placement.image for placement in placements]
-        sheet = Image.new("RGBA", (mode.cell[0] * 4, mode.cell[1] * 4))
+        rows = (len(frames) + 3) // 4
+        sheet = Image.new("RGBA", (mode.cell[0] * 4, mode.cell[1] * rows))
         for index, frame in enumerate(frames):
             sheet.alpha_composite(frame, (index % 4 * mode.cell[0], index // 4 * mode.cell[1]))
         outputs.append((pack / f"{weapon.weapon}.png", sheet))
@@ -1211,7 +1476,7 @@ def pack_mode(mode: Mode) -> None:
             "file": f"{weapon.weapon}.png",
             "resource": f"{weapon.weapon}.tres",
             "cell": list(mode.cell),
-            "grid": [4, 4],
+            "grid": [4, rows],
             "pivot": list(mode.pivot),
             "facing": "right",
             "body_height": visible_height(frames[0]),
@@ -1230,10 +1495,20 @@ def pack_mode(mode: Mode) -> None:
                 else ""
             ),
             "clips": clip_metadata(mode),
-            "anchors": anchors(mode, weapon, placements),
+            "anchors": frame_anchors,
         }
         if weapon.run_register:
             entries[weapon.weapon]["run_registration"] = weapon.run_register
+        if movement is not None:
+            entries[weapon.weapon]["run_registration"] = "body"
+            entries[weapon.weapon]["body_registration"] = body_registration
+            entries[weapon.weapon]["locomotion"] = movement
+            entries[weapon.weapon]["unused_legacy_cells"] = [1, 2, 3, 4]
+            entries[weapon.weapon]["foot_anchor_semantics"] = (
+                "Ready poses and locomotion share the torso axis at pivot x; feet cycle freely. "
+                "Foot anchors follow the translated soles, with at most 3px run bob around the ground row. "
+                "Attacks and unused legacy run cells retain their original registration."
+            )
         if weapon.source_order:
             entries[weapon.weapon]["source_order"] = list(source_order)
         if weapon.per_frame_foot_pivot:
@@ -1252,6 +1527,11 @@ def pack_mode(mode: Mode) -> None:
                     for index, target in enumerate(weapon.body_foot_targets)
                     if target is not None
                 }
+            if movement is not None:
+                entries[weapon.weapon]["foot_planting"]["default"] = (
+                    "Idle, equip, hurt and locomotion use body registration. Attacks and unused legacy run "
+                    "cells preserve original registration. See locomotion for source provenance."
+                )
     icons, carry_calibration = build_carry_icons(mode, packed)
     outputs.extend((pack / "carry" / f"{weapon}.png", icon) for weapon, icon in icons.items())
     manifest = {
@@ -1272,6 +1552,10 @@ def pack_mode(mode: Mode) -> None:
             item = packed[weapon.weapon]
             outputs.append((pack / f"{weapon.weapon}_preview.png", render_preview(mode, sheets[weapon.weapon], weapon.weapon)))
             outputs.append((pack / f"{weapon.weapon}_clips.png", render_clip_preview(mode, [placement.image for placement in item.frames])))
+    if mode.directory == "code_city":
+        outputs.append((pack / "locomotion_contact.png", render_locomotion(mode, packed)))
+        for weapon, item in packed.items():
+            outputs.append((pack / f"{weapon}_locomotion.png", render_locomotion(mode, {weapon: item})))
     # Everything above validated; only now touch the pack.
     (pack / "carry").mkdir(parents=True, exist_ok=True)
     for path, payload in outputs:
@@ -1282,7 +1566,8 @@ def pack_mode(mode: Mode) -> None:
     for weapon in weapons_for_mode(mode):
         entry = entries[weapon.weapon]
         run_body = ", ".join(f"{x:.1f}" for x in run_bodies[weapon.weapon])
-        print(f"packed {mode.directory}/{weapon.weapon}: scale={entry['source_scale']:.6f}, body_height={entry['body_height']}, run body x=[{run_body}]")
+        registration = "body registered at torso x72, run 13 fps" if mode.directory == "code_city" else f"run body x=[{run_body}]"
+        print(f"packed {mode.directory}/{weapon.weapon}: scale={entry['source_scale']:.6f}, body_height={entry['body_height']}, {registration}")
 
 
 def pack_pilot(mode: Mode) -> None:

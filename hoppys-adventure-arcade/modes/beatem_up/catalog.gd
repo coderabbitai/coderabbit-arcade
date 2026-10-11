@@ -7,15 +7,42 @@ const MUSIC := [
 	preload("res://Assets/Audio/Beat'em Up/helldrake(extended).ogg"),
 	preload("res://Assets/Audio/Beat'em Up/kim_lightyear_-_angel_eyes_vision_ii.mp3")]
 const BOSS_MUSIC = preload("res://Assets/Audio/Beat'em Up/Kim Lightyear - The Final.mp3")
+## The district bosses' fight track (mini_boss.gd); BOSS_MUSIC stays the Grand Merge Conflict's.
+const MINI_BOSS_MUSIC = preload("res://Assets/Audio/Beat'em Up/Boss Fight 2.mp3")
 ## Hands-free stage flow (seconds, world px, px/s, dB). stage_flow.gd reads its DEFAULTS keys;
 ## the rest are game.gd's: intro page hold, room-0 telegraph grace, boss-music dip, exit banner,
-## and the hold of each victory-epilogue page.
+## the hold of each victory-epilogue page, and the district-boss victory hop (length, height).
 const FLOW := {
 	"run_speed":300.0, "exit_min":.6, "exit_max":1.6, "exit_margin":60.0,
 	"fade_out":.35, "fade_in":.35, "music_floor_db":-40.0,
 	"enter_from_x":-60.0, "enter_to_x":180.0, "enter_max":1.6,
 	"stage_banner":2.8, "banner_slide":.3, "banner_fade":.6,
-	"exit_banner":2.0, "intro_hold":4.5, "enemy_grace":.8, "boss_dip":.6, "ending_hold":5.0}
+	"exit_banner":2.0, "intro_hold":4.5, "enemy_grace":.8, "boss_dip":.6, "ending_hold":5.0,
+	"boss_victory":1.4, "boss_hop":36.0}
+## The district boss (mini_boss.gd) that guards each stage's third room, by stage; "" is none.
+## The last district keeps the Grand Merge Conflict (boss.gd).
+const MINI_BOSS_STAGES := ["stack_overflow", "zero_day", ""]
+## District bosses (seconds, world px, px/s). `sheet` is the boss's own atlas in the Code City
+## pack, drawn at `scale`. Until that atlas is in the pack's manifest, `fallback` draws an enemy
+## sheet at about twice its enemy scale, playing clips[pose] for each of the boss's poses.
+## Below `rage_at` of its HP the tells shorten by `rage` and it calls in two `add`s, once.
+const MINI_BOSSES := {
+	"stack_overflow": {"title":"STACK OVERFLOW", "sheet":"stack_overflow", "scale":1.7, "hp":14.0,
+		"speed":110.0, "slam_tell":1.0, "dash_tell":.85, "leap":.55, "dash_speed":520.0,
+		"dash_time":.7, "recover":1.1, "rest":.6, "stagger_hits":4, "stagger":.6,
+		"rage_at":.5, "rage":.8, "add":"cli_gremlin", "shot":"syntax_projectile", "shot_speed":220.0,
+		"fallback":{"sheet":"linter_enforcer", "scale":3.4, "clips":{
+			"idle":"armored_idle", "walk":"armored_walk", "slam_warning":"baton_warning",
+			"slam":"baton", "dash_warning":"baton_warning", "dash":"armored_walk",
+			"recover":"armor_break", "hurt":"bare_hurt", "defeat":"defeat"}}},
+	"zero_day": {"title":"ZERO-DAY", "sheet":"zero_day", "scale":1.7, "hp":18.0,
+		"speed":130.0, "slam_tell":.95, "dash_tell":.8, "leap":.5, "dash_speed":600.0,
+		"dash_time":.7, "recover":1.0, "rest":.5, "stagger_hits":4, "stagger":.6,
+		"rage_at":.5, "rage":.8, "add":"dependency_bot", "shot":"injection_projectile", "shot_speed":260.0,
+		"fallback":{"sheet":"force_push_bandit", "scale":3.4, "clips":{
+			"idle":"idle", "walk":"walk", "slam_warning":"charge_warning", "slam":"charge",
+			"dash_warning":"charge_warning", "dash":"charge", "recover":"recover",
+			"hurt":"hurt", "defeat":"defeat"}}}}
 const FX_ROOT := "res://Assets/code-city-brawl-assets-only/code_city/"
 ## Last-life knockout (knockout.gd DEFAULTS keys; seconds since the hit, world px, radians, dB).
 ## Hoppy recoils facing the hit, then turns with the blow and the death clip does the tipping
