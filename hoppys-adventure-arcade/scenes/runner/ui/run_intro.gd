@@ -3,8 +3,6 @@ extends CanvasLayer
 const Style = preload("res://scenes/runner/ui/hud_style.gd")
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 const Prompts = preload("res://app/controller_prompts.gd")
-const FULL_BEATS := [1.0, 3.0, 3.8, 4.6, 5.4]
-const SHORT_BEATS := [1.0, 1.6]
 var game: Node
 var connections: Dictionary = {}
 var mode: StringName = &""
@@ -12,7 +10,7 @@ var seconds := 0.0
 var skipped := false
 var beat_index := -1
 var beat_label := ""
-var _skip_beat_at := 0.0
+var _beat_at := 0.0
 var root: Control
 var title_group: Control
 var title: Label
@@ -192,7 +190,8 @@ func _begin(value: StringName, duration: float) -> void:
 
 func _beat(index: int, label: String) -> void:
 	if mode == &"" or (skipped and not label.to_upper().begins_with("GO")): return
-	if skipped: _skip_beat_at = float(game.get("run_intro_progress")) * seconds
+	# Beat spacing and intro length are configurable; pop from the signal arrival.
+	_beat_at = float(game.get("run_intro_progress")) * seconds
 	beat_index = index
 	beat_label = label
 	_process(0)
@@ -215,11 +214,10 @@ func _process(_delta: float) -> void:
 	header.modulate.a = smoothstep(0.16, 0.40, age) * out
 	footer.visible = not skipped
 	footer.modulate.a = smoothstep(0.16, 0.40, age) * out
-	var times: Array = SHORT_BEATS if mode == &"short" else FULL_BEATS
-	var is_count := beat_index >= (0 if mode == &"short" else 1) and beat_index < times.size()
+	var is_count := beat_index >= 0 and beat_label.to_upper() in ["READY", "3", "2", "1", "GO!"]
 	countdown.visible = is_count and (not skipped or beat_label.to_upper().begins_with("GO"))
 	if is_count:
-		var beat_age := maxf(0, age - _skip_beat_at) if skipped else maxf(0, normalized_age - float(times[beat_index]))
+		var beat_age := maxf(0, age - _beat_at)
 		var go := beat_label.to_upper().begins_with("GO")
 		count_label.text = beat_label.to_upper()
 		count_label.add_theme_color_override("font_color", Palette.MINT if go else Palette.CREAM)
@@ -278,7 +276,7 @@ func _reset() -> void:
 	skipped = false
 	beat_index = -1
 	beat_label = ""
-	_skip_beat_at = 0
+	_beat_at = 0
 	if root == null: return
 	root.hide()
 	title_group.hide()

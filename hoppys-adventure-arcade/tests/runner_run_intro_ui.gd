@@ -19,6 +19,36 @@ const FULL_BEATS := [[1.0, "TITLE"], [3.0, "3"], [3.8, "2"], [4.6, "1"], [5.4, "
 const SHORT_BEATS := [[1.0, "READY"], [1.6, "GO!"]]
 const INTRO_SIGNALS: Array[StringName] = [&"run_intro", &"run_intro_beat", &"run_intro_skipped", &"run_intro_ended"]
 
+## Facade stand-in for the beat-timing checks: just the signals and mirrors the overlay reads.
+class BeatClock extends Node:
+	signal run_intro(mode: StringName, seconds: float)
+	signal run_intro_beat(index: int, label: String)
+	signal run_intro_skipped
+	signal run_intro_ended
+	signal paused_changed(value: bool)
+	var run_intro_mode: StringName = &""
+	var run_intro_progress := 0.0
+	var paused := false
+	func can_skip_run_intro() -> bool:
+		return false
+
+## Restores the SceneTree pause on every exit path: explicit restore() on the normal path, and
+## NOTIFICATION_PREDELETE when a runtime error aborts the function that owns the guard.
+class PauseGuard extends RefCounted:
+	var tree: SceneTree
+	var prior := false
+	func _init(owner: SceneTree) -> void:
+		tree = owner
+		prior = owner.paused
+	func restore() -> void:
+		if tree != null:
+			tree.paused = prior
+			tree = null
+	func _notification(what: int) -> void:
+		# Inline: self methods are no longer callable during PREDELETE.
+		if what == NOTIFICATION_PREDELETE and tree != null:
+			tree.paused = prior
+
 var failures := 0
 var checks := 0
 var mock_script: GDScript
@@ -55,11 +85,13 @@ func run() -> void:
 	await run_end_cleanup()
 	await run_rebind()
 	await run_pause()
+	await run_beat_timing()
 	await run_letterbox()
 	await run_boss_regressions()
 	await finish()
 
 func finish() -> void:
+	paused = false
 	var audio := root.get_node_or_null("AudioService")
 	if audio != null and audio.has_method("shutdown"):
 		audio.shutdown()
@@ -71,6 +103,7 @@ func finish() -> void:
 	await create_timer(0.3).timeout
 	await process_frame
 	note("%d checks, %d failures" % [checks, failures])
+	paused = false
 	quit(1 if failures > 0 else 0)
 
 ## -- helpers ---------------------------------------------------------------------------------
@@ -317,6 +350,7 @@ func run_pause() -> void:
 	game.begin_intro(&"full")
 	await advance_seconds(game, 3.2)
 	game.pause_intro(true)
+	var pause_guard := PauseGuard.new(self)
 	paused = true
 	var frozen: Dictionary = anim(ui)
 	for i in 20:
@@ -326,7 +360,7 @@ func run_pause() -> void:
 	game.advance_intro(TICK * 30.0)
 	await process_frame
 	check(anim(ui) == frozen, "progress does not move while the game is paused")
-	paused = false
+	pause_guard.restore()
 	game.pause_intro(false)
 	await advance_seconds(game, 0.3)
 	check(anim(ui) != frozen, "animation resumes after unpause")
@@ -336,6 +370,64 @@ func run_pause() -> void:
 		await process_frame
 	check(anim(ui) == a, "state is a pure function of progress (no free-running timers)")
 	drop(pair)
+
+## -- beat timing: the overlay animates from beat arrival, not from default beat times --------
+
+func make_stub_pair() -> Dictionary:
+	var game := BeatClock.new()
+	root.add_child(game)
+	junk.append(game)
+	var ui := (load(UI_SCENE) as PackedScene).instantiate()
+	root.add_child(ui)
+	junk.append(ui)
+	ui.bind(game)
+	return {"game": game, "ui": ui}
+
+func stub_set_progress(game: Node, value: float) -> void:
+	game.run_intro_progress = value
+
+func run_beat_timing() -> void:
+	# [mode, seconds, [[index, label, arrival progress], ...]]. Durations and arrivals both
+	# differ from the 6.0 / 2.2 s defaults and from the default beat times.
+	var cases := [
+		[&"full", 10.0, [[1, "3", 0.42], [2, "2", 0.55], [4, "GO!", 0.80]]],
+		# Late arrivals must start visible even when the default animation already faded.
+		[&"full", 10.0, [[1, "3", 0.72], [4, "GO!", 0.92]]],
+		[&"short", 5.0, [[0, "READY", 0.30], [1, "GO!", 0.70]]],
+	]
+	for item in cases:
+		var mode: StringName = item[0]
+		var length: float = item[1]
+		var pair := make_stub_pair()
+		var game: Node = pair["game"]
+		var ui: Node = pair["ui"]
+		game.run_intro_mode = mode
+		stub_set_progress(game, 0.0)
+		game.run_intro.emit(mode, length)
+		await process_frame
+		for beat in item[2]:
+			var label: String = beat[1]
+			var arrival: float = beat[2]
+			stub_set_progress(game, arrival)
+			game.run_intro_beat.emit(beat[0], label)
+			var tag := "%s %s at %.2f (%.1fs): " % [mode, label, arrival, length]
+			check(count_text(ui) == label.to_upper(), tag + "visible at arrival (got '%s')" % count_text(ui))
+			check(is_equal_approx(ui.countdown.modulate.a, 1.0), tag + "alpha 1 at arrival (%.3f)" % ui.countdown.modulate.a)
+			var pop_start: float = ui.countdown.scale.x
+			check(pop_start > 1.2, tag + "pop at full size at arrival (%.3f)" % pop_start)
+			# 0.1 s after arrival: the pop has progressed, GO! is still on screen.
+			stub_set_progress(game, arrival + 0.1 / length)
+			await process_frame
+			check(ui.countdown.scale.x < pop_start, tag + "pop animates after progress advances")
+			check(ui.countdown.visible and ui.countdown.modulate.a > 0.9, tag + "still visible 0.1s later")
+			# 0.7 s after arrival: faded out, so the animation follows the arrival, not defaults.
+			stub_set_progress(game, minf(arrival + 0.7 / length, 0.99))
+			await process_frame
+			check(ui.countdown.modulate.a < 0.5, tag + "fades by 0.7s after arrival (%.3f)" % ui.countdown.modulate.a)
+		game.run_intro_ended.emit()
+		await process_frame
+		check(not active(ui), "%s: reset after ended" % mode)
+		drop(pair)
 
 ## -- letterbox -------------------------------------------------------------------------------
 
