@@ -4,15 +4,19 @@ const Catalog = preload("res://modes/beatem_up/catalog.gd")
 const Player = preload("res://modes/beatem_up/player.gd")
 const Enemy = preload("res://modes/beatem_up/enemy.gd")
 const Boss = preload("res://modes/beatem_up/boss.gd")
+const MiniBoss = preload("res://modes/beatem_up/mini_boss.gd")
 const StageFlow = preload("res://modes/beatem_up/stage_flow.gd")
 const Knockout = preload("res://modes/beatem_up/knockout.gd")
 const StoryScene = preload("res://modes/beatem_up/story_scene.gd")
 const VictoryScreen = preload("res://modes/beatem_up/victory_screen.gd")
 const Minimap = preload("res://modes/beatem_up/minimap.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
-const PAUSABLE := ["combat","intro","ending","stage_enter","stage_exit","knockout"]
+const PAUSABLE := ["combat","intro","ending","stage_enter","stage_exit","knockout","boss_victory","celebration"]
 ## The minimap is up while Hoppy is in a room, and hidden under the story scenes and end screens.
-const MINIMAP_STATES := ["stage_enter","combat","stage_exit","finisher","knockout"]
+const MINIMAP_STATES := ["stage_enter","combat","stage_exit","boss_victory","finisher","knockout"]
+## The finale after the Force Merge (S3's celebration.gd): play(owner, done), tick(dt), cancel().
+## Until it exists the finisher goes straight to the ending.
+const CELEBRATION := "res://modes/beatem_up/celebration.gd"
 ## Results and game-over menus arm this long after appearing (see _input).
 const OVERLAY_ARM := .5
 const ARMED_OVERLAYS := ["won","game_over"]
@@ -43,6 +47,12 @@ var overlay_clock := 0.0
 var flow: StageFlow
 ## The last-life knockout between the fatal hit and game_over().
 var ko := Knockout.new(Catalog.KNOCKOUT)
+## The finale between the Force Merge and the ending pages, or null without celebration.gd.
+var party: RefCounted = make_party()
+## This stage's district boss has been called in (it guards room 3 once the wave is down).
+var mini_boss_called := false
+## Seconds into the district-boss victory hop.
+var victory_clock := 0.0
 var gate_open := false
 var gate: AnimatedSprite2D
 var world: Node2D
@@ -73,6 +83,9 @@ var toast_left := 0.0
 var held_toast := ""
 var held_toast_seconds := 2.0
 var ui_layer: CanvasLayer
+## The HUD bar's backing strip and the control hints along the bottom (knockout_hud_nodes).
+var hud_strip: ColorRect
+var controls_hint: Label
 var prompt: Label
 var overlay: ColorRect
 var panel: VBoxContainer
@@ -124,12 +137,15 @@ func clamp_ground(pos: Vector2) -> Vector2:
 
 func start_stage(index: int, cinematic := false) -> void:
 	ko.cancel()
+	if party: party.cancel()
 	playing = false
 	get_tree().paused = false
 	for child in world.get_children(): child.queue_free()
 	enemies.clear(); props.clear(); pickups.clear(); bullets.clear(); warnings.clear(); allies.clear()
 	boss = null
 	merge_button = null
+	mini_boss_called = false
+	victory_clock = 0
 	stage_index = index
 	room = 0
 	gate_open = false
@@ -228,6 +244,23 @@ func spawn_enemy(kind: String, pos: Vector2, split := true) -> Node2D:
 	actors.add_child(enemy)
 	enemies.append(enemy)
 	return enemy
+
+## Room 3 of districts 1 and 2: the cleared wave calls in the district boss instead of opening
+## the gate. It drops in on the right and shares the `boss` slot (HUD bar, minimap, no hazards).
+func call_mini_boss() -> void:
+	mini_boss_called = true
+	var key: String = Catalog.MINI_BOSS_STAGES[stage_index]
+	boss = MiniBoss.new()
+	boss.arena = self
+	boss.key = key
+	boss.position = Vector2(room_start()+1000,560)
+	actors.add_child(boss)
+	clear_threats()
+	toast("DISTRICT BOSS · %s" % Catalog.MINI_BOSSES[key].title,3)
+	_update_hud()
+
+func has_mini_boss() -> bool:
+	return is_instance_valid(boss) and boss is MiniBoss
 
 func living_enemies() -> int:
 	var count := 0
@@ -363,6 +396,13 @@ func clear_threats() -> void:
 	bullets.clear()
 	warnings.clear()
 
+## Removes the warnings `owner_node` planted, such as a staggered boss's dropped move.
+func drop_warnings(owner_node: Node) -> void:
+	for i in range(warnings.size()-1,-1,-1):
+		if warnings[i].owner == owner_node:
+			warnings[i].node.queue_free()
+			warnings.remove_at(i)
+
 func fx(sheet: String, pose: String, pos: Vector2, magnify: float, lifetime: float, mirror := false) -> void:
 	var sprite := Art.sprite(sheet,pose,magnify,false)
 	sprite.position = pos
@@ -384,6 +424,8 @@ func _physics_process(dt: float) -> void:
 	if not is_instance_valid(player) or get_tree().paused or state=="leaving": return
 	overlay_clock += dt
 	if state=="finisher": _tick_finisher(dt)
+	elif state=="celebration": party.tick(dt)
+	elif state=="boss_victory": _tick_boss_victory(dt)
 	elif state in ["intro","ending"]: _tick_intro(dt)
 	elif state=="won" and victory.advance(dt): sound("win",player.position)
 	_refresh_minimap(dt)
@@ -406,15 +448,14 @@ func _physics_process(dt: float) -> void:
 	if not playing: return
 	_tick_allies(dt)
 	if not gate_open and living_enemies()==0 and not is_instance_valid(boss):
-		gate_open = true
-		gate.hide()
-		clear_threats()
-		toast("BLOCKERS CLEARED — GO RIGHT  →",3)
-	if gate_open and player.position.x > room_start()+1205:
-		if room<2: enter_room(room+1)
-		elif stage_index+1 < Catalog.TITLES.size():
-			exit_stage()
-			return
+		if room==2 and Catalog.MINI_BOSS_STAGES[stage_index]!="" and not mini_boss_called: call_mini_boss()
+		else:
+			gate_open = true
+			gate.hide()
+			clear_threats()
+			toast("BLOCKERS CLEARED — GO RIGHT  →",3)
+	# Room 3 has no walk-out: its boss's defeat runs Hoppy off (mini_boss_defeated, the finisher).
+	if gate_open and room<2 and player.position.x > room_start()+1205: enter_room(room+1)
 	if not gate_open:
 		hazard_clock -= dt
 		if hazard_clock <= 0:
@@ -562,7 +603,10 @@ func game_over() -> void:
 
 func boss_defeated() -> void:
 	# A knocked-out Hoppy can't win: the knockout ends in game over.
-	if state in ["finisher","ending","won","knockout"]: return
+	if state in ["finisher","celebration","ending","won","knockout","boss_victory"]: return
+	if has_mini_boss():
+		mini_boss_defeated()
+		return
 	# No stage sequence may outlive the boss; a boss-music swap still finishes (it isn't one).
 	if flow.active(): flow.cancel()
 	playing = false
@@ -580,6 +624,51 @@ func boss_defeated() -> void:
 	actors.add_child(merge_button)
 	toast("FORCE MERGE — SHIP THE FIX",5)
 	sound("phase",boss.position)
+
+## A district boss is down: play stops, its adds and threats clear, and Hoppy hops in his victory
+## pose under DISTRICT BOSS DOWN for FLOW.boss_victory seconds before running off (exit_stage).
+func mini_boss_defeated() -> void:
+	# No stage sequence may outlive the boss; a boss-music swap still finishes (it isn't one).
+	if flow.active(): flow.cancel()
+	playing = false
+	state = "boss_victory"
+	victory_clock = 0
+	clear_threats()
+	for enemy in enemies:
+		if is_instance_valid(enemy): enemy.queue_free()
+	enemies.clear()
+	score += 500
+	gate_open = true
+	gate.hide()
+	player.swing_left = 0
+	player.queued = false
+	player.height = 0
+	player.rise = 0
+	player.velocity = Vector2.ZERO
+	player.knock = Vector2.ZERO
+	player.body.position = Vector2.ZERO
+	player.body.modulate = Color.WHITE
+	player.held.hide()
+	player.show_pose("victory")
+	# Keep the celebration in front of the fading boss.
+	player.z_index = 2
+	shake = 0
+	camera.offset = Vector2.ZERO
+	hide_toast()
+	prompt.text = ""
+	flow.banner("DISTRICT BOSS DOWN","%s defeated · +500" % boss.title,float(Catalog.FLOW.boss_victory))
+	sound("win",player.position)
+	_update_hud()
+
+func _tick_boss_victory(dt: float) -> void:
+	var length := float(Catalog.FLOW.boss_victory)
+	victory_clock = minf(length,victory_clock+dt)
+	# One short hop on the spot; the ground position and combat stay frozen.
+	player.body.position.y = -float(Catalog.FLOW.boss_hop)*sin(PI*clampf(victory_clock/(length*.5),0,1))
+	if is_instance_valid(boss) and boss.has_method("defeat_tick"): boss.defeat_tick(dt)
+	if victory_clock >= length:
+		player.body.position.y = 0
+		exit_stage()
 
 func _tick_finisher(dt: float) -> void:
 	finish_clock += dt
@@ -600,12 +689,30 @@ func _tick_finisher(dt: float) -> void:
 		score += 1000
 		_update_hud()
 		screen_fx.material.set_shader_parameter("phase",0.0)
-	if finish_clock >= 4.0: start_ending()
+	if finish_clock >= 4.0: celebrate()
+
+## The finale after the Force Merge, then the ending pages; straight to them without one.
+func celebrate() -> void:
+	if state!="finisher": return
+	if party == null:
+		start_ending()
+		return
+	state = "celebration"
+	party.play(self,start_ending)
+
+## The celebration, when celebration.gd is in the build and has its methods; null otherwise.
+static func make_party() -> RefCounted:
+	if not ResourceLoader.exists(CELEBRATION): return null
+	var script := load(CELEBRATION) as GDScript
+	if script == null or not script.can_instantiate(): return null
+	var made = script.new()
+	if made is RefCounted and made.has_method("play") and made.has_method("tick") and made.has_method("cancel"): return made
+	return null
 
 ## The victory epilogue: the ENDING story scenes play like the opening (Next / Skip, pausable),
 ## then the results screen counts the score up.
 func start_ending() -> void:
-	if state!="finisher": return
+	if state not in ["finisher","celebration"]: return
 	state = "ending"
 	story_pages = "ENDING"
 	intro_page = 0
@@ -658,6 +765,7 @@ func _build_ui() -> void:
 	ui.theme = Style.theme()
 	layer.add_child(ui)
 	var top := ColorRect.new()
+	hud_strip = top
 	top.color = Color(.025,.045,.075,.93)
 	top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	top.offset_bottom = 105
@@ -696,6 +804,7 @@ func _build_ui() -> void:
 	prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	ui.add_child(prompt)
 	var controls := Style.label("",13)
+	controls_hint = controls
 	Prompts.track(controls, func() -> String:
 		return "%s · Move    %s · Jump    %s · Combo    %s · Pickup    %s · Pause" % [
 			Prompts.keys_or_pad("WASD", Prompts.if_pad("stick")),
@@ -737,6 +846,13 @@ func _build_ui() -> void:
 	panel.add_theme_constant_override("separation",18)
 	center.add_child(panel)
 
+## The gameplay chrome the knockout cinematic hides and then restores (knockout.gd): the HUD
+## strip and its labels, the boss bar, toast, prompt, control hints and minimap. Menus, story
+## scenes and the screen shader are not chrome.
+func knockout_hud_nodes() -> Array[CanvasItem]:
+	var nodes: Array[CanvasItem] = [hud_strip,hud,objective,boss_text,boss_bar,toast_label,prompt,controls_hint,minimap]
+	return nodes
+
 func _update_hud() -> void:
 	var health := ""
 	for i in 3: health += "♥ " if i<player.hp else "· "
@@ -751,7 +867,7 @@ func _update_hud() -> void:
 	if is_instance_valid(boss):
 		boss_bar.max_value = boss.max_hp
 		boss_bar.value = boss.hp
-		boss_text.text = "GRAND MERGE CONFLICT · PHASE %d" % boss.phase
+		boss_text.text = ("DISTRICT BOSS · %s" % boss.title) if has_mini_boss() else ("GRAND MERGE CONFLICT · PHASE %d" % boss.phase)
 
 ## Feeds the minimap this frame's room: Hoppy, the living enemies and the boss, and the gate.
 func _refresh_minimap(dt: float) -> void:
@@ -763,7 +879,7 @@ func _refresh_minimap(dt: float) -> void:
 		if is_instance_valid(enemy) and not enemy.dead: foes.append(enemy.position)
 	var heads := PackedVector2Array()
 	if is_instance_valid(boss) and not boss.dead: heads.append(boss.position)
-	minimap.tick(dt,{"stage":stage_index, "room":room, "cleared":gate_open or state=="finisher",
+	minimap.tick(dt,{"stage":stage_index, "room":room, "cleared":gate_open or state in ["finisher","celebration"],
 		"gate_open":gate_open, "room_left":room_start(), "player":player.position,
 		"enemies":foes, "bosses":heads})
 
@@ -874,7 +990,7 @@ func resume() -> void:
 		"intro", "ending":
 			state = back
 			show_intro()
-		"stage_enter", "stage_exit":
+		"stage_enter", "stage_exit", "boss_victory", "celebration":
 			state = back
 			overlay.hide()
 		"knockout":
@@ -885,6 +1001,7 @@ func resume() -> void:
 func leave() -> void:
 	if state=="leaving": return
 	ko.cancel()
+	if party: party.cancel()
 	flow.cancel()
 	# The scene keeps running through the router's fade: nothing may start play or music again.
 	state = "leaving"

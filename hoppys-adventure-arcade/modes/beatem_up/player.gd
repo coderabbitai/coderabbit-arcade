@@ -5,8 +5,11 @@ const BASE_FRAMES = preload("res://Assets/bay-area-blitz-assets-only/bay_area/ho
 const COMBAT_FRAMES = preload("res://Assets/code-city-brawl-player/combat.tres")
 const WeaponRig = preload("res://modes/beatem_up/weapon_rig.gd")
 const BODY_OFFSET := Vector2(0,-38)
-## Poses with a baked armed clip. The three attack poses become step1..3 by combo.
-const ARMED_CLIPS := {"idle":"hold_idle","run":"run","pickup":"equip","hurt":"hurt"}
+## Walking speed in px/s; the armed run's foot cadence is calibrated for it.
+const RUN_SPEED := 240.0
+## Poses with a baked armed clip. The three attack poses become step1..3 by combo. A sheet
+## without one of these clips (walk_up and walk_down are newer) falls back to the unarmed pose.
+const ARMED_CLIPS := {"idle":"hold_idle","run":"run","pickup":"equip","hurt":"hurt","walk_up":"walk_up","walk_down":"walk_down"}
 const ATTACK_POSES := ["jab","swing","kick"]
 var arena: Node2D
 var body: AnimatedSprite2D
@@ -92,7 +95,7 @@ func tick(dt: float) -> void:
 				queued = false
 				start_attack()
 	elif absf(movement.x) <= .15: steer = 0.0
-	var speed := 240.0
+	var speed := RUN_SPEED
 	if effects.has("speed_boost"): speed *= 1.4
 	if effects.has("slow"): speed *= .6
 	if swing_left > 0: speed *= .3
@@ -122,6 +125,8 @@ func tick(dt: float) -> void:
 			pose = "run"
 			base = true
 	show_pose(pose,base)
+	# The stride keeps pace with travel under analog input and speed effects, so feet don't slide.
+	body.speed_scale = movement.length()*speed/RUN_SPEED if pose in ["run","walk_up","walk_down"] else 1.0
 	var attacking := swing_left>0
 	var progress := clampf(1.0-swing_left/swing_duration,0,1)
 	body.position.x=0
@@ -149,6 +154,8 @@ func armed_sheet() -> SpriteFrames:
 	return Art.armed(kind) if kind != "" and held.visible else null
 
 func show_pose(pose: String, base := false) -> void:
+	# Until the combat sheet has its victory cheer, the jump pose stands in.
+	if pose=="victory" and not COMBAT_FRAMES.has_animation("victory"): pose = "jump"
 	var sheet := armed_sheet()
 	var clip: String = ARMED_CLIPS.get(pose,"")
 	if swing_left > 0 and pose in ATTACK_POSES: clip = "step%d" % combo
