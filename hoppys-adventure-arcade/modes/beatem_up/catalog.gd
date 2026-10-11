@@ -7,6 +7,8 @@ const MUSIC := [
 	preload("res://Assets/Audio/Beat'em Up/helldrake(extended).ogg"),
 	preload("res://Assets/Audio/Beat'em Up/kim_lightyear_-_angel_eyes_vision_ii.mp3")]
 const BOSS_MUSIC = preload("res://Assets/Audio/Beat'em Up/Kim Lightyear - The Final.mp3")
+## The district bosses' fight track (mini_boss.gd); BOSS_MUSIC stays the Grand Merge Conflict's.
+const MINI_BOSS_MUSIC = preload("res://Assets/Audio/Beat'em Up/Boss Fight 2.mp3")
 ## Hands-free stage flow (seconds, world px, px/s, dB). stage_flow.gd reads its DEFAULTS keys;
 ## the rest are game.gd's: intro page hold, room-0 telegraph grace, boss-music dip, exit banner,
 ## the hold of each victory-epilogue page, and the district-boss victory hop (length, height).

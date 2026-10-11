@@ -88,6 +88,9 @@ func tick(dt: float) -> void:
 		if not swing_fired and swing_left <= swing_duration * .56:
 			swing_fired = true
 			arena.resolve_swing(self)
+			# A swing that stops play (a boss's last hit) hands Hoppy to a scripted sequence; the rest
+			# of this tick would overwrite its pose, weapon and flicker.
+			if not arena.playing: return
 		if swing_left <= 0:
 			combo_window = .48
 			if steer != 0: facing = steer

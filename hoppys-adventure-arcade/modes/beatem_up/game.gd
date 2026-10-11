@@ -254,6 +254,9 @@ func call_mini_boss() -> void:
 	boss.position = Vector2(room_start()+1000,560)
 	actors.add_child(boss)
 	clear_threats()
+	# Its own fight track (the Grand Merge Conflict keeps BOSS_MUSIC); the next district's
+	# start_stage brings that district's track back.
+	flow.swap_music(Catalog.looped(Catalog.MINI_BOSS_MUSIC),Catalog.FLOW.boss_dip,Catalog.MINI_BOSS_MUSIC)
 	toast("DISTRICT BOSS · %s" % Catalog.MINI_BOSSES[key].title,3)
 	_update_hud()
 
@@ -421,8 +424,10 @@ func sound(key: String, pos: Vector2) -> void:
 func _physics_process(dt: float) -> void:
 	if not is_instance_valid(player) or get_tree().paused or state=="leaving": return
 	overlay_clock += dt
+	# The celebration ticks after the minimap and toast refresh below, so the chrome it hides stays
+	# hidden; never on the frame the finisher starts it.
+	var celebrating := state=="celebration"
 	if state=="finisher": _tick_finisher(dt)
-	elif state=="celebration": party.tick(dt)
 	elif state=="boss_victory": _tick_boss_victory(dt)
 	elif state in ["intro","ending"]: _tick_intro(dt)
 	elif state=="won" and victory.advance(dt): sound("win",player.position)
@@ -433,6 +438,7 @@ func _physics_process(dt: float) -> void:
 	flow.tick(dt,player)
 	if held_toast != "" and state=="combat" and not flow.banner_active(): toast(held_toast,held_toast_seconds)
 	if state=="knockout": _tick_knockout(dt)
+	if celebrating and state=="celebration": party.tick(dt)
 	if not playing: return
 	elapsed += dt
 	shake = maxf(0,shake-dt*28)
@@ -694,6 +700,8 @@ func _tick_finisher(dt: float) -> void:
 func celebrate() -> void:
 	if state!="finisher": return
 	state = "celebration"
+	hide_toast()
+	prompt.text = ""
 	party.play(self,start_ending)
 
 ## The victory epilogue: the ENDING story scenes play like the opening (Next / Skip, pausable),
@@ -774,6 +782,12 @@ func _build_ui() -> void:
 	boss_bar.position = Vector2(-430,47)
 	boss_bar.size = Vector2(405,15)
 	boss_bar.show_percentage = false
+	var bar_back := StyleBoxFlat.new()
+	bar_back.bg_color = Color("1d2733")
+	var bar_fill := StyleBoxFlat.new()
+	bar_fill.bg_color = Color("ffc66c")
+	boss_bar.add_theme_stylebox_override("background",bar_back)
+	boss_bar.add_theme_stylebox_override("fill",bar_fill)
 	ui.add_child(boss_bar)
 	toast_label = Style.label("",22,Color("ffe6a6"))
 	toast_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
@@ -849,7 +863,8 @@ func _update_hud() -> void:
 	for effect in player.effects: statuses += "  "+effect.replace("_"," ").to_upper()+" %ds" % ceili(player.effects[effect])
 	if player.shield: statuses += "  APPROVAL SHIELD"
 	objective.text = "%s · %d/3\n%s%s" % [Catalog.TITLES[stage_index],room+1,weapon,statuses]
-	boss_bar.visible = is_instance_valid(boss)
+	# A fallen district boss leaves the HUD; the Grand Merge Conflict's bar stays for the finisher.
+	boss_bar.visible = is_instance_valid(boss) and not (has_mini_boss() and boss.dead)
 	boss_text.visible = boss_bar.visible
 	if is_instance_valid(boss):
 		boss_bar.max_value = boss.max_hp
