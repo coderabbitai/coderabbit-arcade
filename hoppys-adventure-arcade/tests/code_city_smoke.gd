@@ -38,6 +38,10 @@ func run() -> void:
 	while (current_scene==null or current_scene.get("player")==null) and loading<600:
 		await process_frame
 		loading+=1
+	if current_scene==null or current_scene.get("player")==null:
+		check(false,"Code City loads within 600 frames")
+		quit(1)
+		return
 	game=current_scene
 	game.test_mode=true
 	# A window that starts unfocused can focus-pause the game before test_mode is set.

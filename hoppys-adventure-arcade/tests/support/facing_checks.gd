@@ -90,7 +90,7 @@ static func check_facing(p, check: Callable, spawn: Callable, kind: String, clea
 		p.tick(DT)
 		if p.facing!=1: stayed=false
 		guard+=1
-	check.call(stayed and p.steer==0 and p.facing==1,"A swing with no horizontal input leaves steer at 0")
+	check.call(stayed and p.swing_left<=0 and p.steer==0 and p.facing==1,"A swing with no horizontal input ends with steer at 0")
 	p.facing=1
 	p.start_attack()
 	check.call(p.facing==1 and p.steer==0,"start_attack keeps a scripted facing when steer is 0")

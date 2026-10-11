@@ -35,13 +35,21 @@ func capture(name: String) -> void:
 	print("CODE CITY BOSS CAPTURE: ", path if ok else "failed to write "+path)
 	if not ok: failures += 1
 
+## Records a miss and returns false, so the caller skips what depended on it.
+func expect(ok: bool, message: String) -> bool:
+	if not ok:
+		print("CODE CITY BOSS CAPTURE: ", message)
+		failures += 1
+	return ok
+
 ## Hit bursts and slam dust fade on tweens; clear them so a still shows the pose, not the fx.
 func clear_fx() -> void:
 	for child in game.actors.get_children():
 		if child is AnimatedSprite2D and child != game.merge_button: child.queue_free()
 
-## Room 3 of `stage` with its wave gone, Hoppy left of centre and the camera on the room.
-func boss_room(stage: int) -> void:
+## Room 3 of `stage` with its wave gone, Hoppy left of centre and the camera on the room. False
+## (with a recorded miss) when the stage never reaches combat.
+func boss_room(stage: int) -> bool:
 	game.flow.cancel()
 	game.start_stage(stage)
 	freeze()
@@ -49,6 +57,7 @@ func boss_room(stage: int) -> void:
 	while game.state != "combat" and guard < 400:
 		tick()
 		guard += 1
+	if not expect(game.state == "combat", "district %d never reached combat (state %s)" % [stage+1, game.state]): return false
 	game.flow.banner("", "", 0)
 	game.enter_room(2)
 	for e in game.enemies:
@@ -59,21 +68,20 @@ func boss_room(stage: int) -> void:
 	game.ally_clock = 30.0
 	game.camera.position = Vector2(game.room_start()+640, 360)
 	game.player.position = Vector2(game.room_start()+430, 590)
+	return true
 
 func district(stage: int) -> void:
-	boss_room(stage)
+	if not boss_room(stage): return
 	tick() # the cleared wave calls in the district boss
 	var boss = game.boss
-	if not game.has_mini_boss():
-		print("CODE CITY BOSS CAPTURE: no district boss in district %d" % (stage+1))
-		failures += 1
-		return
+	if not expect(game.has_mini_boss(), "no district boss in district %d" % (stage+1)): return
 	boss.set_physics_process(false)
 	var guard := 0
 	while boss.state == "intro" and guard < 200:
 		boss.tick(DT)
 		tick()
 		guard += 1
+	if not expect(boss.state != "intro", "%s never finished its drop-in" % boss.title): return
 	boss.cycle = 0
 	boss.telegraph() # cycle 1 is the slam, planted on Hoppy
 	for i in 24:
@@ -94,42 +102,41 @@ func district(stage: int) -> void:
 	while game.state != "boss_victory" and guard < 60:
 		p.tick(DT)
 		guard += 1
-	if game.state != "boss_victory":
-		print("CODE CITY BOSS CAPTURE: the swing did not defeat %s (state %s)" % [boss.title, game.state])
-		failures += 1
-		return
+	if not expect(game.state == "boss_victory", "the swing did not defeat %s (state %s)" % [boss.title, game.state]): return
 	guard = 0
 	while game.state == "boss_victory" and game.victory_clock < .7 and guard < 200:
 		tick()
 		guard += 1
+	if not expect(game.state == "boss_victory" and game.victory_clock >= .7, "the victory hop never reached its peak (state %s, clock %.2f)" % [game.state, game.victory_clock]): return
 	clear_fx()
 	await capture("district_boss_down")
 	guard = 0
 	while not (game.state == "stage_exit" and game.flow.phase == "exit_run" and game.flow.clock >= .35) and guard < 400:
 		tick()
 		guard += 1
+	if not expect(game.state == "stage_exit" and game.flow.phase == "exit_run" and game.flow.clock >= .35, "the run-off never got under way (state %s, phase %s)" % [game.state, game.flow.phase]): return
 	await capture("district_boss_runoff")
 
 func finale() -> void:
-	boss_room(2)
+	if not boss_room(2): return
 	var boss = game.boss
+	if not expect(is_instance_valid(boss) and not game.has_mini_boss(), "district 3 has no Grand Merge Conflict"): return
 	boss.set_physics_process(false)
 	for damage in [12, 6, 6]:
 		boss.vulnerable = true
 		boss.take_hit(damage, 0, Vector2.ZERO, true)
 	freeze()
+	if not expect(game.state == "finisher", "the Grand Merge Conflict's defeat did not start the finisher (state %s)" % game.state): return
 	var guard := 0
 	while game.state == "finisher" and guard < 600:
 		tick()
 		guard += 1
+	if not expect(game.state == "celebration", "the Force Merge did not reach the celebration (state %s)" % game.state): return
 	guard = 0
 	while game.state == "celebration" and game.party.clock < 2.6 and guard < 600:
 		tick()
 		guard += 1
-	if game.state != "celebration":
-		print("CODE CITY BOSS CAPTURE: the Force Merge did not reach the celebration (state %s)" % game.state)
-		failures += 1
-		return
+	if not expect(game.state == "celebration" and game.party.clock >= 2.6, "the celebration never reached mid-party (state %s, clock %.2f)" % [game.state, game.party.clock]): return
 	clear_fx()
 	await capture("celebration")
 
@@ -156,6 +163,10 @@ func run() -> void:
 	while (current_scene == null or current_scene.get("player") == null) and loading < 600:
 		await process_frame
 		loading += 1
+	if current_scene == null or current_scene.get("player") == null:
+		print("CODE CITY BOSS CAPTURE: Code City never loaded; no images written")
+		quit(1)
+		return
 	game = current_scene
 	game.test_mode = true
 	paused = false

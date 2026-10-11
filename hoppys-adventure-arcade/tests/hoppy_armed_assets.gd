@@ -263,25 +263,49 @@ func validate_run_stride(label: String, sheet: Image, cell: Vector2i, entry: Dic
 	check(stance_x is Array and stance_x.size() == STANCE_X.size(), label + ": locomotion stance_x lists 6 planted foot x values")
 	if not stance_x is Array or stance_x.size() != STANCE_X.size():
 		return
-	var fps := float(run.get("fps", 0))
-	var scale := float(locomotion.get("body_scale", 0.0))
+	var fps_value: Variant = run.get("fps", 0)
+	var fps := float(fps_value) if (fps_value is int or fps_value is float) else 0.0
+	var scale_value: Variant = locomotion.get("body_scale", 0.0)
+	var scale := float(scale_value) if (scale_value is int or scale_value is float) else 0.0
+	var speed_value: Variant = locomotion.get("matched_world_speed", 0.0)
+	var matched := float(speed_value) if (speed_value is int or speed_value is float) else 0.0
 	check(is_equal_approx(fps, 13.0), label + ": run fps %s must be 13" % str(run.get("fps")))
 	check(int(locomotion.get("stance_step_px", 0)) == 12, label + ": stance_step_px must be 12")
 	check(absf(scale - 1.55) < 0.001, label + ": body_scale must be 1.55")
-	check(absf(float(locomotion.get("matched_world_speed", 0.0)) - 241.8) <= 0.5, label + ": matched_world_speed must be about 241.8")
+	check(absf(matched - 241.8) <= 0.5, label + ": matched_world_speed must be about 241.8")
+	var stance_numeric := true
 	for i in STANCE_X.size():
-		check(int(stance_x[i]) == STANCE_X[i], label + ": stance_x[%d] must be %d" % [i, STANCE_X[i]])
-		var cell_frame := int(frames[i])
-		check(cell_frame == int(entry.clips.run.frames[0]) + i, label + ": run frame %d must sit in cell %d" % [i, int(entry.clips.run.frames[0]) + i])
-		check(anchor_near_alpha(sheet, cell, cell_frame, [int(stance_x[i]), int(pivot_data[1])]), label + ": no opaque sole at stance x %d, y %d in run cell %d" % [int(stance_x[i]), int(pivot_data[1]), cell_frame])
-	for pair in STANCE_PAIRS:
-		var delta := float(int(stance_x[pair[1]]) - int(stance_x[pair[0]]))
-		var drift := RUN_SPEED / fps + delta * scale
-		check(absf(drift) <= 1.0, label + ": planted foot slides %.2f px per frame across stance %d to %d (limit 1.0)" % [drift, pair[0], pair[1]])
+		var stance_value: Variant = stance_x[i]
+		if not (stance_value is int or stance_value is float):
+			stance_numeric = false
+			check(false, label + ": stance_x[%d] must be %d" % [i, STANCE_X[i]])
+			continue
+		check(int(stance_value) == STANCE_X[i], label + ": stance_x[%d] must be %d" % [i, STANCE_X[i]])
+		var frame_value: Variant = frames[i]
+		if not (frame_value is int or frame_value is float):
+			check(false, label + ": run frame %d must sit in cell %d" % [i, i])
+			continue
+		var cell_frame := int(frame_value)
+		var first_value: Variant = frames[0]
+		var first_ok := first_value is int or first_value is float
+		var first_cell := int(first_value) if first_ok else 0
+		check(first_ok and cell_frame == first_cell + i, label + ": run frame %d must sit in cell %d" % [i, first_cell + i])
+		var grid_y := sheet.get_height() / cell.y if cell.y > 0 else 0
+		var on_sheet := cell_frame >= 0 and grid_y > 0 and cell_frame < 4 * grid_y
+		var sole_value: Variant = pivot_data[1]
+		var sole_ok := sole_value is int or sole_value is float
+		var sole_y := int(sole_value) if sole_ok else 0
+		check(on_sheet and sole_ok and anchor_near_alpha(sheet, cell, cell_frame, [int(stance_value), sole_y]), label + ": no opaque sole at stance x %d, y %d in run cell %d" % [int(stance_value), sole_y, cell_frame])
+	if fps > 0.0 and stance_numeric:
+		for pair in STANCE_PAIRS:
+			var delta := float(int(stance_x[pair[1]]) - int(stance_x[pair[0]]))
+			var drift := RUN_SPEED / fps + delta * scale
+			check(absf(drift) <= 1.0, label + ": planted foot slides %.2f px per frame across stance %d to %d (limit 1.0)" % [drift, pair[0], pair[1]])
 	var walk_fps_ok := true
 	for clip_name in ["walk_up", "walk_down"]:
 		var walk: Variant = clips.get(clip_name, {})
-		walk_fps_ok = walk_fps_ok and walk is Dictionary and is_equal_approx(float(walk.get("fps", 0)), 9.0)
+		var walk_fps: Variant = walk.get("fps", 0) if walk is Dictionary else 0
+		walk_fps_ok = walk_fps_ok and walk is Dictionary and (walk_fps is int or walk_fps is float) and is_equal_approx(float(walk_fps), 9.0)
 	check(walk_fps_ok, label + ": walk_up and walk_down run at 9 fps")
 
 
@@ -396,15 +420,19 @@ func validate_frames(path: String, label: String, expected: Dictionary, entry: D
 			continue
 		check(frames.get_frame_count(clip_name) == contract.frames, label + "/" + clip_name + ": frame count")
 		check(frames.get_animation_loop(clip_name) == contract.loop, label + "/" + clip_name + ": loop flag")
-		var manifest_clip: Variant = entry.get("clips", {}).get(clip_name) if entry.get("clips") is Dictionary else null
-		if clip_name == "run" and expected.has("grid") and expected.grid.y > 4:
+		var manifest_clips: Variant = entry.get("clips", {})
+		var manifest_clip: Variant = manifest_clips.get(clip_name) if manifest_clips is Dictionary else null
+		var grid: Variant = expected.get("grid", Vector2i.ZERO)
+		if clip_name == "run" and grid is Vector2i and grid.y > 4:
 			# Code City calibrates run fps to the 240 px/s ground speed; the manifest is the source.
-			var listed_fps := float(manifest_clip.get("fps", 0)) if manifest_clip is Dictionary else 0.0
+			var fps_value: Variant = manifest_clip.get("fps", 0) if manifest_clip is Dictionary else 0
+			var listed_fps := float(fps_value) if (fps_value is int or fps_value is float) else 0.0
 			check(listed_fps > 0.0 and is_equal_approx(frames.get_animation_speed(clip_name), listed_fps), label + "/run: frame rate matches manifest")
 		elif clip_name == "run":
 			check(is_equal_approx(frames.get_animation_speed(clip_name), float(run_fps)), label + "/run: frame rate")
 		elif manifest_clip is Dictionary and manifest_clip.has("fps"):
-			check(is_equal_approx(frames.get_animation_speed(clip_name), float(manifest_clip.fps)), label + "/" + clip_name + ": frame rate matches manifest")
+			var clip_fps: Variant = manifest_clip.fps
+			check((clip_fps is int or clip_fps is float) and is_equal_approx(frames.get_animation_speed(clip_name), float(clip_fps)), label + "/" + clip_name + ": frame rate matches manifest")
 		for index in frames.get_frame_count(clip_name):
 			var texture := frames.get_frame_texture(clip_name, index)
 			check(texture != null, label + "/" + clip_name + ": missing texture")
@@ -553,7 +581,7 @@ func validate_pilot_bounds(folder: String, mode: String, cell: Vector2i, pilot: 
 		return
 	var pilot_image := Image.new()
 	var pilot_path := folder + str(pilot.get("weapon", "")) + ".png"
-	if pilot_image.load(pilot_path) != OK or pilot_image.get_size().x != cell.x * 4:
+	if pilot_image.load(pilot_path) != OK or pilot_image.get_size().x != cell.x * 4 or pilot_image.get_height() < cell.y:
 		check(false, mode + ": cannot inspect pilot hold_idle bounds")
 		return
 	var hold_idle := pilot_image.get_region(Rect2i(0, 0, cell.x, cell.y))
@@ -567,7 +595,7 @@ func validate_weapon_bounds(folder: String, mode: String, cell: Vector2i, weapon
 	check(Rect2i(Vector2i.ZERO, cell).encloses(rect), mode + "/carry/" + weapon + ": baked hold_idle_bounds outside cell")
 	var image := Image.new()
 	var path := folder + weapon + ".png"
-	if image.load(path) != OK or image.get_size().x != cell.x * 4:
+	if image.load(path) != OK or image.get_size().x != cell.x * 4 or image.get_height() < cell.y:
 		check(false, mode + "/carry/" + weapon + ": cannot inspect baked hold_idle bounds")
 		return
 	var hold_idle := image.get_region(Rect2i(0, 0, cell.x, cell.y))

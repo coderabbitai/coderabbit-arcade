@@ -64,11 +64,15 @@ const FACE_PIVOT := Vector2(48,86)
 ## Read from the player script's ARMED_CLIPS, so the same test holds before and after S1 maps
 ## walk_up and walk_down, and it never guesses from the body's current frame.
 func armed_clip_for(actor, pose: String) -> String:
-	var constants: Dictionary=actor.get_script().get_script_constant_map()
+	var script: Script=actor.get_script() if actor!=null else null
+	if script==null: return ""
+	var constants: Dictionary=script.get_script_constant_map()
 	var map: Variant=constants.get("ARMED_CLIPS",{})
 	var sheet := Art.armed(actor.weapon)
 	if not map is Dictionary or sheet==null or not map.has(pose): return ""
-	var clip: String=map[pose]
+	var clip_value: Variant=map[pose]
+	if not (clip_value is String or clip_value is StringName): return ""
+	var clip := str(clip_value)
 	return clip if sheet.has_animation(clip) else ""
 
 ## A mapped armed pose must play the armed sheet's own clip and show no carry icon or legacy cel.
@@ -78,6 +82,9 @@ func check_armed_pose(actor, pose: String) -> bool:
 	if clip=="": return false
 	var sheet := Art.armed(actor.weapon)
 	var label := "%s %s facing %d" % [actor.weapon,pose,int(actor.facing)]
+	if sheet==null:
+		check(false,label+" plays the armed %s clip (got %s)" % [clip,actor.body.animation])
+		return true
 	check(actor.body.sprite_frames==sheet and actor.body.animation==clip,label+" plays the armed %s clip (got %s)" % [clip,actor.body.animation])
 	if pose=="walk_up" or pose=="walk_down":
 		check(sheet.get_frame_count(clip)==4 and sheet.get_animation_loop(clip),label+" armed clip is a 4 frame loop")
@@ -224,25 +231,45 @@ func check_armed_locomotion_clips() -> void:
 		var spec := Art.armed_spec(weapon)
 		check(sheet != null and not spec.is_empty(), weapon+" has an armed sheet and manifest entry")
 		if sheet == null or spec.is_empty(): continue
-		var pivot := Vector2(spec.pivot[0],spec.pivot[1])
-		check(Vector2(spec.cell[0],spec.cell[1])==Vector2(192,128) and pivot==Vector2(72,118),weapon+" keeps the 192x128 cell and (72,118) pivot")
+		var cell: Variant=spec.get("cell",[])
+		var pivot_data: Variant=spec.get("pivot",[])
+		var cell_ok: bool=cell is Array and cell.size()==2
+		var pivot_ok: bool=pivot_data is Array and pivot_data.size()==2
+		var pivot := Vector2(pivot_data[0],pivot_data[1]) if pivot_ok else Vector2.ZERO
+		check(cell_ok and pivot_ok and Vector2(cell[0],cell[1])==Vector2(192,128) and pivot==Vector2(72,118),weapon+" keeps the 192x128 cell and (72,118) pivot")
+		var clips: Variant=spec.get("clips",{})
+		var anchors: Variant=spec.get("anchors",{})
+		var hands: Dictionary={}
+		if anchors is Dictionary and anchors.get("hand",{}) is Dictionary:
+			hands=anchors.hand
 		for clip in contract:
 			var count: int=contract[clip]
 			check(sheet.has_animation(clip) and sheet.get_frame_count(clip)==count and sheet.get_animation_loop(clip),weapon+" "+clip+" loops over "+str(count)+" frames")
-			var listed: Array=spec.clips.get(clip,{}).get("frames",[])
+			var clip_spec: Variant=clips.get(clip,{}) if clips is Dictionary else {}
+			var listed_v: Variant=clip_spec.get("frames",[]) if clip_spec is Dictionary else []
+			var listed: Array=listed_v if listed_v is Array else []
 			check(listed.size()==count,weapon+" manifest lists "+str(count)+" "+clip+" frames")
 			if not sheet.has_animation(clip): continue
 			var fps := sheet.get_animation_speed(clip)
 			check(fps>=(12.0 if clip=="run" else 8.0) and fps<=(15.0 if clip=="run" else 10.0),weapon+" "+clip+" fps %.1f is in range" % fps)
-			var hands: Dictionary=spec.anchors.get("hand",{})
+			if not pivot_ok: continue
 			for i in sheet.get_frame_count(clip):
-				var image := sheet.get_frame_texture(clip,i).get_image()
+				var texture := sheet.get_frame_texture(clip,i)
+				var image := texture.get_image() if texture!=null else null
+				if image!=null and image.is_compressed(): image.decompress()
+				if image==null:
+					check(false,weapon+" "+clip+" frame "+str(i)+" has a texture")
+					continue
 				var used := image.get_used_rect()
 				check(used.has_area() and used.end.y>=pivot.y-3 and used.end.y<=pivot.y+3,weapon+" "+clip+" frame "+str(i)+" stands on the foot pivot row")
-				if i<listed.size(): check(hands.has(str(int(listed[i]))),weapon+" "+clip+" frame "+str(i)+" has a hand anchor")
+				if i<listed.size():
+					if listed[i] is int or listed[i] is float:
+						check(hands.has(str(int(listed[i]))),weapon+" "+clip+" frame "+str(i)+" has a hand anchor")
+					else:
+						check(false,weapon+" "+clip+" frame "+str(i)+" has a hand anchor")
 		# Vertical walks keep every pre-existing cell: attack and idle clips still sit in cells 0 to 15.
 		for clip in ["hold_idle","run","step1","step2","step3","equip","hurt","walk_up","walk_down"]:
-			check(spec.clips.has(clip),weapon+" manifest keeps clip "+clip)
+			check(clips is Dictionary and clips.has(clip),weapon+" manifest keeps clip "+clip)
 
 ## `-- --capture-locomotion [--capture-path=<png>]` renders every armed sheet's locomotion frames
 ## through the engine and quits without running the suite. Rows per weapon: run facing right, run
@@ -307,6 +334,12 @@ func capture_locomotion(path: String) -> void:
 			printerr("FAIL: no armed sheet for "+weapon)
 			failures+=1
 			continue
+		var pivot_data: Variant=Art.armed_spec(weapon).get("pivot",[])
+		if not pivot_data is Array or pivot_data.size()<2:
+			printerr("FAIL: "+weapon+" armed spec has no foot pivot")
+			failures+=1
+			continue
+		var foot_pivot := Vector2(pivot_data[0],pivot_data[1])
 		var origin := Vector2i((w/rows_per_column)*CAPTURE_COLUMNS*CAPTURE_CELL.x,(w%rows_per_column)*block_h)
 		var label := Label.new()
 		label.text=weapon
@@ -322,7 +355,7 @@ func capture_locomotion(path: String) -> void:
 				var cell_origin := Vector2(origin)+Vector2(f*CAPTURE_CELL.x,r*CAPTURE_CELL.y)
 				var ground := ColorRect.new()
 				ground.color=Color(.3,.33,.38)
-				ground.position=cell_origin+Vector2(0,Art.armed_spec(weapon).pivot[1])
+				ground.position=cell_origin+Vector2(0,foot_pivot.y)
 				ground.size=Vector2(CAPTURE_CELL.x,1)
 				stage.add_child(ground)
 				var sprite := AnimatedSprite2D.new()
@@ -334,8 +367,7 @@ func capture_locomotion(path: String) -> void:
 				var offset: Vector2=Art.armed_offset(weapon)
 				sprite.offset=Vector2(-offset.x if row[1] else offset.x,offset.y)
 				# The offset moves the texture so the foot pivot lands on the sprite position.
-				var pivot: Array=Art.armed_spec(weapon).pivot
-				sprite.position=cell_origin+Vector2(pivot[0],pivot[1])
+				sprite.position=cell_origin+Vector2(foot_pivot.x,foot_pivot.y)
 				stage.add_child(sprite)
 				count+=1
 			var tag := Label.new()
@@ -350,12 +382,18 @@ func capture_locomotion(path: String) -> void:
 	while RenderingServer.viewport_get_update_mode(rid)!=RenderingServer.VIEWPORT_UPDATE_DISABLED and drawn<DRAW_FRAMES:
 		await RenderingServer.frame_post_draw
 		drawn+=1
-	check(RenderingServer.viewport_get_update_mode(rid)==RenderingServer.VIEWPORT_UPDATE_DISABLED,"The contact sheet viewport draws within %d frames" % DRAW_FRAMES)
-	var image := viewport.get_texture().get_image()
-	var dir := ProjectSettings.globalize_path(path).get_base_dir()
-	DirAccess.make_dir_recursive_absolute(dir)
-	var saved := image.save_png(ProjectSettings.globalize_path(path))
-	check(saved==OK and count>0,"Locomotion contact sheet saved with %d frames to %s" % [count,path])
+	var drew: bool=RenderingServer.viewport_get_update_mode(rid)==RenderingServer.VIEWPORT_UPDATE_DISABLED
+	check(drew,"The contact sheet viewport draws within %d frames" % DRAW_FRAMES)
+	if drew:
+		var viewport_texture := viewport.get_texture()
+		var image: Image=viewport_texture.get_image() if viewport_texture!=null else null
+		if image==null:
+			check(false,"The contact sheet viewport produced an image")
+		else:
+			var dir := ProjectSettings.globalize_path(path).get_base_dir()
+			DirAccess.make_dir_recursive_absolute(dir)
+			var saved := image.save_png(ProjectSettings.globalize_path(path))
+			check(saved==OK and count>0,"Locomotion contact sheet saved with %d frames to %s" % [count,path])
 	viewport.queue_free()
 	await finish_capture()
 

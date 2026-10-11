@@ -41,6 +41,12 @@ func advance_to(seconds: float) -> void:
 	while game.state=="knockout" and game.ko.clock<seconds and guard<600:
 		step()
 		guard += 1
+	if guard>=600: check(false, tag("advance_to(%.2f) reaches its clock within 600 ticks" % seconds))
+## A polling loop that ran out of ticks leaves the knockout running: record it once per loop.
+func ko_stuck(label: String) -> bool:
+	if game.state!="knockout": return false
+	check(false, tag("%s: the knockout ends within the tick cap" % label))
+	return true
 func freeze() -> void:
 	game.set_physics_process(false)
 	if is_instance_valid(game.player):
@@ -368,6 +374,7 @@ func check_poses() -> void:
 				elif frame_bad=="": frame_bad = "clock %.3f frame %s" % [c, str(p.body.frame)]
 		step()
 		guard += 1
+	ko_stuck("poses")
 	check(face_bad=="", tag("he faces the hit, then the throw (%s)" % face_bad))
 	if heroes: check(pose_bad=="", tag("hurt before 0.75 s, then defeat (%s)" % pose_bad))
 	else:
@@ -406,6 +413,7 @@ func check_weapon() -> void:
 		elif p.held.visible and hidden_bad=="": hidden_bad = "clock %.3f" % c
 		step()
 		guard += 1
+	ko_stuck("weapon")
 	if heroes:
 		check(saw_air and air_bad=="", tag("the stamp is hidden and the body is unarmed while airborne (%s)" % air_bad))
 		check(saw_carry and carry_bad=="", tag("the stamp and its carry return after touchdown (%s)" % carry_bad))
@@ -435,6 +443,7 @@ func check_effects() -> void:
 				duck_at = game.flow.music_db
 		step()
 		guard += 1
+	ko_stuck("effects")
 	check(saw_dust, tag("a dust sprite is in actors right after touchdown"))
 	check(stars_ok, tag("stars are visible during out_cold"))
 	check(duck_ok, tag("music ducks during out_cold (db %.2f)" % duck_at))
@@ -538,6 +547,7 @@ func check_flow() -> void:
 		if game.toast_label.visible or game.held_toast!="" or game.prompt.text!="": chatter = true
 		if game.flow.banner_panel.visible: chatter = true
 		guard += 1
+	ko_stuck("flow")
 	check(not moved and game.room==room, tag("the flow stays idle and the room does not change past the gate"))
 	check(not chatter, tag("toasts, the prompt and the stage banner stay hidden"))
 func check_menu() -> void:
@@ -551,6 +561,7 @@ func check_menu() -> void:
 	while game.state=="knockout" and guard<600:
 		step()
 		guard += 1
+	if ko_stuck("menu"): return
 	check(game.state=="game_over" and game.overlay.visible and game.primary.has_focus(), tag("game over focuses Retry"))
 	await process_frame
 	if heroes:
@@ -910,7 +921,7 @@ func check_preview() -> void:
 	var stars = p.get_node_or_null("KnockoutStars")
 	var orbit: Node2D = stars if stars else p
 	var screen: Vector2 = orbit.get_global_transform_with_canvas().origin
-	var zoom := float(game.camera.zoom.x)
+	var zoom := float(game.camera.zoom.x) if game.camera!=null else 1.0
 	var star_box := Rect2(screen-Vector2(64, 40)*zoom, Vector2(128, 80)*zoom)
 	var callout_xform: Transform2D = game.ko.callout.get_global_transform_with_canvas()
 	var callout_rect := Rect2(callout_xform.origin, game.ko.callout.size*callout_xform.get_scale())
@@ -979,6 +990,7 @@ func settle_window() -> void:
 		await process_frame
 		frames += 1
 	print("window settled at ", root.get_texture().get_size(), " after ", frames, " frames")
+	if Vector2i(root.get_texture().get_size())!=FRAME: check(false, "the window settles to 1280x720 within 120 frames")
 func frame_ok(image: Image) -> bool:
 	return Vector2i(image.get_width(), image.get_height())==FRAME
 func save_capture(image: Image, name: String) -> bool:
@@ -1020,6 +1032,7 @@ func check_cinematic() -> void:
 		elif dw>0.0 and before_clock<SLOWMO_FROM-DT:
 			if absf(dc/dw-1.0)>.02 and scale_bad=="": scale_bad = "before slow-mo, clock %.3f ratio %.3f" % [before_clock, dc/dw]
 		guard += 1
+	ko_stuck("cinematic")
 	check(scale_bad=="", tag("the pose clock runs .55x in wall time between .12 and .75 and 1x outside it (%s)" % scale_bad))
 	check(not time_scale_bad and is_equal_approx(Engine.time_scale, 1.0), tag("Engine.time_scale is never touched"))
 ## The card is `ko.card` (a Control) with `card_title` and `top_bar`/`bottom_bar` letterbox bars.
@@ -1065,6 +1078,9 @@ func check_card() -> void:
 func check_camera() -> void:
 	ready_combat()
 	var cam: Camera2D = game.camera
+	if cam==null:
+		check(false, tag("the game has a camera for the camera check"))
+		return
 	var zoom0 := Vector2(1.1, 1.1)
 	var pos0 := Vector2(game.room_start()+600.0, 340.0)
 	cam.zoom = zoom0
@@ -1081,6 +1097,7 @@ func check_camera() -> void:
 		peak = maxf(peak, float(cam.zoom.x))
 		if game.state=="knockout" and game.ko.phase=="card" and absf(cam.zoom.x-zoom0.x*ZOOM)<.01: moved = true
 		guard += 1
+	ko_stuck("camera")
 	check(peak>zoom0.x+.05 and peak<=zoom0.x*ZOOM+.01, tag("the camera pushes in during the knockout, to at most ZOOMx its snapshot zoom (peak %.3f)" % peak))
 	check(moved, tag("the camera holds the full zoom of its snapshot through the card"))
 	check(cam.zoom.is_equal_approx(zoom0) and cam.position.is_equal_approx(pos0), tag("camera position and zoom are restored to their snapshot on completion"))
@@ -1088,7 +1105,9 @@ func check_camera() -> void:
 	cam.zoom = zoom0
 	cam.position = pos0
 	game.player.position = Vector2(game.room_start()+640.0, 580.0)
-	strike(true)
+	if not strike(true):
+		check(false, tag("a fatal hit is accepted for the camera cancel"))
+		return
 	advance_to(1.5)
 	check(not cam.zoom.is_equal_approx(zoom0), tag("the camera is mid-push before cancel (%.3f)" % cam.zoom.x))
 	game.ko.cancel()
@@ -1376,6 +1395,9 @@ func check_hud_real() -> void:
 		for n in nodes:
 			if n.is_visible_in_tree(): leaked = true
 		guard += 1
+	if game.state!="knockout" or game.ko.phase!="card":
+		check(false, tag("the real HUD check reaches the card (state %s, phase %s)" % [game.state, str(game.ko.phase)]))
+		return
 	check(not leaked, tag("no HUD or minimap node is visible from the throw to the card"))
 	do_pause()
 	check(game.state=="paused" and game.overlay.visible, tag("pausing during the card still shows the pause overlay"))

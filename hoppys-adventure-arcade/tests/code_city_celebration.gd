@@ -294,7 +294,7 @@ func check_music_flow() -> void:
 	check(calls==1 and not party.active(), "the party completes once")
 	check(flow.music.playing and flow.music.stream!=boss_stream, "the loop is flow-owned and keeps playing after completion")
 	var looped: AudioStream = flow.music.stream
-	var loops: bool = ("loop_mode" in looped and looped.loop_mode!=AudioStreamWAV.LOOP_DISABLED) or ("loop" in looped and looped.loop)
+	var loops: bool = looped!=null and ("loop_mode" in looped and looped.loop_mode!=AudioStreamWAV.LOOP_DISABLED) or ("loop" in looped and looped.loop)
 	check(loops, "the stream the flow plays loops (without editing the shared asset)")
 	if looped is AudioStreamWAV:
 		var pcm: PackedByteArray = looped.data
@@ -493,6 +493,9 @@ func check_capture() -> void:
 			owner_refresh(owner)
 			party.tick(DT)
 			clock += DT
+		if clock<float(at):
+			check(false, "the party is still running at %.1f s for capture %s (clock %.2f)" % [float(at), shots[at], clock])
+			break
 		await RenderingServer.frame_post_draw
 		await RenderingServer.frame_post_draw
 		var image: Image = root.get_texture().get_image()
@@ -526,6 +529,7 @@ func settle_window() -> void:
 		await process_frame
 		frames += 1
 	print("window settled at ", root.get_texture().get_size(), " after ", frames, " frames")
+	if Vector2i(root.get_texture().get_size())!=FRAME: check(false, "the window settles to 1280x720 within 120 frames")
 func frame_ok(image: Image) -> bool:
 	return Vector2i(image.get_width(), image.get_height())==FRAME
 func image_ok_save(image: Image, name: String) -> bool:
@@ -594,6 +598,7 @@ func check_hud_hidden() -> void:
 		if party.active() and hud_states(owner)!=[false, false, false, false, false]: leaked = true
 		if not menu.visible: menu_hidden = true
 		guard += 1
+	check(not party.active(), "the HUD party ends within %d ticks" % guard)
 	check(not leaked, "the HUD stays hidden on every tick even when the owner re-shows it first")
 	check(not menu_hidden and menu.visible, "the pause/menu overlay outside the hook is never hidden")
 	# Paused: the owner's refresh still happens, and the pause menu must stay usable.
@@ -731,14 +736,21 @@ func real_capture(name: String) -> void:
 	check(frame_ok(image), "real-game capture %s is 1280x720 (%dx%d)" % [name, image.get_width(), image.get_height()])
 	check(image_ok_save(image, name), "real-game capture %s saved" % name)
 	check(not is_flat(image), "real-game capture %s is not a flat frame" % name)
+func real_abort() -> void:
+	if is_instance_valid(current_scene): current_scene.queue_free()
 func check_real_game() -> void:
 	if is_instance_valid(stage): stage.free()
 	stage = null
-	change_scene_to_file(CODE_CITY)
+	if change_scene_to_file(CODE_CITY)!=OK:
+		check(false, "the Code City scene starts loading")
+		return
 	await process_frame
 	await process_frame
 	game = current_scene
-	if game==null or not game.has_method("celebrate"):
+	if game==null:
+		check(false, "the Code City scene loads for the real-game check")
+		return
+	if not game.has_method("celebrate"):
 		print("real-game celebration check skipped: this game has no celebrate()")
 		if is_instance_valid(current_scene): current_scene.queue_free()
 		await process_frame
@@ -753,11 +765,19 @@ func check_real_game() -> void:
 	while game.state!="combat" and guard<400:
 		real_step()
 		guard += 1
+	if game.state!="combat":
+		check(false, "the real game reaches combat within %d ticks (state %s)" % [guard, game.state])
+		real_abort()
+		return
 	real_freeze()
 	game.enter_room(2)
 	real_freeze()
 	game.playing = true
-	check(is_instance_valid(game.boss), "the real game has its final boss in room 3")
+	var has_boss: bool = is_instance_valid(game.boss) and is_instance_valid(game.player)
+	check(has_boss, "the real game has its final boss and player in room 3")
+	if not has_boss:
+		real_abort()
+		return
 	var nodes: Array = game.knockout_hud_nodes() if game.has_method("knockout_hud_nodes") else []
 	check(nodes.size()>0, "the real game lists HUD nodes for the party")
 	game.player.hp = 3
@@ -771,7 +791,11 @@ func check_real_game() -> void:
 	while game.state=="finisher" and guard<600:
 		real_step()
 		guard += 1
-	check(game.state=="celebration" and game.get("party")!=null and game.party.active(), "the finisher hands over to the celebration (state %s)" % game.state)
+	var celebrating: bool = game.state=="celebration" and game.get("party")!=null and game.party.active()
+	check(celebrating, "the finisher hands over to the celebration (state %s)" % game.state)
+	if not celebrating:
+		real_abort()
+		return
 	# The very tick that enters the celebration must already have hidden the chrome, not the next one.
 	check(hud_visible(nodes)==0, "every HUD node is hidden on the tick that enters the celebration (%d visible)" % hud_visible(nodes))
 	check(game.party.clock<=DT*2.0+.001, "the celebration entry is on its first tick (clock %.3f)" % game.party.clock)

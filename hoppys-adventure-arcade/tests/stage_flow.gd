@@ -55,6 +55,11 @@ func defeat_district_boss() -> bool:
 		boss.tick(DT)
 		guard += 1
 	boss.take_hit(999, 0, game.player.position)
+	# The drop-in shrugs off hits, so a boss still in its intro never starts the hop.
+	if game.state!="boss_victory":
+		check(false, "The district boss is defeated into the victory hop (boss %s, game %s)" % [boss.state, game.state])
+		quit(1)
+		return false
 	return true
 ## Right edge sits at room_start()+1280, so exit_x is room_start()+1340 on any viewport.
 func frame_room() -> void:
@@ -615,6 +620,10 @@ func check_armed_overlays() -> void:
 			game._physics_process(DT)
 			waited += 1
 		check(game.state=="game_over" and game.primary.has_focus(), "Game over focuses Retry")
+		# The menu checks below press the overlay's buttons; without game over there are none.
+		if game.state!="game_over":
+			quit(1)
+			return
 		await guarded("Game over", activate)
 		check(game.state=="stage_enter", "A %s after 0.5 s presses Retry" % activate)
 	for activate in ["click", "touch"]:
@@ -632,5 +641,9 @@ func check_armed_overlays() -> void:
 			game._physics_process(DT)
 			guard += 1
 		check(game.state=="won" and game.victory.visible and not game.victory.landed and game.victory.action.disabled, "The Force Merge hands off through the celebration and the ending to the results screen mid-count")
+		# The results checks press the results screen's button; without it they have nothing to press.
+		if game.state!="won":
+			quit(1)
+			return
 		await guarded_results(activate)
 		await reload()

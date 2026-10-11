@@ -157,7 +157,9 @@ static func run_frame_count(spec: Dictionary) -> int:
 ## from frame to frame because the stance advances instead of the body staying still.
 static func foot_reference_x(body: AnimatedSprite2D, spec: Dictionary, anim_frame: int) -> float:
 	var pivot: Variant = spec.get("pivot", [])
-	if body.sprite_frames == null or not body.sprite_frames.has_animation("run") or not pivot is Array or pivot.size() < 2:
+	if body == null or body.sprite_frames == null or not body.sprite_frames.has_animation("run") or not pivot is Array or pivot.size() < 2:
+		return NAN
+	if anim_frame < 0 or anim_frame >= body.sprite_frames.get_frame_count("run"):
 		return NAN
 	var texture := body.sprite_frames.get_frame_texture("run", anim_frame)
 	var image := texture.get_image() if texture != null else null
@@ -189,31 +191,40 @@ class RunSample:
 ## Sheet, clip, offset, and body-x drift across the four run frames.
 static func measure_run_frames(actor, sheet: SpriteFrames, spec: Dictionary, expected_offset: Vector2, facing: float) -> RunSample:
 	var sample := RunSample.new()
+	if actor == null or actor.body == null:
+		sample.measured = false
+		sample.detail = "no body"
+		return sample
 	var frames: SpriteFrames = actor.body.sprite_frames
-	sample.pose_ok = frames == sheet and actor.body.animation == "run" and frames.has_animation("run") and frames.get_frame_count("run") == run_frame_count(spec)
+	sample.pose_ok = frames != null and frames == sheet and actor.body.animation == "run" and frames.has_animation("run") and frames.get_frame_count("run") == run_frame_count(spec)
 	sample.detail = "clip %s offset %s expected %s" % [actor.body.animation, actor.body.offset, expected_offset]
 	sample.measured = sample.pose_ok
 	sample.foot = spec.get("run_registration", "body") == "foot"
 	sample.limit = (RUN_STRIDE_MIN_PX if sample.foot else RUN_BODY_LIMIT_PX) * float(actor.body.scale.x)
 	if sample.pose_ok:
-		var pivot_x := float(spec.pivot[0])
-		var sign: float = -1.0 if facing < 0.0 else 1.0
-		for f in run_frame_count(spec):
-			actor.body.pause()
-			actor.body.frame = f
-			var frame_ok: bool = actor.body.sprite_frames == sheet and actor.body.animation == "run" and actor.body.offset.is_equal_approx(expected_offset) and actor.body.flip_h == (facing < 0.0)
-			if not frame_ok:
-				sample.pose_ok = false
-				sample.measured = false
-				sample.detail = "frame %d clip %s offset %s expected %s flip %s" % [f, actor.body.animation, actor.body.offset, expected_offset, actor.body.flip_h]
-				break
-			var cel := foot_reference_x(actor.body, spec, f) if sample.foot else armed_run_cel(actor.body, spec, f)
-			if is_nan(cel):
-				sample.measured = false
-				sample.detail = "frame %d has no body pixels behind the paw" % f
-				break
-			sample.cels.append(cel)
-			sample.worlds.append((cel - pivot_x) * actor.body.scale.x * sign)
+		var pivot: Variant = spec.get("pivot", [])
+		if not pivot is Array or pivot.is_empty() or not (pivot[0] is int or pivot[0] is float):
+			sample.measured = false
+			sample.detail = "run spec has no pivot"
+		else:
+			var pivot_x := float(pivot[0])
+			var sign: float = -1.0 if facing < 0.0 else 1.0
+			for f in run_frame_count(spec):
+				actor.body.pause()
+				actor.body.frame = f
+				var frame_ok: bool = actor.body.sprite_frames == sheet and actor.body.animation == "run" and actor.body.offset.is_equal_approx(expected_offset) and actor.body.flip_h == (facing < 0.0)
+				if not frame_ok:
+					sample.pose_ok = false
+					sample.measured = false
+					sample.detail = "frame %d clip %s offset %s expected %s flip %s" % [f, actor.body.animation, actor.body.offset, expected_offset, actor.body.flip_h]
+					break
+				var cel := foot_reference_x(actor.body, spec, f) if sample.foot else armed_run_cel(actor.body, spec, f)
+				if is_nan(cel):
+					sample.measured = false
+					sample.detail = "frame %d has no body pixels behind the paw" % f
+					break
+				sample.cels.append(cel)
+				sample.worlds.append((cel - pivot_x) * actor.body.scale.x * sign)
 	else:
 		sample.measured = false
 	if sample.worlds.size() == run_frame_count(spec):

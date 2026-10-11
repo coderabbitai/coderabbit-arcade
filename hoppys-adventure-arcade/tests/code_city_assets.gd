@@ -54,7 +54,11 @@ func run() -> void:
 				check(image.detect_alpha() != Image.ALPHA_NONE, clip.name + " alpha")
 			clip_count += 1
 		if not MINI_BOSSES.has(key):
-			frame_count += spec.frames.size()
+			var counted: Variant = spec.get("frames", [])
+			if counted is Array:
+				frame_count += counted.size()
+			else:
+				check(false, key + " publishes a frame list")
 	for bg in manifest.backgrounds.values():
 		var texture := load(BASE + "code_city/" + bg.file) as Texture2D
 		check(texture != null and texture.get_size() == Vector2(1280,720), bg.file)
@@ -80,46 +84,92 @@ func run() -> void:
 	await finish(0 if failures == 0 else 1)
 
 func standing_height(key: String, clip_name: String) -> float:
-	var spec: Dictionary = manifest.atlases[key]
-	for clip in spec.clips:
-		if clip.name == clip_name:
-			var bounds: Array = spec.frames[int(clip.frames[0])].visible_bounds
-			return float(bounds[3] - bounds[1])
+	if not manifest is Dictionary:
+		return 0.0
+	var atlases: Variant = manifest.get("atlases", {})
+	if not atlases is Dictionary or not atlases.get(key) is Dictionary:
+		return 0.0
+	var spec: Dictionary = atlases[key]
+	var clips: Variant = spec.get("clips", [])
+	var frames: Variant = spec.get("frames", [])
+	if not clips is Array or not frames is Array:
+		return 0.0
+	for clip in clips:
+		if not clip is Dictionary or str(clip.get("name", "")) != clip_name:
+			continue
+		var listed: Variant = clip.get("frames", [])
+		if not listed is Array or listed.is_empty():
+			return 0.0
+		var index := int(listed[0])
+		if index < 0 or index >= frames.size() or not frames[index] is Dictionary:
+			return 0.0
+		var bounds: Variant = frames[index].get("visible_bounds", [])
+		if not bounds is Array or bounds.size() < 4:
+			return 0.0
+		return float(bounds[3]) - float(bounds[1])
 	return 0.0
 
 func check_mini_bosses() -> void:
 	var reference := standing_height("linter_enforcer", "armored_idle")
 	check(reference > 0.0, "linter_enforcer reference height measured")
+	var atlases: Variant = manifest.get("atlases", {}) if manifest is Dictionary else {}
 	for key in MINI_BOSSES:
-		check(manifest.atlases.has(key), key + " atlas is in the manifest")
-		if not manifest.atlases.has(key):
+		var present: bool = atlases is Dictionary and atlases.has(key)
+		check(present, key + " atlas is in the manifest")
+		if not present or not atlases[key] is Dictionary:
+			if present:
+				check(false, key + " atlas entry is an object")
 			continue
-		var spec: Dictionary = manifest.atlases[key]
+		var spec: Dictionary = atlases[key]
 		check(spec.get("facing", "") == "left", key + " faces left")
-		check(Vector2i(int(spec.cell[0]), int(spec.cell[1])) == Vector2i(256, 256) and Vector2i(int(spec.pivot[0]), int(spec.pivot[1])) == Vector2i(128, 230), key + " keeps the 256 square cell and (128, 230) pivot")
-		check(spec.frames.size() == 16, key + " has 16 populated cells")
+		var cell: Variant = spec.get("cell", [])
+		var pivot: Variant = spec.get("pivot", [])
+		var cell_ok: bool = cell is Array and cell.size() == 2
+		var pivot_ok: bool = pivot is Array and pivot.size() == 2
+		check(cell_ok and pivot_ok and Vector2i(int(cell[0]), int(cell[1])) == Vector2i(256, 256) and Vector2i(int(pivot[0]), int(pivot[1])) == Vector2i(128, 230), key + " keeps the 256 square cell and (128, 230) pivot")
+		var frames: Variant = spec.get("frames", [])
+		check(frames is Array and frames.size() == 16, key + " has 16 populated cells")
+		var clips: Variant = spec.get("clips", [])
+		if not clips is Array:
+			check(false, key + " clips are exactly " + ", ".join(MINI_BOSS_CLIPS.keys()) + " (got none)")
+			continue
+		if not cell_ok or not pivot_ok or not frames is Array:
+			continue
 		var names := []
-		for clip in spec.clips:
-			names.append(clip.name)
+		for clip in clips:
+			names.append(str(clip.get("name", "")) if clip is Dictionary else "")
 		var wanted: Array = MINI_BOSS_CLIPS.keys()
 		wanted.sort()
 		var got := names.duplicate()
 		got.sort()
 		check(got == wanted, key + " clips are exactly " + ", ".join(MINI_BOSS_CLIPS.keys()) + " (got " + ", ".join(names) + ")")
-		for clip in spec.clips:
-			if not MINI_BOSS_CLIPS.has(clip.name):
+		for clip in clips:
+			if not clip is Dictionary or not MINI_BOSS_CLIPS.has(str(clip.get("name", ""))):
 				continue
-			var contract: Array = MINI_BOSS_CLIPS[clip.name]
+			var clip_name := str(clip.name)
+			var contract: Array = MINI_BOSS_CLIPS[clip_name]
+			var listed_frames: Variant = clip.get("frames", [])
+			if not listed_frames is Array:
+				check(false, key + "/" + clip_name + " frames [] should be " + str(contract[0]))
+				continue
 			var listed := []
-			for index in clip.frames:
+			for index in listed_frames:
 				listed.append(int(index))
-			check(listed == contract[0], key + "/" + clip.name + " frames " + str(listed) + " should be " + str(contract[0]))
-			check(is_equal_approx(float(clip.fps), float(contract[1])), key + "/" + clip.name + " fps")
-			check(clip.loop == contract[2], key + "/" + clip.name + " loop flag")
-			for index in clip.frames:
-				var b: Array = spec.frames[int(index)].visible_bounds
-				check(int(b[0]) >= 0 and int(b[1]) >= 0 and int(b[2]) <= int(spec.cell[0]) and int(b[3]) <= int(spec.cell[1]), key + "/" + clip.name + " art fits its cell")
-				check(int(b[3]) <= int(spec.pivot[1]) + 2, key + "/" + clip.name + " does not sink below the foot pivot")
+			check(listed == contract[0], key + "/" + clip_name + " frames " + str(listed) + " should be " + str(contract[0]))
+			var fps_value: Variant = clip.get("fps", null)
+			check((fps_value is float or fps_value is int) and is_equal_approx(float(fps_value), float(contract[1])), key + "/" + clip_name + " fps")
+			check(clip.get("loop") == contract[2], key + "/" + clip_name + " loop flag")
+			for index in listed_frames:
+				var frame_index := int(index)
+				if frame_index < 0 or frame_index >= frames.size() or not frames[frame_index] is Dictionary:
+					check(false, key + "/" + clip_name + " frame " + str(frame_index) + " is missing")
+					continue
+				var b: Variant = frames[frame_index].get("visible_bounds", [])
+				if not b is Array or b.size() < 4:
+					check(false, key + "/" + clip_name + " publishes visible bounds")
+					continue
+				check(int(b[0]) >= 0 and int(b[1]) >= 0 and int(b[2]) <= int(cell[0]) and int(b[3]) <= int(cell[1]), key + "/" + clip_name + " art fits its cell")
+				check(int(b[3]) <= int(pivot[1]) + 2, key + "/" + clip_name + " does not sink below the foot pivot")
 		var stand := standing_height(key, "idle")
 		check(stand >= 85.0 and stand <= 110.0, key + " idle stands about 98 px (got %.0f)" % stand)
 		var ratio := standing_height(key, "idle") / maxf(reference, 1.0)
