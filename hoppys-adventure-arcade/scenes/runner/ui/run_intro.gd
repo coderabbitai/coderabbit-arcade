@@ -201,11 +201,11 @@ func _process(_delta: float) -> void:
 	if _viewport_size != get_viewport().get_visible_rect().size: _layout()
 	var p := clampf(float(game.get("run_intro_progress")), 0, 1)
 	var age := p * seconds
-	var normalized_age := p * (6.0 if mode == &"full" else 2.2)
 	var out := 1.0 - smoothstep(0.93, 1, p)
-	var title_age := normalized_age - 1.0
-	var title_alpha := smoothstep(0, 0.12, title_age) * (1.0 - smoothstep(2.20, 2.65, normalized_age))
-	title_group.visible = mode == &"full" and title_age >= 0 and normalized_age < 2.65 and not skipped
+	# Keep the title's original timing relative to its beat, regardless of intro length.
+	var title_age := age - _beat_at
+	var title_alpha := smoothstep(0, 0.12, title_age) * (1.0 - smoothstep(1.20, 1.65, title_age))
+	title_group.visible = mode == &"full" and beat_label.to_lower() == "title" and title_age >= 0 and title_age < 1.65 and not skipped
 	lower_third.visible = title_group.visible
 	title_group.modulate.a = title_alpha
 	lower_third.modulate.a = title_alpha

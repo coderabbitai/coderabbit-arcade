@@ -89,6 +89,7 @@ func run() -> void:
 	await run_rebind()
 	await run_pause()
 	await run_beat_timing()
+	await run_title_clock()
 	await run_letterbox()
 	await run_boss_regressions()
 	await finish()
@@ -516,6 +517,70 @@ func run_beat_timing() -> void:
 		await process_frame
 		check(not active(ui), "%s: reset after ended" % mode)
 		drop(pair)
+
+## -- title card: anchored to the title beat's arrival, whatever the configured length --------
+
+func expected_title_alpha(age: float) -> float:
+	return smoothstep(0.0, 0.12, age) * (1.0 - smoothstep(1.20, 1.65, age))
+
+func expected_title_scale(age: float) -> float:
+	return lerpf(1.10, 1.0, 1.0 - pow(1.0 - clampf(age / 0.28, 0.0, 1.0), 3))
+
+func run_title_clock() -> void:
+	# [full length, title arrival seconds]: a stretched 10 s intro and the 6 s default.
+	for item in [[10.0, 1.7], [6.0, 1.0]]:
+		var length: float = item[0]
+		var arrival: float = item[1]
+		var pair := make_stub_pair()
+		var game: Node = pair["game"]
+		var ui: Node = pair["ui"]
+		var tag := "title %.0fs: " % length
+		game.run_intro_mode = &"full"
+		stub_set_progress(game, 0.0)
+		game.run_intro.emit(&"full", length)
+		await process_frame
+		# Before the title signal the card stays hidden, even past the default 1.0 s mark.
+		for early in [0.5, 1.0, arrival - 0.1]:
+			stub_set_progress(game, early / length)
+			await process_frame
+			check(not ui.title_group.visible, tag + "card hidden before the title beat at %.2fs" % early)
+		stub_set_progress(game, arrival / length)
+		game.run_intro_beat.emit(0, "title")
+		await process_frame
+		check(ui.title_group.visible, tag + "card shown at the title beat")
+		check(ui.title_group.modulate.a < 0.02, tag + "card starts transparent (%.3f)" % ui.title_group.modulate.a)
+		for age in [0.06, 0.12, 0.28, 0.6, 1.0, 1.3, 1.5]:
+			stub_set_progress(game, (arrival + age) / length)
+			await process_frame
+			check(ui.title_group.visible, tag + "card visible at +%.2fs" % age)
+			check(absf(ui.title_group.modulate.a - expected_title_alpha(age)) < 0.02, tag + "alpha at +%.2fs is %.3f, expected %.3f" % [age, ui.title_group.modulate.a, expected_title_alpha(age)])
+			check(absf(ui.title_group.scale.x - expected_title_scale(age)) < 0.01, tag + "scale at +%.2fs is %.3f, expected %.3f" % [age, ui.title_group.scale.x, expected_title_scale(age)])
+		check(is_equal_approx(ui.title_group.scale.x, 1.0), tag + "scale settled by +0.28s")
+		# Fade completes before the first count when the count lands after the fade-out.
+		stub_set_progress(game, (arrival + 1.7) / length)
+		await process_frame
+		check(not ui.title_group.visible and card_text(ui) == "", tag + "card gone after the fade-out")
+		stub_set_progress(game, (arrival + 2.0) / length)
+		game.run_intro_beat.emit(1, "3")
+		await process_frame
+		check(not ui.title_group.visible, tag + "card stays cleared when the first count arrives")
+		check(count_text(ui) == "3", tag + "first count shows")
+		drop(pair)
+	# An early count clears a still-visible title.
+	var early_pair := make_stub_pair()
+	var early_game: Node = early_pair["game"]
+	var early_ui: Node = early_pair["ui"]
+	early_game.run_intro_mode = &"full"
+	early_game.run_intro.emit(&"full", 10.0)
+	stub_set_progress(early_game, 0.17)
+	early_game.run_intro_beat.emit(0, "title")
+	stub_set_progress(early_game, 0.20)
+	await process_frame
+	check(early_ui.title_group.visible, "title still up 0.3s after its beat")
+	early_game.run_intro_beat.emit(1, "3")
+	await process_frame
+	check(not early_ui.title_group.visible, "an early first count clears the title card")
+	drop(early_pair)
 
 ## -- letterbox -------------------------------------------------------------------------------
 
