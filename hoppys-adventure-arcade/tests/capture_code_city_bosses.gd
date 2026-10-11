@@ -30,7 +30,8 @@ func capture(name: String) -> void:
 	await process_frame
 	await RenderingServer.frame_post_draw
 	var path := OUT_DIR+name+".png"
-	var ok: bool = root.get_texture().get_image().save_png(path) == OK
+	var image := root.get_texture().get_image()
+	var ok: bool = image.get_size() == Vector2i(1280, 720) and image.save_png(path) == OK
 	print("CODE CITY BOSS CAPTURE: ", path if ok else "failed to write "+path)
 	if not ok: failures += 1
 
@@ -81,9 +82,22 @@ func district(stage: int) -> void:
 	game.hide_toast()
 	await capture("mini_boss_%d" % (stage+1))
 	if stage != 0: return
+	# The last hit lands through a real swing, the way play reaches the victory hop.
 	game.clear_threats()
 	boss.state = "chase"
-	boss.take_hit(999, 0, game.player.position)
+	boss.hp = 1.0
+	var p = game.player
+	p.position = boss.position-Vector2(80, 0)
+	p.facing = 1.0
+	p.start_attack()
+	guard = 0
+	while game.state != "boss_victory" and guard < 60:
+		p.tick(DT)
+		guard += 1
+	if game.state != "boss_victory":
+		print("CODE CITY BOSS CAPTURE: the swing did not defeat %s (state %s)" % [boss.title, game.state])
+		failures += 1
+		return
 	guard = 0
 	while game.state == "boss_victory" and game.victory_clock < .7 and guard < 200:
 		tick()
@@ -124,9 +138,19 @@ func run() -> void:
 		print("CODE CITY BOSS CAPTURE: requires a graphical display; no images written")
 		quit(1)
 		return
-	root.size = Vector2i(1280, 720)
-	# A graphical start is still adding the autoloads' nodes to root for its first frames.
+	# A graphical start is still adding the autoloads' nodes to root for its first frames, and the
+	# maximized window can open taller than 720 px; settle, then size it like the other stills.
 	await create_timer(.5).timeout
+	root.size = Vector2i(1280, 720)
+	DisplayServer.window_set_size(Vector2i(1280, 720))
+	var sizing := 0
+	while Vector2i(root.get_texture().get_size()) != Vector2i(1280, 720) and sizing < 120:
+		await process_frame
+		sizing += 1
+	if Vector2i(root.get_texture().get_size()) != Vector2i(1280, 720):
+		print("CODE CITY BOSS CAPTURE: the window stayed %s, not 1280x720; no images written" % root.get_texture().get_size())
+		quit(1)
+		return
 	change_scene_to_file("res://scenes/beatem_up/code_city_brawl.tscn")
 	var loading := 0
 	while (current_scene == null or current_scene.get("player") == null) and loading < 600:
