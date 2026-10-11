@@ -14,7 +14,7 @@ Arrow keys, Tab, D-pad, or left stick navigate; Enter / gamepad A activates; Esc
 
 ## Behavior and ownership
 
-- Scene-local showcase: idle previews 0–12 every 9 seconds; 1.2-second fades. Focusing a mode cycles its previews every 3 seconds with 0.6-second fades: Platformer cycles three themes; Beat’em Up cycles all three Code City Brawl stages followed by all three Heroes vs. Villains stages, and the Endless Runner cycles four in-game stills (corridor, power-ups, sharp turn, boss).
+- Scene-local showcase: idle previews 0–12 every 9 seconds; 1.2-second fades. Focusing a mode cycles its previews every 3 seconds with 0.6-second fades: Platformer cycles three themes; Beat’em Up cycles all three Code City Brawl stages followed by all three Heroes vs. Villains stages, and the Endless Runner cycles four in-game stills (corridor, power-ups, a jump over a hazard, boss).
 - Focus exit waits 2 seconds, then restores the idle index and remaining dwell. Modals pause showcase timing. Parallax continues behind overlays.
 - At most two preview nodes exist. During a fade, requests coalesce to the latest selection; the outgoing node is freed before another fade begins. Each preview is a `CanvasGroup`, so a fade blends the flattened scene instead of letting its parallax layers show through each other. Preview textures are loaded once and kept, so transitions never read from disk.
 - Layout recenters on viewport resize (not every frame). Menu buttons grow 5% around their centre on hover/focus and keep that scale when their container re-sorts.
@@ -33,7 +33,7 @@ As of 2026-09-30, `hoppy.gd` uses the supplied `Assets/Character/Hoppy/2D/hoppy-
 | Bay Area Blitz | `Assets/bay-area-blitz-assets-only/bay_area/backdrop.png` |
 | Orbital Ops | `Assets/orbital-ops-assets-only/orbital_ops/` starfield and station hull |
 | Enchanted Repo | `Assets/enchanted-repo-assets-only/enchanted_repo/` sky and treeline |
-| Codebase Corridor, Power-ups, Sharp Turns, Boss Fights | `Assets/runner/menu_previews/runner_*.png`, captured from an autopilot run by `tests/capture_runner_menu_previews.gd` (graphical: `Godot --always-on-top --path hoppys-adventure-arcade --script res://tests/capture_runner_menu_previews.gd`) |
+| Codebase Corridor, Power-ups, Jump/Roll/Dodge, Boss Fights | `Assets/runner/menu_previews/runner_*.png`, captured from an autopilot run by `tests/capture_runner_menu_previews.gd` (graphical: `Godot --always-on-top --path hoppys-adventure-arcade --script res://tests/capture_runner_menu_previews.gd`) |
 | CLI / IDE District | `Assets/code-city-brawl-assets-only/code_city/district_background.png` |
 | Security Sector | `Assets/code-city-brawl-assets-only/code_city/security_background.png` |
 | Git Repository HQ | `Assets/code-city-brawl-assets-only/code_city/hq_background.png` |

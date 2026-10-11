@@ -1,5 +1,13 @@
 extends SceneTree
 const Mock = preload("res://scenes/runner/ui/dev/mock_runner_game.gd")
+
+## The facade has no encounter clock. BossHud and the title card both bind these signals.
+class CinematicMock extends Mock:
+	signal boss_cinematic(kind: StringName, mode: StringName, seconds: float)
+	signal boss_cinematic_skipped(mode: StringName)
+	signal boss_cinematic_ended(mode: StringName)
+	var boss_cinematic_progress := 0.0
+	var boss_time_factor := 1.0
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
 const Alert = preload("res://scenes/runner/ui/pursuit_alert.gd")
 const Pursuer = preload("res://scenes/runner/pursuer/pursuer_visual.gd")
@@ -19,6 +27,7 @@ var failures := 0
 var canvas_items := 0
 var mesh_triangles := 0
 var draws_3d := 0
+var cinematic: CanvasLayer
 func _initialize() -> void:
 	run.call_deferred()
 func check(ok: bool, message: String) -> void:
@@ -54,9 +63,12 @@ func run() -> void:
 	OS.add_logger(logger)
 	create_timer(30.0).timeout.connect(func() -> void: quit(1))
 	root.size = Vector2i(1280, 720)
-	var mock := Mock.new()
+	var mock := CinematicMock.new()
 	mock.autoplay = false
 	root.add_child(mock)
+	cinematic = (load("res://scenes/runner/ui/boss_cinematic.tscn") as PackedScene).instantiate()
+	root.add_child(cinematic)
+	cinematic.bind(mock)
 	mock.start_run()
 	await frames()
 	await check_real_startup()
@@ -93,13 +105,13 @@ func run() -> void:
 	check(not mock.hud.pursuit_alert.visible, "alert recovery closes")
 	mock.stage_started.emit(2, &"Merge Conflict Hydra", 24.0)
 	mock.stage_banner._process(0.5)
-	check(mock.stage_banner.visible, "stage banner")
-	mock.turn_incoming.emit(1, 1.0)
-	mock.turn_started.emit(1, 1.0)
+	check(mock.stage_banner.visible and mock.stage_banner.title.text == "S T A G E  2", "stage banner")
 	mock.stage_started.emit(3, &"Legacy Monolith", 26.0)
-	check(not mock.stage_banner.visible, "turn defers banner")
-	mock.turn_finished.emit()
-	check(mock.stage_banner.visible, "turn releases banner")
+	check(mock.stage_banner.visible and mock.stage_banner.title.text == "S T A G E  3", "the next stage card replaces the open one")
+	mock.boss_intro.emit(mock.boss_kind, "Merge Conflict Hydra", 1.0)
+	check(not mock.stage_banner.visible, "boss intro hides the stage card")
+	mock.stage_started.emit(4, &"Legacy Monolith", 26.0)
+	check(not mock.stage_banner.visible, "a visible boss keeps the next stage card hidden")
 	mock.boss_hp = 140
 	mock.boss_intro.emit(mock.boss_kind, "Merge Conflict Hydra", 1.0)
 	mock.boss_spawned.emit(mock.boss_kind, 140)
@@ -119,16 +131,9 @@ func run() -> void:
 		mock.hud._state(&"running")
 		mock.hud._toast("CODERABBIT TOOL: REVIEW COMMENT \u2014 auto-fires at the boss", 10, Palette.ORANGE, 2.4, true)
 		mock.hud._process(0.01)
-		mock.hud.turn_label.text = "TURN RIGHT 3"
-		mock.hud.turn_panel.show()
 		await frames()
 		await check_centered_titles(mock)
-		check(absf(mock.hud.turn_panel.get_global_rect().get_center().x-extent.x*0.5) <= 2, "R7 centered turn plate")
-		var label: Label = mock.hud.turn_label
-		var text_width := label.get_theme_font("font").get_string_size(label.text,HORIZONTAL_ALIGNMENT_LEFT,-1,label.get_theme_font_size("font_size")).x
-		check(label.get_theme_font_size("font_size") >= 34, "R7 warning type minimum")
-		check((label.size.x-text_width)*0.5 >= mock.hud.turn_icon.position.x+mock.hud.turn_icon.size.x+6, "R7 vector arrow clears centered copy")
-		check(mock.hud.turn_icon.tint == mock.hud.turn_label.get_theme_color("font_color"), "R7 arrow and turn copy share hue")
+		_check_clear_of_removed_phase(mock.hud)
 		# Boss cards deliberately share one slot, but must never be visible together.
 		var panels := {
 			"approvals": mock.hud.hp_row.get_parent().get_parent(),
@@ -136,8 +141,6 @@ func run() -> void:
 			"score": mock.hud.score_label.get_parent().get_parent(),
 			"pursuit countdown": mock.hud.pursuit_panel,
 			"boss plate": mock.boss_overlay.panel,
-			"intro card": mock.boss_overlay.intro_card,
-			"turn plate": mock.hud.turn_panel,
 			"toast": mock.hud.toast_panel,
 			"speed": mock.hud.speed_label.get_parent().get_parent(),
 			"pursuit alert": mock.hud.pursuit_alert,
@@ -145,32 +148,30 @@ func run() -> void:
 		var scale_xy := Vector2(extent) / Vector2(1280, 720)
 		var top_band := Rect2(Vector2.ZERO, Vector2(extent.x, 130 * scale_xy.y))
 		var viewing_region := Rect2(Vector2(300, 130) * scale_xy, Vector2(680, 350) * scale_xy)
-		# Lay out the longest authored intro while it is visible, then verify handover.
-		mock.boss_intro.emit(mock.boss_kind, "Merge Conflict Hydra", 3.0)
-		mock.boss_overlay._process(1.0)
-		await frames()
-		check(not mock.boss_overlay.visible and mock.boss_overlay.intro_card.visible, "intro replaces boss plate")
-		for card in [mock.boss_overlay.panel, mock.boss_overlay.intro_card]:
-			var rect: Rect2 = card.get_global_rect()
-			check(top_band.encloses(rect), "boss card inside top band at " + str(extent) + ": " + str(rect))
-			check(not viewing_region.intersects(rect), "boss card clears viewing region at " + str(extent))
+		var plate_rect: Rect2 = mock.boss_overlay.panel.get_global_rect()
+		check(top_band.encloses(plate_rect), "boss plate inside top band at " + str(extent) + ": " + str(plate_rect))
+		check(not viewing_region.intersects(plate_rect), "boss plate clears viewing region at " + str(extent))
 		check(mock.boss_overlay.hp.size.y <= 14, "compact boss HP track")
 		var names := panels.keys()
 		for i in names.size():
 			var rect: Rect2 = panels[names[i]].get_global_rect()
-			if names[i] not in ["toast", "turn plate"]: check(not viewing_region.intersects(rect), "persistent panel clears centre: " + names[i])
+			if names[i] != "toast": check(not viewing_region.intersects(rect), "persistent panel clears centre: " + names[i])
 			print("A7 HUD RECT %s %s: %s" % [extent, names[i], rect])
 			for j in range(i + 1, names.size()):
-				if names[i] == "boss plate" and names[j] == "intro card":
-					check(not (panels[names[i]].is_visible_in_tree() and panels[names[j]].is_visible_in_tree()), "shared boss slot is exclusive")
-					continue
 				check(not rect.intersects(panels[names[j]].get_global_rect()), "%s / %s separated at %s" % [names[i], names[j], extent])
-		mock.boss_overlay._process(3.0)
-		mock.boss_spawned.emit(mock.boss_kind, 140)
+		# The title card lives on the cinematic, framed by the letterbox, and the plate stays hidden until it ends.
+		mock.boss_cinematic_progress = 0.55
+		mock.boss_cinematic.emit(mock.boss_kind, &"intro_full", 3.0)
+		await frames()
+		check(not mock.boss_overlay.visible and cinematic.title_group.is_visible_in_tree(), "intro replaces boss plate")
+		var bar_height := float(extent.y) * 0.065 + 1.0
+		var title_rect: Rect2 = cinematic.title_group.get_global_rect()
+		check(title_rect.position.y > bar_height and title_rect.end.y < float(extent.y) - bar_height, "bars frame title card at " + str(extent) + ": " + str(title_rect))
+		check(cinematic.review_header.get_global_rect().end.y <= bar_height, "review header stays on the top matte at " + str(extent))
+		mock.boss_cinematic_ended.emit(&"intro_full")
 		await create_timer(0.35).timeout
-		check(mock.boss_overlay.visible and not mock.boss_overlay.intro_card.visible, "spawned boss owns top slot after intro")
-		check(mock.hud.turn_panel.get_global_rect().position.y >= 530, "turn warning below hazard read zone")
-		check(not mock.hud.turn_panel.get_global_rect().intersects(mock.hud.speed_label.get_parent().get_parent().get_global_rect()), "turn and speed separated")
+		check(mock.boss_overlay.visible and not cinematic.title_group.is_visible_in_tree(), "spawned boss owns top slot after intro")
+		check(top_band.encloses(mock.boss_overlay.panel.get_global_rect()), "boss plate returns to the top band at " + str(extent))
 
 	root.size = Vector2i(1280,720)
 	root.content_scale_size = Vector2i(1280,720)
@@ -396,10 +397,15 @@ func check_raster_rejection() -> void:
 func check_overlay_fonts(mock: Node) -> void:
 	var shared: Font = Style.theme().default_font
 	check(shared == Style.theme().default_font, "R4 stable shared theme font")
-	for ui: Control in [mock.hud.screen, mock.pause_menu.get_child(0), mock.game_over.get_node("Screen"), mock.boss_overlay, mock.boss_overlay.intro_card, mock.stage_banner, mock.stage_clear, mock.hud.pursuit_alert]:
+	for ui: Control in [mock.hud.screen, mock.pause_menu.get_child(0), mock.game_over.get_node("Screen"), mock.boss_overlay, mock.stage_banner, mock.stage_clear, mock.hud.pursuit_alert]:
 		check(ui.get_theme_default_font() == shared, "R4 overlay font: " + ui.name)
 		for label: Label in ui.find_children("*", "Label", true, false):
 			check(label.get_theme_font("font") == shared, "R4 label font: " + label.text)
+	check(cinematic.root.get_theme_default_font() == shared, "R4 cinematic font")
+	var title_font: Font = cinematic.boss_name.get_theme_font("font")
+	check(title_font is FontVariation and (title_font as FontVariation).base_font == shared, "R4 title variation bases on the shared font")
+	for label: Label in [cinematic.epithet, cinematic.chyron, cinematic.threat]:
+		check(label.get_theme_font("font") == shared, "R4 cinematic label font: " + label.name)
 
 func check_tally_cleanup() -> void:
 	var label := Style.label("SCORE 12840",22)
@@ -414,7 +420,7 @@ func check_tally_cleanup() -> void:
 
 func check_centered_titles(mock: Node) -> void:
 	# Hidden containers retain stale bounds. Measure each card after visible layout.
-	var cards := [mock.boss_overlay.intro_card, mock.stage_banner, mock.stage_clear]
+	var cards := [mock.stage_banner, mock.stage_clear]
 	var visibility: Array[bool] = []
 	for card: Control in cards:
 		visibility.append(card.visible)
@@ -426,9 +432,25 @@ func check_centered_titles(mock: Node) -> void:
 		var box: StyleBoxFlat = panel.get_theme_stylebox("panel")
 		check(is_equal_approx(box.content_margin_left,box.content_margin_right), "R5 symmetric title margins")
 		check(absf(title.get_global_rect().get_center().x-panel.get_global_rect().get_center().x) <= 2, "R5 title horizontally centered: " + title.text)
-	var intro: Label = mock.boss_overlay.intro_name
-	check(mock.boss_overlay.intro_card.get_global_rect().encloses(intro.get_global_rect()), "intro title fits top-band card")
-	check(not intro.get_global_rect().intersects(intro.get_parent().get_child(0).get_global_rect()), "intro title clears warning eyebrow")
+	var saved_progress: float = mock.boss_cinematic_progress
+	mock.boss_cinematic_progress = 0.55
+	cinematic._cinematic(mock.boss_kind, &"intro_full", 3.0)
+	cinematic._layout()
+	cinematic._process(0.0)
+	await frames()
+	var title_card: Control = cinematic.title_group
+	var intro: Label = cinematic.boss_name
+	check(title_card.get_global_rect().encloses(intro.get_global_rect()), "intro title fits title card")
+	check(absf(intro.get_global_rect().get_center().x - title_card.get_global_rect().get_center().x) <= 2.0, "intro title horizontally centered")
+	var epithet: Label = cinematic.epithet
+	check(epithet.position.y < intro.position.y, "intro epithet sits above the name")
+	check(title_card.get_global_rect().encloses(epithet.get_global_rect()), "intro epithet fits title card")
+	var bar_height := root.size.y * 0.065 + 1.0
+	var title_rect := title_card.get_global_rect()
+	check(title_rect.position.y > bar_height and title_rect.end.y < root.size.y - bar_height, "bars frame title card")
+	check(cinematic.review_header.get_global_rect().end.y <= bar_height, "review header stays on the top matte")
+	cinematic._ended(&"intro_full")
+	mock.boss_cinematic_progress = saved_progress
 	for card: Control in cards: check_panel_decorations(card)
 	check_panel_decorations(mock.boss_overlay)
 	for index in cards.size():
@@ -520,10 +542,9 @@ func check_teaching(mock: Node) -> void:
 		mock.pursuit_recovered.emit(&"timer")
 		hud.pursuit_alert._process(1.5)
 		hud._state(&"ready")
-		mock.turn_incoming.emit(1, 3.0)
-		check(hud.turn_panel.visible and not hud.ready_panel.visible, "turn replaces GET READY")
+		check(hud.ready_panel.visible, "GET READY stays up with nothing to replace it")
+		_check_clear_of_removed_phase(hud)
 		check_ready_separation(mock, extent)
-		mock.turn_finished.emit()
 		hud._state(&"ready")
 		hud._state(&"running")
 		hud._process(3.0)
@@ -577,13 +598,22 @@ func check_teaching(mock: Node) -> void:
 	hud.toast_teaching = false
 	hud.set_process(true)
 
+func _check_clear_of_removed_phase(node: Node) -> void:
+	var script: Script = node.get_script()
+	while script != null:
+		for prop in script.get_script_property_list():
+			var prop_name := String(prop["name"])
+			check(not prop_name.contains("turn"), "HUD still exposes %s" % prop_name)
+		script = script.get_base_script()
+	for child in node.find_children("*", "Node", true, false):
+		check(not String(child.name).to_lower().contains("turn"), "HUD still builds %s" % child.name)
+
 func check_ready_separation(mock: Node, extent: Vector2i) -> void:
 	var ready: Control = mock.hud.ready_panel
 	var panels := {
 		"speed": mock.hud.speed_label.get_parent().get_parent(),
 		"stage banner": mock.stage_banner.panel,
 		"pursuit alert": mock.hud.pursuit_alert,
-		"turn plate": mock.hud.turn_panel,
 	}
 	for title in panels:
 		var panel: Control = panels[title]

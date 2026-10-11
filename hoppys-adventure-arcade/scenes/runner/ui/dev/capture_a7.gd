@@ -75,10 +75,6 @@ func run() -> void:
 	fixture.boss_overlay._process(3.0)
 	fixture.boss_spawned.emit(fixture.boss_kind, 140)
 	await create_timer(0.35).timeout
-	fixture.turn_incoming.emit(1, 3.0)
-	fixture.hud._process(0.2)
-	if not await shot("turn-warning"): return
-	fixture.turn_finished.emit()
 
 	fixture.boss_overlay.hide()
 	fixture.hud.widgets.hide()

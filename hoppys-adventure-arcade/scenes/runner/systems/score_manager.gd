@@ -93,9 +93,11 @@ func base_rate() -> float:
 	return float(config.base_score_rate) if config != null else 0.0
 
 ## base_score_rate x multiplier x delta, emitted only when the integer score or the multiplier
-## changes (contract §4.1).
+## changes (contract §4.1). Nothing accrues during the run intro (contract 2.7 §11.15).
 func _physics_process(delta: float) -> void:
 	if game == null or game.state != &"running":
+		return
+	if &"run_intro_mode" in game and StringName(game.get(&"run_intro_mode")) != &"":
 		return
 	var value := current_multiplier()
 	var multiplier_changed := not is_equal_approx(value, multiplier)

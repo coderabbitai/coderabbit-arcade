@@ -1,7 +1,7 @@
 extends CanvasGroup
 ## Scene-local artwork only, flattened so crossfades do not ghost through individual layers.
 const TITLES = ["BAY AREA BLITZ", "ORBITAL OPS", "ENCHANTED REPO",
-	"THE CODEBASE CORRIDOR", "GRAB THE POWER-UPS", "SHARP TURNS AHEAD", "BOSS FIGHTS",
+	"THE CODEBASE CORRIDOR", "GRAB THE POWER-UPS", "JUMP, ROLL, DODGE", "BOSS FIGHTS",
 	"CLI / IDE DISTRICT", "SECURITY SECTOR", "GIT REPOSITORY HQ",
 	"THE GENERATION FLOOR", "THE REVIEW GAUNTLET", "THE AGENTIC CORE"]
 const COLORS = [Color("65dec9"), Color("a99bff"), Color("b6dc87"),
@@ -26,7 +26,7 @@ const LAYERS := {
 const STILLS := {
 	3: "res://Assets/runner/menu_previews/runner_gameplay.png",
 	4: "res://Assets/runner/menu_previews/runner_powerup.png",
-	5: "res://Assets/runner/menu_previews/runner_turn.png",
+	5: "res://Assets/runner/menu_previews/runner_dodge.png",
 	6: "res://Assets/runner/menu_previews/runner_boss.png"
 }
 const STILL_DRIFT := 0.035

@@ -45,12 +45,14 @@ const SIGNALS := [
 	"run_finished", "leaderboard_saved", "score_changed", "bonus_awarded", "speed_changed",
 	"difficulty_changed", "power_up_collected", "power_up_expired", "hazard_cleared",
 	"hazards_blasted", "player_action", "chunk_spawned", "paused_changed",
-	"phase_changed", "stage_started", "stage_cleared", "turn_incoming", "turn_started", "turn_finished",
+	"phase_changed", "stage_started", "stage_cleared",
 	"boss_intro", "boss_spawned", "boss_health_changed", "boss_phase_changed", "boss_attack_telegraph",
 	"boss_projectile_fired", "boss_defeated", "boss_retreated", "tool_collected",
 	"pursuit_alert", "pursuer_distance_changed",
 	# Contract 2.6 §11.14.
-	"boss_cinematic", "boss_cinematic_skipped", "boss_cinematic_ended"
+	"boss_cinematic", "boss_cinematic_skipped", "boss_cinematic_ended",
+	# Contract 2.7 §11.15.
+	"run_intro", "run_intro_beat", "run_intro_skipped", "run_intro_ended"
 ]
 
 ## Contract §4.3 and the §11.4 / §11.14 additions.
@@ -58,7 +60,7 @@ const METHODS := [
 	"pause", "resume", "toggle_pause", "retry", "go_to_menu", "hit_stop", "submit_name",
 	"get_leaderboard", "get_result", "get_active_effects", "start_run", "set_autopilot",
 	"get_stage_info", "get_boss_info", "track_z", "track_aabb", "on_tool_hit", "skip_boss_cinematic",
-	"can_skip_boss_cinematic"
+	"can_skip_boss_cinematic", "skip_run_intro", "can_skip_run_intro"
 ]
 
 ## Contract §4.2 and the §11.4 additions.
@@ -67,9 +69,9 @@ const PROPERTIES := [
 	"normalized_speed", "difficulty", "hp", "score", "multiplier", "player", "camera_rig",
 	"cosmetic_rng",
 	"phase", "stage_index", "stage_name", "stage_distance", "stage_distance_target", "run_clock",
-	"next_turn_direction",
 	"boss", "boss_kind", "boss_hp", "boss_max_hp", "boss_phase",
 	"boss_cinematic_mode", "boss_cinematic_progress", "boss_time_factor",
+	"run_intro_mode", "run_intro_progress",
 	"stage_manager", "turn_rig", "boss_encounter"
 ]
 
@@ -88,6 +90,7 @@ const OPTIONAL_HUD_MOUNTS := [
 	"res://scenes/runner/ui/stage_banner.tscn",
 	"res://scenes/runner/ui/stage_clear.tscn",
 	"res://scenes/runner/ui/boss_cinematic.tscn",
+	"res://scenes/runner/ui/run_intro.tscn",
 	"res://scenes/runner/ui/post_fx.tscn"
 ]
 
@@ -148,7 +151,11 @@ func run() -> void:
 		await _report()
 		return
 	# Before add_child: _ready() honours `autostart`, so the run is already live by the time the
-	# node is in the tree and a later assignment would race it.
+	# node is in the tree and a later assignment would race it. The duplicate opts out of the run
+	# intro, which would otherwise move the camera before the rest-pose check below.
+	var config := (load("res://scenes/runner/data/run_config.tres") as Resource).duplicate()
+	config.set(&"run_intro_enabled", false)
+	game.config = config
 	game.leaderboard_path = leaderboard_path
 	root.add_child(game)
 	for i in 3:
@@ -307,7 +314,7 @@ func _check_environment(game: Node) -> void:
 ## Contract §11.8: the HUD mount point is shared, so its children are never counted. The backend
 ## asserts only its own mounts — `runner_hud` once, each v2 panel once when its scene exists on
 ## disk, and no scene mounted twice — and tolerates any other child the frontend has parented here
-## (F10's turn-warning banner, boss-intro card and effects all live on this layer). Both branches of
+## (a boss-intro card, effects, and any other frontend child may live on this layer). Both branches of
 ## the optional loop spend one check, so the run's check total is identical on either tree.
 func _check_hud_mounts(game: Node) -> void:
 	var hud := game.get_node("HUD") as CanvasLayer
@@ -364,10 +371,19 @@ func _check_stage_scaffold(game: Node) -> void:
 		"stage 1 should name the Flaky Test Swarm, got %s" % game.stage_name)
 	check(game.stage_distance_target > 0.0, "stage 1 has no distance target")
 	check(game.run_clock >= 0.0, "run_clock must never be negative")
-	# Contract §11.4: the seam's direction is only picked once the stage drains, and a stage that has
-	# barely opened is nowhere near that.
-	check(int(game.next_turn_direction) == 0,
-		"next_turn_direction must read 0 with no turn pending, got %d" % int(game.next_turn_direction))
+	check(game.turn_rig.rotation.is_equal_approx(Vector3.ZERO),
+		"the TurnRig stays square from the opening of a stage")
+	for info in game.get_signal_list():
+		check(not String(info["name"]).contains("turn"),
+			"the facade still signals %s" % info["name"])
+	var facade_script: Script = game.get_script()
+	while facade_script != null:
+		for prop in facade_script.get_script_property_list():
+			var prop_name := String(prop["name"])
+			if prop_name == "turn_rig":
+				continue
+			check(not prop_name.contains("turn"), "the facade still exposes %s" % prop_name)
+		facade_script = facade_script.get_base_script()
 	check(game.boss == null and game.boss_kind == &"" and game.boss_phase == 0,
 		"the boss block must read empty outside a fight")
 
@@ -378,9 +394,9 @@ func _check_stage_scaffold(game: Node) -> void:
 	for key in ["kind", "name", "hp", "max_hp", "phase", "phase_count", "accepted_tools", "pending_attacks"]:
 		check(boss_info.has(key), "get_boss_info() is missing the %s key" % key)
 
-	# track_z is the identity while the rig is square, which is every frame outside a turn.
+	# track_z is the identity: the rig never rotates.
 	check(is_equal_approx(game.track_z(game.player), game.player.global_position.z),
-		"track_z should equal global z while the TurnRig is unrotated")
+		"track_z should equal global z while the TurnRig stays square")
 	check(game.track_aabb(game.player) is AABB, "track_aabb must return an AABB")
 	# The shake hook is backend-owned and must survive being called outside a fight.
 	game.on_tool_hit()
