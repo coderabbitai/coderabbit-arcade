@@ -51,7 +51,16 @@ func run() -> void:
 	check(corridor.rotation == Vector3.ZERO, "the corridor stays square")
 	var bulkhead: MeshInstance3D = corridor.starship.get_node("EntryBulkhead")
 	var hull: ShaderMaterial = bulkhead.material_override
-	check(bulkhead.get_node_or_null("EntryDoorGlow") != null, "entry door has its glow child")
+	var glow := bulkhead.get_node_or_null("EntryDoorGlow") as MeshInstance3D
+	check(glow != null, "entry door has its glow child")
+	check(is_zero_approx(bulkhead.extra_cull_margin),
+		"entry bulkhead cull margin is 0, got %.2f" % bulkhead.extra_cull_margin)
+	check(glow != null and is_zero_approx(glow.extra_cull_margin),
+		"entry door glow cull margin is 0, got %.2f" % (glow.extra_cull_margin if glow != null else -1.0))
+	if glow != null:
+		var box: AABB = bulkhead.global_transform * bulkhead.get_aabb()
+		check(box.position.z > 8.0 and box.end.z > 8.0,
+			"entry bulkhead sits behind the gameplay camera at z 8 (z %.2f..%.2f)" % [box.position.z, box.end.z])
 	check(is_equal_approx(float(hull.get_shader_parameter("metallic")), 0.68)
 		and not bool(hull.get_shader_parameter("window_mode"))
 		and is_zero_approx(float(hull.get_shader_parameter("glow")))

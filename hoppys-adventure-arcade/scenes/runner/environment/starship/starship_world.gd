@@ -105,8 +105,9 @@ func _end_cap() -> void:
 ## span local z 0..12 and recycle with their origin in (-84, 12], so the near wall edge wanders
 ## between +12 and +24 and the deck stops at +14. A wall at +24.4 with a sleeve behind the module
 ## walls over z 11.5..24.5 (ceiling, sides, and the floor past the deck) closes the end at every
-## scroll offset. It sits behind the gameplay camera and every boss shot, so normal play never
-## draws it; the pursuer (z 4.5..12) always stays in front of it. Two draw calls, static.
+## scroll offset. It sits behind the gameplay camera and every boss shot, and it keeps a zero cull
+## margin (it never bends, unlike the scrolling modules), so frustum culling drops both of its draw
+## calls from every gameplay frame; the pursuer (z 4.5..12) always stays in front of it.
 func _entry_bulkhead() -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -127,7 +128,7 @@ func _entry_bulkhead() -> void:
 	var material := Assets.material(Assets.HULL)
 	materials.append(material)
 	door.material_override = material
-	door.extra_cull_margin = 90.0
+	door.extra_cull_margin = 0.0
 	door.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	door.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	add_child(door)
@@ -145,7 +146,7 @@ func _entry_bulkhead() -> void:
 	var conduit := Assets.material(Assets.CONDUIT)
 	materials.append(conduit)
 	strips.material_override = conduit
-	strips.extra_cull_margin = 90.0
+	strips.extra_cull_margin = 0.0
 	strips.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	strips.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	door.add_child(strips)

@@ -314,7 +314,7 @@ func _check_environment(game: Node) -> void:
 ## Contract §11.8: the HUD mount point is shared, so its children are never counted. The backend
 ## asserts only its own mounts — `runner_hud` once, each v2 panel once when its scene exists on
 ## disk, and no scene mounted twice — and tolerates any other child the frontend has parented here
-## (F10's turn-warning banner, boss-intro card and effects all live on this layer). Both branches of
+## (a boss-intro card, effects, and any other frontend child may live on this layer). Both branches of
 ## the optional loop spend one check, so the run's check total is identical on either tree.
 func _check_hud_mounts(game: Node) -> void:
 	var hud := game.get_node("HUD") as CanvasLayer

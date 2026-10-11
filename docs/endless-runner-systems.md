@@ -512,8 +512,8 @@ frontend's single full-screen post-processing pass (CanvasLayer 9, PAUSABLE, ide
 ### 10.1 `systems/stage_manager.gd` — phase state machine
 
 Vars: `phase: StringName = &"idle"`, `stage_index := 0`, `stage_distance := 0.0`, `stage_distance_target := 0.0`,
-`run_clock := 0.0`, `_phase_timer := 0.0`, `_draining := false`, `stage_rng := RandomNumberGenerator.new()`
-(seeded `seed ^ 0x5F356495` in `reset(seed)` so the boss's lane rolls are reproducible). `reset(seed)` → `idle`; `begin()` (called by
+`run_clock := 0.0`, `_phase_timer := 0.0`, `_draining := false`. The machine draws no random numbers: the
+encounter's own `fight_rng` makes every boss roll. `reset(seed)` → `idle`; `begin()` (called by
 `RunnerGame.start_run` after every system reset) → `_enter_run()` with `stage_index = 1`.
 
 Per physics tick (only while `game.state == &"running"` and not paused), in this order:
@@ -542,15 +542,15 @@ from StageManager/BossEncounter counters in `_finish_run`.
 `data/stage_defs.gd`: static `boss_slot(i)`, `cycle(i)`, `boss_kind(i)`, `boss_name(i)`, `speed_bonus(i, config)`,
 `difficulty_floor(i, config)`, `distance_target(i, config)`.
 
-**Run intro (contract 2.7 §11.15).** `begin(intro_mode := &"")` and `begin_at_boss(checkpoint, intro_mode := &"")`
-open `intro` first when the mode is `&"full"` / `&"short"` and `run_intro_enabled` is on. `_enter_intro(mode,
-then_boss)`: spawning off, phase `intro`, `_set_cinematic_hold(true)`, the camera framed, then `run_intro(mode,
+**Run intro (contract 2.7 §11.15).** `begin(intro_mode := &"")` opens `intro` first when the mode is `&"full"` /
+`&"short"` and `run_intro_enabled` is on; `begin_at_boss(checkpoint)` never does (the boss's short intro is the
+checkpoint's lead-in). `_enter_intro(mode)`: spawning off, phase `intro`, `_set_cinematic_hold(true)`, the camera framed, then `run_intro(mode,
 seconds)` and any beat due at 0 s. `_tick_intro(delta)`: the clock advances (clamped to the length; a pause stops it
 with the rest of the machine), `run_intro_progress` is mirrored, every beat whose time is reached goes out in
 order, the camera follows (`camera_rig.set_run_intro(progress, mode, player.global_position)`), and at the end
-`_finish_intro()` closes the intro and enters `run`, or emits the checkpoint's held-back `stage_started` and enters
-`boss`. The last beat (GO) releases the hold before it is sent. `skip_run_intro()` (guarded by
-`can_skip_run_intro()`: past `run_intro_skip_after`, before the last `run_intro_skip_tail`, not yet skipped) jumps
+`_finish_intro()` closes the intro and enters `run`. The last beat (GO) releases the hold before it is sent.
+`skip_run_intro()` (guarded by `can_skip_run_intro()`: past `run_intro_skip_after`, GO not yet sent, before the last
+`run_intro_skip_tail`, not yet skipped) jumps
 the clock to the tail, releases the hold, emits `run_intro_skipped`, then the GO beat if it has not gone out.
 `_end_intro()` is the single exit (natural end, `reset()`, catch): hold off, camera reset `(0, &"")`, mirrors
 cleared, `run_intro_ended` exactly once. Beat times are made non-decreasing per label, so the order holds whatever
@@ -586,7 +586,7 @@ seconds) and `time_factor()` all read the same clock; it closes with `boss_cinem
 reaches 0, and `abort()` closes it early.
 
 `tick(delta)`: intro countdown (no attacks) → ACTIVE: `_attack_timer -= delta`; when ≤ 0 pick the next beat of the
-current pattern (patterns cycle a fixed beat list; lanes from `stage_rng` where the pattern says "random", never
+current pattern (patterns cycle a fixed beat list; lanes from `fight_rng` where the pattern says "random", never
 repeating the immediately previous lane mask), emit `boss_attack_telegraph(mask, variant, telegraph)`, call
 `visual.play_telegraph(...)`, queue `{mask, variant, remaining: telegraph}`; when a queued telegraph reaches 0 spawn
 `hazards/projectile.tscn` under `Projectiles` at the boss position projected to each lane centre of the mask (one

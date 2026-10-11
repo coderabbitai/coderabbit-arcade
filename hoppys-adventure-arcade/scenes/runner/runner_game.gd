@@ -139,7 +139,7 @@ var state: StringName = &"ready"
 var paused := false
 var seed := 0
 var run_id := ""
-## Unpaused running seconds.
+## Unpaused running seconds, the run intro excluded (contract 2.7 §11.15).
 var elapsed := 0.0
 ## Metres travelled. RunnerGame owns this accumulator; the spawner moves chunks by the same dz but
 ## must not add to it, or the distance would double-count.
@@ -197,9 +197,10 @@ var checkpoint_retry := false
 ## a fresh scene through AppRouter, like retry(); start_run() consumes it and empties it at once.
 static var pending_boss_checkpoint := {}
 ## Contract 2.7 §11.15: the run intro the next start_run() opens with. A fresh run from the menu gets
-## the full one; retry() and retry_boss() ask for the short one; &"" opens the next run with no intro
-## (capture tools). Static for the same reason as pending_boss_checkpoint, and consumed (back to full)
-## by start_run().
+## the full one; retry() asks for the short one; &"" opens the next run with no intro (capture
+## tools). A boss-checkpoint retry never plays one, whatever this holds: the boss's own short intro is
+## its lead-in. Static for the same reason as pending_boss_checkpoint, and consumed (back to full) by
+## start_run().
 static var pending_intro_mode: StringName = &"full"
 
 @onready var systems: Node = $Systems
@@ -322,9 +323,10 @@ func start_run(run_seed := 0) -> void:
 	speed_changed.emit(speed, normalized_speed)
 	# Stage 1 opens only once every system is back at zero and the run is live, so the first
 	# stage_started lands after run_started and the spawner fills against a running phase. A boss
-	# checkpoint opens in front of that stage's boss instead. Either way the run intro comes first.
+	# checkpoint opens in front of that stage's boss instead, with no run intro: the boss's short
+	# intro cinematic is the lead-in, so the player is not handed control at GO only to lose it again.
 	if checkpoint_retry and stage_manager != null and stage_manager.has_method("begin_at_boss"):
-		stage_manager.begin_at_boss(checkpoint, intro_mode)
+		stage_manager.begin_at_boss(checkpoint)
 	elif stage_manager != null and stage_manager.has_method("begin"):
 		stage_manager.begin(intro_mode)
 
@@ -414,7 +416,6 @@ func retry_boss() -> void:
 		return
 	resume()
 	pending_boss_checkpoint = boss_checkpoint.duplicate(true)
-	pending_intro_mode = &"short"
 	_take_route("runner_game")
 
 func go_to_menu() -> void:
@@ -635,8 +636,11 @@ func _physics_process(delta: float) -> void:
 	if paused:
 		return
 	if state == &"running":
-		elapsed += delta
-		distance += speed * delta
+		# The run intro is a cinematic, not run time: the clock and the distance start at GO's
+		# hand-over to `run` (contract 2.7 §11.15), as the ScoreManager's base rate does.
+		if run_intro_mode == &"":
+			elapsed += delta
+			distance += speed * delta
 		_track_dodges()
 	elif state == &"caught":
 		distance += speed * delta

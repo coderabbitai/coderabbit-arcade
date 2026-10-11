@@ -576,4 +576,29 @@ func _canvas() -> void:
 			rect.material = material
 			rect.size = Vector2(64, 64)
 			layer.add_child(rect)
+	_warm_run_intro_fonts(layer)
 	_place(layer, "canvas")
+
+## Contract 2.7 §11.15: the run intro's title card and countdown draw in their own emboldened
+## FontVariation at roughly 50 and 150 px, so their glyphs would otherwise be rasterised on the
+## intro's first title and count frames. Copies of the mounted labels (the same font resource, size
+## and outline) draw once here, invisibly, like the HUD's own font warm. A no-op without the mount.
+func _warm_run_intro_fonts(layer: CanvasLayer) -> void:
+	var host := get_parent()
+	var ui: Node = host.get_node_or_null(^"HUD/RunIntro") if host != null else null
+	if ui == null:
+		return
+	for entry: Array in [[&"title", "THE CODEBASE CORRIDOR"], [&"count_label", "READY 3 2 1 GO!"]]:
+		var source: Label = ui.get(entry[0]) as Label if entry[0] in ui else null
+		if source == null:
+			continue
+		var copy := Label.new()
+		copy.text = source.text if not source.text.is_empty() else String(entry[1])
+		if entry[0] == &"count_label":
+			copy.text = String(entry[1])
+		copy.add_theme_font_override("font", source.get_theme_font("font"))
+		copy.add_theme_font_size_override("font_size", source.get_theme_font_size("font_size"))
+		copy.add_theme_constant_override("outline_size", source.get_theme_constant("outline_size"))
+		copy.add_theme_color_override("font_outline_color", source.get_theme_color("font_outline_color"))
+		copy.modulate.a = 0.0
+		layer.add_child(copy)
