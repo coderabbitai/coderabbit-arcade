@@ -121,8 +121,8 @@ extends Resource
 ## The in-engine cinematic before a run (contract 2.7 §11.15). Tests that drive the run from its first
 ## tick turn it off on a duplicated config.
 @export var run_intro_enabled := true
-## The full intro on a fresh run from the menu, and the short lead-in on a retry and a boss-checkpoint
-## retry.
+## The full intro on a fresh run from the menu, and the short lead-in on a retry. A boss-checkpoint
+## retry plays no run intro; the boss's own short intro cinematic is its lead-in.
 @export var run_intro_full_seconds := 6.0
 @export var run_intro_short_seconds := 2.2
 ## An intro can be skipped once it has played this long; a skip jumps to the last run_intro_skip_tail

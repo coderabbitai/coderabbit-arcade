@@ -721,7 +721,7 @@ A catch during the `boss` phase no longer has to throw the run away.
   fresh `run_id` (`<unix>-<seed>-boss<stage>-<msec>`) whose score continues from the checkpoint. Its result carries
   `checkpoint_retry: true` (false on every other run).
 - **Verification.** `runner_logic.gd` section 24b (checkpoint on boss entry and kept by the catch, repeated
-  `retry_boss()` reloads through the short run intro into the boss with stage/score/`run_clock` intact and full HP, plain Retry from zero, no
+  `retry_boss()` reloads straight into the boss (no run intro) with stage/score/`run_clock` intact and full HP, plain Retry from zero, no
   checkpoint after a stage clear or a run-phase catch, Game Over button visibility and focus); `runner_smoke.gd`
   boss-catch phase reloads a real `runner_game.tscn` from the checkpoint into the same fight.
 
