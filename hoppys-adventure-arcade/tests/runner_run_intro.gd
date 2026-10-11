@@ -1,5 +1,5 @@
 extends SceneTree
-## Contract 2.7 §11.15. The run intro in front of a fresh run, a retry and a boss checkpoint.
+## Contract 2.7 §11.15. The run intro in front of a fresh run and a retry, and none on a boss checkpoint.
 ## Run with --path <project> --script res://tests/runner_run_intro.gd.
 
 const GAME_SCENE := "res://scenes/runner/runner_game.tscn"
