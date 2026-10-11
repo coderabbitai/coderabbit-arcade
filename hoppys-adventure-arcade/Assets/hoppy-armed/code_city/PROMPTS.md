@@ -66,7 +66,7 @@ Regenerations: 1. Attempt 1 produced seventeen disconnected major components and
 
 ## Locomotion masters: October 10, 2026
 
-Built-in image generation. Six run, four back walk and four front walk poses per weapon. Original combat masters and cells 0-15 are preserved. New movement occupies cells 16-29.
+Built-in image generation. Six run, four back walk and four front walk poses per weapon. Original combat masters are preserved. New movement occupies cells 16-29; idle, equip and hurt are body-registered alongside it.
 
 ### debug_stick: locomotion
 
@@ -108,4 +108,4 @@ Use case: precise-object-edit. Refine ONLY the weapon cable and dangling key in 
 
 The gutter refinement applies to linter_staff, firewall_shield and git_branch. Their earlier masters are retained. Git branch uses the refined master for run and back views; two front steps come from generation-zero cells 9 and 10, rescaled to match the refined source. No atlas is painted.
 
-Run stance soles advance backward 12 texels per frame at 13 fps. At the runtime body scale of 1.55 this matches 241.8 px/s, within 1% of the 240 px/s walk speed. Foot registration follows the orange body soles, excluding hanging whip keys.
+Body registration keeps the torso near pivot x72 in ready poses and every locomotion frame. The run uses the shirt back edge, avoiding the moving forearm; a separate head measurement limits head sway. Vertical bob is limited to 3px. Run remains 13 fps and vertical walks 9 fps; feet cycle inside the cell instead of shifting the whole body to hold a planted foot. Generated masters are unchanged, and the builder records every registration offset and measured landmark.

@@ -2,7 +2,7 @@
 
 Baked sprite sheets of Hoppy holding each beat'em up weapon. The weapon is drawn into Hoppy's frames, so the grip, pixel density and layering match the body in every pose. There are eleven sheets: six for Code City Brawl (`code_city/`) and five for Heroes vs. Villains (`heroes/`).
 
-The masters come from built-in image generation. `tools/build_hoppy_armed.py` never paints or edits a master. It finds the generated sprites, scales them with nearest-neighbour sampling, plants their feet on the pivot and packs the outputs, so the same masters always rebuild the same files.
+The masters come from built-in image generation. `tools/build_hoppy_armed.py` never paints or edits a master. It finds the generated sprites, scales them with nearest-neighbour sampling, aligns their body and ground references and packs the outputs, so the same masters always rebuild the same files.
 
 ## Cells and pivots
 
@@ -27,9 +27,9 @@ Heroes `<weapon>.png` sheets remain 4 × 4 atlases. Code City sheets are 4 × 8,
 | 14 | `equip` | Lifting the weapon after a pickup |
 | 15 | `hurt` | Stagger while holding it (the Firewall Shield's block recoil) |
 
-Code City appends six `run` frames at cells 16-21 (13 fps), four `walk_up` frames at 22-25 and four `walk_down` frames at 26-29 (9 fps). All locomotion clips loop. These are separately generated full-body poses holding the weapon. The six run frames alternate open contacts and bent-knee passing poses. Their soles register to x = 84, 72, 60, 84, 72, 60 at y = 118. Each stance moves 12 sprite pixels backward per frame, matching 241.8 world px/s at the runtime scale 1.55, within 1% of the normal speed 240.
+Code City appends six `run` frames at cells 16-21 (13 fps), four `walk_up` frames at 22-25 and four `walk_down` frames at 26-29 (9 fps). All locomotion clips loop. These are separately generated full-body poses holding the weapon. The six run frames alternate open contacts and bent-knee passing poses. The torso stays within 2 cell pixels of x72 across idle, run, both vertical walks, equip and hurt. The side run registers the back edge of the shirt and checks the head separately, so moving paws cannot pull the torso sideways. Locomotion has at most 3px of vertical bob. Feet cycle inside the cell while the player node moves at 240 px/s; runtime cadence still follows movement speed.
 
-The `locomotion` manifest object records source filenames, source cell indices, extraction bounds, per-source scale adjustments, paw and foot anchors, stance positions and cadence. Git branch combines corrected back views with two complete front views from generation zero. Earlier, clipped rightmost source poses are never packed. Every source is preserved unchanged.
+The `locomotion` manifest object records source filenames, source cell indices, extraction bounds, per-source scale adjustments, paw and foot anchors and cadence. The `body_registration` object records the measured torso/head landmarks and whole-frame offsets. Git branch combines corrected back views with two complete front views from generation zero. Earlier, clipped rightmost source poses are never packed. Every source is preserved unchanged.
 
 The attack steps are SpriteFrames clips at 9 fps, but the game picks their frame from attack progress: windup before 30%, contact until 64%, follow-through after that. Damage still lands at 44%, inside the contact frame.
 
@@ -62,7 +62,8 @@ Leave out `--mode` to rebuild both. Run it from the repository root, then reimpo
 - a small fragment (such as the thin end of a whip) lies more than 10 source pixels from every sprite;
 - a packed frame touches its cell edge;
 - with `per_frame_foot_pivot`, the planted foot (the painted run at each frame's registered planted x) moves more than about 3 px between frames of a clip, or a sole misses the pivot row. Run clips are exempt from the planted-foot check, since a run alternates its feet by design;
-- for the original Heroes and preserved legacy Code City cells, the body moves more than 3 px between consecutive run frames, the loop seam included. The body is measured weapon-free, from the opaque pixels behind the paw, and the builder prints each weapon's run body x;
+- for Heroes and the unused legacy Code City run cells, the body moves more than 3 px between consecutive run frames, the loop seam included. The body is measured weapon-free, from the opaque pixels behind the paw, and the builder prints each weapon's run body x;
+- for active Code City movement, the torso shifts more than 3px between frames or is more than 2px from the common axis, or the run head moves more than 2px either side of its cycle centre;
 - a hand or tip anchor has no opaque pixel near its hand-picked target;
 - a weapon's `hold_idle_weapon_bounds` fall outside the `hold_idle` cell or cover no opaque pixels;
 - a carry icon drifts more than 10% from its calibrated length;
@@ -87,7 +88,7 @@ Opt-in fields. Leaving one out keeps the default behaviour, and turning one on f
 | `per_frame_foot_pivot` | Registers each frame horizontally on its planted foot instead of using one sheet-wide offset. Idle, run, equip and hurt use the centre of the feet; attack frames use the rear foot. The build fails if that foot moves more than about 3 px between frames of a clip, so Hoppy doesn't skate. |
 | `foot_plant_overrides`, `foot_plant_note` | Per-frame `center` / `rear` / `front` choice for the planted foot, and a note explaining it in the manifest. |
 | `body_foot_targets` | 16 optional `(left, right)` x spans, in packed-cell pixels before registration, that name the foot to plant for frames where a low weapon shares the foot row. |
-| `run_register` | `"body"` registers each run frame so the weapon-free body holds still over the cycle while the feet stay on the pivot row and the legs cycle. Frames with a `body_foot_target` keep it. Heroes and the preserved original Code City cells use it; new Code City locomotion uses foot registration instead; without it, run frames are registered on the foot centre and the body can surge 25 px or more between frames. |
+| `run_register` | `"body"` registers each run frame so the weapon-free body holds still over the cycle while the feet stay on the pivot row and the legs cycle. Frames with a `body_foot_target` keep it. Heroes and the preserved original Code City cells use it; Code City additionally aligns every active ready and locomotion pose with its shirt landmark; without it, run frames are registered on the foot centre and the body can surge 25 px or more between frames. |
 | `source_order` | Maps each packed frame to a source cell, for masters whose poses came out in a different order, or to reuse a cell. Four Heroes vs. Villains sheets reorder their step-3 cells this way. `api_key_whip` reuses its step-1 follow-through (source cell 7) as the step-3 follow-through (frame 13). |
 | `carry_orientation`, `carry_grip` | Flips or rotates the carry icon (`flip_h`, `flip_v` or `rotate_180`) for a weapon whose sheet holds it by the other end from its cel. `carry_grip` is required with it: the oriented icon's texel held in the paw, which must be opaque. Both are written to `carry_calibration` in the manifest; Code City's weapon rig uses that grip in place of its cel grip. `api_key_whip` and `refactor_hammer` use `flip_h`, so their carries put the key or the hammer head at the far end, as on the sheet. (Heroes vs. Villains turns its scanner carry in the rig instead, so the screen stays clear of Hoppy's face.) |
 

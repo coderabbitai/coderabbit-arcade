@@ -143,8 +143,84 @@ static func carry_face_hits(carry: Sprite2D, image: Image, box: Rect2, body_scal
 				hits += 1
 	return hits
 
-## Cel pixels the grounded feet must travel between adjacent foot registered run frames.
-const RUN_STRIDE_MIN_PX := 4.0
+## Hoppy's shirt, found without weapon, paw or anatomy anchors, for Code City torso registration.
+## The head is the largest 4-connected orange component. The torso is the largest neutral dark gray
+## component whose pixels start within 2 rows above to 20 rows below the head's lowest row and sit
+## within 18 px of the head's centroid x. Side runs read the component's back edge plus
+## SHIRT_BACK_EDGE_OFFSET, which a staff shaft or a moving arm in front of the chest does not move;
+## every other pose reads the centroid. Positions are in cell pixels, NaN when unreadable.
+const SHIRT_WINDOW := 18.0
+const SHIRT_BACK_EDGE_OFFSET := 6.0
+
+static func _is_orange(c: Color) -> bool:
+	var r := c.r8
+	var g := c.g8
+	var b := c.b8
+	return c.a8 >= 128 and r > 200 and g > 40 and g < 170 and b < 100 and r - g > 70 and g - b > 25
+
+static func _is_shirt_gray(c: Color) -> bool:
+	var lo := mini(c.r8, mini(c.g8, c.b8))
+	var hi := maxi(c.r8, maxi(c.g8, c.b8))
+	return c.a8 >= 128 and lo >= 20 and hi < 85 and hi - lo < 22
+
+## Largest 4-connected group of pixels where `test(color, x, y)` is true, as an Array of Vector2i.
+static func _largest_component(image: Image, test: Callable) -> Array:
+	var w := image.get_width()
+	var h := image.get_height()
+	var seen := PackedByteArray()
+	seen.resize(w * h)
+	var best := []
+	for y in h:
+		for x in w:
+			if seen[y * w + x] == 1 or not test.call(image.get_pixel(x, y), x, y):
+				continue
+			var group := []
+			var stack: Array[Vector2i] = [Vector2i(x, y)]
+			seen[y * w + x] = 1
+			while not stack.is_empty():
+				var at: Vector2i = stack.pop_back()
+				group.append(at)
+				for step in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]:
+					var nxt: Vector2i = at + step
+					if nxt.x < 0 or nxt.y < 0 or nxt.x >= w or nxt.y >= h or seen[nxt.y * w + nxt.x] == 1:
+						continue
+					if test.call(image.get_pixel(nxt.x, nxt.y), nxt.x, nxt.y):
+						seen[nxt.y * w + nxt.x] = 1
+						stack.append(nxt)
+			if group.size() > best.size():
+				best = group
+	return best
+
+static func shirt_landmark(cell_image: Image, side_run := false) -> Vector2:
+	return shirt_measure(cell_image, side_run).position
+
+## Shirt landmark, the pixel count of its component, the head centroid x and `head_to_back` (head x
+## minus the shirt back edge). A tiny component means the front view's cream chest hid most of the
+## shirt, so callers can require a minimum before trusting x.
+static func shirt_measure(cell_image: Image, side_run := false) -> Dictionary:
+	var missing := {"position": Vector2(NAN, NAN), "size": 0, "head_x": NAN, "head_to_back": NAN}
+	var head := _largest_component(cell_image, func(c: Color, _x: int, _y: int) -> bool: return _is_orange(c))
+	if head.is_empty():
+		return missing
+	var head_bottom := 0
+	var head_x := 0.0
+	for p in head:
+		head_bottom = maxi(head_bottom, p.y)
+		head_x += p.x
+	head_x /= float(head.size())
+	var core := _largest_component(cell_image, func(c: Color, x: int, y: int) -> bool:
+		return _is_shirt_gray(c) and y >= head_bottom - 2 and y <= head_bottom + 20 and absf(float(x) - head_x) < SHIRT_WINDOW)
+	if core.is_empty():
+		return missing
+	var sum := Vector2.ZERO
+	var back_edge := INF
+	for p in core:
+		sum += Vector2(p)
+		back_edge = minf(back_edge, float(p.x))
+	var centroid := sum / float(core.size())
+	if side_run:
+		centroid.x = back_edge + SHIRT_BACK_EDGE_OFFSET
+	return {"position": centroid, "size": core.size(), "head_x": head_x, "head_to_back": head_x - back_edge}
 
 ## Run frame count the spec publishes; Heroes stays at 4 and Code City publishes 6.
 static func run_frame_count(spec: Dictionary) -> int:
@@ -153,28 +229,16 @@ static func run_frame_count(spec: Dictionary) -> int:
 	var frames: Variant = run.get("frames", []) if run is Dictionary else []
 	return frames.size() if frames is Array and frames.size() > 0 else 4
 
-## Mean x of opaque pixels on the foot rows of one run frame. Foot registered sheets move this
-## from frame to frame because the stance advances instead of the body staying still.
-static func foot_reference_x(body: AnimatedSprite2D, spec: Dictionary, anim_frame: int) -> float:
-	var pivot: Variant = spec.get("pivot", [])
-	if body == null or body.sprite_frames == null or not body.sprite_frames.has_animation("run") or not pivot is Array or pivot.size() < 2:
-		return NAN
-	if anim_frame < 0 or anim_frame >= body.sprite_frames.get_frame_count("run"):
+## Shirt x (side run back edge + 6) of the run frame the body is showing, for body registered sheets.
+static func shirt_run_cel(body: AnimatedSprite2D, anim_frame: int) -> float:
+	if body.sprite_frames == null or not body.sprite_frames.has_animation("run"):
 		return NAN
 	var texture := body.sprite_frames.get_frame_texture("run", anim_frame)
 	var image := texture.get_image() if texture != null else null
 	if image == null:
 		return NAN
-	if image.is_compressed():
-		image.decompress()
-	var sum := 0.0
-	var count := 0
-	for y in range(maxi(0, int(pivot[1]) - 3), mini(image.get_height(), int(pivot[1]) + 1)):
-		for x in image.get_width():
-			if image.get_pixel(x, y).a >= 128.0 / 255.0:
-				sum += float(x)
-				count += 1
-	return sum / float(count) if count > 0 else NAN
+	var measured := shirt_measure(image, true)
+	return measured.position.x if measured.size >= 15 else NAN
 
 ## One weapon's run frames (4 for Heroes, 6 for Code City). Packed arrays stay on the object so formatting sees the same values.
 class RunSample:
@@ -186,7 +250,6 @@ class RunSample:
 	var limit := 0.0
 	var worst := 0.0
 	var worst_at := "n/a"
-	var foot := false
 
 ## Sheet, clip, offset, and body-x drift across the four run frames.
 static func measure_run_frames(actor, sheet: SpriteFrames, spec: Dictionary, expected_offset: Vector2, facing: float) -> RunSample:
@@ -199,8 +262,7 @@ static func measure_run_frames(actor, sheet: SpriteFrames, spec: Dictionary, exp
 	sample.pose_ok = frames != null and frames == sheet and actor.body.animation == "run" and frames.has_animation("run") and frames.get_frame_count("run") == run_frame_count(spec)
 	sample.detail = "clip %s offset %s expected %s" % [actor.body.animation, actor.body.offset, expected_offset]
 	sample.measured = sample.pose_ok
-	sample.foot = spec.get("run_registration", "body") == "foot"
-	sample.limit = (RUN_STRIDE_MIN_PX if sample.foot else RUN_BODY_LIMIT_PX) * float(actor.body.scale.x)
+	sample.limit = RUN_BODY_LIMIT_PX * float(actor.body.scale.x)
 	if sample.pose_ok:
 		var pivot: Variant = spec.get("pivot", [])
 		if not pivot is Array or pivot.is_empty() or not (pivot[0] is int or pivot[0] is float):
@@ -218,7 +280,7 @@ static func measure_run_frames(actor, sheet: SpriteFrames, spec: Dictionary, exp
 					sample.measured = false
 					sample.detail = "frame %d clip %s offset %s expected %s flip %s" % [f, actor.body.animation, actor.body.offset, expected_offset, actor.body.flip_h]
 					break
-				var cel := foot_reference_x(actor.body, spec, f) if sample.foot else armed_run_cel(actor.body, spec, f)
+				var cel := shirt_run_cel(actor.body, f) if spec.has("body_registration") else armed_run_cel(actor.body, spec, f)
 				if is_nan(cel):
 					sample.measured = false
 					sample.detail = "frame %d has no body pixels behind the paw" % f
@@ -279,12 +341,9 @@ static func check_armed_run_registration(
 			var expected_offset: Vector2 = offset_for.call(weapon, facing)
 			var sample := measure_run_frames(actor, sheet, spec, expected_offset, facing)
 			report.call(sample.pose_ok, "%s facing %d armed run uses the sheet, clip run, and armed offset (%s)" % [weapon, int(facing), sample.detail])
-			# Foot-registered sheets pass on their largest adjacent step: the run cycle has to move
-			# the foot reference at all. Contact and passing frames hold the planted foot, so some
-			# adjacent steps are legitimately near zero (0.27-1.17 px on today's sheets), and a
-			# smallest-step check would reject correct art. hoppy_armed_assets checks per-frame
-			# sliding with its 1 px planted-foot drift limit.
-			report.call(sample.measured and sample.worlds.size() == run_frame_count(spec) and ((sample.worst >= sample.limit) if sample.foot else (sample.worst <= sample.limit)), "%s facing %d armed run %s %.2f px across run frames (worst %.2f between %s; world x %s; cel x %s)" % [weapon, int(facing), "feet advance by at least" if sample.foot else "body stays within", sample.limit, sample.worst, sample.worst_at, fmt_xs(sample.worlds), fmt_xs(sample.cels)])
+			# Body registered sheets pass when the shirt (side run back edge + 6) stays within
+			# RUN_BODY_LIMIT_PX of itself; Heroes keeps its paw anchored body reference.
+			report.call(sample.measured and sample.worlds.size() == run_frame_count(spec) and sample.worst <= sample.limit, "%s facing %d armed run %s %.2f px across run frames (worst %.2f between %s; world x %s; cel x %s)" % [weapon, int(facing), "body stays within", sample.limit, sample.worst, sample.worst_at, fmt_xs(sample.worlds), fmt_xs(sample.cels)])
 	actor.swing_left = 0
 	actor.visual_weapon = ""
 	if show_held:

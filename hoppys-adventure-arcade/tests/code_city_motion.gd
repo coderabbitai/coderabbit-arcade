@@ -261,7 +261,9 @@ func check_armed_locomotion_clips() -> void:
 					check(false,weapon+" "+clip+" frame "+str(i)+" has a texture")
 					continue
 				var used := image.get_used_rect()
-				check(used.has_area() and used.end.y>=pivot.y-3 and used.end.y<=pivot.y+3,weapon+" "+clip+" frame "+str(i)+" stands on the foot pivot row")
+				# Rect2i.end is exclusive, so the lowest occupied row is end.y - 1.
+				var lowest_row := used.end.y-1
+				check(used.has_area() and lowest_row>=pivot.y-3 and lowest_row<=pivot.y+3,weapon+" "+clip+" frame "+str(i)+" stands on the foot pivot row")
 				if i<listed.size():
 					if listed[i] is int or listed[i] is float:
 						check(hands.has(str(int(listed[i]))),weapon+" "+clip+" frame "+str(i)+" has a hand anchor")
@@ -402,11 +404,286 @@ func finish_capture() -> void:
 	await create_timer(.2).timeout
 	quit(1 if failures else 0)
 
+## Torso registration at runtime. The player ticks at the physics rate (move_and_slide steps by the
+## physics delta) while the sprite animates on the engine clock. The drawn shirt x comes from the
+## body's own transform, mirrored inside the texture when flipped, so an offset or scale bug shows.
+## Side runs read the shirt back edge + 6, every other pose the shirt centroid.
+const RUN_PX_PER_S := 240.0
+const RUN_FPS := 13.0
+## The animation clock and the physics ticks are independent, so a frame boundary can land a tick
+## either side of its ideal time: up to 8.5 px at 240 px/s. This only widens the per-animation-frame
+## step; each physics tick is held to 240 * dt within TORSO_TICK_SLACK, and whole cycles to 1 px.
+const TORSO_STEP_SLACK := 8.5
+const TORSO_TICK_SLACK := 1.0
+## Shirt x within 2 cel px of the node, times the 1.55 body scale, plus rounding.
+const TORSO_POSE_SLACK := 3.2
+const TORSO_TICK_CAP := 900
+var landmark_cache := {}
+
+## Shirt x (cel px) for every frame of `clip` on the weapon's armed sheet. NaN where unreadable.
+func shirt_xs(weapon: String, clip: String) -> PackedFloat32Array:
+	var key := weapon+"/"+clip
+	if landmark_cache.has(key): return landmark_cache[key]
+	var sheet := Art.armed(weapon)
+	var xs := PackedFloat32Array()
+	for i in sheet.get_frame_count(clip):
+		var measured := ArmedMeasure.shirt_measure(sheet.get_frame_texture(clip,i).get_image(),clip=="run")
+		xs.append(measured.position.x if measured.size>=15 else NAN)
+	landmark_cache[key]=xs
+	return xs
+
+## World x of the shirt landmark on the frame the body is showing, or NaN.
+func drawn_torso(actor) -> float:
+	var body: AnimatedSprite2D=actor.body
+	var xs := shirt_xs(actor.weapon,body.animation)
+	if body.frame>=xs.size() or is_nan(xs[body.frame]): return NAN
+	var cell: Vector2=body.sprite_frames.get_frame_texture(body.animation,body.frame).get_size()
+	var texel := xs[body.frame]+.5
+	var u := cell.x-texel if body.flip_h else texel
+	return body.to_global(Vector2(u,cell.y/2.0)-cell/2.0+body.offset).x
+
+func hold_move(action: String, strength := 1.0) -> void:
+	for name in ["move_left","move_right","move_up","move_down"]:
+		Input.action_release(name)
+	if action!="": Input.action_press(action,strength)
+
+## One physics tick: the sprite animates on the real clock, the player steps by the physics delta.
+func step_player(actor) -> float:
+	await physics_frame
+	var dt := 1.0/float(Engine.physics_ticks_per_second)
+	actor.tick(dt)
+	return dt
+
+func sample_of(actor, clock: float) -> Dictionary:
+	return {"t":clock,"x":drawn_torso(actor),"clip":actor.body.animation,"frame":actor.body.frame,"pos":actor.position.x}
+
+## Runs `ticks` ticks and returns a sample after each.
+func run_samples(actor, ticks: int) -> Array:
+	var out := []
+	var clock := 0.0
+	for _i in ticks:
+		clock+=await step_player(actor)
+		out.append(sample_of(actor,clock))
+	return out
+
+## Runs until the run clip has wrapped `wraps` times (frame returns to 0), bounded by TORSO_TICK_CAP.
+func run_cycles(actor, wraps: int) -> Array:
+	var out := []
+	var clock := 0.0
+	var seen := 0
+	var last_frame := -1
+	while seen<wraps and out.size()<TORSO_TICK_CAP:
+		clock+=await step_player(actor)
+		var sample := sample_of(actor,clock)
+		if sample.clip=="run" and sample.frame==0 and last_frame!=0 and not out.is_empty(): seen+=1
+		last_frame=sample.frame
+		out.append(sample)
+	return out
+
+func torso_offset_ok(sample: Dictionary) -> bool:
+	return not is_nan(sample.x) and absf(sample.x-sample.pos)<=TORSO_POSE_SLACK
+
+func check_torso_motion(actor, weapon: String, facing: float) -> void:
+	var label := "%s facing %d" % [weapon,int(facing)]
+	actor.equip(weapon);actor.pickup_time=0;actor.stagger=0;actor.input_lock=0
+	actor.swing_left=0;actor.combo_window=0;actor.held.show();actor.controlled=true
+	actor.facing=facing;actor.steer=facing
+	actor.position=Vector2(game.room_start()+(180 if facing>0 else 1020),560)
+	var run_action := "move_right" if facing>0 else "move_left"
+	hold_move(run_action)
+	await run_samples(actor,12)
+	# Two full wraps after the settle: three wraps are run so the first, partial cycle is dropped.
+	var samples: Array=await run_cycles(actor,3)
+	check(samples.size()<TORSO_TICK_CAP and samples.all(func(s): return s.clip=="run"),label+" runs three wraps on the armed run clip (%d ticks)" % samples.size())
+	check(absf(actor.body.speed_scale-1.0)<.001,label+" cadence is 1.0 at full stick")
+	var backward := 0
+	var unreadable := 0
+	var worst_back := 0.0
+	for i in range(1,samples.size()):
+		if is_nan(samples[i].x) or is_nan(samples[i-1].x):
+			unreadable+=1
+			continue
+		var delta: float=(samples[i].x-samples[i-1].x)*facing
+		if delta<-0.001:
+			backward+=1
+			worst_back=minf(worst_back,delta)
+	var worst_tick := 0.0
+	for i in range(1,samples.size()):
+		if is_nan(samples[i].x) or is_nan(samples[i-1].x): continue
+		var tick_dt: float=samples[i].t-samples[i-1].t
+		worst_tick=maxf(worst_tick,absf((samples[i].x-samples[i-1].x)*facing-RUN_PX_PER_S*tick_dt))
+	check(worst_tick<=TORSO_TICK_SLACK,label+" each physics tick moves the torso by 240*dt (worst %.2f px off, slack %.1f)" % [worst_tick,TORSO_TICK_SLACK])
+	check(unreadable==0,label+" every drawn run frame has a readable shirt")
+	check(backward==0,label+" drawn torso never steps backward (%d backward ticks, worst %.2f px)" % [backward,worst_back])
+	# Animation-frame steps: the first tick of each frame, skipping the partial first interval.
+	var starts := []
+	for i in range(1,samples.size()):
+		if samples[i].frame!=samples[i-1].frame: starts.append(i)
+	var expected := RUN_PX_PER_S/RUN_FPS
+	var worst_step := 0.0
+	for k in range(1,starts.size()):
+		var a: Dictionary=samples[starts[k-1]]
+		var b: Dictionary=samples[starts[k]]
+		if is_nan(a.x) or is_nan(b.x): continue
+		worst_step=maxf(worst_step,absf((b.x-a.x)*facing-expected))
+	check(starts.size()>=13,label+" shows at least 2 full run cycles after the partial one (%d frame changes)" % starts.size())
+	check(worst_step<=TORSO_STEP_SLACK,label+" each frame step is near %.1f px (worst %.1f px off, slack %.1f)" % [expected,worst_step,TORSO_STEP_SLACK])
+	var firsts := starts.filter(func(i): return samples[i].frame==0)
+	if firsts.size()>=2:
+		var first: Dictionary=samples[firsts[0]]
+		var last: Dictionary=samples[firsts[firsts.size()-1]]
+		var travelled: float=(last.x-first.x)*facing
+		var wanted: float=RUN_PX_PER_S*(last.t-first.t)
+		check(not is_nan(travelled) and absf(travelled-wanted)<=1.0,label+" torso travels %.2f px over %d cycles, ground covered is %.2f" % [travelled,firsts.size()-1,wanted])
+		var per_frame := travelled/float((firsts.size()-1)*6)
+		check(not is_nan(per_frame) and absf(per_frame-expected)<=1.0,label+" cycle average is %.2f px per animation frame, 240/13 is %.2f" % [per_frame,expected])
+	var run_offset: float=samples[samples.size()-1].x-samples[samples.size()-1].pos
+	check(absf(run_offset)<=TORSO_POSE_SLACK,label+" side run torso sits on the pivot (%.2f px)" % run_offset)
+	# Every switch is judged from its first new pose, with no ticks skipped.
+	for move in [["","hold_idle"],[run_action,"run"],["move_up","walk_up"],["move_down","walk_down"],[run_action,"run"]]:
+		hold_move(move[0])
+		var first_ticks: Array=await run_samples(actor,6)
+		var worst := 0.0
+		var wrong := ""
+		for sample in first_ticks:
+			if sample.clip!=move[1]:
+				wrong=sample.clip
+				break
+			if is_nan(sample.x):
+				wrong="unreadable"
+				break
+			worst=maxf(worst,absf(sample.x-sample.pos))
+		check(wrong=="" and worst<=TORSO_POSE_SLACK,label+" switch to "+move[1]+" holds the torso within %.1f px of the pivot from its first tick (worst %.2f, wrong '%s')" % [TORSO_POSE_SLACK,worst,wrong])
+	hold_move("")
+	actor.controlled=false
+
+func check_torso_motion_all(actor) -> void:
+	var saved_fps := Engine.max_fps
+	Engine.max_fps=60
+	for weapon in Catalog.WEAPONS:
+		for facing in [1.0,-1.0]:
+			await check_torso_motion(actor,weapon,facing)
+	hold_move("")
+	Engine.max_fps=saved_fps
+
+## `-- --capture-running [--capture-path=<png>]` renders the real player running through the game
+## scene. For each weapon and facing, one row shows ghost copies of the body every few physics ticks
+## in world x across: run, stop, start, then side to up and back. Red ticks mark the drawn shirt x.
+## Needs a rendered run (use --always-on-top); the suite does not run.
+const RUNNING_PATH := "res://../docs/previews/code-city-motion/running_world_space.png"
+const RUNNING_ROW := 200
+const RUNNING_GHOST_EVERY := 9
+const RUNNING_SEGMENTS := [["run",54,""],["stop",9,""],["start",27,""],["up",18,""],["side",18,""]]
+
+func running_target() -> String:
+	var args := OS.get_cmdline_user_args()
+	if not args.has("--capture-running"): return ""
+	for i in args.size():
+		if args[i].begins_with("--capture-path="): return args[i].trim_prefix("--capture-path=")
+		if args[i]=="--capture-path" and i+1<args.size(): return args[i+1]
+	return RUNNING_PATH
+
+func ghost(stage: Node2D, actor, at: Vector2, alpha: float) -> void:
+	var sprite := AnimatedSprite2D.new()
+	sprite.sprite_frames=actor.body.sprite_frames
+	sprite.animation=actor.body.animation
+	sprite.frame=actor.body.frame
+	sprite.pause()
+	sprite.flip_h=actor.body.flip_h
+	sprite.offset=actor.body.offset
+	sprite.scale=actor.body.scale
+	sprite.modulate=Color(1,1,1,alpha)
+	sprite.z_index=0
+	sprite.position=at
+	stage.add_child(sprite)
+
+func capture_running(path: String) -> void:
+	if DisplayServer.get_name()=="headless":
+		printerr("FAIL: --capture-running needs a rendered run, not --headless")
+		quit(1)
+		return
+	var weapons: Array=Catalog.WEAPONS.keys()
+	var rows := weapons.size()*2
+	var viewport := SubViewport.new()
+	viewport.size=Vector2i(1280,rows*RUNNING_ROW)
+	viewport.render_target_update_mode=SubViewport.UPDATE_DISABLED
+	var stage := Node2D.new()
+	stage.texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
+	viewport.add_child(stage)
+	var backdrop := ColorRect.new()
+	backdrop.color=Color(.18,.2,.24)
+	backdrop.size=Vector2(viewport.size)
+	stage.add_child(backdrop)
+	game.add_child(viewport)
+	var saved_fps := Engine.max_fps
+	Engine.max_fps=60
+	var actor=game.player
+	var row := 0
+	for weapon in weapons:
+		for facing in [1.0,-1.0]:
+			var base_y := row*RUNNING_ROW+RUNNING_ROW-30.0
+			var run_action := "move_right" if facing>0 else "move_left"
+			actor.equip(weapon);actor.pickup_time=0;actor.stagger=0;actor.input_lock=0
+			actor.swing_left=0;actor.combo_window=0;actor.held.show();actor.controlled=true
+			actor.facing=facing;actor.steer=facing
+			var start_x: float=game.room_start()+(140 if facing>0 else 1000)
+			actor.position=Vector2(start_x,560)
+			var label := Label.new()
+			label.text="%s facing %d" % [weapon,int(facing)]
+			label.position=Vector2(6,row*RUNNING_ROW+2)
+			stage.add_child(label)
+			var ground := ColorRect.new()
+			ground.color=Color(.32,.35,.4)
+			ground.position=Vector2(0,base_y)
+			ground.size=Vector2(1280,1)
+			stage.add_child(ground)
+			var tick := 0
+			var drawn_marks := 0
+			for segment in RUNNING_SEGMENTS:
+				var action: String={"run":run_action,"stop":"","start":run_action,"up":"move_up","side":run_action}[segment[0]]
+				hold_move(action)
+				for _i in segment[1]:
+					await step_player(actor)
+					tick+=1
+					var world_x: float=actor.position.x-game.room_start()
+					var at := Vector2(world_x,base_y+(actor.position.y-560.0)*0.5)
+					if tick%RUNNING_GHOST_EVERY==0: ghost(stage,actor,at,.75)
+					var torso := drawn_torso(actor)
+					if not is_nan(torso):
+						var mark := ColorRect.new()
+						mark.color=Color(1,.2,.3,.9)
+						mark.position=Vector2(torso-game.room_start(),base_y-110)
+						mark.size=Vector2(1,16)
+						stage.add_child(mark)
+						drawn_marks+=1
+				var tag := Label.new()
+				tag.text=segment[0]
+				tag.add_theme_font_size_override("font_size",11)
+				tag.position=Vector2(actor.position.x-game.room_start()-14,row*RUNNING_ROW+RUNNING_ROW-16-(10 if segment[0]=="stop" or segment[0]=="up" else 0))
+				stage.add_child(tag)
+			check(drawn_marks>40,"%s facing %d running capture has %d torso marks" % [weapon,int(facing),drawn_marks])
+			row+=1
+	hold_move("")
+	Engine.max_fps=saved_fps
+	actor.controlled=false
+	await process_frame
+	viewport.render_target_update_mode=SubViewport.UPDATE_ONCE
+	var rid := viewport.get_viewport_rid()
+	await RenderingServer.frame_post_draw
+	while RenderingServer.viewport_get_update_mode(rid)!=RenderingServer.VIEWPORT_UPDATE_DISABLED:
+		await RenderingServer.frame_post_draw
+	var image := viewport.get_texture().get_image()
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path).get_base_dir())
+	check(image.save_png(ProjectSettings.globalize_path(path))==OK,"Running world-space sheet saved with %d rows to %s" % [rows,path])
+	viewport.queue_free()
+	await finish_capture()
+
 func run() -> void:
 	var target := capture_target()
 	if target!="":
 		await capture_locomotion(target)
 		return
+	if running_target()!="": await autoloads_ready()
 	change_scene_to_file("res://scenes/beatem_up/code_city_brawl.tscn")
 	await process_frame;await process_frame
 	game=current_scene
@@ -416,7 +693,8 @@ func run() -> void:
 	if game.state=="paused": game.resume()
 	game.begin_play()
 	game.set_physics_process(false)
-	check_armed_locomotion_clips()
+	var running := running_target()
+	if running=="": check_armed_locomotion_clips()
 	var p=game.player
 	p.set_physics_process(false);p.controlled=false
 	for e in game.enemies: e.queue_free()
@@ -425,6 +703,9 @@ func run() -> void:
 	game.props.clear()
 	for item in game.pickups: item.node.queue_free()
 	game.pickups.clear()
+	if running!="":
+		await capture_running(running)
+		return
 	var players: Array=[]
 	var i:=0
 	for weapon in Catalog.WEAPONS:
@@ -599,6 +880,8 @@ func run() -> void:
 		check(p.armed_sheet()==null and not p.armed and p.body.sprite_frames==PLATFORMER_FRAMES and p.body.animation=="run","Hiding the weapon returns the finisher to the unarmed platformer frames")
 	for actor in players:
 		if actor!=p: actor.queue_free()
+	p.hp=3;p.invulnerable=0
+	await check_torso_motion_all(p)
 	game.start_stage(2)
 	await process_frame;await process_frame
 	game.begin_play();game.set_physics_process(false)

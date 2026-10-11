@@ -378,7 +378,7 @@ CLIPS = {
     "hurt": ([15], 1, False),
 }
 
-# Original cells stay byte-identical; the old four shuffle cells are archived in
+# Attack cells stay byte-identical; the old four shuffle cells are archived in
 # the atlas but are no longer used by a Code City clip.
 CODE_CITY_CLIPS = {
     **CLIPS,
@@ -386,7 +386,6 @@ CODE_CITY_CLIPS = {
     "walk_up": (list(range(22, 26)), 9, True),
     "walk_down": (list(range(26, 30)), 9, True),
 }
-RUN_STANCE_X = (84, 72, 60, 84, 72, 60)
 
 
 def clips_for_mode(mode: Mode) -> dict:
@@ -398,12 +397,7 @@ def frame_count_for_mode(mode: Mode) -> int:
 
 
 def locomotion_frames(pack: Path, mode: Mode, weapon: str) -> tuple[list[FramePlacement], dict]:
-    """Slice real generated leg poses, registering their soles to a moving stance.
-
-    The stance travels 12 cel pixels backward per animation frame. At 13 fps and
-    the player's 1.55 scale this cancels 241.8 world px/s, within 1% of 240.
-    Register the painted foot, never the weapon or a whole-body centroid.
-    """
+    """Slice generated leg poses; body registration follows the initial sole alignment."""
     source = pack / "sources" / f"{weapon}-locomotion.png"
     master = Image.open(source).convert("RGBA")
     components, fragments = master_components(master)
@@ -462,7 +456,7 @@ def locomotion_frames(pack: Path, mode: Mode, weapon: str) -> tuple[list[FramePl
                 foot_y = y
         grounded_xs = [x for x in range(left, right + 1) if alpha.getpixel((x, foot_y)) >= 128]
         foot_x = min(grounded_xs, key=lambda x: abs(x - foot_x))
-        target_x = RUN_STANCE_X[index] if index < 6 else mode.pivot[0]
+        target_x = mode.pivot[0]
         # Vertical walks use the centre of the two legs. Their alternating raised
         # soles remain drawn by the source, not synthesized by translation.
         if index >= 6:
@@ -491,10 +485,114 @@ def locomotion_frames(pack: Path, mode: Mode, weapon: str) -> tuple[list[FramePl
         "source_component_bounds": source_bounds, "source_scale": scale,
         "relative_scales": relative_scales,
         "fragment_attachments": fragments, "hand": hands, "foot": feet,
-        "visible_bounds": bounds, "stance_x": list(RUN_STANCE_X),
-        "stance_step_px": 12, "fps": 13, "body_scale": 1.55,
-        "matched_world_speed": 241.8,
+        "visible_bounds": bounds, "fps": 13, "body_scale": 1.55,
     }
+
+
+def largest_color_component(points: set[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Find a painted region, ignoring disconnected weapon highlights and outlines."""
+    largest: list[tuple[int, int]] = []
+    while points:
+        seed = min(points, key=lambda p: (p[1], p[0]))
+        points.remove(seed)
+        region, pending = [seed], [seed]
+        while pending:
+            x, y = pending.pop()
+            for neighbor in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if neighbor in points:
+                    points.remove(neighbor)
+                    region.append(neighbor)
+                    pending.append(neighbor)
+        if len(region) > len(largest):
+            largest = region
+    if not largest:
+        raise ValueError("no painted body component")
+    return largest
+
+
+def body_landmarks(frame: Image.Image, side_run: bool = False) -> tuple[float, float, float]:
+    """Measure the shirt independently of anchors, feet, and forward weapon pixels.
+
+    A side runner's forearm hides different amounts of shirt each frame. Its back
+    edge follows the spine, whereas the visible shirt centroid follows the arm.
+    Six texels inward gives the torso axis. Front/back carries use the shirt centre.
+    The orange head centroid is a second check against a bad component selection.
+    """
+    pixels = frame.load()
+    head = largest_color_component({
+        (x, y) for y in range(frame.height) for x in range(frame.width)
+        if (lambda p: p[3] >= 128 and p[0] > 200 and 40 < p[1] < 170 and p[2] < 100
+            and p[0] - p[1] > 70 and p[1] - p[2] > 25)(pixels[x, y])
+    })
+    head_x = sum(x for x, _ in head) / len(head)
+    head_bottom = max(y for _, y in head)
+    shirt = largest_color_component({
+        (x, y) for y in range(max(0, head_bottom - 2), min(frame.height, head_bottom + 21))
+        for x in range(frame.width) if abs(x - head_x) < 18
+        and (lambda p: p[3] >= 128 and min(p[:3]) >= 20 and max(p[:3]) < 85
+             and max(p[:3]) - min(p[:3]) < 22)(pixels[x, y])
+    })
+    if len(shirt) < 20:
+        raise ValueError(f"shirt region too small to register: {len(shirt)} pixels")
+    torso_x = min(x for x, _ in shirt) + 6 if side_run else sum(x for x, _ in shirt) / len(shirt)
+    return torso_x, sum(y for _, y in shirt) / len(shirt), head_x
+
+
+def register_code_city_body(mode: Mode, weapon: str, placements: list[FramePlacement],
+                            frame_anchors: dict, movement: dict) -> dict:
+    """Give ready poses and walking a common torso axis without changing attack art."""
+    indices = [0, 14, 15, *range(16, 30)]
+    before = {i: body_landmarks(placements[i].image, 16 <= i < 22) for i in indices}
+    bob_centers = {}
+    for clip in ("run", "walk_up", "walk_down"):
+        frames = CODE_CITY_CLIPS[clip][0]
+        ys = [before[i][1] for i in frames]
+        for i in frames:
+            bob_centers[i] = (min(ys) + max(ys)) / 2
+    measured, offsets = {}, {}
+    for index in indices:
+        original = placements[index]
+        torso_x, torso_y, _ = before[index]
+        dx, dy = round(mode.pivot[0] - torso_x), 0
+        if index >= 16:
+            bob_center = bob_centers[index]
+            target_y = max(bob_center - .75, min(bob_center + .75, torso_y))
+            dy = round(target_y - torso_y)
+        frame = translate_frame(original.image, (dx, dy), mode, index)
+        foot = (original.foot[0] + dx, original.foot[1] + dy)
+        sole = lowest_sole_row(frame, foot[0])
+        if abs(sole - foot[1]) > 1 or (index >= 16 and abs(sole - mode.pivot[1]) > 3):
+            raise ValueError(f"{weapon} cell {index}: body registration moved sole beyond the ground tolerance")
+        placements[index] = FramePlacement(
+            frame, (original.offset[0] + dx, original.offset[1] + dy), foot,
+            original.selected_foot_before_registration, sole, original.same_foot_x + dx,
+        )
+        for kind in ("hand", "foot"):
+            old = frame_anchors[kind][str(index)]
+            frame_anchors[kind][str(index)] = [old[0] + dx, old[1] + dy]
+            if index >= 16:
+                movement[kind][str(index)] = frame_anchors[kind][str(index)]
+        if index >= 16:
+            movement["visible_bounds"][index - 16] = list(frame.getchannel("A").getbbox())
+        measured[index] = body_landmarks(frame, 16 <= index < 22)
+        offsets[str(index)] = [dx, dy]
+    for index, (x, _, _) in measured.items():
+        if abs(x - mode.pivot[0]) > 2:
+            raise ValueError(f"{weapon} cell {index}: torso misses common axis: {x}")
+    for clip in ("run", "walk_up", "walk_down"):
+        values = [measured[i] for i in CODE_CITY_CLIPS[clip][0]]
+        for current, following in zip(values, values[1:] + values[:1]):
+            if abs(current[0] - following[0]) > 3:
+                raise ValueError(f"{weapon} {clip}: torso pops between frames: {values}")
+        if max(v[1] for v in values) - min(v[1] for v in values) > 3:
+            raise ValueError(f"{weapon} {clip}: torso bob exceeds 3 pixels")
+    run_heads = [measured[i][2] for i in range(16, 22)]
+    if max(run_heads) - min(run_heads) > 4:
+        raise ValueError(f"{weapon}: run head moves more than 2 pixels either side of its centre")
+    return {"method": "shirt back edge + 6px for run, shirt centroid for other ready poses",
+            "torso_x": mode.pivot[0], "frame_offsets": offsets,
+            "landmarks": {str(i): {"torso": [round(v[0], 4), round(v[1], 4)], "head_x": round(v[2], 4)}
+                          for i, v in measured.items()}}
 
 
 def pilot_weapon(mode: Mode) -> Weapon:
@@ -1305,14 +1403,14 @@ def prompts_text(pack: Path, mode: Mode) -> str:
         ))
     if mode.directory == "code_city":
         movement = json.loads((pack / "locomotion.json").read_text())
-        sections.append("\n## Locomotion masters: October 10, 2026\n\nBuilt-in image generation. Six run, four back walk and four front walk poses per weapon. Original combat masters and cells 0-15 are preserved. New movement occupies cells 16-29.\n")
+        sections.append("\n## Locomotion masters: October 10, 2026\n\nBuilt-in image generation. Six run, four back walk and four front walk poses per weapon. Original combat masters are preserved. New movement occupies cells 16-29; idle, equip and hurt are body-registered alongside it.\n")
         for weapon, prompt in movement["prompts"].items():
             sections.extend((f"\n### {weapon}: locomotion\n\n", prompt + "\n"))
         sections.append("\n### Layout and gutter refinements\n\n")
         sections.append((pack / "locomotion-refinement.txt").read_text() + "\n\n")
         sections.append((pack / "locomotion-gutters.txt").read_text() + "\n\n")
         sections.append("\n### Whip carry clearance refinement\n\n" + (pack / "locomotion-whip-refinement.txt").read_text() + "\n\n")
-        sections.append("The gutter refinement applies to linter_staff, firewall_shield and git_branch. Their earlier masters are retained. Git branch uses the refined master for run and back views; two front steps come from generation-zero cells 9 and 10, rescaled to match the refined source. No atlas is painted.\n\nRun stance soles advance backward 12 texels per frame at 13 fps. At the runtime body scale of 1.55 this matches 241.8 px/s, within 1% of the 240 px/s walk speed. Foot registration follows the orange body soles, excluding hanging whip keys.\n")
+        sections.append("The gutter refinement applies to linter_staff, firewall_shield and git_branch. Their earlier masters are retained. Git branch uses the refined master for run and back views; two front steps come from generation-zero cells 9 and 10, rescaled to match the refined source. No atlas is painted.\n\nBody registration keeps the torso near pivot x72 in ready poses and every locomotion frame. The run uses the shirt back edge, avoiding the moving forearm; a separate head measurement limits head sway. Vertical bob is limited to 3px. Run remains 13 fps and vertical walks 9 fps; feet cycle inside the cell instead of shifting the whole body to hold a planted foot. Generated masters are unchanged, and the builder records every registration offset and measured landmark.\n")
     return "".join(sections)
 
 
@@ -1356,6 +1454,7 @@ def pack_mode(mode: Mode) -> None:
             placements.extend(movement_frames)
             frame_anchors["hand"].update(movement["hand"])
             frame_anchors["foot"].update(movement["foot"])
+            body_registration = register_code_city_body(mode, weapon.weapon, placements, frame_anchors, movement)
         frames = [placement.image for placement in placements]
         rows = (len(frames) + 3) // 4
         sheet = Image.new("RGBA", (mode.cell[0] * 4, mode.cell[1] * rows))
@@ -1398,13 +1497,14 @@ def pack_mode(mode: Mode) -> None:
         if weapon.run_register:
             entries[weapon.weapon]["run_registration"] = weapon.run_register
         if movement is not None:
-            entries[weapon.weapon]["run_registration"] = "foot"
+            entries[weapon.weapon]["run_registration"] = "body"
+            entries[weapon.weapon]["body_registration"] = body_registration
             entries[weapon.weapon]["locomotion"] = movement
             entries[weapon.weapon]["unused_legacy_cells"] = [1, 2, 3, 4]
             entries[weapon.weapon]["foot_anchor_semantics"] = (
-                "Original cells retain their original foot anchors. Run cells 16-21 use the painted support sole "
-                "at x84,72,60 repeated and y118; the stance travels backward to cancel world motion. "
-                "Vertical walks use a ground midpoint between the legs."
+                "Ready poses and locomotion share the torso axis at pivot x; feet cycle freely. "
+                "Foot anchors follow the translated soles, with at most 3px run bob around the ground row. "
+                "Attacks and unused legacy run cells retain their original registration."
             )
         if weapon.source_order:
             entries[weapon.weapon]["source_order"] = list(source_order)
@@ -1426,8 +1526,8 @@ def pack_mode(mode: Mode) -> None:
                 }
             if movement is not None:
                 entries[weapon.weapon]["foot_planting"]["default"] = (
-                    "Legacy cells 0-15 preserve original registration. Locomotion cells 16-29 use separately "
-                    "generated poses with sole registration; see locomotion for stance and source provenance."
+                    "Idle, equip, hurt and locomotion use body registration. Attacks and unused legacy run "
+                    "cells preserve original registration. See locomotion for source provenance."
                 )
     icons, carry_calibration = build_carry_icons(mode, packed)
     outputs.extend((pack / "carry" / f"{weapon}.png", icon) for weapon, icon in icons.items())
@@ -1463,7 +1563,7 @@ def pack_mode(mode: Mode) -> None:
     for weapon in weapons_for_mode(mode):
         entry = entries[weapon.weapon]
         run_body = ", ".join(f"{x:.1f}" for x in run_bodies[weapon.weapon])
-        registration = "foot stance x=[84,72,60,84,72,60], 13 fps / 241.8 world px/s" if mode.directory == "code_city" else f"run body x=[{run_body}]"
+        registration = "body registered at torso x72, run 13 fps" if mode.directory == "code_city" else f"run body x=[{run_body}]"
         print(f"packed {mode.directory}/{weapon.weapon}: scale={entry['source_scale']:.6f}, body_height={entry['body_height']}, {registration}")
 
 

@@ -35,7 +35,8 @@ const EXPECTED := {
 			"walk_up": {"frames": 4, "loop": true},
 			"walk_down": {"frames": 4, "loop": true},
 		},
-		"run_registration": "foot",
+		"run_registration": "body",
+		"torso": true,
 		"unused_cells": [1, 2, 3, 4],
 		"run_first_frame": 16,
 		"walk_first_frame": 22,
@@ -50,6 +51,7 @@ const EXPECTED := {
 		"populated": 16,
 		"clips": CLIPS,
 		"run_registration": "body",
+		"torso": false,
 		"unused_cells": [],
 		"pilot": "review_stamp",
 		"weapons": ["review_stamp", "triage_hammer", "change_stack_baton", "security_scanner", "pr_merger"],
@@ -229,84 +231,89 @@ func validate_sheet(path: String, label: String, expected: Dictionary, entry: Di
 			var tips: Variant = anchors.get("tip", {}) if anchors is Dictionary else {}
 			var tip: Variant = tips.get(str(frame), []) if tips is Dictionary else []
 			check(anchor_near_alpha(image, cell, frame, tip), label + ": contact tip anchor is missing or farther than 2 pixels from alpha in frame " + str(frame))
-		var feet := find_grounded_foot_row(image, cell, frame, pivot)
+		var feet := find_grounded_foot_row(image, cell, frame, pivot, 3 if expected.torso and frame >= 16 else 1)
 		check(feet.has("row"), label + ": no grounded opaque foot row near pivot in frame " + str(frame))
-		if frame == 0 and feet.has("row"):
+		# Heroes registers on the feet, so its idle foot centre sits on pivot.x. Code City registers on
+		# the torso, which owns x, so only Heroes keeps this requirement.
+		if frame == 0 and feet.has("row") and not expected.torso:
 			var foot_center := (float(feet.min_x) + float(feet.max_x)) / 2.0
 			check(absf(foot_center - float(pivot.x)) <= 2.0, label + ": hold_idle foot centre differs from pivot.x by more than 2 pixels")
 	if not entry.is_empty():
-		if expected.run_registration == "body":
+		# Code City registers on the shirt (validate_torso); the paw-anchored mean is the Heroes metric.
+		if not expected.torso:
 			validate_run_body(label, image, cell, entry, expected.clips.run.frames)
-		else:
-			validate_run_stride(label, image, cell, entry, expected.clips.run.frames)
+		if expected.torso:
+			validate_torso(label, image, cell, entry, expected)
+			validate_head_run_range(label, image, cell, entry)
 
 
-## Foot registration. The builder plants a foot at stance_x on pivot row y for each run cell, and
-## the world speed must carry the planted foot back by exactly the ground the body covers per
-## frame: run_speed / fps + delta_x * body_scale stays within 1 px across 0>1>2 and 3>4>5.
-const RUN_SPEED := 240.0
-const STANCE_X := [84, 72, 60, 84, 72, 60]
-const STANCE_PAIRS := [[0, 1], [1, 2], [3, 4], [4, 5]]
+## Code City torso registration, measured on Hoppy's own shirt so a weapon, paw or foot cannot move
+## the reference. The shirt x must stay within 2 px of the idle shirt in every clip, may move 3 px
+## at most between adjacent frames of a looping clip (wrap included), and its y at most 3 px.
+const TORSO_IDLE_TOLERANCE := 2.0
+const TORSO_STEP_LIMIT := 3.0
+const TORSO_MIN_PIXELS := 15
+## Secondary side run check: the head centroid spans at most this far across the run cycle.
+## Front and back walks let the head shift naturally, so only the side run is checked.
+const HEAD_RUN_RANGE := 4.0
+const TORSO_CLIPS := ["hold_idle", "run", "walk_up", "walk_down", "equip", "hurt"]
+const TORSO_LOOPS := ["run", "walk_up", "walk_down"]
 
-func validate_run_stride(label: String, sheet: Image, cell: Vector2i, entry: Dictionary, run_count: int) -> void:
-	var pivot_data: Variant = entry.get("pivot", [])
+func validate_torso(label: String, sheet: Image, cell: Vector2i, entry: Dictionary, expected: Dictionary) -> void:
 	var clips: Variant = entry.get("clips", {})
-	var run: Variant = clips.get("run", {}) if clips is Dictionary else {}
-	var frames: Variant = run.get("frames", []) if run is Dictionary else []
-	var locomotion: Variant = entry.get("locomotion", {})
-	check(locomotion is Dictionary and not locomotion.is_empty(), label + ": locomotion record missing")
-	var ready: bool = pivot_data is Array and pivot_data.size() == 2 and frames is Array and frames.size() == run_count and run_count == STANCE_X.size() and locomotion is Dictionary and not locomotion.is_empty()
-	check(ready, label + ": foot run needs pivot, %d run frames and a locomotion record" % run_count)
-	if not ready:
+	if not clips is Dictionary or not clips.has("hold_idle"):
 		return
-	var stance_x: Variant = locomotion.get("stance_x", [])
-	check(stance_x is Array and stance_x.size() == STANCE_X.size(), label + ": locomotion stance_x lists 6 planted foot x values")
-	if not stance_x is Array or stance_x.size() != STANCE_X.size():
+	var measured := {}
+	for clip_name: String in TORSO_CLIPS:
+		var clip: Variant = clips.get(clip_name, {})
+		if not clip is Dictionary or not clip.get("frames") is Array:
+			continue
+		for frame_value in clip.frames:
+			var frame := int(frame_value)
+			if measured.has(frame):
+				continue
+			var region := sheet.get_region(Rect2i((frame % 4) * cell.x, int(frame / 4) * cell.y, cell.x, cell.y))
+			var shirt := ArmedMeasure.shirt_measure(region, clip_name == "run")
+			measured[frame] = shirt
+			check(not is_nan(shirt.position.x) and shirt.size >= TORSO_MIN_PIXELS, label + ": cell %d has no readable shirt (%d px)" % [frame, shirt.size])
+	var idle_cell := int(clips.hold_idle.frames[0])
+	if not measured.has(idle_cell) or is_nan(measured[idle_cell].position.x):
 		return
-	var fps_value: Variant = run.get("fps", 0)
-	var fps := float(fps_value) if (fps_value is int or fps_value is float) else 0.0
-	var scale_value: Variant = locomotion.get("body_scale", 0.0)
-	var scale := float(scale_value) if (scale_value is int or scale_value is float) else 0.0
-	var speed_value: Variant = locomotion.get("matched_world_speed", 0.0)
-	var matched := float(speed_value) if (speed_value is int or speed_value is float) else 0.0
-	check(is_equal_approx(fps, 13.0), label + ": run fps %s must be 13" % str(run.get("fps")))
-	check(int(locomotion.get("stance_step_px", 0)) == 12, label + ": stance_step_px must be 12")
-	check(absf(scale - 1.55) < 0.001, label + ": body_scale must be 1.55")
-	check(absf(matched - 241.8) <= 0.5, label + ": matched_world_speed must be about 241.8")
-	var stance_numeric := true
-	for i in STANCE_X.size():
-		var stance_value: Variant = stance_x[i]
-		if not (stance_value is int or stance_value is float):
-			stance_numeric = false
-			check(false, label + ": stance_x[%d] must be %d" % [i, STANCE_X[i]])
+	var idle_x: float = measured[idle_cell].position.x
+	for clip_name: String in TORSO_CLIPS:
+		var clip: Variant = clips.get(clip_name, {})
+		if not clip is Dictionary or not clip.get("frames") is Array:
 			continue
-		check(int(stance_value) == STANCE_X[i], label + ": stance_x[%d] must be %d" % [i, STANCE_X[i]])
-		var frame_value: Variant = frames[i]
-		if not (frame_value is int or frame_value is float):
-			check(false, label + ": run frame %d must sit in cell %d" % [i, i])
-			continue
-		var cell_frame := int(frame_value)
-		var first_value: Variant = frames[0]
-		var first_ok := first_value is int or first_value is float
-		var first_cell := int(first_value) if first_ok else 0
-		check(first_ok and cell_frame == first_cell + i, label + ": run frame %d must sit in cell %d" % [i, first_cell + i])
-		var grid_y := sheet.get_height() / cell.y if cell.y > 0 else 0
-		var on_sheet := cell_frame >= 0 and grid_y > 0 and cell_frame < 4 * grid_y
-		var sole_value: Variant = pivot_data[1]
-		var sole_ok := sole_value is int or sole_value is float
-		var sole_y := int(sole_value) if sole_ok else 0
-		check(on_sheet and sole_ok and anchor_near_alpha(sheet, cell, cell_frame, [int(stance_value), sole_y]), label + ": no opaque sole at stance x %d, y %d in run cell %d" % [int(stance_value), sole_y, cell_frame])
-	if fps > 0.0 and stance_numeric:
-		for pair in STANCE_PAIRS:
-			var delta := float(int(stance_x[pair[1]]) - int(stance_x[pair[0]]))
-			var drift := RUN_SPEED / fps + delta * scale
-			check(absf(drift) <= 1.0, label + ": planted foot slides %.2f px per frame across stance %d to %d (limit 1.0)" % [drift, pair[0], pair[1]])
-	var walk_fps_ok := true
-	for clip_name in ["walk_up", "walk_down"]:
-		var walk: Variant = clips.get(clip_name, {})
-		var walk_fps: Variant = walk.get("fps", 0) if walk is Dictionary else 0
-		walk_fps_ok = walk_fps_ok and walk is Dictionary and (walk_fps is int or walk_fps is float) and is_equal_approx(float(walk_fps), 9.0)
-	check(walk_fps_ok, label + ": walk_up and walk_down run at 9 fps")
+		var listed: Array = clip.frames
+		for i in listed.size():
+			var frame := int(listed[i])
+			var here: Vector2 = measured[frame].position
+			if is_nan(here.x):
+				continue
+			check(absf(here.x - idle_x) <= TORSO_IDLE_TOLERANCE, label + ": %s cell %d shirt x %.1f is %.1f px from idle %.1f (limit %.1f)" % [clip_name, frame, here.x, here.x - idle_x, idle_x, TORSO_IDLE_TOLERANCE])
+			if TORSO_LOOPS.has(clip_name):
+				var nxt: Vector2 = measured[int(listed[(i + 1) % listed.size()])].position
+				if is_nan(nxt.x):
+					continue
+				check(absf(nxt.x - here.x) <= TORSO_STEP_LIMIT, label + ": %s shirt x moves %.1f px between cells %d and %d (limit %.1f)" % [clip_name, nxt.x - here.x, frame, int(listed[(i + 1) % listed.size()]), TORSO_STEP_LIMIT])
+				check(absf(nxt.y - here.y) <= TORSO_STEP_LIMIT, label + ": %s shirt y moves %.1f px between cells %d and %d (limit %.1f)" % [clip_name, nxt.y - here.y, frame, int(listed[(i + 1) % listed.size()]), TORSO_STEP_LIMIT])
+
+
+func validate_head_run_range(label: String, sheet: Image, cell: Vector2i, entry: Dictionary) -> void:
+	var run: Variant = entry.get("clips", {}).get("run", {})
+	if not run is Dictionary or not run.get("frames") is Array:
+		return
+	var low := INF
+	var high := -INF
+	for frame_value in run.frames:
+		var frame := int(frame_value)
+		var region := sheet.get_region(Rect2i((frame % 4) * cell.x, int(frame / 4) * cell.y, cell.x, cell.y))
+		var head_x: float = ArmedMeasure.shirt_measure(region, true).head_x
+		if is_nan(head_x):
+			return
+		low = minf(low, head_x)
+		high = maxf(high, head_x)
+	check(high - low <= HEAD_RUN_RANGE, label + ": run head x spans %.1f px (limit %.1f)" % [high - low, HEAD_RUN_RANGE])
 
 
 func validate_run_body(label: String, sheet: Image, cell: Vector2i, entry: Dictionary, run_count: int) -> void:
@@ -373,12 +380,14 @@ func anchor_near_alpha(sheet: Image, cell: Vector2i, frame: int, point: Variant)
 	return false
 
 
-func find_grounded_foot_row(sheet: Image, cell: Vector2i, frame: int, pivot: Vector2i) -> Dictionary:
+## `reach` is how many rows above the pivot row a sole may sit: 1 for foot registered Heroes, 3 for the
+## body registered Code City locomotion whose feet lift or land a few pixels around the pivot.
+func find_grounded_foot_row(sheet: Image, cell: Vector2i, frame: int, pivot: Vector2i, reach := 1) -> Dictionary:
 	# Feet are sought in the bottom 45% of the cell and close to the foot pivot,
 	# keeping a raised weapon or hand from being mistaken for ground contact.
 	var lower_body_top := int(ceil(float(cell.y) * 0.55))
-	var first_row := maxi(lower_body_top, pivot.y - 1)
-	var last_row := mini(cell.y - 1, pivot.y + 1)
+	var first_row := maxi(lower_body_top, pivot.y - reach)
+	var last_row := mini(cell.y - 1, pivot.y + reach)
 	var x_radius := int(round(float(cell.x) * 0.10))
 	var first_x := maxi(0, pivot.x - x_radius)
 	var last_x := mini(cell.x - 1, pivot.x + x_radius)
