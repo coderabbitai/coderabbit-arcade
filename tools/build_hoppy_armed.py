@@ -393,6 +393,10 @@ def clips_for_mode(mode: Mode) -> dict:
     return CODE_CITY_CLIPS if mode.directory == "code_city" else CLIPS
 
 
+def frame_count_for_mode(mode: Mode) -> int:
+    return 1 + max(index for frames, _, _ in clips_for_mode(mode).values() for index in frames)
+
+
 def locomotion_frames(pack: Path, mode: Mode, weapon: str) -> tuple[list[FramePlacement], dict]:
     """Slice real generated leg poses, registering their soles to a moving stance.
 
@@ -468,6 +472,11 @@ def locomotion_frames(pack: Path, mode: Mode, weapon: str) -> tuple[list[FramePl
             raise ValueError(f"{weapon} locomotion {index}: cropped by destination cell {dx=}, {dy=}, size={resized.size}, foot={(foot_x, foot_y)}")
         frame = Image.new("RGBA", mode.cell)
         frame.alpha_composite(resized, (dx, dy))
+        sole_y = lowest_sole_row(frame, target_x)
+        if abs(sole_y - mode.pivot[1]) > 1:
+            raise ValueError(
+                f"{mode.directory}/{weapon}: locomotion sole misses the pivot at cell {index + 16}: {sole_y}"
+            )
         # Choose a painted paw near the centre-right grip, below the muzzle.
         hand_target = (resized.width * (.53 if index < 6 else .43), resized.height * .69)
         paw = min((p for p in orange if resized.height * .48 < p[1] < resized.height * .82),
@@ -475,7 +484,7 @@ def locomotion_frames(pack: Path, mode: Mode, weapon: str) -> tuple[list[FramePl
         hands[str(index + 16)] = [paw[0] + dx, paw[1] + dy]
         feet[str(index + 16)] = [target_x, mode.pivot[1]]
         result.append(FramePlacement(frame, (dx, dy), (target_x, mode.pivot[1]),
-                                     (foot_x, foot_y), mode.pivot[1], target_x))
+                                     (foot_x, foot_y), sole_y, target_x))
         bounds.append(list(frame.getchannel("A").getbbox()))
     return result, {
         "sources": source_names, "source_frames": source_indices,
@@ -1010,7 +1019,7 @@ def anchors(mode: Mode, weapon: Weapon, placements: list[FramePlacement]) -> dic
 
 
 def tres_text(sheet_name: str, mode: Mode) -> str:
-    frame_count = 30 if mode.directory == "code_city" else 16
+    frame_count = frame_count_for_mode(mode)
     lines = [
         f"[gd_resource type=\"SpriteFrames\" load_steps={frame_count + 2} format=3]",
         "",
@@ -1167,7 +1176,7 @@ def render_preview(mode: Mode, sheet: Image.Image, weapon: str | None = None) ->
     scale = 2
     card_width = mode.cell[0] * scale
     card_height = mode.cell[1] * scale
-    count = 30 if mode.directory == "code_city" else 16
+    count = frame_count_for_mode(mode)
     preview = Image.new("RGBA", (card_width * 4 + 28, card_height * ((count + 4) // 4) + 64), (12, 17, 28, 255))
     title = ImageDraw.Draw(preview)
     weapon_name = mode.pilot if weapon is None else weapon
