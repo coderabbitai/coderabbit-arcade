@@ -14,26 +14,37 @@ Launch Godot 4.7.1 and choose **Beat'em Up → Play Code City Brawl** from the a
 | Pick up nearby weapon | E or K | Y / Triangle |
 | Pause / resume | Escape | Start |
 
-W/Up changes the ground lane. Jump is a separate height above that lane. Attacks have a forward reach and depth tolerance, so standing in another lane avoids melee. Jump above ground attacks and projectiles, or sidestep their telegraphs. Late attack input buffers one next combo step; a gap of more than 0.48 seconds after recovery resets the chain.
+W/Up changes the ground lane. Jump is a separate height above that lane. Attacks have a forward reach and depth tolerance, so standing in another lane avoids melee. Jump above ground attacks and projectiles, or sidestep their telegraphs. Late attack input buffers one next combo step; a gap of more than 0.48 seconds after recovery resets the chain. Hoppy keeps his facing through a swing, so its hit area never flips mid-attack. Pressing the other way during or right after a swing turns him for the next one, buffered combo steps included. A quick tap mid-swing is remembered until the swing ends.
 
-Hoppy has three HP. Coffee restores one HP. Each stage begins with fresh health and equipment. Losing the last HP knocks Hoppy out. Play freezes under a white flash, he is thrown back away from the hit and topples over, lands with a dust puff and a bounce, and lies there with dizzy stars and a "K.O." callout while the music ducks. About 2.2 seconds after the hit, the game-over menu offers a retry from that stage's first encounter, restoring the score saved on entry. Pause freezes combat, effects and music, including during the introduction and stage transitions; losing window focus also pauses. Return-to-menu is available from pause, intros and results.
+Hoppy has three HP. Coffee restores one HP. Each stage begins with fresh health and equipment. Losing the last HP plays a knockout cinematic, the same in both brawler modes:
+- A slow-motion throw under a camera push and letterbox bars, with the HUD, minimap and control hints hidden.
+- Hoppy lying in the defeat pose with orbiting stars.
+- A REVIEW FAILED card.
 
-There are three gated encounters per district. Clear every living combatant, including split soldiers and reviving zombies, then walk right. The ninth encounter is the boss. No confirm press is needed between stages:
+The sequence lasts about 3.5 seconds and restores the camera and HUD when it ends or is cancelled. The game-over menu then offers a retry from that stage's first encounter, restoring the score saved on entry. Pause freezes combat, effects and music, including during the introduction and stage transitions; losing window focus also pauses. Return-to-menu is available from pause, intros and results.
+
+There are three gated encounters per district. Clear every living combatant, including split soldiers and reviving zombies, then walk right. In the first two districts, clearing the third encounter's wave calls in a [district boss](#district-bosses) instead of opening the gate. The ninth encounter is the Grand Merge Conflict. No confirm press is needed between stages:
 
 - **Introduction.** Three painted story scenes open the run: Code City under siege, the review pipeline breached, and Hoppy clocking in on a rooftop over the districts.
   - Each scene slowly pans and zooms under letterbox bars while its caption types out, then dips to black.
   - Each turns by itself after 4.5 seconds while a bar in the lower letterbox drains.
   - In the lower bar, **Next →** turns a scene sooner, **Skip intro** goes straight to the first district, and **Return to Beat'em Up menu** leaves.
-- **Stage exit and entry.** Walk through the third encounter's open gate and Hoppy keeps running out on his own under a DISTRICT SECURED banner. The screen dips to black while the next district loads, then he runs in under its title banner. The sequence takes about 2–3 seconds; the title banner stays up for 2.8 seconds and fades over the start of combat, and messages raised in that time (such as the encounter counter) wait until it clears. The first room's enemies wait 0.8 seconds before their first telegraph. Retry uses the same run-in.
+- **District boss down.** When a district boss falls, play stops and its adds and threats clear. Hoppy hops once in his victory pose under a DISTRICT BOSS DOWN banner (+500 points) for 1.4 seconds.
+- **Stage exit and entry.** After the victory hop, Hoppy runs off to the right on his own under a DISTRICT SECURED banner. The screen dips to black while the next district loads, then he runs in under its title banner. The sequence takes about 2–3 seconds; the title banner stays up for 2.8 seconds and fades over the start of combat, and messages raised in that time (such as the encounter counter) wait until it clears. The first room's enemies wait 0.8 seconds before their first telegraph. Retry uses the same run-in.
 - **Boss music** dips, swaps tracks at the bottom and comes back up over 0.6 seconds instead of cutting hard.
-- **Ending.** The Force Merge finisher leads into a painted victory epilogue, and then the victory screen completes the run.
+- **Celebration.** After the Force Merge finisher, a 5.2-second celebration plays:
+  - Hoppy's three-frame victory cheer, confetti, a camera push and a MERGE SUCCESSFUL banner.
+  - The boss track ducks, and an original 3.5-second square-wave jingle plays once.
+  - Then a 16.552-second F-major victory loop starts and continues through the ending pages and results.
+  - Pause freezes the choreography and the jingle. Rebuilding the stage or leaving cancels the celebration.
+- **Ending.** The celebration leads into a painted victory epilogue, and then the victory screen completes the run.
   - The epilogue is three story scenes, played like the introduction: the Grand Merge Conflict resolving, Code City coming back online, and Hoppy shipping it on a rooftop at sunrise.
   - Each scene holds for 5 seconds. **Next →** turns a scene sooner and **Skip** goes straight to the victory screen. Pause freezes the epilogue and resumes it on the same scene.
   - The victory screen counts the final score up from zero over 1.8 seconds and shows the time taken, then **Return to Beat'em Up menu** takes focus.
   - The victory screen and game-over menu ignore confirm, click and touch input for their first 0.5 seconds, so a jump or attack press carried over from combat can't select an option. After that, the first press lands the score count at once.
 - **Minimap.** A minimap sits in the top-right corner, under the HUD bar and clear of the boss bar.
-  - Its top row shows the whole run: all nine encounters as tiles, grouped by district. Cleared encounters are filled, the current one pulses, and the boss encounter is marked.
-  - Below that is the current encounter, with Hoppy, the enemies and the boss as live dots over the depth band, and the gate (red while closed, dashed once open).
+  - Its top row shows the whole run: all nine encounters as tiles, grouped by district. Cleared encounters are filled, the current one pulses, and the final boss encounter is marked.
+  - Below that is the current encounter, with Hoppy, the enemies and the boss (a district boss too) as live dots over the depth band, and the gate (red while closed, dashed once open).
   - It hides during the story scenes, the victory screen, game over and while a stage title banner is up.
 
 ![Hoppy running into the Security Sector under its title banner](previews/code-city/stage_banner.png)
@@ -69,11 +80,27 @@ CR Bot supplies an Approval Shield, the Linting Fairy supplies speed, and Senior
 | Firewall Shield | 3 | Absorbs three hits while retaining the unarmed combo |
 | Refactor Hammer | 3 | Slow, four-damage single-target strike |
 
-Each weapon has a baked sheet of Hoppy holding it, so grip, pixel scale and layering match the body in every frame. With a weapon equipped, idle, side running, pickup and hurt play the sheet's `hold_idle`, `run`, `equip` and `hurt` clips. The three combo steps play `step1`–`step3`: thrusts and alternating sweeps for the stick, staff and branch; a crack, an extended lash and a recoil for the whip; overhead and side swings for the hammer. Each step shows a windup, contact or follow-through frame chosen from the attack clock. Contact occurs at 44% of the swing, inside the contact frame. The shield stays in guard during the unarmed combo and shows its block-recoil frame on blocks. Hits burst on the enemy; swing and miss effects start at the weapon tip (the sheet's contact-frame anchor), mirrored with facing, and a trail follows the contact frame. Poses with no armed frame (walking toward or away from the camera, and jumping) draw a pixel-matched carry icon at Hoppy's paw. It draws behind the body in the back view and on jumps, where the paw is at his chin, and the shield also does so walking toward the camera, so no carry covers his face. Facing locks through each swing, and damage cancels the motion. Reach, timing, durability and damage are unchanged. A weapon without a sheet would fall back to the older hand-animated weapon cel.
+Each weapon has a baked sheet of Hoppy holding it, so grip, pixel scale and layering match the body in every frame. With a weapon equipped, idle, side running, pickup and hurt play the sheet's `hold_idle`, `run`, `equip` and `hurt` clips. Walking toward or away from the camera plays its `walk_down` or `walk_up` clip when the sheet has one. The three combo steps play `step1`–`step3`: thrusts and alternating sweeps for the stick, staff and branch; a crack, an extended lash and a recoil for the whip; overhead and side swings for the hammer. Each step shows a windup, contact or follow-through frame chosen from the attack clock. Contact occurs at 44% of the swing, inside the contact frame. The shield stays in guard during the unarmed combo and shows its block-recoil frame on blocks. Hits burst on the enemy; swing and miss effects start at the weapon tip (the sheet's contact-frame anchor), mirrored with facing, and a trail follows the contact frame. Poses with no armed frame (jumping, and walking toward or away from the camera on a sheet without those clips) draw a pixel-matched carry icon at Hoppy's paw. It draws behind the body in the back view and on jumps, where the paw is at his chin, and the shield also does so walking toward the camera, so no carry covers his face. Facing holds through each swing, and damage cancels the motion. Reach, timing, durability and damage are unchanged. A weapon without a sheet would fall back to the older hand-animated weapon cel.
 
 ![All six armed weapons at the contact frame](previews/code-city-motion/weapons_44.png)
 
 Weapons require the pickup action; consumables collect on contact. A successful offensive swing consumes one durability charge even if it hits multiple targets. Misses cost no charge. Breaking a weapon returns Hoppy to the unarmed combo. The hammer selects the first valid enemy in encounter order, then props if no enemy was hit; it is not a nearest-target lock-on system.
+
+## District bosses
+
+The first two districts end on a district boss instead of a gate. It is called in when the third encounter's wave is cleared, drops in on the right of the room and takes the boss bar (DISTRICT BOSS · name). The district's stage hazards pause for the fight.
+
+| District | Boss | HP | Adds below half HP |
+|---|---|---:|---|
+| CLI/IDE District | STACK OVERFLOW, a tottering tower of call-stack frames | 14 | Two CLI Gremlins |
+| Security Sector | ZERO-DAY, a cloaked exploit knight | 18 | Two Dependency Bots |
+
+- **No openings to wait for.** Every hit lands, and every fourth hit makes the boss reel for 0.6 seconds, dropping the move it was winding up.
+- **Slam.** The boss winds up while a ground warning marks Hoppy's spot, leaps onto it and lands as the warning fires. A shot then runs along the lane in each direction. Jump the shots or change lanes.
+- **Dash.** The boss lines up on Hoppy's lane behind a row of warning markers and charges across the room.
+- **Enrage.** Below half HP its wind-ups are 20% shorter, and it calls in two adds, once.
+
+Until the bosses' own sprite sheets are in the pack, each draws a stand-in at about twice that enemy's size: the Linter Enforcer for Stack Overflow and the Force Push Bandit for Zero-Day.
 
 ## The Grand Merge Conflict
 
@@ -83,7 +110,7 @@ The boss has 24 HP and exposes its core during recovery. Land the third unarmed 
 2. **Split Screen (50% HP):** flanks to the other side between opposing projectile volleys, with a cyan/red screen divide.
 3. **Merge Chaos (25% HP):** faster flanking, committed jumping slams, projectile storms with a safe lane, bounded reinforcements and mild screen distortion.
 
-A leap commits to the warned destination; it does not follow Hoppy after takeoff. The ground warning includes the 0.65-second flight. Landings carry impact effects and camera feedback. Recovery keeps the boss still for 2.4 seconds in phase 1 and 2.1 seconds thereafter. Phase 3 holds the staggered `hurt` pose with a breathing animation, a pulsing core ring, and a persistent FINISHER cue. The ring drains from the same recovery timer used for vulnerability, freezes on pause, and clears on recovery exit or defeat. `core_exposure.gd` draws this cue over the existing art; no damage timing or hit area changes are tied to the visual. Phase transitions clear old threats and cancel travel. The final hit starts the automatic Force Merge jump/slam, resolves the core and awards 1,000 points. The victory epilogue and victory screen follow, and the run counts as complete once.
+A leap commits to the warned destination; it does not follow Hoppy after takeoff. The ground warning includes the 0.65-second flight. Landings carry impact effects and camera feedback. Recovery keeps the boss still for 2.4 seconds in phase 1 and 2.1 seconds thereafter. Phase 3 holds the staggered `hurt` pose with a breathing animation, a pulsing core ring, and a persistent FINISHER cue. The ring drains from the same recovery timer used for vulnerability, freezes on pause, and clears on recovery exit or defeat. `core_exposure.gd` draws this cue over the existing art; no damage timing or hit area changes are tied to the visual. Phase transitions clear old threats and cancel travel. The final hit starts the automatic Force Merge jump/slam, resolves the core and awards 1,000 points. The celebration, victory epilogue and victory screen follow, and the run counts as complete once.
 
 ## Audio and assets
 
@@ -100,9 +127,10 @@ The existing [Code City Brawl pack](code-city-brawl-assets.md) supplies environm
 
 ## Implementation and verification
 
-Runtime scripts are in `modes/beatem_up/`: `catalog.gd` owns immutable tuning (including the `FLOW` timings) and music mappings; `player.gd`, `enemy.gd` and `boss.gd` own instance state; `player.gd` picks the armed or unarmed frames for each pose; `weapon_rig.gd` draws the carry icon, the contact trail and the fallback weapon cel from the player attack clock; `game.gd` owns encounters, UI, items, audio and cleanup. `stage_flow.gd`, shared with Heroes vs. Villains, runs the stage exit and entry sequence, the black veil, the banner and the music envelope from the game's physics tick rather than tweens, so it freezes on pause and headless tests can step it. Four more shared scripts work the same way:
+Runtime scripts are in `modes/beatem_up/`: `catalog.gd` owns immutable tuning (including the `FLOW` timings and the `MINI_BOSSES` table) and music mappings; `player.gd`, `enemy.gd`, `boss.gd` and `mini_boss.gd` own instance state (`mini_boss.gd` is the district boss, sharing `game.gd`'s boss slot and `boss.gd`'s duck-typed interface); `player.gd` picks the armed or unarmed frames for each pose; `weapon_rig.gd` draws the carry icon, the contact trail and the fallback weapon cel from the player attack clock; `game.gd` owns encounters, UI, items, audio and cleanup. `stage_flow.gd`, shared with Heroes vs. Villains, runs the stage exit and entry sequence, the black veil, the banner and the music envelope from the game's physics tick rather than tweens, so it freezes on pause and headless tests can step it. Four more shared scripts work the same way:
 - `story_scene.gd` draws a story scene (pan and zoom, letterbox, typed caption, dip) from the intro clock. It plays the catalog's `STORY` pages for the opening and its `ENDING` pages for the victory epilogue.
 - `knockout.gd` plays the last-HP knockout before `game_over()`, with the catalog's `KNOCKOUT` tuning.
+- `celebration.gd` (Code City only) plays the celebration between the Force Merge and the ending pages.
 - `victory_screen.gd` counts up the final score on the results screen. Its copy is the catalog's `VICTORY`.
 - `minimap.gd` draws the top-right minimap from a per-tick snapshot of the room.
 
@@ -112,6 +140,7 @@ Runtime scripts are in `modes/beatem_up/`: `catalog.gd` owns immutable tuning (i
 godot --headless --path hoppys-adventure-arcade --import
 godot --headless --path hoppys-adventure-arcade --script res://tests/code_city_assets.gd
 godot --headless --path hoppys-adventure-arcade --script res://tests/code_city_logic.gd
+godot --headless --path hoppys-adventure-arcade --script res://tests/code_city_mini_boss.gd
 godot --headless --path hoppys-adventure-arcade --script res://tests/code_city_motion.gd
 godot --headless --path hoppys-adventure-arcade --script res://tests/code_city_smoke.gd
 godot --headless --path hoppys-adventure-arcade --script res://tests/stage_flow.gd
@@ -125,7 +154,7 @@ godot --path hoppys-adventure-arcade --always-on-top --script res://tests/code_c
 godot --path hoppys-adventure-arcade --always-on-top --script res://tests/beatemup_knockout.gd
 ```
 
-The logic suite covers combo buffering, attack deduplication and depth, weapon durability, armor, shields/statuses, hammer target count, soldier splits, zombie revival, gate ownership, pickup rules, hazard warnings, jumping, pause, boss thresholds, Force Merge, retry cleanup and all four music mappings. The smoke suite injects keyboard/gamepad events, traverses all nine encounters with no confirm input between stages, verifies bounded pools and one completion, and returns to the menu. `stage_flow.gd` checks the director's phase order and durations, a single stage rebuild on black, pause during every phase, the music envelope and boss-music dip, retry, cancellation on game over and return-to-menu, and the 0.5-second menu guard. `hoppy_armed_assets.gd` requires all eleven armed sheets in both modes and checks their frames, clips, pivots, anchors, body height and carry icons. `beatemup_story.gd` checks, for both modes, that each story scene's caption types and its pan moves on the clock, the dips and bars, Next / Skip / the one-press card skip, the pause freeze, and the hands-free hand-off into the first stage. `beatemup_knockout.gd` covers the knockout in both modes:
+The logic suite covers combo buffering, turning between swings and on buffered steps, attack deduplication and depth, weapon durability, armor, shields/statuses, hammer target count, soldier splits, zombie revival, gate ownership, pickup rules, hazard warnings, jumping, pause, boss thresholds, Force Merge, retry cleanup and all four music mappings. The smoke suite injects keyboard/gamepad events, traverses all nine encounters with no confirm input between stages, beats both district bosses, verifies bounded pools and one completion, and returns to the menu. `code_city_mini_boss.gd` checks that districts 1 and 2 call in their district boss and district 3 keeps the Grand Merge Conflict; the boss's stagger, enrage and adds; and the hands-free defeat: victory hop, run-off and next district. It also checks pause during the hop and that a retry clears the boss. `stage_flow.gd` checks the director's phase order and durations, a single stage rebuild on black, pause during every phase, the music envelope and boss-music dip, retry, cancellation on game over and return-to-menu, and the 0.5-second menu guard. `hoppy_armed_assets.gd` requires all eleven armed sheets in both modes and checks their frames, clips, pivots, anchors, body height and carry icons. `beatemup_story.gd` checks, for both modes, that each story scene's caption types and its pan moves on the clock, the dips and bars, Next / Skip / the one-press card skip, the pause freeze, and the hands-free hand-off into the first stage. `beatemup_knockout.gd` covers the knockout in both modes:
 - Hoppy is knocked out by direct and live hits (bullets, ground warnings, enemy and boss contact).
 - Phase timing: the menu appears only at about 2.2 seconds.
 - The pause freeze, and that a double knockout is ignored.
