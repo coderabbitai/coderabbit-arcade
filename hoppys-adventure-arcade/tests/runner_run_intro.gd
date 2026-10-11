@@ -302,8 +302,8 @@ func _test_checkpoint_retry() -> void:
 # --- skip, jump, pause, endings ---------------------------------------------------
 
 func _test_skip_window_and_jump() -> void:
-	var early : Node = await _open(true)
 	_set_mode(&"full")
+	var early : Node = await _open(true)
 	var early_log := _watch(early)
 	early.start_run(3)
 	_press(early, "jump")
@@ -322,8 +322,8 @@ func _test_skip_window_and_jump() -> void:
 	check(refused and early.can_skip_run_intro(), "skip is accepted once 0.3 s have played")
 	_close(early)
 
-	var skipped : Node = await _open(true)
 	_set_mode(&"full")
+	var skipped : Node = await _open(true)
 	var log := _watch(skipped)
 	var order: Array = []
 	skipped.run_intro_skipped.connect(func() -> void: order.append(&"skipped"))
@@ -346,8 +346,8 @@ func _test_skip_window_and_jump() -> void:
 	check(stages.size() == 1 and int(stages[0]) == 1, "the skipped intro still announces stage 1 once")
 	_close(skipped)
 
-	var tail : Node = await _open(true)
 	_set_mode(&"full")
+	var tail : Node = await _open(true)
 	tail.start_run(5)
 	var tail_guard := 0
 	# Step until the clock is on the tail. A sum of 1/60 can print as 5.600 while still a hair under
@@ -367,8 +367,8 @@ func _test_skip_window_and_jump() -> void:
 	await _assert_consumed_press("ui_accept")
 
 func _assert_consumed_press(action: String) -> void:
-	var game : Node = await _open(true)
 	_set_mode(&"full")
+	var game : Node = await _open(true)
 	var log := _watch(game)
 	var jumps := {"n": 0}
 	game.player_action.connect(func(kind: StringName) -> void:
@@ -390,8 +390,8 @@ func _assert_consumed_press(action: String) -> void:
 	_close(game)
 
 func _test_pause_and_endings() -> void:
-	var game : Node = await _open(true)
 	_set_mode(&"full")
+	var game : Node = await _open(true)
 	var log := _watch(game)
 	game.start_run(11)
 	_advance_to_window(game)
@@ -410,8 +410,8 @@ func _test_pause_and_endings() -> void:
 	check(game.run_intro_progress > progress + 0.001, "progress moves again after resume")
 	_close(game)
 
-	var restarted : Node = await _open(true)
 	_set_mode(&"full")
+	var restarted : Node = await _open(true)
 	var restart_log := _watch(restarted)
 	restarted.start_run(12)
 	_tick(restarted, 30)
@@ -424,8 +424,8 @@ func _test_pause_and_endings() -> void:
 	check(int(restart_log["ended"]) == 1, "the replacement intro has not ended yet")
 	_close(restarted)
 
-	var caught : Node = await _open(true)
 	_set_mode(&"full")
+	var caught : Node = await _open(true)
 	var catch_log := _watch(caught)
 	caught.start_run(14)
 	_tick(caught, 10)
