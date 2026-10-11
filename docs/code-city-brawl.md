@@ -51,7 +51,11 @@ There are three gated encounters per district. Clear every living combatant, inc
 
 | Opening story scene | Knockout on the last HP |
 |---|---|
-| ![The first story scene of the introduction](previews/code-city/intro.png) | ![Hoppy knocked out, with dizzy stars and the K.O. callout](previews/code-city/knockout.png) |
+| ![The first story scene of the introduction](previews/code-city/intro.png) | ![Hoppy knocked out under letterbox bars and the REVIEW FAILED card](previews/code-city/knockout.png) |
+
+| District boss down | Running off to the next district | Celebration |
+|---|---|---|
+| ![Hoppy cheering under the DISTRICT BOSS DOWN banner as Stack Overflow fades](previews/code-city/district_boss_down.png) | ![Hoppy running off to the right under the DISTRICT SECURED banner](previews/code-city/district_boss_runoff.png) | ![Hoppy cheering by the merge button under confetti and the MERGE SUCCESSFUL banner](previews/code-city/celebration.png) |
 
 | Minimap | Victory epilogue | Victory screen |
 |---|---|---|
@@ -100,7 +104,11 @@ The first two districts end on a district boss instead of a gate. It is called i
 - **Dash.** The boss lines up on Hoppy's lane behind a row of warning markers and charges across the room.
 - **Enrage.** Below half HP its wind-ups are 20% shorter, and it calls in two adds, once.
 
-Until the bosses' own sprite sheets are in the pack, each draws a stand-in at about twice that enemy's size: the Linter Enforcer for Stack Overflow and the Force Push Bandit for Zero-Day.
+Each boss has its own 16-frame sheet in the Code City pack (`stack_overflow`, `zero_day`), drawn at the enemies' scale so it stands about 1.6 times as tall as a Linter Enforcer. A boss whose sheet is missing from the pack manifest draws a stand-in at about twice that enemy's size instead: the Linter Enforcer for Stack Overflow and the Force Push Bandit for Zero-Day.
+
+| Stack Overflow winding up a slam | Zero-Day winding up a slam |
+|---|---|
+| ![Stack Overflow, a tower of call-stack frames, telegraphing a slam onto Hoppy's spot](previews/code-city/mini_boss_1.png) | ![Zero-Day, a cloaked exploit knight, telegraphing a slam onto Hoppy's spot](previews/code-city/mini_boss_2.png) |
 
 ## The Grand Merge Conflict
 
@@ -141,6 +149,7 @@ godot --headless --path hoppys-adventure-arcade --import
 godot --headless --path hoppys-adventure-arcade --script res://tests/code_city_assets.gd
 godot --headless --path hoppys-adventure-arcade --script res://tests/code_city_logic.gd
 godot --headless --path hoppys-adventure-arcade --script res://tests/code_city_mini_boss.gd
+godot --headless --path hoppys-adventure-arcade --script res://tests/code_city_celebration.gd
 godot --headless --path hoppys-adventure-arcade --script res://tests/code_city_motion.gd
 godot --headless --path hoppys-adventure-arcade --script res://tests/code_city_smoke.gd
 godot --headless --path hoppys-adventure-arcade --script res://tests/stage_flow.gd
@@ -152,15 +161,25 @@ godot --headless --path hoppys-adventure-arcade --script res://tests/beatemup_kn
 godot --path hoppys-adventure-arcade --always-on-top --script res://tests/code_city_smoke.gd
 godot --path hoppys-adventure-arcade --always-on-top --script res://tests/code_city_motion.gd
 godot --path hoppys-adventure-arcade --always-on-top --script res://tests/beatemup_knockout.gd
+godot --path hoppys-adventure-arcade --always-on-top --script res://tests/capture_code_city_bosses.gd
 ```
 
 The logic suite covers combo buffering, turning between swings and on buffered steps, attack deduplication and depth, weapon durability, armor, shields/statuses, hammer target count, soldier splits, zombie revival, gate ownership, pickup rules, hazard warnings, jumping, pause, boss thresholds, Force Merge, retry cleanup and all four music mappings. The smoke suite injects keyboard/gamepad events, traverses all nine encounters with no confirm input between stages, beats both district bosses, verifies bounded pools and one completion, and returns to the menu. `code_city_mini_boss.gd` checks that districts 1 and 2 call in their district boss and district 3 keeps the Grand Merge Conflict; the boss's stagger, enrage and adds; and the hands-free defeat: victory hop, run-off and next district. It also checks pause during the hop and that a retry clears the boss. `stage_flow.gd` checks the director's phase order and durations, a single stage rebuild on black, pause during every phase, the music envelope and boss-music dip, retry, cancellation on game over and return-to-menu, and the 0.5-second menu guard. `hoppy_armed_assets.gd` requires all eleven armed sheets in both modes and checks their frames, clips, pivots, anchors, body height and carry icons. `beatemup_story.gd` checks, for both modes, that each story scene's caption types and its pan moves on the clock, the dips and bars, Next / Skip / the one-press card skip, the pause freeze, and the hands-free hand-off into the first stage. `beatemup_knockout.gd` covers the knockout in both modes:
 - Hoppy is knocked out by direct and live hits (bullets, ground warnings, enemy and boss contact).
-- Phase timing: the menu appears only at about 2.2 seconds.
+- Phase timing: the slow-motion throw, the camera push and letterbox bars, the card, and the menu after about 3.5 seconds (never more than 4).
+- The HUD, minimap and control hints are hidden through the cinematic and restored after it, and the camera is restored on completion or cancellation.
 - The pause freeze, and that a double knockout is ignored.
 - Retry, and the menu's input guard.
 
-Rendered runs save previews in `docs/previews/code-city/`. `--always-on-top` keeps macOS from skipping frames while the window is covered, which otherwise stalls the captures.
+`code_city_celebration.gd` checks the celebration's assets and plays it on a stub owner:
+- the victory clip and the click-free jingle and loop;
+- `done` called once at 5.2 seconds;
+- the boss-track duck, then the jingle;
+- the switch to the looping victory track, which keeps playing afterwards;
+- the camera push and its restore;
+- cancellation at each stage.
+
+Rendered runs save previews in `docs/previews/code-city/`. `capture_code_city_bosses.gd` steps the game into each district boss and the finale and writes the boss, hop, run-off and celebration stills. The rendered knockout run saves its frames under `/tmp/s3-captures/`; `knockout.png` is its REVIEW FAILED card. `--always-on-top` keeps macOS from skipping frames while the window is covered, which otherwise stalls the captures.
 
 The traversal bot uses invulnerability to establish reachability; it does **not** validate difficulty balance. Physical controllers, exported builds and mobile/web targets have not been tested. This v1 uses three finite panoramic rooms per district with repeated scenery and curated enemy waves; prop bodies do not obstruct movement. Boss attacks use ground-plane hit geometry, not pixel-perfect sprite collision. These are explicit starting points for the next gameplay-tuning pass.
 
@@ -179,3 +198,12 @@ Phase 3 exposure polish: logic and motion regression tests passed, including bot
 ### Hands-free stage flow and armed sheets — October 8, 2026
 
 Godot 4.7.1: the project imported headless and all 26 headless suites listed in CI passed, including `stage_flow` and `hoppy_armed_assets`. The rendered smoke run completed all nine encounters with no confirm input between stages. The rendered motion run's `weapons_25/44/70` captures were compared against the armed sheet cells for all six weapons, and the stage fade and banner captures were inspected. Ruff and `git diff --check` passed. As before, the traversal bot checks reachability, not difficulty.
+
+### Brawl polish: district bosses, celebration and knockout cinematic — October 10, 2026
+
+Godot 4.7.1, on the integrated brawl branch with the armed-locomotion and mini-boss sheets and the celebration and knockout work merged in. These suites passed headless:
+- the Code City suites: `code_city_logic`, `code_city_mini_boss` (on the real boss sheets), `code_city_celebration`, `code_city_motion`, `code_city_assets` and `code_city_smoke`;
+- the shared suites: `stage_flow`, `beatemup_story`, `beatemup_knockout`, `beatemup_minimap` and `hoppy_armed_assets`;
+- the Heroes vs. Villains suites: logic, smoke, motion and assets.
+
+The rendered smoke run completed all nine encounters through both district bosses and the celebration. It now waits for a graphical start to settle before changing scenes; without that wait the scene change failed. The rendered knockout run passed in both modes. Its frames and the `capture_code_city_bosses.gd` stills were inspected at 1280×720.
