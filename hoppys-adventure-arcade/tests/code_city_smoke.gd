@@ -25,11 +25,19 @@ func capture(name: String) -> void:
 	DirAccess.make_dir_recursive_absolute("res://../docs/previews/code-city")
 	root.get_texture().get_image().save_png("res://../docs/previews/code-city/"+name+".png")
 func run() -> void:
+	# A rendered start is still adding the autoloads' nodes to root for its first frames, and a
+	# scene change then fails ("Parent node is busy setting up children"). Let it settle.
+	await create_timer(.5).timeout
 	change_scene_to_file("res://scenes/beatem_up/beatem_menu.tscn")
 	await process_frame;await process_frame
 	await capture("menu")
 	change_scene_to_file("res://scenes/beatem_up/code_city_brawl.tscn")
 	await process_frame;await process_frame
+	# A rendered start can take longer than two frames to build the stage; wait on the scene itself.
+	var loading := 0
+	while (current_scene==null or current_scene.get("player")==null) and loading<600:
+		await process_frame
+		loading+=1
 	game=current_scene
 	game.test_mode=true
 	# A window that starts unfocused can focus-pause the game before test_mode is set.
@@ -131,9 +139,6 @@ func run() -> void:
 		var framed: bool=absf(game.camera.position.x-(game.room_start()+640))<4
 		if framed and game.state=="combat" and game.minimap.visible and game.stage_index==1 and game.room==1 and game.minimap.enemy_dots.size()>=2: await capture("minimap")
 		if framed and game.state=="combat" and game.minimap.visible and game.stage_index==2 and is_instance_valid(game.boss) and game.boss_bar.visible and game.minimap.boss_dots.size()>=1: await capture("minimap_boss")
-		# Each district boss winding up a move (its tell ring is up), and the victory hop at its peak.
-		if framed and game.state=="combat" and game.has_mini_boss() and game.boss.state=="tell": await capture("mini_boss_%d" % (game.stage_index+1))
-		if game.state=="boss_victory" and game.victory_clock>=float(game.Catalog.FLOW.boss_victory)*.5: await capture("district_boss_down")
 		# The epilogue's middle page, once its caption is typed.
 		if game.state=="ending" and game.intro_page==1 and game.intro_clock>=3.5: await capture("ending")
 		if game.state=="stage_exit" and prev!="stage_exit": stage_exits += 1
