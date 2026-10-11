@@ -7,6 +7,7 @@ const Boss = preload("res://modes/beatem_up/boss.gd")
 const MiniBoss = preload("res://modes/beatem_up/mini_boss.gd")
 const StageFlow = preload("res://modes/beatem_up/stage_flow.gd")
 const Knockout = preload("res://modes/beatem_up/knockout.gd")
+const Celebration = preload("res://modes/beatem_up/celebration.gd")
 const StoryScene = preload("res://modes/beatem_up/story_scene.gd")
 const VictoryScreen = preload("res://modes/beatem_up/victory_screen.gd")
 const Minimap = preload("res://modes/beatem_up/minimap.gd")
@@ -14,9 +15,6 @@ const Style = preload("res://scenes/main_menu/menu_style.gd")
 const PAUSABLE := ["combat","intro","ending","stage_enter","stage_exit","knockout","boss_victory","celebration"]
 ## The minimap is up while Hoppy is in a room, and hidden under the story scenes and end screens.
 const MINIMAP_STATES := ["stage_enter","combat","stage_exit","boss_victory","finisher","knockout"]
-## The finale after the Force Merge (S3's celebration.gd): play(owner, done), tick(dt), cancel().
-## Until it exists the finisher goes straight to the ending.
-const CELEBRATION := "res://modes/beatem_up/celebration.gd"
 ## Results and game-over menus arm this long after appearing (see _input).
 const OVERLAY_ARM := .5
 const ARMED_OVERLAYS := ["won","game_over"]
@@ -47,8 +45,8 @@ var overlay_clock := 0.0
 var flow: StageFlow
 ## The last-life knockout between the fatal hit and game_over().
 var ko := Knockout.new(Catalog.KNOCKOUT)
-## The finale between the Force Merge and the ending pages, or null without celebration.gd.
-var party: RefCounted = make_party()
+## The celebration between the Force Merge and the ending pages.
+var party := Celebration.new()
 ## This stage's district boss has been called in (it guards room 3 once the wave is down).
 var mini_boss_called := false
 ## Seconds into the district-boss victory hop.
@@ -137,7 +135,7 @@ func clamp_ground(pos: Vector2) -> Vector2:
 
 func start_stage(index: int, cinematic := false) -> void:
 	ko.cancel()
-	if party: party.cancel()
+	party.cancel()
 	playing = false
 	get_tree().paused = false
 	for child in world.get_children(): child.queue_free()
@@ -691,23 +689,12 @@ func _tick_finisher(dt: float) -> void:
 		screen_fx.material.set_shader_parameter("phase",0.0)
 	if finish_clock >= 4.0: celebrate()
 
-## The finale after the Force Merge, then the ending pages; straight to them without one.
+## The celebration (confetti, the victory cheer, the jingle into the victory loop), then the
+## ending pages.
 func celebrate() -> void:
 	if state!="finisher": return
-	if party == null:
-		start_ending()
-		return
 	state = "celebration"
 	party.play(self,start_ending)
-
-## The celebration, when celebration.gd is in the build and has its methods; null otherwise.
-static func make_party() -> RefCounted:
-	if not ResourceLoader.exists(CELEBRATION): return null
-	var script := load(CELEBRATION) as GDScript
-	if script == null or not script.can_instantiate(): return null
-	var made = script.new()
-	if made is RefCounted and made.has_method("play") and made.has_method("tick") and made.has_method("cancel"): return made
-	return null
 
 ## The victory epilogue: the ENDING story scenes play like the opening (Next / Skip, pausable),
 ## then the results screen counts the score up.
@@ -1001,7 +988,7 @@ func resume() -> void:
 func leave() -> void:
 	if state=="leaving": return
 	ko.cancel()
-	if party: party.cancel()
+	party.cancel()
 	flow.cancel()
 	# The scene keeps running through the router's fade: nothing may start play or music again.
 	state = "leaving"

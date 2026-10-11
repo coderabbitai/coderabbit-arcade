@@ -622,9 +622,9 @@ func check_armed_overlays() -> void:
 			boss.take_hit(damage, 0, Vector2.ZERO, true)
 		freeze()
 		var guard := 0
-		while game.state in ["finisher","ending"] and guard<2000:
+		while game.state in ["finisher","celebration","ending"] and guard<2000:
 			game._physics_process(DT)
 			guard += 1
-		check(game.state=="won" and game.victory.visible and not game.victory.landed and game.victory.action.disabled, "The Force Merge hands off through the ending to the results screen mid-count")
+		check(game.state=="won" and game.victory.visible and not game.victory.landed and game.victory.action.disabled, "The Force Merge hands off through the celebration and the ending to the results screen mid-count")
 		await guarded_results(activate)
 		await reload()

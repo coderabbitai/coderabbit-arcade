@@ -749,10 +749,12 @@ func run_city_ending_hands_free() -> void:
 	city_to_finisher()
 	check(game.state == "finisher", "The boss's last hit starts the Force Merge finisher")
 	var guard := 0
-	while game.state == "finisher" and guard < 600:
+	var celebrated := false
+	while game.state in ["finisher", "celebration"] and guard < 1200:
 		game._physics_process(DT)
+		if game.state == "celebration": celebrated = true
 		guard += 1
-	check(game.state == "ending" and game.story_pages == "ENDING" and game.intro_page == 0 and game.story.visible, "The finisher hands off to the ending after ~4s (%d ticks)" % guard)
+	check(celebrated and game.state == "ending" and game.story_pages == "ENDING" and game.intro_page == 0 and game.story.visible, "The finisher hands off through the celebration to the ending (%d ticks)" % guard)
 	check(game.completion_count == 0 and not game.minimap.visible and not game.victory.visible, "The ending is not yet a win, and has no minimap or results")
 	check(game.story.kicker.text == str(City.ENDING[0]["kicker"]) and game.intro_next.text == "Next →" and game.intro_skip.text == "Skip" and not game.intro_return.visible, "Ending page 1: Next, Skip, and no Return")
 	var per := ticks_to_cross(float(City.FLOW.ending_hold))
@@ -794,7 +796,7 @@ func check_city_ending_controls() -> void:
 	# Next, and the Return button hidden, then Skip.
 	city_to_finisher()
 	var guard := 0
-	while game.state == "finisher" and guard < 600:
+	while game.state in ["finisher", "celebration"] and guard < 1200:
 		game._physics_process(DT)
 		guard += 1
 	check(game.state == "ending" and not game.intro_return.visible, "The ending starts with Return hidden")
@@ -830,7 +832,7 @@ func check_city_ending_controls() -> void:
 	# Skip.
 	city_to_finisher()
 	guard = 0
-	while game.state == "finisher" and guard < 600:
+	while game.state in ["finisher", "celebration"] and guard < 1200:
 		game._physics_process(DT)
 		guard += 1
 	var skip := action_button("Skip")

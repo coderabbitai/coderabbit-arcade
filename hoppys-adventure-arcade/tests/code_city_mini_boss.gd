@@ -206,7 +206,8 @@ func down_and_off(from_stage: int, pause_hop: bool) -> void:
 	check(game.score == score+500, "Defeat scores 500")
 	check(game.gate_open and not game.gate.visible, "Defeat opens the gate and hides it")
 	check(not game.player.held.visible, "Defeat hides what Hoppy was holding")
-	check(game.player.body.animation == "jump", "The victory pose falls back to jump")
+	var cheer: String = "victory" if game.player.COMBAT_FRAMES.has_animation("victory") else "jump"
+	check(game.player.body.animation == cheer, "Hoppy cheers in the %s pose" % cheer)
 	check(game.flow.banner_title.text == "DISTRICT BOSS DOWN", "The banner says DISTRICT BOSS DOWN")
 	check(game.flow.banner_subtitle.text == "%s defeated · +500" % boss.title, "The banner names the fallen boss")
 	game._physics_process(DT)
@@ -351,11 +352,16 @@ func run() -> void:
 			down_and_off(1, false)
 	if game.stage_index == 2 and game.state == "combat": check_grand()
 	await check_retry()
-	check(game.party == null, "This branch has no celebration scene")
-	if game.party == null:
-		game.state = "finisher"
-		game.celebrate()
-		check(game.state == "ending" and game.story_pages == "ENDING", "celebrate() goes straight to the ending")
+	# The Force Merge hands off to the celebration, which hands off to the ending once.
+	game.state = "finisher"
+	game.celebrate()
+	check(game.state == "celebration" and game.party.active(), "celebrate() starts the celebration")
+	var party_ticks := 0
+	while game.state == "celebration" and party_ticks < 600:
+		game._physics_process(DT)
+		party_ticks += 1
+	check(game.state == "ending" and game.story_pages == "ENDING" and not game.party.active(), "The celebration hands off to the ending (%d ticks)" % party_ticks)
+	check(absi(party_ticks-int(ceil(game.Celebration.LENGTH/DT))) <= 2, "The celebration lasts %ss" % game.Celebration.LENGTH)
 	print("Code City mini-boss failures: ", failures)
 	if is_instance_valid(game): game.queue_free()
 	root.get_node("AudioService").shutdown()
