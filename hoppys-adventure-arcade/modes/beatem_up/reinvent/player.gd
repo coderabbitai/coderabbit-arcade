@@ -15,6 +15,9 @@ var visual_weapon := ""
 var block_time := 0.0
 var hp := 3
 var facing := 1.0
+## The way the stick last pointed past the deadzone. A swing keeps its facing, so a turn asked
+## for mid-swing waits here for the swing's end or the next step; 0 once idle with no input.
+var steer := 0.0
 var height := 0.0
 var rise := 0.0
 var invulnerable := 0.0
@@ -80,7 +83,8 @@ func tick(dt: float) -> void:
 	if controlled and input_lock <= 0 and stagger <= 0:
 		movement = Input.get_vector("move_left","move_right","move_up","move_down")
 		if effects.has("confused"): movement = -movement
-		if absf(movement.x) > .15 and swing_left<=0: facing = signf(movement.x)
+		if absf(movement.x) > .15: steer = signf(movement.x)
+		if steer != 0 and swing_left <= 0: facing = steer
 		if Input.is_action_just_pressed("brawl_jump"): jump()
 		if Input.is_action_just_pressed("brawl_attack"): request_attack()
 		if Input.is_action_just_pressed("brawl_pickup") and swing_left <= 0 and height < 20:
@@ -92,9 +96,11 @@ func tick(dt: float) -> void:
 			arena.resolve_swing(self)
 		if swing_left <= 0:
 			combo_window = .48
+			if steer != 0: facing = steer
 			if queued:
 				queued = false
 				start_attack()
+	elif absf(movement.x) <= .15: steer = 0.0
 	var speed := MOVE_SPEED
 	if effects.has("speed_surge"): speed *= 1.4
 	if effects.has("overwhelmed"): speed *= .6
@@ -230,6 +236,8 @@ func attack_pose() -> String:
 	return ["jab","swing","kick"][maxi(0,combo-1)]
 
 func start_attack() -> void:
+	# Each swing starts facing the way the stick last asked, so a buffered step can turn.
+	if steer != 0: facing = steer
 	combo = combo%3+1 if combo_window > 0 else 1
 	attack_weapon = weapon
 	visual_weapon = weapon
