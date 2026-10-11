@@ -279,6 +279,11 @@ static func check_armed_run_registration(
 			var expected_offset: Vector2 = offset_for.call(weapon, facing)
 			var sample := measure_run_frames(actor, sheet, spec, expected_offset, facing)
 			report.call(sample.pose_ok, "%s facing %d armed run uses the sheet, clip run, and armed offset (%s)" % [weapon, int(facing), sample.detail])
+			# Foot-registered sheets pass on their largest adjacent step: the run cycle has to move
+			# the foot reference at all. Contact and passing frames hold the planted foot, so some
+			# adjacent steps are legitimately near zero (0.27-1.17 px on today's sheets), and a
+			# smallest-step check would reject correct art. hoppy_armed_assets checks per-frame
+			# sliding with its 1 px planted-foot drift limit.
 			report.call(sample.measured and sample.worlds.size() == run_frame_count(spec) and ((sample.worst >= sample.limit) if sample.foot else (sample.worst <= sample.limit)), "%s facing %d armed run %s %.2f px across run frames (worst %.2f between %s; world x %s; cel x %s)" % [weapon, int(facing), "feet advance by at least" if sample.foot else "body stays within", sample.limit, sample.worst, sample.worst_at, fmt_xs(sample.worlds), fmt_xs(sample.cels)])
 	actor.swing_left = 0
 	actor.visual_weapon = ""
