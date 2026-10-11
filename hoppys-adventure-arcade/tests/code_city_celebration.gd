@@ -785,7 +785,10 @@ func check_real_game() -> void:
 		game.toast("CELEBRATION CHATTER", .5)
 		refreshed += 1
 		real_step()
-		if game.state=="celebration": leaked += hud_visible(nodes)
+		if game.state=="celebration":
+			leaked += hud_visible(nodes)
+			# The toast just raised above counts on its own, whatever knockout_hud_nodes() returns.
+			if game.toast_label.is_visible_in_tree(): leaked += 1
 		if not shot and game.party.clock>=2.5:
 			shot = true
 			await real_capture("real_celebration")
