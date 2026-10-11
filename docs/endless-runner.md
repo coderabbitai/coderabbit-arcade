@@ -37,7 +37,7 @@ Development cameras use (0,4,8), looking at (0,1,-8), FOV 60. The menu camera us
 | Corridor preview | Space | Toggle pause |
 | Renderer spike | G / F / R | Toggle glow / fog / 50% or 100% 3D resolution |
 
-Key 6 reaches the F1 26 m/s acceptance limit; key 7 exercises the Nitro cap. The capture script saves PNGs after `RenderingServer.frame_post_draw`, measures the corridor at 26 m/s with preview UI hidden, and reports failure above 14 rest draw calls or 18 turn draw calls. The capture script also saves the Hoppy fixture after 1.5 s to `docs/previews/endless-runner-hoppy.png`. The coordinator produced the 1280x720 environment previews: renderer spike and corridor.
+Key 6 reaches the F1 26 m/s acceptance limit; key 7 exercises the Nitro cap. The capture script saves PNGs after `RenderingServer.frame_post_draw`, measures the corridor at 26 m/s with preview UI hidden, and reports failure above 14 rest draw calls (the 18-call turn budget went with the turn in contract 2.7). The capture script also saves the Hoppy fixture after 1.5 s to `docs/previews/endless-runner-hoppy.png`. The coordinator produced the 1280x720 environment previews: renderer spike and corridor.
 
 ## Behavior and ownership
 
@@ -51,7 +51,7 @@ The teaching layer uses a mint shield for power-ups, an orange wrench for CodeRa
 
 HUD is on layer 10, PauseMenu 21 and GameOver 22. HUD listens to facade signals, uses responsive margins, counts up score, displays effects and pursuit, dims on pause and hides gameplay widgets on caught. Backend owns damage camera shake. Pause has no ui_cancel handler. Game Over appears only on run_finished, shows result stats and the local top ten, and saves qualifying names through the facade. Save success locks the name field and focuses Retry; failure stays editable. Retry creates a fresh scene. The mock scene demonstrates the same signals in 40 seconds with in-memory persistence.
 
-Player feedback identified the boss name, HP plate and intro card as blocking the corridor vanishing point. Both now share the top-centre slot at x=300..980: the boss plate occupies y=8..64 with a 10-unit HP track, and the intro card occupies y=48..128 with a compact warning/title row and an 18-unit taunt row. Its 48-unit top inset clears the existing cinematic letterbox while remaining wholly above y=130. They are mutually exclusive through the existing three-second intro and spawned-boss handover. The score plate is narrowed to x=1000..1252, with the timer below it at y=140..196 and BACKLOG below that at y=208..272; APPROVALS stays on the left. This keeps the central x=300..980, y=130..480 viewing region clear of persistent boss widgets, preserves outlined panel-backed type, and leaves the turn warning at y=536 clear of the pursuit alert. Stage-banner and stage-clear timing and layout are unchanged. Headless checks measure final container rects at 1280x720 and 1440x900 against proportionally scaled viewing bounds and check every panel pair, with only the mutually exclusive boss cards allowed to overlap. Existing capture view names are retained for coordinator overwrite of the A7 PNGs.
+Player feedback identified the boss name, HP plate and intro card as blocking the corridor vanishing point. Both now share the top-centre slot at x=300..980: the boss plate occupies y=8..64 with a 10-unit HP track, and the intro card occupies y=48..128 with a compact warning/title row and an 18-unit taunt row. Its 48-unit top inset clears the existing cinematic letterbox while remaining wholly above y=130. They are mutually exclusive through the existing three-second intro and spawned-boss handover. The score plate is narrowed to x=1000..1252, with the timer below it at y=140..196 and BACKLOG below that at y=208..272; APPROVALS stays on the left. This keeps the central x=300..980, y=130..480 viewing region clear of persistent boss widgets, preserves outlined panel-backed type, and kept the turn warning at y=536 clear of the pursuit alert (the warning was removed in contract 2.7). Stage-banner and stage-clear timing and layout are unchanged. Headless checks measure final container rects at 1280x720 and 1440x900 against proportionally scaled viewing bounds and check every panel pair, with only the mutually exclusive boss cards allowed to overlap. Existing capture view names are retained for coordinator overwrite of the A7 PNGs.
 
 Hoppy supplies thirteen animations (the seven locomotion/reaction states idle/run/jump/fall/roll/hurt/dead plus six gait one-shots: lane_dash_left, lane_dash_right, land, shield_brace, powerup_react and victory) and every player visual hook, retains feet at y=0 and stands 1.8 m. The roll is a full-size (unscaled) baseball-style low slide that stays within 0.9 m: the builder seats it on the floor and caps the whole skinned pose at 0.885 m. Hurt returns to previous locomotion unless interrupted. Hazards implement all eight kinds and every variant; collision artwork stays within the 110% envelope, while ground projections use exact hitbox footprints. Power-ups supply six types with spin/bob/collection reactions. The pursuer uses threat-driven cards, a trip-and-trap catch and a 0.7 s retreat. On the catch, Hoppy trips on his trailing foot, faceplants and tries to crawl away (`player/hifi/knockout_rig.gd`, layered over the dead clip). The QUARANTINE drone leaps over him, lands past his head facing the camera, clamps its claws on him at 1.6 s and drops a red containment field (`pursuer/hifi/quarantine_field.gdshader`) around him until the Game Over panel at `caught_sequence_seconds` (3.0 s). Shared resources are duplicated before mutation. Cosmetic clocks and particles inherit pause.
 
@@ -59,7 +59,7 @@ The corridor scrolls shaders and recycles 24 pillars over 96 m. Its per-viewport
 
 ## High-fidelity asset pass (A1–A9)
 
-**Prewarm.** The first corridor `_ready()` calls `environment/hifi/prewarm.gd` before runner chunks or pickups spawn, skips editor hints, and keeps its static guard across retries and menu/game transitions. A3 hazards/projectile meshes and atlas, A4 pickup maps/templates, shared materials/theme, A8 percussives, jump, boss-intro and turn cues, six footsteps and all 16 directional whooshes warm synchronously. `runner_audio.bind()` relies on that same guarded warmup. A2 plating/circuit/floor and A6 pursuer maps, plus A5 boss maps, generate local Images in four WorkerThreadPool tasks. A1 uses the imported Blender GLB and baked textures; prewarm no longer generates unused fur/cloth maps. Main-thread polling finalizes at most one image package or deferred package per frame; remaining audio recipes and boss glyph/mesh/material preparation are deferred on the main thread. No worker touches scene nodes or ImageTextures. Early boss and pursuer use the original lazy fallback; later finalizers preserve their caches. A2 initially binds neutral 1x1 textures, then installs full images into those same texture objects. Instance-owned animated materials remain private.
+**Prewarm.** The first corridor `_ready()` calls `environment/hifi/prewarm.gd` before runner chunks or pickups spawn, skips editor hints, and keeps its static guard across retries and menu/game transitions. A3 hazards/projectile meshes and atlas, A4 pickup maps/templates, shared materials/theme, A8 percussives, jump, boss-intro and run-intro cues, six footsteps and the 8 directional projectile whooshes warm synchronously. `runner_audio.bind()` relies on that same guarded warmup. A2 plating/circuit/floor and A6 pursuer maps, plus A5 boss maps, generate local Images in four WorkerThreadPool tasks. A1 uses the imported Blender GLB and baked textures; prewarm no longer generates unused fur/cloth maps. Main-thread polling finalizes at most one image package or deferred package per frame; remaining audio recipes and boss glyph/mesh/material preparation are deferred on the main thread. No worker touches scene nodes or ImageTextures. Early boss and pursuer use the original lazy fallback; later finalizers preserve their caches. A2 initially binds neutral 1x1 textures, then installs full images into those same texture objects. Instance-owned animated materials remain private.
 
 **Blender cleanup verification (2026-09-22):** `PREWARM: PASS (311 checks)` after removing the unused player maps, census expectation and repeated cache checks. Cold `warm()` was **722.690 ms**, corridor ready **804.826 ms**, pending repeat **0.002 ms**, completed repeat **0.001 ms**. A1/A2/A4/A7 pass with the counts in the table below. [Complete commands, outputs and exit codes](assets/integration-cleanup-verification.md) record this headless run.
 
@@ -1044,16 +1044,17 @@ The automatic turn-left/turn-right phase is gone. Phases are `run → boss → s
 - **Entry bulkhead:** `starship_world.gd` closes the near end of the corridor behind Hoppy with a sealed door at
   z ≈ +24.4 and a sleeve over z 11.5..24.5, the mirror of the far bulkhead. Gameplay never sees it; the run intro's
   reverse shots land on it.
-- **Boss-checkpoint retry** opens straight in front of the boss.
+- **Boss-checkpoint retry** opens straight in front of the boss, with no run intro (see below).
 - **Main menu:** the fifth runner still is now "JUMP, ROLL, DODGE" (`runner_dodge.png`, a jump over a blocking
   hazard captured by `tests/capture_runner_menu_previews.gd`).
 
 ## Contract 2.7: run intro
 
 A fresh run opens with a six-second in-engine cinematic: letterbox bars frame a camera approach through the corridor,
-Hoppy celebrates beneath THE CODEBASE CORRIDOR, and the camera settles behind Hoppy for 3, 2, 1, GO!. Retries and
-boss-checkpoint retries use a 2.2-second READY/GO lead-in. Space or the active controller jump button skips after
-0.3 seconds; the on-screen skip button supports pointer/touch input. Skip retains a brief GO burst and 0.4-second
+Hoppy celebrates beneath THE CODEBASE CORRIDOR, and the camera settles behind Hoppy for 3, 2, 1, GO!. Retries use
+a 2.2-second READY/GO lead-in; a boss-checkpoint retry goes straight to the boss, whose short intro cinematic is its
+lead-in. Space or the active controller jump button skips after 0.3 seconds and until GO; the on-screen skip button
+supports pointer/touch input. Skip retains a brief GO burst and 0.4-second
 exit. Pause freezes the presentation with the run clock. The shot data lives in
 `scenes/runner/data/run_intro_shots.gd`; `ui/run_intro.gd` reads facade progress and beats, and `ui/post_fx.gd` owns
 the letterbox.
@@ -1065,10 +1066,11 @@ Backend hand-off (contract §11.15 is authoritative):
   `GO!` 1.6), `run_intro_skipped()`, `run_intro_ended()` (exactly once per intro, aborts included);
   `game.run_intro_mode`, `game.run_intro_progress`, `game.can_skip_run_intro()`, `game.skip_run_intro()`.
 - **Who plays it.** `RunnerGame.pending_intro_mode` is full on a fresh run from the menu and set to short by
-  `retry()` and `retry_boss()`. On a checkpoint retry the short intro replaces the old turn lead-in and hands over
-  to the boss (whose own short intro cinematic follows).
+  `retry()`. A boss-checkpoint retry plays no run intro: the boss's own short intro cinematic is the lead-in.
+- **Not run time.** `elapsed`, `distance` and the score's base rate stay at zero through the intro, so the HUD
+  clock reads 00:00 and the score 0 at GO.
 - **Hold.** Controls (autopilot included) and the corridor's speed are held from `run_intro` until the GO beat, or
-  until a skip. The HUD hides its widgets and GET READY for the intro and opens GET READY with the run.
+  until a skip. The skip window closes at GO, so a jump pressed on GO is a jump. The HUD hides its widgets and GET READY for the intro and opens GET READY with the run.
 - **Camera.** `camera_rig.set_run_intro(progress, mode, focus)` places the lens off Hoppy's feet from the frontend
   `SHOTS` table (fallback shots built in). The rest pose is `[8.0, 4.0, 0.0, 60.0, 2.5]`.
 - **Hoppy.** The `title` beat plays Hoppy's `victory` clip through the player visual's `celebrate()`.

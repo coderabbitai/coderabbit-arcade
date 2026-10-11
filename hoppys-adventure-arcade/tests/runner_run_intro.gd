@@ -50,6 +50,8 @@ func run() -> void:
 	await _test_short_retry()
 	await _test_checkpoint_retry()
 	await _test_skip_window_and_jump()
+	await _assert_go_jump(&"full")
+	await _assert_go_jump(&"short")
 	await _test_pause_and_endings()
 	await _test_opt_out_and_direct_begin()
 	_set_mode(&"full")
@@ -208,17 +210,26 @@ func _test_full_intro() -> void:
 		"the corridor snaps to the cinematic speed scale")
 	check(game.camera_rig.intro_mode == &"full", "the camera rig takes the full intro")
 	_assert_hud(game, true, "during the full intro")
+	check(not bool(game.spawner.spawning) and not game.spawner._phase_allows_placement(),
+		"the spawner is closed for the intro")
 	var chunks_before: int = game.spawner.get_active_chunks().size()
 	var clock_before: float = game.run_clock
 	_tick(game, 20)
 	var chunks_after: int = game.spawner.get_active_chunks().size()
 	check(chunks_after == chunks_before, "the spawner places nothing during the intro (%d -> %d)" % [chunks_before, chunks_after])
+	check(not bool(game.spawner.spawning) and not game.spawner._phase_allows_placement(),
+		"the spawner stays closed while the intro ticks")
+	check(is_zero_approx(game.elapsed) and is_zero_approx(game.distance) and game.score == 0
+		and is_zero_approx(float(game.score_manager.exact)),
+		"the intro accrues no time, distance or score")
 	check(is_equal_approx(game.run_clock, clock_before), "run_clock stays frozen during the intro")
 	check(game.camera_rig.intro_mode == &"full" and game.camera_rig.intro_progress > 0.0
 		and is_equal_approx(game.camera_rig.intro_progress, game.run_intro_progress),
 		"set_run_intro keeps the rig on the facade's progress")
 	var guard := _until_phase_changes(game, &"intro")
 	check(guard > 0 and game.phase == &"run", "the full intro hands over to run (phase %s after %d ticks)" % [game.phase, guard])
+	_assert_no_accrual(log, "full")
+	_assert_clear_road(game)
 	_assert_beats(log, FULL_BEATS, FULL_TIMES, "full")
 	check(bool(log["victory"]), "the title beat plays Hoppy's victory pose")
 	var stages: Array = log["stages"]
@@ -233,6 +244,7 @@ func _test_full_intro() -> void:
 		"controls are live once the intro has handed over")
 	_tick(game, 10)
 	check(int(log["ended"]) == 1, "a finished intro does not emit run_intro_ended again")
+	_assert_accrual_resumes(game, "full")
 	_close(game)
 
 # --- short retry ------------------------------------------------------------------
@@ -255,6 +267,8 @@ func _test_short_retry() -> void:
 		"run_intro announced %s for the retry" % [opened])
 	_until_phase_changes(game, &"intro")
 	check(game.phase == &"run", "the short intro hands over to run, got %s" % game.phase)
+	_assert_no_accrual(log, "short")
+	_assert_accrual_resumes(game, "short")
 	_assert_beats(log, SHORT_BEATS, SHORT_TIMES, "short")
 	check(not bool(log["victory"]), "the short intro has no title beat, so it does not celebrate")
 	var stages: Array = log["stages"]
@@ -265,6 +279,8 @@ func _test_short_retry() -> void:
 
 func _test_checkpoint_retry() -> void:
 	var recorder := _recorder()
+	var boss_defs := load("res://scenes/runner/boss/boss_defs.gd") as GDScript
+	var kind := StringName(boss_defs.call(&"boss_kind", 1))
 	var checkpoint := {
 		"stage_index": 1,
 		"seed": 99,
@@ -273,29 +289,44 @@ func _test_checkpoint_retry() -> void:
 		"score": 80,
 		"elapsed": 4.5,
 		"distance": 50.0,
+		"bosses_met": [kind],
 	}
 	recorder.boss_checkpoint = checkpoint.duplicate(true)
+	# A stale short request must not open a run intro in front of the boss.
+	_set_mode(&"short")
 	recorder.retry_boss()
 	var routes: Array = recorder.get("routes")
 	check(routes.size() == 1 and String(routes[0]) == "runner_game", "retry_boss() records runner_game, got %s" % [routes])
-	check(_pending_mode() == &"short", "retry_boss() asks for the short intro")
+	check(_pending_mode() == &"short", "retry_boss() leaves the pending intro mode alone")
 	var game : Node = await _open(true)
 	var log := _watch(game)
+	var order: Array[String] = []
+	game.stage_started.connect(func(index: int, _stage_name: StringName, _speed: float) -> void:
+		order.append("stage:%d" % index))
+	game.phase_changed.connect(func(phase: StringName) -> void:
+		order.append("phase:%s" % String(phase)))
+	game.boss_cinematic.connect(func(_boss_kind: StringName, mode: StringName, _seconds: float) -> void:
+		order.append("cinematic:%s" % String(mode)))
+	game.boss_intro.connect(func(_boss_kind: StringName, _boss_name: String, _seconds: float) -> void:
+		order.append("boss_intro"))
+	game.boss_spawned.connect(func(_boss_kind: StringName, _hp: int) -> void:
+		order.append("boss_spawned"))
 	game.start_run(0)
+	check(_pending_mode() == &"full", "the checkpoint run consumes the stale pending mode")
 	check(bool(game.checkpoint_retry), "the checkpoint retry is flagged")
 	check(game.seed == 99, "the checkpoint retry keeps seed 99, got %d" % game.seed)
-	check(game.phase == &"intro" and game.run_intro_mode == &"short",
-		"a checkpoint retry opens on the short intro, got %s / %s" % [game.phase, game.run_intro_mode])
-	check((log["stages"] as Array).is_empty(), "stage_started waits until the checkpoint intro ends")
-	check(is_equal_approx(game.run_clock, 4.5), "run_clock is restored and frozen at %.3f" % game.run_clock)
-	_tick(game, 10)
-	check((log["stages"] as Array).is_empty() and is_equal_approx(game.run_clock, 4.5),
-		"the checkpoint intro still holds stage_started and run_clock")
-	_until_phase_changes(game, &"intro")
+	check(game.phase == &"boss" and game.run_intro_mode == &"",
+		"a checkpoint retry opens on the boss with no run intro, got %s / %s" % [game.phase, game.run_intro_mode])
+	check((log["intro"] as Array).is_empty() and (log["beats"] as Array).is_empty() and int(log["ended"]) == 0,
+		"a checkpoint retry emits no run_intro, beat or run_intro_ended")
 	var stages: Array = log["stages"]
-	check(stages.size() == 1 and int(stages[0]) == 1, "stage_started fired once as the checkpoint intro ended, got %s" % [stages])
-	check(game.phase == &"boss", "the checkpoint intro hands over to the boss, got %s" % game.phase)
-	check(int(log["ended"]) == 1 and game.run_intro_mode == &"", "the checkpoint intro ended once")
+	check(stages.size() == 1 and int(stages[0]) == 1, "stage_started fired once as the boss opened, got %s" % [stages])
+	check(is_equal_approx(game.run_clock, 4.5), "run_clock is restored at %.3f" % game.run_clock)
+	_assert_checkpoint_order(order)
+	_tick(game, 5)
+	check(game.phase == &"boss" and game.run_intro_mode == &"" and int(log["ended"]) == 0
+		and is_equal_approx(game.run_clock, 4.5),
+		"the boss lead-in does not start a run intro")
 	_close(game)
 	recorder.free()
 
@@ -536,8 +567,10 @@ func _tick(game: Node, count: int) -> void:
 	for _i in count:
 		game.speed_controller._physics_process(TICK)
 		game.stage_manager._physics_process(TICK)
+		game.spawner._physics_process(TICK)
 		game.camera_rig._physics_process(TICK)
 		game.player._physics_process(TICK)
+		game.score_manager._physics_process(TICK)
 		game._physics_process(TICK)
 
 func _until_phase_changes(game: Node, phase: StringName) -> int:
@@ -546,6 +579,85 @@ func _until_phase_changes(game: Node, phase: StringName) -> int:
 		_tick(game, 1)
 		guard += 1
 	return guard
+
+func _assert_no_accrual(log: Dictionary, tag: String) -> void:
+	var accrual: Dictionary = log.get("accrual", {})
+	check(not accrual.is_empty()
+		and is_zero_approx(float(accrual.get("elapsed", -1.0)))
+		and is_zero_approx(float(accrual.get("distance", -1.0)))
+		and int(accrual.get("score", -1)) == 0
+		and is_zero_approx(float(accrual.get("exact", -1.0))),
+		"%s hands over with elapsed, distance and score still 0, got %s" % [tag, accrual])
+
+func _assert_accrual_resumes(game: Node, tag: String) -> void:
+	var elapsed0: float = game.elapsed
+	var distance0: float = game.distance
+	var exact0: float = float(game.score_manager.exact)
+	var score0: int = int(game.score)
+	_tick(game, 12)
+	check(game.elapsed > elapsed0 and game.distance > distance0
+		and float(game.score_manager.exact) > exact0 and int(game.score) > score0,
+		"%s accrues after the hand-over (t %.3f->%.3f d %.3f->%.3f score %d->%d exact %.3f->%.3f)"
+			% [tag, elapsed0, game.elapsed, distance0, game.distance, score0, int(game.score), exact0, float(game.score_manager.exact)])
+
+func _assert_clear_road(game: Node) -> void:
+	var spawner: Node = game.spawner
+	check(float(spawner.clear_road_remaining()) > 0.0, "the hand-over opens the clear-road window")
+	var entry_clear := float(spawner.get_script().get_script_constant_map().get("ENTRY_CLEAR_DISTANCE", 6.0))
+	check(float(spawner.frontier_z) <= -entry_clear + 0.001,
+		"the first chunk is at least %.1f m ahead, frontier %.2f" % [entry_clear, float(spawner.frontier_z)])
+	var chunks: Array = spawner.get_active_chunks()
+	check(not chunks.is_empty(), "the hand-over places a chunk")
+	if chunks.is_empty():
+		return
+	var first: Node = chunks[0]
+	var blocking := false
+	for hazard in first.call(&"get_hazards"):
+		if hazard.has_method("is_blocking") and bool(hazard.call(&"is_blocking")):
+			blocking = true
+	var tags: PackedStringArray = first.get(&"tags")
+	check(tags.has("breather") or not blocking,
+		"the first chunk has no blocking hazard inside the clear-road window (%s)" % [tags])
+
+func _assert_checkpoint_order(order: Array[String]) -> void:
+	var stage_at := order.find("stage:1")
+	var boss_at := order.find("phase:boss")
+	var cinematic_at := order.find("cinematic:intro_short")
+	if cinematic_at >= 0:
+		check(stage_at >= 0 and stage_at < boss_at and boss_at < cinematic_at,
+			"checkpoint order is stage_started, boss, intro_short, got %s" % [order])
+		return
+	var lead := "boss_intro" if order.has("boss_intro") else "boss_spawned"
+	var lead_at := order.find(lead)
+	check(stage_at >= 0 and boss_at > stage_at and lead_at > boss_at,
+		"checkpoint cinematic was absent; order fell back to %s, got %s" % [lead, order])
+
+func _assert_go_jump(mode: StringName) -> void:
+	_set_mode(mode)
+	var game: Node = await _open(true)
+	var log := _watch(game)
+	var jumps := {"n": 0}
+	game.player_action.connect(func(kind: StringName) -> void:
+		if kind == &"jump":
+			jumps["n"] += 1)
+	game.start_run(21 if mode == &"full" else 22)
+	var guard := 0
+	while guard < 800:
+		var beats: Array = log["beats"]
+		if not beats.is_empty() and String((beats[beats.size() - 1] as Array)[1]).begins_with("GO"):
+			break
+		_tick(game, 1)
+		guard += 1
+	check(game.phase == &"intro" and not game.can_skip_run_intro(),
+		"%s GO closes the skip window (phase %s, clock %.3f)" % [mode, game.phase, float(game.stage_manager._intro_clock)])
+	_press(game, "jump")
+	game._unhandled_input(_action_event("jump", true))
+	_tick(game, 8)
+	check(int(jumps["n"]) > 0, "%s jump on GO fires player_action, got %d" % [mode, int(jumps["n"])])
+	check(int(log["skipped"]) == 0 and not bool(game.stage_manager._intro_skipped),
+		"%s jump on GO does not skip the intro" % mode)
+	_release_input()
+	_close(game)
 
 func _advance_to_window(game: Node) -> void:
 	var guard := 0
@@ -569,6 +681,15 @@ func _watch(game: Node) -> Dictionary:
 	game.run_intro_ended.connect(func() -> void: log["ended"] += 1)
 	game.stage_started.connect(func(index: int, _stage_name: StringName, _speed: float) -> void:
 		log["stages"].append(index))
+	game.phase_changed.connect(func(phase: StringName) -> void:
+		if phase != &"run" or log.has("accrual"):
+			return
+		log["accrual"] = {
+			"elapsed": game.elapsed,
+			"distance": game.distance,
+			"score": int(game.score),
+			"exact": float(game.score_manager.exact),
+		})
 	return log
 
 func _assert_beats(log: Dictionary, labels: Array[String], times: Array[float], tag: String) -> void:

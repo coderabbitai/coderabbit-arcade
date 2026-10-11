@@ -2,6 +2,8 @@ extends SceneTree
 ## Endless Runner frame-time probe. Rendered runs only (headless does not draw):
 ## Godot --always-on-top --path hoppys-adventure-arcade --script res://tests/runner_perf_probe.gd [-- seconds=60 seed=4242]
 ## Add -- boss_cinematic=true for the opt-in full intro and defeat capture across stages 1-3.
+## Add -- run_intro=true to open the run on the full run intro (contract 2.7 §11.15) instead of
+## opting out, and report its frames apart from gameplay, with each beat and the GO hand-over named.
 ## Plays an autopilot run from the runner menu's Play route and attributes every slow frame to what
 ## happened on it (pickup, chunk spawn, boss, stage). Writes a throwaway leaderboard only.
 const HITCH_MS := 25.0
@@ -12,6 +14,7 @@ const StageDefs = preload("res://scenes/runner/data/stage_defs.gd")
 var seconds := 60.0
 var run_seed := 4242
 var boss_cinematic_probe := false
+var run_intro_probe := false
 var game: Node
 var events: Array[String] = []
 var counts := {}
@@ -25,6 +28,8 @@ func _initialize() -> void:
 		if parts.size() == 2 and parts[0] == "seed": run_seed = int(parts[1])
 		if parts.size() == 2 and parts[0] == "boss_cinematic":
 			boss_cinematic_probe = parts[1].to_lower() in ["true", "1", "yes"]
+		if parts.size() == 2 and parts[0] == "run_intro":
+			run_intro_probe = parts[1].to_lower() in ["true", "1", "yes"]
 	# call_deferred("run") is flushed by SaveService.apply_display() inside autoload _ready,
 	# and root.add_child then fails because the tree is still setting children up. Wait until
 	# that setup has finished.
@@ -59,9 +64,10 @@ func run() -> void:
 	game = (load("res://scenes/runner/runner_game.tscn") as PackedScene).instantiate()
 	game.autostart = false
 	game.leaderboard_path = OS.get_temp_dir().path_join("runner_perf_probe_leaderboard.cfg")
-	# Frame times are the gameplay run. The intro is a separate suite, and this must not edit the
-	# shared run_config.tres, so the flag lives on a duplicate assigned before _ready.
-	_opt_out_run_intro(game)
+	# Frame times are the gameplay run unless run_intro=true asks for the intro too. This must not
+	# edit the shared run_config.tres, so the flag lives on a duplicate assigned before _ready.
+	if not run_intro_probe:
+		_opt_out_run_intro(game)
 	root.add_child(game)
 	if not game.is_inside_tree():
 		push_error("RUNNER PERF: runner was not added to the tree")
@@ -78,8 +84,20 @@ func run() -> void:
 	game.stage_started.connect(func(i, _n, _s): _note("stage:%d" % i))
 	game.damage_taken.connect(func(kind, _h): _note("hit:" + String(kind)))
 	game.pursuit_started.connect(func(_s): _note("pursuit"))
+	if run_intro_probe:
+		game.run_intro.connect(func(mode, _s): _note("intro:" + String(mode)))
+		game.run_intro_beat.connect(func(_i, label): _note("intro-beat:" + String(label)))
+		game.run_intro_skipped.connect(func(): _note("intro-skipped"))
+		game.run_intro_ended.connect(func(): _note("intro-ended"))
+		game.phase_changed.connect(func(phase: StringName) -> void:
+			if phase == &"run" and events.has("intro-ended"):
+				_note("intro-handover"))
+		# A fresh run from the menu: the full intro (start_run consumes this).
+		game.pending_intro_mode = &"full"
 	game.start_run(run_seed)
 	game.set_autopilot(true)
+	var intro_spans: Array[float] = []
+	var intro_marks: Array[String] = []
 	var last := Time.get_ticks_usec()
 	var first := true
 	var end := Time.get_ticks_msec() + int(seconds * 1000)
@@ -100,9 +118,17 @@ func run() -> void:
 			first = false
 			print("RUNNER PERF: first frame %.1f ms" % span)
 			continue
-		spans.append(span)
+		var in_intro := run_intro_probe and (StringName(game.run_intro_mode) != &"" or events.has("intro-handover"))
+		if in_intro:
+			intro_spans.append(span)
+			for what in events:
+				if what.begins_with("intro"):
+					intro_marks.append("%6.1f ms  %s" % [span, what])
+		else:
+			spans.append(span)
 		if span > HITCH_MS:
-			hitches.append("%6.1f ms  t=%5.1fs  %s" % [span, game.elapsed, ", ".join(events) if events.size() else "-"])
+			hitches.append("%6.1f ms  t=%5.1fs %s %s" % [span, game.elapsed, "[intro]" if in_intro else "",
+				", ".join(events) if events.size() else "-"])
 	var sorted := spans.duplicate()
 	sorted.sort()
 	var total := 0.0
@@ -113,6 +139,20 @@ func run() -> void:
 	for line in hitches.slice(0, 40):
 		print("RUNNER PERF HITCH ", line)
 	print("RUNNER PERF events: ", counts)
+	if run_intro_probe:
+		var intro_sorted := intro_spans.duplicate()
+		intro_sorted.sort()
+		var intro_total := 0.0
+		for s in intro_spans: intro_total += s
+		var intro_hitches := intro_spans.filter(func(s: float) -> bool: return s > HITCH_MS).size()
+		if intro_sorted.is_empty():
+			print("RUNNER PERF INTRO: no intro frames were measured")
+		else:
+			print("RUNNER PERF INTRO: frames=%d avg=%.2fms p50=%.1f p99=%.1f max=%.1f hitches(>%dms)=%d" % [
+				intro_sorted.size(), intro_total / intro_sorted.size(), intro_sorted[intro_sorted.size() / 2],
+				intro_sorted[int(intro_sorted.size() * 0.99)], intro_sorted.max(), int(HITCH_MS), intro_hitches])
+		for line in intro_marks:
+			print("RUNNER PERF INTRO BEAT ", line)
 	game.queue_free()
 	await create_timer(0.3).timeout
 	quit(0)

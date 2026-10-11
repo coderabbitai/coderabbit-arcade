@@ -4,9 +4,10 @@ extends Node
 ## only node that drives the boss encounter and the camera's boss and run-intro shots. The corridor
 ## never turns: the drain at the end of `run` empties it and the boss phase follows on the same tick.
 ##
-## The run intro (contract 2.7 §11.15) opens a run: the full one in front of stage 1 on a fresh run,
-## the short one on a retry, and the short one in front of the boss on a checkpoint retry. It holds
-## the player through the same cinematic hold the boss cinematics use until its last (GO) beat.
+## The run intro (contract 2.7 §11.15) opens a run in front of stage 1: the full one on a fresh run,
+## the short one on a retry. A boss-checkpoint retry has none; the boss's own short intro is its
+## lead-in. The intro holds the player through the same cinematic hold the boss cinematics use until
+## its last (GO) beat.
 ##
 ## `state` (ready/running/caught/finished) stays the facade's; `phase` is orthogonal to it. A catch
 ## aborts whatever phase is live back to `idle`.
@@ -33,9 +34,6 @@ const PHASE_STAGE_CLEAR: StringName = &"stage_clear"
 const INTRO_FULL: StringName = &"full"
 const INTRO_SHORT: StringName = &"short"
 
-## Mixed into the run seed so the boss's lane rolls are reproducible but never in step with the
-## spawner's stream.
-const STAGE_SEED_MIX := 0x5F356495
 ## Contract §11.10 fallbacks, used only when no config has been supplied yet.
 const DEFAULT_STAGE_DRAIN_DISTANCE := 120.0
 const DEFAULT_STAGE_DRAIN_TIMEOUT := 6.0
@@ -86,7 +84,6 @@ var bosses_escaped := 0
 var tools_used := 0
 var boss_damage_dealt := 0
 
-var stage_rng := RandomNumberGenerator.new()
 
 ## Seconds inside the current phase. In `run` it only starts once the distance target is reached,
 ## so it measures the drain window and nothing else.
@@ -103,11 +100,6 @@ var _intro_next_beat := 0
 var _intro_labels: Array[String] = []
 var _intro_times: Array[float] = []
 var _intro_skipped := false
-## True when this intro is a checkpoint retry's lead-in, so it hands over to the boss, not to `run`.
-var _intro_then_boss := false
-## The checkpoint retry's stage_started waits for its intro to end, so the stage banner never sits on
-## top of the intro's own cards.
-var _intro_stage_pending := false
 
 func setup(runner: RunnerGame) -> void:
 	game = runner
@@ -140,8 +132,6 @@ func _connect(runner: RunnerGame) -> void:
 func reset(run_seed: int) -> void:
 	# A restart mid-intro still owes its run_intro_ended (exactly one per run_intro).
 	_end_intro()
-	_intro_stage_pending = false
-	stage_rng.seed = run_seed ^ STAGE_SEED_MIX
 	stage_index = 0
 	stage_name = &""
 	stage_distance = 0.0
@@ -172,20 +162,17 @@ func begin(intro_mode: StringName = &"") -> void:
 		# Mirrors first, so the intro's listeners already read stage 1 off the facade.
 		stage_distance_target = StageDefs.distance_target(stage_index, config)
 		stage_name = StageDefs.boss_name(stage_index)
-		_enter_intro(intro_mode, false)
+		_enter_intro(intro_mode)
 		return
 	_enter_run()
 
 ## Contract §11.13: open a run in front of the boss a checkpoint was taken at, instead of stage 1.
 ## RunnerGame calls this in place of begin() once every system is reset and the facade has restored
-## its own half of the checkpoint. With an `intro_mode` the run intro is the lead-in (contract 2.7
-## §11.15); _enter_boss() then runs as normal and takes a fresh checkpoint, so a boss can be retried
-## any number of times.
-func begin_at_boss(checkpoint: Dictionary, intro_mode: StringName = &"") -> void:
+## its own half of the checkpoint. There is no run intro here (contract 2.7 §11.15): the boss's
+## short intro cinematic is the lead-in. _enter_boss() then runs as normal and takes a fresh
+## checkpoint, so a boss can be retried any number of times.
+func begin_at_boss(checkpoint: Dictionary) -> void:
 	stage_index = maxi(int(checkpoint.get("stage_index", 1)), 1)
-	# Only this path re-seeds: the lane rolls of a replayed stage depend on the stage and the run seed
-	# alone, never on how many draws the original run had made before it.
-	stage_rng.seed = int(checkpoint.get("seed", 0)) ^ STAGE_SEED_MIX ^ stage_index
 	stage_name = StageDefs.boss_name(stage_index)
 	stage_distance_target = StageDefs.distance_target(stage_index, config)
 	stage_distance = stage_distance_target
@@ -215,11 +202,6 @@ func begin_at_boss(checkpoint: Dictionary, intro_mode: StringName = &"") -> void
 	_clear_blocking_hazards()
 	_draining = true
 	_publish()
-	if _intro_allowed(intro_mode):
-		# stage_started waits for the intro's end (_finish_intro), right before the boss opens.
-		_intro_stage_pending = true
-		_enter_intro(intro_mode, true)
-		return
 	# The HUDs key the stage label and the stage-clear card off stage_started, so it goes out once
 	# here and they read this stage before the fight opens.
 	game.stage_started.emit(stage_index, stage_name, _stage_base_speed())
@@ -371,14 +353,13 @@ func _tick_stage_clear(delta: float) -> void:
 # --- transitions ---
 
 ## Open the run intro: hazard-free, the player held and the corridor eased down until the GO beat.
-func _enter_intro(mode: StringName, then_boss: bool) -> void:
+func _enter_intro(mode: StringName) -> void:
 	_phase_timer = 0.0
 	run_intro_mode = mode
 	_intro_seconds = _intro_length(mode)
 	_intro_clock = 0.0
 	_intro_next_beat = 0
 	_intro_skipped = false
-	_intro_then_boss = then_boss
 	_intro_labels = _intro_beat_labels(mode)
 	_intro_times = _intro_beat_times(mode, _intro_labels.size())
 	run_intro_progress = 0.0
@@ -392,16 +373,9 @@ func _enter_intro(mode: StringName, then_boss: bool) -> void:
 	# A beat authored at 0 s goes out with the intro rather than a tick late.
 	_send_due_beats()
 
-## The intro has played out (or its skip tail has): close it, then open what it led into.
+## The intro has played out (or its skip tail has): close it and open stage 1's run.
 func _finish_intro() -> void:
-	var then_boss := _intro_then_boss
 	_end_intro()
-	if then_boss:
-		if _intro_stage_pending:
-			_intro_stage_pending = false
-			game.stage_started.emit(stage_index, stage_name, _stage_base_speed())
-		_enter_boss()
-		return
 	_enter_run()
 
 ## Close a live intro on every exit path (played out, skipped tail done, a catch, a new run): the hold
@@ -415,7 +389,6 @@ func _end_intro() -> void:
 	_intro_seconds = 0.0
 	_intro_next_beat = 0
 	_intro_skipped = false
-	_intro_then_boss = false
 	_set_cinematic_hold(false)
 	_apply_intro_camera_reset()
 	_publish()
@@ -437,9 +410,13 @@ func _send_beat(index: int) -> void:
 	game.run_intro_beat.emit(index, _intro_labels[index])
 
 ## Contract 2.7 §11.15: true once the intro has played run_intro_skip_after seconds, until it is
-## skipped or reaches its last run_intro_skip_tail seconds. The facade adds the running/paused gate.
+## skipped, its GO beat has gone out, or it reaches its last run_intro_skip_tail seconds. Closing on
+## GO matters: controls are live from GO, so a jump pressed on it must be a jump, not a skip. The
+## facade adds the running/paused gate.
 func can_skip_run_intro() -> bool:
 	if phase != PHASE_INTRO or run_intro_mode == &"" or _intro_skipped:
+		return false
+	if _intro_next_beat >= _intro_labels.size():
 		return false
 	return _intro_clock >= _intro_skip_after() and _intro_clock < _intro_seconds - _intro_skip_tail()
 
@@ -530,7 +507,6 @@ func _on_caught() -> void:
 	if phase == PHASE_IDLE:
 		return
 	_end_intro()
-	_intro_stage_pending = false
 	_phase_timer = 0.0
 	_draining = false
 	_abort_boss()
