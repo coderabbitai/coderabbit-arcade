@@ -11,6 +11,12 @@ class CinematicGame extends PreviewScript.StubGame:
 	signal boss_cinematic_ended(mode: StringName)
 	var boss_cinematic_progress := 0.0
 	var boss_time_factor := 1.0
+	signal run_intro(mode: StringName, seconds: float)
+	signal run_intro_beat(index: int, label: String)
+	signal run_intro_skipped
+	signal run_intro_ended
+	var run_intro_mode: StringName = &""
+	var run_intro_progress := 0.0
 
 ## Title layout reads the encounter clock off its game node.
 class TitleFixture extends Node:
