@@ -78,6 +78,7 @@ jobs:
             orbital_assets
             orbital_ops_smoke
             platformer_boss
+            platformer_knockout
             platformer_smoke
             platformer_traversal
             runner_boss_validator

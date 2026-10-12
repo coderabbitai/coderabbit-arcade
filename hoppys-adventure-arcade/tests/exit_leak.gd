@@ -8,7 +8,7 @@ extends SceneTree
 ## closed mid-transition, while AppRouter is busy, so quit_game(true) quits at once.
 ## It prints "EXIT_LEAK closing" just before the close; the wrapper times the exit from there.
 const SCENARIOS := ["hub", "hub_quit", "code_city", "mini_boss", "celebration", "heroes_knockout",
-	"runner_intro", "route_leaving", "route_arriving"]
+	"runner_intro", "route_leaving", "route_arriving", "platformer_knockout", "platformer_results"]
 ## Closed while the router fades out of the hub or into Code City, before go() has finished.
 const MID_ROUTE := ["route_leaving", "route_arriving"]
 const HUB := "res://scenes/main_menu/main_menu.tscn"
@@ -138,6 +138,15 @@ func reach() -> bool:
 			if not await wait_until(func() -> bool: return game.state == "combat", 10.0): return false
 			game.knockout(game.player.position+Vector2(60, 0))
 			return await wait_until(func() -> bool: return game.ko.phase == "card", 8.0)
+		"platformer_knockout", "platformer_results":
+			if not await route("bay_area_blitz", "res://scenes/platformer/bay_area_blitz.tscn"): return false
+			game._resume()
+			game.player.hp = 1
+			game.player.invulnerable = 0
+			game.player.damage(game.player.position.x + 80)
+			if scenario == "platformer_results":
+				return await wait_until(func() -> bool: return game.overlay.visible and not game.results_reveal.is_running(), 6.0)
+			return game.knockout.active
 		"runner_intro":
 			if not await route("runner", RUNNER_MENU): return false
 			if not await route("runner_game", RUNNER): return false

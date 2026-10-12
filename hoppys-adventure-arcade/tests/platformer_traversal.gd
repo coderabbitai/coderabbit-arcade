@@ -33,6 +33,9 @@ func jump_to(target: Vector2) -> bool:
 	return false
 func run() -> void:
 	change_scene_to_file("res://scenes/platformer/bay_area_blitz.tscn")
+	# Scene changes are committed at the end of a process frame, not a physics tick.
+	await process_frame
+	await process_frame
 	await frames(3)
 	level = current_scene
 	player = level.player

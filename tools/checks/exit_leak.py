@@ -28,7 +28,7 @@ from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parents[2] / "hoppys-adventure-arcade"
 SCENARIOS = ("hub", "hub_quit", "code_city", "mini_boss", "celebration", "heroes_knockout", "runner_intro",
-             "route_leaving", "route_arriving")
+             "route_leaving", "route_arriving", "platformer_knockout", "platformer_results")
 # The same exit lines tools/build/export_game.py's smoke check rejects.
 LEAK = re.compile(r"leaked at exit|still in use at exit")
 FAILURE = re.compile(r"SCRIPT ERROR|^FAIL:", re.M)
