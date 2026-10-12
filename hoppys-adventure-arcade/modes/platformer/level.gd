@@ -1,6 +1,7 @@
 extends Node2D
 ## Shared platformer session. Concrete levels provide layout, actors and presentation.
 const Art = preload("res://modes/platformer/art.gd")
+const Knockout = preload("res://modes/platformer/knockout.gd")
 const Player = preload("res://modes/platformer/player.gd")
 const Enemy = preload("res://modes/platformer/enemy.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
@@ -63,6 +64,13 @@ var banner_title: Label
 var previous_feet := Vector2.ZERO
 var music_fade: Tween
 var celebration_hop: Tween
+var knockout: Control
+var gameplay_hud: Array[CanvasItem] = []
+var knockout_visibility: Array[bool] = []
+var knockout_music_fade: Tween
+var knockout_music_volume := 0.0
+var knockout_music_mode := Node.PROCESS_MODE_PAUSABLE
+var knockout_player_visible := true
 
 func _pickup(kind: String, pos: Vector2) -> void:
 	var area := Area2D.new()
@@ -171,6 +179,10 @@ func _hud() -> void:
 	controls.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	controls.position = Vector2(24, -32)
 	root.add_child(controls)
+	gameplay_hud = [bar, boss_label, controls]
+	knockout = Knockout.new()
+	root.add_child(knockout)
+	knockout.completed.connect(func(): _reveal_results(0.0))
 	overlay = ColorRect.new()
 	overlay.color = PAUSE_SHADE
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -253,9 +265,39 @@ func _finish(won: bool) -> void:
 	overlay_title.text = "MERGE SUCCESSFUL!" if won else "BUILD FAILED"
 	overlay_detail.text = "%06d POINTS   /   %02d:%02d\n%s" % [score, int(elapsed) / 60, int(elapsed) % 60, level_title + " complete." if won else "Fresh branch. Another try."]
 	resume_button.hide()
-	_reveal_results(0.35 if won else maxf(0.0, player.death_time() - 0.35))
-## Holds on the frozen final moment (Hoppy's knockout keeps playing), then eases the results in.
+	if won:
+		_reveal_results(0.35)
+	else:
+		_start_knockout()
+
+func _start_knockout() -> void:
+	knockout_player_visible = player.sprite.visible
+	player.sprite.hide()
+	for item in gameplay_hud:
+		knockout_visibility.append(item.visible)
+		item.hide()
+	if music_fade: music_fade.kill()
+	knockout_music_volume = music.volume_db
+	knockout_music_mode = music.process_mode
+	music.process_mode = Node.PROCESS_MODE_ALWAYS
+	knockout_music_fade = create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
+	knockout_music_fade.tween_property(music, "volume_db", knockout_music_volume - 12.0, 0.5)
+	knockout.play(player.sprite.sprite_frames, player.facing)
+
+func _cancel_knockout() -> void:
+	if is_instance_valid(knockout): knockout.cancel()
+	if knockout_music_fade: knockout_music_fade.kill()
+	if not knockout_visibility.is_empty():
+		for i in gameplay_hud.size():
+			gameplay_hud[i].visible = knockout_visibility[i]
+		knockout_visibility.clear()
+		player.sprite.visible = knockout_player_visible
+		music.volume_db = knockout_music_volume
+		music.process_mode = knockout_music_mode
+
+## The cutaway holds its final pose behind the existing results fade.
 func _reveal_results(delay: float) -> void:
+	if not won_run: knockout.callout.hide()
 	overlay.color = RESULTS_SHADE
 	overlay.modulate.a = 0.0
 	overlay_card.position.y = 40
@@ -284,6 +326,8 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and is_instance_valid(overlay) and not finished and not AppRouter.busy:
 		_pause()
 func _exit_tree() -> void:
+	_cancel_knockout()
+	if results_reveal: results_reveal.kill()
 	get_tree().paused = false
 	AudioService.music.stream_paused = false
 
