@@ -74,8 +74,9 @@ The MERGE button has a one-way top aligned to its green cap. After boss defeat, 
 ### Knockout cutaway
 
 All three platformer levels share a 3.5-second knockout cutaway for fatal hits and pit falls.
-The level freezes and its HUD disappears while an enlarged Hoppy tumbles, lands, and sees
-stars beneath a K.O. callout. The current level or boss music keeps playing, ducked by 12 dB,
+The level freezes and its HUD disappears while an enlarged Hoppy plays the knockout sprite
+animation in place, with fixed position, rotation and scale, and sees stars beneath a K.O.
+callout. The current level or boss music keeps playing, ducked by 12 dB,
 through the existing results menu. Retry creates a fresh run; leaving restores menu audio.
 Gameplay inputs cannot skip the cutaway, but can still finish the results fade once it appears.
 

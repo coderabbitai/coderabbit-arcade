@@ -47,6 +47,7 @@ func run() -> void:
 			var volume: float = game.music.volume_db
 			var position: float = game.music.get_playback_position()
 			die(fell)
+			var rabbit_transform: Transform2D = game.knockout.rabbit.transform
 			var completions := [0]
 			game.knockout.completed.connect(func(): completions[0] += 1)
 			check(game.finished and paused and game.knockout.active, label + ": death starts cutaway with frozen world")
@@ -66,6 +67,7 @@ func run() -> void:
 			check(game.results_reveal == null and not game.overlay.visible, label + ": repeat death and input cannot reveal results")
 			await create_timer(0.6).timeout
 			check(game.knockout.elapsed > 0.4 and game.knockout.rabbit.frame > 0, label + ": cutaway advances through pause")
+			check(game.knockout.rabbit.transform == rabbit_transform, label + ": KO frames play without rabbit movement")
 			check(game.elapsed == world_time and game.player.position == world_position, label + ": world stays still")
 			check(game.camera.transform == camera_transform and game.camera.zoom == camera_zoom, label + ": camera untouched")
 			check(game.music.playing and not game.music.stream_paused and game.music.stream == stream, label + ": current track continues")
@@ -73,9 +75,12 @@ func run() -> void:
 			check(is_equal_approx(game.music.volume_db, volume - 12.0), label + ": music ducks by 12 dB")
 			if not fell: await capture(route + "-air")
 			game.knockout.set_process(false)
+			while game.knockout.elapsed < 2.1:
+				game.knockout.tick(0.1)
+				check(game.knockout.rabbit.transform == rabbit_transform, label + ": rabbit stays fixed throughout KO")
 			game.knockout.tick(2.2 - game.knockout.elapsed)
 			check(game.knockout.callout.modulate.a == 1.0 and game.knockout.rabbit.frame == 5, label + ": final pose and KO callout")
-			check(game.knockout.rabbit.position.distance_to(game.knockout.size * Vector2(0.5, 0.56)) < 100, label + ": close-up centered even after a pit fall")
+			check(game.knockout.rabbit.position.is_equal_approx(game.knockout.size * Vector2(0.5, 0.56)), label + ": close-up centered even after a pit fall")
 			if not fell: await capture(route + "-stars")
 			game.knockout.tick(10)
 			game.knockout.tick(10)

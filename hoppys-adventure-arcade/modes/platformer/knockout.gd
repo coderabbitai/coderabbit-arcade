@@ -64,16 +64,14 @@ func tick(dt: float) -> void:
 func _apply() -> void:
 	if rabbit.sprite_frames == null: return
 	var unit := minf(size.x / 1280.0, size.y / 720.0)
-	var launch := clampf((elapsed - 0.12) / 1.4, 0.0, 1.0)
-	var bounce := sin(clampf((elapsed - 1.52) / 0.3, 0.0, 1.0) * PI) * 16.0
-	var lift := sin(launch * PI) * 95.0 + bounce
-	rabbit.position = Vector2(size.x * 0.5 + direction * lerpf(-65.0, 40.0, launch) * unit, size.y * RABBIT_Y - lift * unit)
-	rabbit.scale = Vector2.ONE * lerpf(3.8, 4.4, smoothstep(0.0, 0.45, elapsed)) * unit
-	rabbit.rotation = direction * sin(launch * PI) * 0.32
+	var animation_progress := clampf((elapsed - 0.12) / 1.4, 0.0, 1.0)
+	rabbit.position = Vector2(size.x * 0.5, size.y * RABBIT_Y)
+	rabbit.scale = Vector2.ONE * 4.4 * unit
+	rabbit.rotation = 0.0
 	rabbit.animation = &"hurt" if elapsed < 0.12 else &"death"
 	rabbit.pause()
 	var count := rabbit.sprite_frames.get_frame_count(rabbit.animation)
-	rabbit.frame = mini(count - 1, int(launch * count))
+	rabbit.frame = mini(count - 1, int(animation_progress * count))
 	var pop := clampf((elapsed - 1.82) / 0.2, 0.0, 1.0)
 	callout.position = Vector2(0, size.y * 0.24)
 	callout.size = Vector2(size.x, 110 * unit)
