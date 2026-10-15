@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://sthtxcmmjtva"
+path="res://.godot/imported/enchanted_repo_level.ogg-586e73c4359f2987ff09326f9f1427e5.oggvorbisstr"
+
+[deps]
+
+source_file="res://Assets/Audio/Platformer/The Enchanted Repo/enchanted_repo_level.ogg"
+dest_files=["res://.godot/imported/enchanted_repo_level.ogg-586e73c4359f2987ff09326f9f1427e5.oggvorbisstr"]
+
+[params]
+
+loop=true
+loop_offset=38.545125
+bpm=94.63
+beat_count=0
+bar_beats=4

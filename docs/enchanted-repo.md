@@ -40,12 +40,12 @@ These numerical timings, armor counts and patterns are v1 implementation choices
 
 ## Music and implementation
 
-The requested files are used directly from `Assets/Audio/Platformer/The Enchanted Repo/`:
+The level plays original music by Erik Thorelli from `Assets/Audio/Platformer/The Enchanted Repo/` (prompts, Suno song IDs and loop points in its `PROMPTS.md`):
 
-- `04 - Silent Forest.mp3`: traversal, fresh retry and after boss defeat.
-- `05 - Battle 1.mp3`: begins during the intro and continues through the fight.
+- `enchanted_repo_level.ogg`: traversal, fresh retry and after boss defeat. A 38.5 s intro plays once, then a 40-bar loop repeats.
+- `enchanted_repo_boss.ogg`: begins during the intro and continues through the fight. The opening hit plays once, then a 44-bar loop repeats.
 
-The shared scene-local Music-bus player loops through its finished signal, changes tracks with pause-aware fades, suspends arcade music while playing and restores it on leaving. Shared imported streams are not changed. Existing Platformer jump/hurt/UI sounds are reused.
+Both loop from their `.import` settings (`loop`, `loop_offset`), so the player never reaches its finished signal. The shared scene-local Music-bus player changes tracks with pause-aware fades, suspends arcade music while playing and restores it on leaving. Shared imported streams are not changed. Existing Platformer jump/hurt/UI sounds are reused.
 
 `scenes/platformer/enchanted_repo.gd` extends the existing `modes/platformer/level.gd`. New local scripts provide art crops, enemies, branch lifecycle, timed hazards, Monolith combat, and a ground-wave subclass of Orbital's projectile. The shared player and level lifecycle are unchanged. The router and Level Select now expose the new level with its own layered artwork. Background plates are finite scenery overlapped for coverage, not seamless textures. Terrain combines cropped kit sprites with separate collision solids, as in Orbital Ops; no editor-painted TileSet is claimed.
 
