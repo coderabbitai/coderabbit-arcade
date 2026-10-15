@@ -30,6 +30,18 @@ In Orbital Ops' zero-gravity bay, hold Jump or Up to rise, hold Down to descend,
 
 Versioned macOS, Windows, Linux and Web builds come from the [Build workflow](.github/workflows/build.yml): releases for `v*` tags, artifacts for every `main` push, and preview builds for PRs labelled `preview-build`. To build locally, run `python3 tools/build/export_game.py --smoke`. See [docs/builds.md](docs/builds.md).
 
+### Run it at a booth
+
+To run a build as an unattended kiosk, pass `--booth` after `--`. Add `--route=<name>` to open a game straight away:
+
+```sh
+open -a "Hoppy’s Adventure Arcade.app" --args -- --booth --route=heroes_vs_villains   # macOS
+HoppysAdventureArcade.exe -- --booth --route=heroes_vs_villains                       # Windows
+./HoppysAdventureArcade.x86_64 -- --booth --route=heroes_vs_villains                  # Linux
+```
+
+Booth mode runs fullscreen and ignores the menu's **Quit Game**, so staff close the window instead. After 90 seconds without input, any game returns to the hub's attract screen. [Run it at a booth](docs/builds.md#run-it-at-a-booth) lists every route and flag.
+
 ## Docs
 
 - Platformer: [Bay Area Blitz](docs/bay-area-blitz.md), [Orbital Ops](docs/orbital-ops.md), [The Enchanted Repo](docs/enchanted-repo.md)
