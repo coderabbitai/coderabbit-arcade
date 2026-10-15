@@ -24,11 +24,12 @@ const BOOTH_FLAG := "--booth"
 const ROUTE_PREFIX := "--route="
 const IDLE_SECONDS := 90.0
 const STICK_DEADZONE := 0.4
-## Booth analytics (app/booth_log.gd): with --booth, each game session's start and end are appended
-## to SESSION_LOG_DEFAULT. `--session-log=<path>` (absolute or user://) picks another file and also
-## works without --booth, for playtests. Nothing is logged unless one of them is passed.
+## Booth analytics (app/booth_log.gd): with --booth, each game session's start and end go to a file
+## for this run in the SESSION_LOG_DEFAULT folder. `--session-log=<folder>` (absolute or user://)
+## picks another folder and also works without --booth, for playtests. Nothing is logged unless one
+## of them is passed.
 const SESSION_LOG_PREFIX := "--session-log="
-const SESSION_LOG_DEFAULT := "user://booth/sessions.jsonl"
+const SESSION_LOG_DEFAULT := "user://booth"
 var busy := false
 var veil: ColorRect
 var booth := false
@@ -112,17 +113,17 @@ static func launch_route(args: PackedStringArray) -> String:
 			push_error("Unknown --route %s; expected one of %s" % [route, ", ".join(ROUTES.keys())])
 	return ""
 
-## The session log these arguments ask for: `--session-log=<path>`, else the default file in booth
-## mode, else "" (no logging).
+## The session-log folder these arguments ask for: `--session-log=<folder>`, else the default in
+## booth mode, else "" (no logging).
 static func session_log_path(args: PackedStringArray, booth_mode: bool) -> String:
 	for arg in args:
 		if arg.begins_with(SESSION_LOG_PREFIX) and arg.length() > SESSION_LOG_PREFIX.length():
 			return arg.trim_prefix(SESSION_LOG_PREFIX)
 	return SESSION_LOG_DEFAULT if booth_mode else ""
 
-func start_session_log(path: String) -> void:
-	session_log = BoothLog.new(path)
-	print("AppRouter: session log at %s" % ProjectSettings.globalize_path(path))
+func start_session_log(folder: String) -> void:
+	session_log = BoothLog.new(folder)
+	print("AppRouter: session log at %s" % ProjectSettings.globalize_path(session_log.path))
 
 func _launch(route: String) -> void:
 	await go(route)

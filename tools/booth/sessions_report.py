@@ -1,13 +1,15 @@
 """Summarize the session logs that booth mode writes (hoppys-adventure-arcade/app/booth_log.gd).
 
 Usage:
-    python3 tools/booth/sessions_report.py sessions.jsonl [more.jsonl ...]
-    python3 tools/booth/sessions_report.py sessions.jsonl --csv sessions.csv
+    python3 tools/booth/sessions_report.py booth/ [more folders or .jsonl files ...]
+    python3 tools/booth/sessions_report.py booth/ --csv sessions.csv
 
-Each line of a log is one event: "launch" (the game started), then "start" and "end" for each
-game session. Starts and ends pair by file, launch and session number. A start without an end
-means the game stopped without quitting (a crash, a power cut or a forced kill); it is reported
-as unfinished. Pass every machine's log at once to combine them. Standard library only.
+The game writes one file per run (sessions-<time>-<process id>.jsonl) in its booth folder; pass
+the folder, or single files. Each line is one event: "launch" (the game started), then "start"
+and "end" for each game session. Starts and ends pair by file, launch and session number. A start
+without an end means the game stopped without quitting (a crash, a power cut or a forced kill);
+it is reported as unfinished. Pass every machine's folder at once to combine them. Standard
+library only.
 """
 from __future__ import annotations
 
@@ -67,8 +69,12 @@ def read(paths: list[Path]) -> Log:
                         if session is None:
                             skipped.append(f"{where}: end without a start")
                             continue
-                        # Convert every field first, so a malformed end leaves the session as it was.
-                        end, ended_by = str(event["time"]), str(event["ended_by"])
+                        # Check every field first, so a malformed end leaves the session as it was.
+                        end, ended_by = event["time"], event["ended_by"]
+                        if event["game"] != session.game:
+                            raise ValueError(f"end for {event['game']!r} closes a {session.game!r} session")
+                        if not (isinstance(end, str) and end and isinstance(ended_by, str) and ended_by):
+                            raise ValueError("time and ended_by must be non-empty strings")
                         duration_s, retries = float(event["duration_s"]), int(event.get("retries", 0))
                         if not math.isfinite(duration_s) or duration_s < 0:
                             raise ValueError(f"duration_s must be a finite, non-negative number, not {duration_s}")
@@ -134,19 +140,36 @@ def write_csv(log: Log, target: Path) -> None:
             writer.writerow([s.source, s.launch, s.number, s.game, s.start, s.end, duration, s.ended_by or "unfinished", s.retries])
 
 
+def expand(paths: list[Path]) -> list[Path]:
+    """The log files: each file as given, and every .jsonl file in each folder."""
+    files: list[Path] = []
+    for path in paths:
+        files.extend(sorted(path.glob("*.jsonl")) if path.is_dir() else [path])
+    return files
+
+
+def same_file(a: Path, b: Path) -> bool:
+    """True when both paths name one file, through a symlink, a hardlink or `..`."""
+    try:
+        return a.samefile(b)
+    except OSError:
+        return a.resolve() == b.resolve()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("logs", nargs="+", type=Path, help="session logs (JSON Lines)")
+    parser.add_argument("logs", nargs="+", type=Path, help="booth folders or session log files (JSON Lines)")
     parser.add_argument("--csv", type=Path, help="also write one row per session to this CSV file")
     args = parser.parse_args(argv)
-    missing = [str(path) for path in args.logs if not path.is_file()]
+    missing = [str(path) for path in args.logs if not path.exists()]
     if missing:
-        print("No such log: " + ", ".join(missing), file=sys.stderr)
+        print("No such log or folder: " + ", ".join(missing), file=sys.stderr)
         return 2
-    if args.csv and any(args.csv.resolve() == path.resolve() for path in args.logs):
+    logs = expand(args.logs)
+    if args.csv and any(same_file(args.csv, path) for path in logs):
         print(f"--csv {args.csv} is one of the logs; pick another file so the log isn't overwritten", file=sys.stderr)
         return 2
-    log = read(args.logs)
+    log = read(logs)
     print(summary(log))
     if args.csv:
         write_csv(log, args.csv)

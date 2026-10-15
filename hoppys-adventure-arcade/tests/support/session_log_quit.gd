@@ -2,7 +2,7 @@ extends SceneTree
 ## Child process for tests/booth_session_log.gd, skipped as a suite in tools/tests/suites.toml. It
 ## opens a game with a session log, then quits through AppRouter.quit_game(true), as a window close
 ## does, so the parent can check the log's "quit" end without quitting itself.
-## Usage: --script res://tests/support/session_log_quit.gd -- <log path>
+## Usage: --script res://tests/support/session_log_quit.gd -- <log folder>
 
 func _initialize() -> void:
 	call_deferred("run")
@@ -11,7 +11,7 @@ func run() -> void:
 	var args := OS.get_cmdline_user_args()
 	var router := root.get_node("AppRouter")
 	if args.is_empty():
-		push_error("session_log_quit: pass the log path after --")
+		push_error("session_log_quit: pass the log folder after --")
 		quit(2)
 		return
 	router.start_session_log(args[0])

@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -106,12 +107,37 @@ class SessionsReportTest(unittest.TestCase):
             event("end", session=1, game="runner_game", time="2026-11-30T10:01:00", duration_s=float("nan"), ended_by="menu"),
             event("end", session=1, game="runner_game", time="2026-11-30T10:01:00", duration_s=1e400, ended_by="menu"),
             event("end", session=1, game="runner_game", time="2026-11-30T10:01:00", duration_s=-5, ended_by="menu"),
+            end(1, "orbital_ops", "2026-11-30T10:01:00", 60.0, "menu"),
+            event("end", session=1, game="runner_game", time=None, duration_s=60.0, ended_by="menu"),
+            event("end", session=1, game="runner_game", time="2026-11-30T10:01:00", duration_s=60.0, ended_by=None),
+            event("end", session=1, time="2026-11-30T10:01:00", duration_s=60.0, ended_by="menu"),
         ])
         log = sessions_report.read([path])
         session = log.sessions[0]
         self.assertEqual((session.end, session.duration_s, session.ended_by, session.retries), ("", None, "", 0))
-        self.assertEqual(len(log.skipped), 4)
+        self.assertEqual(len(log.skipped), 8)
+        self.assertIn("closes a 'runner_game' session", log.skipped[4])
         self.assertIn("Sessions: 1 (0 finished, 1 unfinished)", sessions_report.summary(log))
+
+    def test_reads_every_run_file_in_a_folder(self) -> None:
+        folder = Path(self.folder.name) / "booth"
+        folder.mkdir()
+        (folder / "sessions-a.jsonl").write_text(start(1, "runner_game", "2026-11-30T10:00:00") + "\n", encoding="utf-8")
+        (folder / "sessions-b.jsonl").write_text(start(1, "orbital_ops", "2026-11-30T11:00:00") + "\n", encoding="utf-8")
+        (folder / "notes.txt").write_text("not a log", encoding="utf-8")
+        with redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(sessions_report.main([str(folder)]), 0)
+        self.assertIn("Sessions: 2 (0 finished, 2 unfinished)", out.getvalue())
+
+    def test_csv_target_cannot_be_a_hardlink_to_a_log(self) -> None:
+        log = self.sample()
+        alias = log.parent / "alias.csv"
+        os.link(log, alias)
+        original = log.read_bytes()
+        with redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(sessions_report.main([str(log), "--csv", str(alias)]), 2)
+        self.assertIn("is one of the logs", err.getvalue())
+        self.assertEqual(log.read_bytes(), original)
 
     def test_csv_target_cannot_be_a_log(self) -> None:
         log = self.sample()

@@ -6,10 +6,10 @@ extends SceneTree
 ## quit_game() are covered. Child launches get a throwaway user-data root, so a standalone run never
 ## reads or writes a real booth log. Run headless with --script res://tests/booth_session_log.gd.
 const BoothLog := preload("res://app/booth_log.gd")
-const LOG := "user://test_booth_sessions.jsonl"
-const CHILD_LOG := "user://test_booth_child_sessions.jsonl"
-const QUIT_LOG := "user://test_booth_quit_sessions.jsonl"
-const RELAUNCH_LOG := "user://test_booth_relaunch_sessions.jsonl"
+const LOG_DIR := "user://test_booth_sessions"
+const CHILD_DIR := "user://test_booth_child_sessions"
+const QUIT_DIR := "user://test_booth_quit_sessions"
+const RELAUNCH_DIR := "user://test_booth_relaunch_sessions"
 const BLOCKER := "user://test_booth_blocker"
 const CHILD_HOME := "user://test_booth_home"
 const ISOLATED := ["HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "APPDATA", "LOCALAPPDATA",
@@ -97,15 +97,17 @@ func records(path: String) -> Array[Dictionary]:
 func events(entries: Array[Dictionary], kind: String) -> Array[Dictionary]:
 	return entries.filter(func(record: Dictionary) -> bool: return record.event == kind)
 
-func find_file(directory: String, file_name: String) -> bool:
+## True when a file whose name starts with `prefix` exists anywhere under `directory`.
+func find_file(directory: String, prefix: String) -> bool:
 	var dir := DirAccess.open(directory)
 	if dir == null:
 		return false
 	dir.include_hidden = true
-	if file_name in dir.get_files():
-		return true
+	for file_name in dir.get_files():
+		if file_name.begins_with(prefix):
+			return true
 	for child in dir.get_directories():
-		if find_file(directory.path_join(child), file_name):
+		if find_file(directory.path_join(child), prefix):
 			return true
 	return false
 
@@ -121,10 +123,10 @@ func remove_tree(directory: String) -> void:
 	DirAccess.remove_absolute(directory)
 
 func clean() -> void:
-	for path in [LOG, CHILD_LOG, QUIT_LOG, RELAUNCH_LOG, BLOCKER]:
-		if FileAccess.file_exists(path):
-			DirAccess.remove_absolute(path)
-	remove_tree(ProjectSettings.globalize_path(CHILD_HOME))
+	if FileAccess.file_exists(BLOCKER):
+		DirAccess.remove_absolute(BLOCKER)
+	for folder in [LOG_DIR, CHILD_DIR, QUIT_DIR, RELAUNCH_DIR, CHILD_HOME]:
+		remove_tree(ProjectSettings.globalize_path(folder))
 
 func run() -> void:
 	router = root.get_node("AppRouter")
@@ -133,24 +135,25 @@ func run() -> void:
 	check(router.session_log == null, "No session log without --booth or --session-log")
 	check(router.session_log_path(PackedStringArray(), false) == "",
 		"No flags means no session log")
-	check(router.session_log_path(PackedStringArray(["--booth"]), true) == router.SESSION_LOG_DEFAULT,
-		"Booth mode logs to the default file")
-	check(router.session_log_path(PackedStringArray(["--session-log=user://playtest.jsonl"]), false)
-		== "user://playtest.jsonl", "--session-log picks a file, with or without --booth")
+	check(router.session_log_path(PackedStringArray(["--booth"]), true) == "user://booth",
+		"Booth mode logs to the booth folder")
+	check(router.session_log_path(PackedStringArray(["--session-log=user://playtest"]), false)
+		== "user://playtest", "--session-log picks a folder, with or without --booth")
 	check(router.session_log_path(PackedStringArray(["--session-log="]), false) == "",
 		"An empty --session-log is ignored")
 
 	var plain := launch(["--route=bay_area_blitz"])
 	check(plain.code == 0, "A plain launch exits cleanly")
 	check(logged_path(plain.log) == ""
-		and not find_file(ProjectSettings.globalize_path(CHILD_HOME), "sessions.jsonl"),
+		and not find_file(ProjectSettings.globalize_path(CHILD_HOME), "sessions-"),
 		"A launch without --booth writes no session log")
 	var kiosk := launch(["--booth", "--route=heroes_vs_villains"])
 	var booth_path := logged_path(kiosk.log)
 	check(kiosk.code == 0, "A booth launch exits cleanly")
 	check(booth_path.begins_with(ProjectSettings.globalize_path(CHILD_HOME))
-		and booth_path.ends_with("booth/sessions.jsonl"),
-		"--booth logs to booth/sessions.jsonl in the user data (%s)" % booth_path)
+		and booth_path.get_base_dir().ends_with("/booth")
+		and booth_path.get_file().begins_with("sessions-") and booth_path.ends_with(".jsonl"),
+		"--booth logs this run to booth/sessions-<time>-<pid>.jsonl in the user data (%s)" % booth_path)
 	var booth_log := records(booth_path)
 	check(booth_log.size() == 2 and booth_log[0].event == "launch"
 		and booth_log[0].version == ProjectSettings.get_setting("application/config/version")
@@ -158,40 +161,44 @@ func run() -> void:
 		"--booth logs the launch and the launch route's session start")
 	# --quit-after stops the child without a quit request, as a crash would: the start stays open.
 	check(events(booth_log, "end").is_empty(), "A run that stops without quitting leaves no end")
-	var child := launch(["--session-log=" + ProjectSettings.globalize_path(CHILD_LOG),
+	var child := launch(["--session-log=" + ProjectSettings.globalize_path(CHILD_DIR),
 		"--route=orbital_ops"])
-	var child_log := records(CHILD_LOG)
-	check(child.code == 0 and child_log.size() == 2 and child_log[1].game == "orbital_ops",
-		"--session-log logs without --booth")
+	var child_path := logged_path(child.log)
+	var child_log := records(child_path)
+	check(child.code == 0 and child_path.get_base_dir() == ProjectSettings.globalize_path(CHILD_DIR)
+		and child_log.size() == 2 and child_log[1].game == "orbital_ops",
+		"--session-log logs to its folder without --booth")
 	var closed := godot(["--script", "res://tests/support/session_log_quit.gd", "--",
-		ProjectSettings.globalize_path(QUIT_LOG)])
-	var quit_ends := events(records(QUIT_LOG), "end")
+		ProjectSettings.globalize_path(QUIT_DIR)])
+	var quit_path := logged_path(closed.log)
+	var quit_ends := events(records(quit_path), "end")
 	check(closed.code == 0 and quit_ends.size() == 1 and quit_ends[0].ended_by == "quit"
 		and quit_ends[0].game == "bay_area_blitz",
 		"A window close (quit_game(true)) ends the session as quit")
 
-	var first := BoothLog.new(RELAUNCH_LOG)
+	var first := BoothLog.new(RELAUNCH_DIR)
 	first.route_changed("runner_game", "menu")
-	OS.delay_msec(5)  # Real relaunches are seconds apart; launch ids have millisecond resolution.
-	var second := BoothLog.new(RELAUNCH_LOG)
+	# Separate processes differ by process id; within this one, by the millisecond in the name.
+	OS.delay_msec(5)
+	var second := BoothLog.new(RELAUNCH_DIR)
 	second.route_changed("runner_game", "menu")
-	var relaunched := records(RELAUNCH_LOG)
-	var launches := events(relaunched, "launch")
-	check(relaunched.size() == 4 and launches.size() == 2
-		and launches[0].launch != launches[1].launch,
-		"A relaunch appends to the same log under a new launch id")
+	var first_log := records(first.path)
+	var second_log := records(second.path)
+	check(first.path != second.path and first_log.size() == 2 and second_log.size() == 2
+		and first_log[0].launch != second_log[0].launch,
+		"Each run writes its own file, under its own launch id")
 
 	# A file where the log's folder should be: logging switches itself off with a warning.
 	var blocker := FileAccess.open(BLOCKER, FileAccess.WRITE)
 	blocker.store_line("not a folder")
 	blocker.close()
-	var broken := BoothLog.new(BLOCKER + "/sessions.jsonl")
+	var broken := BoothLog.new(BLOCKER)
 	broken.route_changed("heroes_vs_villains", "menu")
 	broken.end("quit")
 	check(broken.failed and broken.game == "",
 		"An unwritable log turns itself off and the session bookkeeping carries on")
 
-	router.start_session_log(LOG)
+	router.start_session_log(LOG_DIR)
 	await visit("bay_area_blitz")
 	await visit("bay_area_blitz")
 	await visit("platformer")
@@ -211,7 +218,7 @@ func run() -> void:
 	# The child above covers quit_game(true); here the session just needs an end.
 	router.session_log.end("quit")
 
-	var entries := records(LOG)
+	var entries := records(router.session_log.path)
 	var starts := events(entries, "start")
 	var ends := events(entries, "end")
 	check(entries.size() > 0 and entries[0].event == "launch", "The log opens with a launch line")
@@ -231,7 +238,7 @@ func run() -> void:
 				and float(ends[i].duration_s) > 0.0
 		check(numbered, "Starts and ends pair by launch and session, with a positive duration")
 	var extra := []
-	for path in [LOG, CHILD_LOG, QUIT_LOG, booth_path]:
+	for path in [router.session_log.path, child_path, quit_path, booth_path]:
 		for record in records(path):
 			for key in record:
 				if key not in FIELDS:
