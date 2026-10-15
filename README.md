@@ -46,7 +46,7 @@ Versioned macOS, Windows, Linux and Web builds come from the [Build workflow](.g
 python3 tools/tests/run_tests.py --godot /path/to/Godot
 ```
 
-Every script in `hoppys-adventure-arcade/tests/` is a standalone suite, and CI runs all of them on every PR, except the few listed with a reason in [`tools/tests/suites.toml`](tools/tests/suites.toml). A suite fails on a nonzero exit, an engine or script error, or a leak. See [CONTRIBUTING.md](CONTRIBUTING.md#tests) for details.
+CI discovers the suites in `hoppys-adventure-arcade/tests/`: every script that extends `SceneTree` or `MainLoop`. Helpers such as `tests/support/` are not suites. It runs all of them on every PR, except the few listed with a reason in [`tools/tests/suites.toml`](tools/tests/suites.toml). A suite fails on a nonzero exit, an engine or script error, or a leak. See [CONTRIBUTING.md](CONTRIBUTING.md#tests) for details.
 
 ## Contributing
 

@@ -56,6 +56,7 @@ class Result:
 
     @property
     def passed(self) -> bool:
+        """A clean exit with nothing in the log that fails a suite."""
         return self.exit_code == 0 and not self.problems
 
 
@@ -82,6 +83,7 @@ class Config:
 
 
 def load_config(suites: list[str], text: str | None = None) -> Config:
+    """Read suites.toml (or `text`); every entry must name a suite, and skips and serials need a reason."""
     raw = tomllib.loads(CONFIG.read_text(encoding="utf-8") if text is None else text)
     skip: dict[str, str] = raw.get("skip", {})
     serial: dict[str, str] = raw.get("serial", {})
@@ -122,6 +124,9 @@ def check_isolation(godot: str) -> str | None:
 
 
 LEAK = re.compile(r"leaked at exit|still in use at exit")
+# The engine's two summary lines whose --verbose detail lines classify_leaks() reads. Any other exit
+# leak report (RID allocations, for one) has no such detail and is never tolerated.
+LEAK_SUMMARY = re.compile(r"ObjectDB instances were leaked at exit|resources still in use at exit")
 LEAKED_INSTANCE = re.compile(r"^Leaked instance: (\w+):", re.M)
 RESOURCE_IN_USE = re.compile(r"^Resource still in use: (.+) \((\w+)\)$", re.M)
 # The engine releases audio playbacks on its audio thread. When a suite quits while that thread
@@ -137,18 +142,20 @@ def classify_leaks(log: str) -> tuple[bool, list[str]]:
     """(is the audio-teardown race, detail lines naming what leaked) from a --verbose log."""
     instances = LEAKED_INSTANCE.findall(log)
     resources = RESOURCE_IN_USE.findall(log)
+    unclassified = [line.strip() for line in log.splitlines() if LEAK.search(line) and not LEAK_SUMMARY.search(line)]
     details = [f"leaked: {name}" for name in instances] + [f"still in use: {path} ({kind})" for path, kind in resources]
-    audio_only = bool(details) and all(AUDIO_CLASS.match(name) for name in instances) \
+    audio_only = bool(details) and not unclassified and all(AUDIO_CLASS.match(name) for name in instances) \
         and all(AUDIO_CLASS.match(kind) for _, kind in resources)
-    return audio_only, details
+    return audio_only, details + unclassified
 
 
 def run_suite(godot: str, name: str, expected: list[re.Pattern[str]]) -> Result:
+    """Run one suite and classify any exit leak: only the audio-teardown race becomes a note."""
     result = run_once(godot, name, expected)
     if any(LEAK.search(problem) for problem in result.problems):
         audio_only, details = classify_leaks(result.log)
         if audio_only:
-            result.problems = [problem for problem in result.problems if not LEAK.search(problem)]
+            result.problems = [problem for problem in result.problems if not LEAK_SUMMARY.search(problem)]
             result.notes.append("engine audio-teardown race tolerated: " + ", ".join(details))
         else:
             result.problems += details[:20] or ["leak with no --verbose detail"]
@@ -157,6 +164,7 @@ def run_suite(godot: str, name: str, expected: list[re.Pattern[str]]) -> Result:
 
 
 def run_once(godot: str, name: str, expected: list[re.Pattern[str]]) -> Result:
+    """One headless, --verbose run of res://tests/<name>.gd with a private user-data root."""
     home = tempfile.mkdtemp(prefix="arcade-test-home-")
     env = isolated_env(home)
     # --verbose makes Godot name what leaked in the same run, so a leak can be classified.
@@ -185,13 +193,31 @@ def find_problems(log: str, exit_code: int | None, expected: list[re.Pattern[str
 
 
 def annotate(result: Result) -> None:
+    """Report a failed suite as a GitHub Actions error annotation (no-op outside Actions)."""
     if os.environ.get("GITHUB_ACTIONS") != "true":
         return
     detail = "%0A".join(dict.fromkeys(result.problems))[:4000] or f"exit {result.exit_code}"
     print(f"::error title=tests/{result.name}.gd::{detail}")
 
 
+def write_summary(path: Path, seconds: float, skipped: dict[str, str], results: list[Result],
+                  setup_error: str | None = None) -> None:
+    """Write the JSON results summary. A setup failure (isolation, import) is recorded with no suites."""
+    summary: dict[str, object] = {
+        "seconds": round(seconds, 1),
+        "skipped": skipped,
+        "suites": [{"name": r.name, "passed": r.passed, "exit_code": r.exit_code, "seconds": round(r.seconds, 1),
+                    "problems": list(dict.fromkeys(r.problems)), "notes": r.notes}
+                   for r in sorted(results, key=lambda r: r.name)],
+    }
+    if setup_error is not None:
+        summary["setup_error"] = setup_error
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+
+
 def main() -> int:
+    """Discover, filter and run the suites; returns 0 if all pass, 1 on a failure, 2 on a usage or setup error."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--godot", default=os.environ.get("GODOT", "godot"),
                         help="Godot 4.7.1 binary (default: $GODOT or godot)")
@@ -223,10 +249,12 @@ def main() -> int:
     if not planned:
         print("No suites selected.", file=sys.stderr)
         return 2
+    skipped = {name: skips[name] for name in selected if name in skips}
 
     leak = check_isolation(args.godot)
     if leak:
         print(f"Refusing to run: {leak}. Suites would touch real settings and leaderboards.", file=sys.stderr)
+        write_summary(args.results, 0.0, skipped, [], f"user:// isolation: {leak}")
         return 2
 
     if not args.no_import:
@@ -241,6 +269,8 @@ def main() -> int:
         if imported.returncode != 0 or import_problems:
             print(import_log[-4000:], file=sys.stderr)
             print("Resource import failed:", *dict.fromkeys(import_problems), sep="\n  ", file=sys.stderr)
+            reasons = list(dict.fromkeys(import_problems)) or [f"exit {imported.returncode}"]
+            write_summary(args.results, 0.0, skipped, [], "resource import failed: " + "; ".join(reasons))
             return 1
 
     parallel = [s for s in planned if s not in config.serial]
@@ -271,14 +301,7 @@ def main() -> int:
         print("    last output:\n" + "\n".join(f"      {line}" for line in result.log.splitlines()[-25:]))
         annotate(result)
 
-    args.results.parent.mkdir(parents=True, exist_ok=True)
-    args.results.write_text(json.dumps({
-        "seconds": round(time.monotonic() - started, 1),
-        "skipped": {name: skips[name] for name in selected if name in skips},
-        "suites": [{"name": r.name, "passed": r.passed, "exit_code": r.exit_code, "seconds": round(r.seconds, 1),
-                    "problems": list(dict.fromkeys(r.problems)), "notes": r.notes}
-                   for r in sorted(results, key=lambda r: r.name)],
-    }, indent=2) + "\n", encoding="utf-8")
+    write_summary(args.results, time.monotonic() - started, skipped, results)
     print(f"\n{len(results) - len(failed)} passed, {len(failed)} failed, "
           f"{len(selected) - len(planned)} skipped in {time.monotonic() - started:.0f}s")
     return 1 if failed else 0
