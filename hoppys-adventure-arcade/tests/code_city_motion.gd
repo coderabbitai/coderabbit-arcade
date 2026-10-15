@@ -6,6 +6,10 @@ const COMBAT_FRAMES = preload("res://Assets/code-city-brawl-player/combat.tres")
 const PLATFORMER_FRAMES = preload("res://Assets/bay-area-blitz-assets-only/bay_area/hoppy/platformer.tres")
 ## The weapon captures' deliberate on-screen caption.
 const CAPTION := "EQUIPPED WEAPON ANIMATION · windup / contact / recovery"
+## Frame caps on the capture's waits (autoloads ready, one viewport draw), so a stuck run fails
+## instead of hanging.
+const READY_FRAMES := 600
+const DRAW_FRAMES := 120
 var game
 var failures := 0
 func _initialize() -> void: call_deferred("run")
@@ -56,6 +60,40 @@ const FACE_BOX := {
 }
 const FACE_PIVOT := Vector2(48,86)
 
+## The armed clip the player routes `pose` to, or "" while the player (or the sheet) has no such clip.
+## Read from the player script's ARMED_CLIPS, so the same test holds before and after S1 maps
+## walk_up and walk_down, and it never guesses from the body's current frame.
+func armed_clip_for(actor, pose: String) -> String:
+	var script: Script=actor.get_script() if actor!=null else null
+	if script==null: return ""
+	var constants: Dictionary=script.get_script_constant_map()
+	var map: Variant=constants.get("ARMED_CLIPS",{})
+	var sheet := Art.armed(actor.weapon)
+	if not map is Dictionary or sheet==null or not map.has(pose): return ""
+	var clip_value: Variant=map[pose]
+	if not (clip_value is String or clip_value is StringName): return ""
+	var clip := str(clip_value)
+	return clip if sheet.has_animation(clip) else ""
+
+## A mapped armed pose must play the armed sheet's own clip and show no carry icon or legacy cel.
+## Returns true when the pose is mapped, so callers skip the carry icon checks that no longer apply.
+func check_armed_pose(actor, pose: String) -> bool:
+	var clip := armed_clip_for(actor,pose)
+	if clip=="": return false
+	var sheet := Art.armed(actor.weapon)
+	var label := "%s %s facing %d" % [actor.weapon,pose,int(actor.facing)]
+	if sheet==null:
+		check(false,label+" plays the armed %s clip (got %s)" % [clip,actor.body.animation])
+		return true
+	check(actor.body.sprite_frames==sheet and actor.body.animation==clip,label+" plays the armed %s clip (got %s)" % [clip,actor.body.animation])
+	if pose=="walk_up" or pose=="walk_down":
+		check(sheet.get_frame_count(clip)==4 and sheet.get_animation_loop(clip),label+" armed clip is a 4 frame loop")
+	check(not actor.held.carry.visible and not actor.held.sprite.visible,label+" hides the carry icon and legacy cel on the armed clip")
+	# The next tick animates the rig again with no attack active; it must not paste the icon back.
+	actor.held.animate(actor.weapon,1,0.0,false,Vector2.ZERO,0.0,0.0)
+	check(actor.body.sprite_frames==sheet and actor.body.animation==clip and not actor.held.carry.visible and not actor.held.sprite.visible,label+" keeps the carry hidden after the rig animates again")
+	return true
+
 func carry_should_behind(kind: String, pose: String) -> bool:
 	if pose=="walk_up" or pose=="jump": return true
 	if pose=="walk_down": return kind=="firewall_shield"
@@ -72,6 +110,7 @@ func check_carry_faces(players: Array) -> void:
 			for face in [1,-1]:
 				actor.facing=face
 				actor.show_pose(pose)
+				if check_armed_pose(actor,pose): continue
 				actor.body.frame=0
 				actor.held.scale=Vector2(face,1)
 				actor.held.animate(weapon,1,0.0,false,Vector2.ZERO,0.0,0.0)
@@ -183,7 +222,515 @@ func check_armed_run_registration(actor) -> void:
 	var show_held := true
 	ArmedMeasure.check_armed_run_registration(actor, Catalog.WEAPONS, check, sheet_for, spec_for, offset_for, "debug_stick", game.flow, require_cell, show_held)
 
+## Run is a 6 frame cycle and the vertical walks are 4 frame loops on every Code City armed sheet.
+## This reads only the sheets and manifest, so it holds before player.gd plays walk_up or walk_down.
+func check_armed_locomotion_clips() -> void:
+	var contract := {"run": 6, "walk_up": 4, "walk_down": 4}
+	for weapon in Catalog.WEAPONS:
+		var sheet := Art.armed(weapon)
+		var spec := Art.armed_spec(weapon)
+		check(sheet != null and not spec.is_empty(), weapon+" has an armed sheet and manifest entry")
+		if sheet == null or spec.is_empty(): continue
+		var cell: Variant=spec.get("cell",[])
+		var pivot_data: Variant=spec.get("pivot",[])
+		var cell_ok: bool=cell is Array and cell.size()==2
+		var pivot_ok: bool=pivot_data is Array and pivot_data.size()==2
+		var pivot := Vector2(pivot_data[0],pivot_data[1]) if pivot_ok else Vector2.ZERO
+		check(cell_ok and pivot_ok and Vector2(cell[0],cell[1])==Vector2(192,128) and pivot==Vector2(72,118),weapon+" keeps the 192x128 cell and (72,118) pivot")
+		var clips: Variant=spec.get("clips",{})
+		var anchors: Variant=spec.get("anchors",{})
+		var hands: Dictionary={}
+		if anchors is Dictionary and anchors.get("hand",{}) is Dictionary:
+			hands=anchors.hand
+		for clip in contract:
+			var count: int=contract[clip]
+			check(sheet.has_animation(clip) and sheet.get_frame_count(clip)==count and sheet.get_animation_loop(clip),weapon+" "+clip+" loops over "+str(count)+" frames")
+			var clip_spec: Variant=clips.get(clip,{}) if clips is Dictionary else {}
+			var listed_v: Variant=clip_spec.get("frames",[]) if clip_spec is Dictionary else []
+			var listed: Array=listed_v if listed_v is Array else []
+			check(listed.size()==count,weapon+" manifest lists "+str(count)+" "+clip+" frames")
+			if not sheet.has_animation(clip): continue
+			var fps := sheet.get_animation_speed(clip)
+			check(fps>=(12.0 if clip=="run" else 8.0) and fps<=(15.0 if clip=="run" else 10.0),weapon+" "+clip+" fps %.1f is in range" % fps)
+			if not pivot_ok: continue
+			for i in sheet.get_frame_count(clip):
+				var texture := sheet.get_frame_texture(clip,i)
+				var image := texture.get_image() if texture!=null else null
+				if image!=null and image.is_compressed(): image.decompress()
+				if image==null:
+					check(false,weapon+" "+clip+" frame "+str(i)+" has a texture")
+					continue
+				var used := image.get_used_rect()
+				# Rect2i.end is exclusive, so the lowest occupied row is end.y - 1.
+				var lowest_row := used.end.y-1
+				check(used.has_area() and lowest_row>=pivot.y-3 and lowest_row<=pivot.y+3,weapon+" "+clip+" frame "+str(i)+" stands on the foot pivot row")
+				if i<listed.size():
+					if listed[i] is int or listed[i] is float:
+						check(hands.has(str(int(listed[i]))),weapon+" "+clip+" frame "+str(i)+" has a hand anchor")
+					else:
+						check(false,weapon+" "+clip+" frame "+str(i)+" has a hand anchor")
+		# Vertical walks keep every pre-existing cell: attack and idle clips still sit in cells 0 to 15.
+		for clip in ["hold_idle","run","step1","step2","step3","equip","hurt","walk_up","walk_down"]:
+			check(clips is Dictionary and clips.has(clip),weapon+" manifest keeps clip "+clip)
+
+## `-- --capture-locomotion [--capture-path=<png>]` renders every armed sheet's locomotion frames
+## through the engine and quits without running the suite. Rows per weapon: run facing right, run
+## facing left (flipped like the player), walk_up, walk_down. Frames are selected explicitly, so
+## this does not depend on the player routing walk_up or walk_down. Launch with --always-on-top.
+const CAPTURE_PATH := "res://../docs/previews/code-city-motion/locomotion_contact_sheet.png"
+const CAPTURE_CELL := Vector2i(192,128)
+const CAPTURE_COLUMNS := 6
+const CAPTURE_ROWS := [["run",false,"run right"],["run",true,"run left"],["walk_up",false,"walk up"],["walk_down",false,"walk down"]]
+
+func capture_target() -> String:
+	var args := OS.get_cmdline_user_args()
+	if not args.has("--capture-locomotion"): return ""
+	for i in args.size():
+		if args[i].begins_with("--capture-path="): return args[i].trim_prefix("--capture-path=")
+		if args[i]=="--capture-path" and i+1<args.size(): return args[i+1]
+	return CAPTURE_PATH
+
+## Resuming inside an autoload's _ready (SaveService pumps frames there) makes add_child fail on
+## root, so wait until root and every autoload report ready, from a clean frame.
+## Gives up after READY_FRAMES, so a stuck start fails instead of hanging.
+func autoloads_ready() -> bool:
+	for frame in READY_FRAMES:
+		await process_frame
+		var ready := root.is_node_ready()
+		for child in root.get_children():
+			ready = ready and child.is_node_ready()
+		if ready: return true
+	return false
+
+func capture_locomotion(path: String) -> void:
+	if not await autoloads_ready():
+		printerr("FAIL: root and its autoloads were not ready within %d frames" % READY_FRAMES)
+		quit(1)
+		return
+	if DisplayServer.get_name()=="headless":
+		printerr("FAIL: --capture-locomotion needs a rendered run, not --headless")
+		quit(1)
+		return
+	var weapons: Array=Catalog.WEAPONS.keys()
+	var columns := 2
+	var block_h := CAPTURE_ROWS.size()*CAPTURE_CELL.y
+	var rows_per_column := int(ceil(float(weapons.size())/columns))
+	var size := Vector2i(columns*CAPTURE_COLUMNS*CAPTURE_CELL.x,rows_per_column*block_h)
+	var viewport := SubViewport.new()
+	viewport.size=size
+	viewport.transparent_bg=false
+	viewport.render_target_update_mode=SubViewport.UPDATE_DISABLED
+	var stage := Node2D.new()
+	stage.texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
+	viewport.add_child(stage)
+	root.add_child(viewport)
+	var backdrop := ColorRect.new()
+	backdrop.color=Color(.18,.2,.24)
+	backdrop.size=Vector2(size)
+	stage.add_child(backdrop)
+	var count := 0
+	for w in weapons.size():
+		var weapon: String=weapons[w]
+		var sheet := Art.armed(weapon)
+		if sheet==null:
+			printerr("FAIL: no armed sheet for "+weapon)
+			failures+=1
+			continue
+		var pivot_data: Variant=Art.armed_spec(weapon).get("pivot",[])
+		if not pivot_data is Array or pivot_data.size()<2:
+			printerr("FAIL: "+weapon+" armed spec has no foot pivot")
+			failures+=1
+			continue
+		var foot_pivot := Vector2(pivot_data[0],pivot_data[1])
+		var origin := Vector2i((w/rows_per_column)*CAPTURE_COLUMNS*CAPTURE_CELL.x,(w%rows_per_column)*block_h)
+		var label := Label.new()
+		label.text=weapon
+		label.position=Vector2(origin)+Vector2(4,2)
+		stage.add_child(label)
+		for r in CAPTURE_ROWS.size():
+			var row: Array=CAPTURE_ROWS[r]
+			if not sheet.has_animation(row[0]):
+				printerr("FAIL: "+weapon+" has no "+row[0]+" clip")
+				failures+=1
+				continue
+			for f in sheet.get_frame_count(row[0]):
+				var cell_origin := Vector2(origin)+Vector2(f*CAPTURE_CELL.x,r*CAPTURE_CELL.y)
+				var ground := ColorRect.new()
+				ground.color=Color(.3,.33,.38)
+				ground.position=cell_origin+Vector2(0,foot_pivot.y)
+				ground.size=Vector2(CAPTURE_CELL.x,1)
+				stage.add_child(ground)
+				var sprite := AnimatedSprite2D.new()
+				sprite.sprite_frames=sheet
+				sprite.animation=row[0]
+				sprite.frame=f
+				sprite.pause()
+				sprite.flip_h=row[1]
+				var offset: Vector2=Art.armed_offset(weapon)
+				sprite.offset=Vector2(-offset.x if row[1] else offset.x,offset.y)
+				# The offset moves the texture so the foot pivot lands on the sprite position.
+				sprite.position=cell_origin+Vector2(foot_pivot.x,foot_pivot.y)
+				stage.add_child(sprite)
+				count+=1
+			var tag := Label.new()
+			tag.text=row[2]
+			tag.position=Vector2(origin)+Vector2(4,r*CAPTURE_CELL.y+18)
+			stage.add_child(tag)
+	# One explicit update. The renderer's own mode drops back to disabled once the viewport has drawn.
+	viewport.render_target_update_mode=SubViewport.UPDATE_ONCE
+	var rid := viewport.get_viewport_rid()
+	await RenderingServer.frame_post_draw
+	var drawn := 0
+	while RenderingServer.viewport_get_update_mode(rid)!=RenderingServer.VIEWPORT_UPDATE_DISABLED and drawn<DRAW_FRAMES:
+		await RenderingServer.frame_post_draw
+		drawn+=1
+	var drew: bool=RenderingServer.viewport_get_update_mode(rid)==RenderingServer.VIEWPORT_UPDATE_DISABLED
+	check(drew,"The contact sheet viewport draws within %d frames" % DRAW_FRAMES)
+	if drew:
+		var viewport_texture := viewport.get_texture()
+		var image: Image=viewport_texture.get_image() if viewport_texture!=null else null
+		if image==null:
+			check(false,"The contact sheet viewport produced an image")
+		else:
+			var dir := ProjectSettings.globalize_path(path).get_base_dir()
+			DirAccess.make_dir_recursive_absolute(dir)
+			var saved := image.save_png(ProjectSettings.globalize_path(path))
+			check(saved==OK and count>0,"Locomotion contact sheet saved with %d frames to %s" % [count,path])
+	viewport.queue_free()
+	await finish_capture()
+
+func finish_capture() -> void:
+	if root.has_node("AudioService"): root.get_node("AudioService").shutdown()
+	await create_timer(.2).timeout
+	quit(1 if failures else 0)
+
+## Torso registration at runtime. The player ticks at the physics rate (move_and_slide steps by the
+## physics delta) and the paused sprite advances on that same clock. The drawn shirt x comes from the
+## body's own transform, mirrored inside the texture when flipped, so an offset or scale bug shows.
+## Side runs read the shirt back edge + 6, every other pose the shirt centroid.
+const RUN_PX_PER_S := 240.0
+const RUN_FPS := 13.0
+## step_player advances the animation on the physics clock, so a frame boundary lands on a whole
+## tick. 13 fps over 60 Hz ticks is 4.6 ticks per frame, so a step is 4 or 5 ticks (16 or 20 px
+## against 18.5): never more than 2.5 px off. Each physics tick is held to 240 * dt within
+## TORSO_TICK_SLACK, and whole cycles to 1 px.
+const TORSO_STEP_SLACK := 3.0
+const TORSO_TICK_SLACK := 1.0
+## Shirt x within 2 cel px of the node, times the 1.55 body scale, plus rounding.
+const TORSO_POSE_SLACK := 3.2
+const TORSO_TICK_CAP := 900
+var landmark_cache := {}
+
+## Shirt x (cel px) for every frame of `clip` on the weapon's armed sheet. NaN where unreadable.
+func shirt_xs(weapon: String, clip: String) -> PackedFloat32Array:
+	var key := weapon+"/"+clip
+	if landmark_cache.has(key): return landmark_cache[key]
+	var sheet := Art.armed(weapon)
+	var xs := PackedFloat32Array()
+	for i in sheet.get_frame_count(clip):
+		var measured := ArmedMeasure.shirt_measure(sheet.get_frame_texture(clip,i).get_image(),clip=="run")
+		xs.append(measured.position.x if measured.size>=15 else NAN)
+	landmark_cache[key]=xs
+	return xs
+
+## World x of the shirt landmark on the frame the body is showing, or NaN.
+func drawn_torso(actor) -> float:
+	var body: AnimatedSprite2D=actor.body
+	var xs := shirt_xs(actor.weapon,body.animation)
+	if body.frame>=xs.size() or is_nan(xs[body.frame]): return NAN
+	var cell: Vector2=body.sprite_frames.get_frame_texture(body.animation,body.frame).get_size()
+	var texel := xs[body.frame]+.5
+	var u := cell.x-texel if body.flip_h else texel
+	return body.to_global(Vector2(u,cell.y/2.0)-cell/2.0+body.offset).x
+
+func hold_move(action: String, strength := 1.0) -> void:
+	for name in ["move_left","move_right","move_up","move_down"]:
+		Input.action_release(name)
+	if action!="": Input.action_press(action,strength)
+
+## One physics tick on a deterministic clock. The body never animates on the engine's wall clock:
+## it is paused before the wait, the player ticks (which may switch clips and sets speed_scale), and
+## the sprite then advances by exactly this tick's dt, so animation and movement share one timeline.
+func step_player(actor) -> float:
+	actor.body.pause()
+	await physics_frame
+	var dt := 1.0/float(Engine.physics_ticks_per_second)
+	actor.tick(dt)
+	# tick() calls play(), which resumes autoplay; stop it before the engine can advance a frame.
+	actor.body.pause()
+	advance_body(actor.body,dt)
+	return dt
+
+## Advances the paused body like the engine would: frame time is dt * speed_scale * the clip's fps,
+## measured in the clip's relative frame durations. State lives in body.frame and frame_progress,
+## so a clip or resource switch (play() resets both) is respected without extra bookkeeping.
+func advance_body(body: AnimatedSprite2D, dt: float) -> void:
+	var frames := body.sprite_frames
+	var clip := body.animation
+	if frames==null or not frames.has_animation(clip): return
+	var count := frames.get_frame_count(clip)
+	if count<=1: return
+	var loops := frames.get_animation_loop(clip)
+	var remaining := dt*absf(body.speed_scale)*frames.get_animation_speed(clip)
+	var frame := body.frame
+	var progress := body.frame_progress
+	while remaining>0.0:
+		var duration := frames.get_frame_duration(clip,frame)
+		var left := (1.0-progress)*duration
+		if remaining<left:
+			progress+=remaining/duration
+			break
+		remaining-=left
+		progress=0.0
+		if frame+1<count: frame+=1
+		elif loops: frame=0
+		else:
+			progress=1.0-1e-9
+			break
+	body.set_frame_and_progress(frame,progress)
+
+func sample_of(actor, clock: float) -> Dictionary:
+	return {"t":clock,"x":drawn_torso(actor),"clip":actor.body.animation,"frame":actor.body.frame,"pos":actor.position.x}
+
+## Runs `ticks` ticks and returns a sample after each.
+func run_samples(actor, ticks: int) -> Array:
+	var out := []
+	var clock := 0.0
+	for _i in ticks:
+		clock+=await step_player(actor)
+		out.append(sample_of(actor,clock))
+	return out
+
+## Runs until the run clip has wrapped `wraps` times (frame returns to 0), bounded by TORSO_TICK_CAP.
+func run_cycles(actor, wraps: int) -> Array:
+	var out := []
+	var clock := 0.0
+	var seen := 0
+	var last_frame := -1
+	while seen<wraps and out.size()<TORSO_TICK_CAP:
+		clock+=await step_player(actor)
+		var sample := sample_of(actor,clock)
+		if sample.clip=="run" and sample.frame==0 and last_frame!=0 and not out.is_empty(): seen+=1
+		last_frame=sample.frame
+		out.append(sample)
+	return out
+
+func torso_offset_ok(sample: Dictionary) -> bool:
+	return not is_nan(sample.x) and absf(sample.x-sample.pos)<=TORSO_POSE_SLACK
+
+func check_torso_motion(actor, weapon: String, facing: float) -> void:
+	var label := "%s facing %d" % [weapon,int(facing)]
+	actor.equip(weapon);actor.pickup_time=0;actor.stagger=0;actor.input_lock=0
+	actor.swing_left=0;actor.combo_window=0;actor.held.show();actor.controlled=true
+	actor.facing=facing;actor.steer=facing
+	actor.position=Vector2(game.room_start()+(180 if facing>0 else 1020),560)
+	var run_action := "move_right" if facing>0 else "move_left"
+	hold_move(run_action)
+	await run_samples(actor,12)
+	# Two full wraps after the settle: three wraps are run so the first, partial cycle is dropped.
+	var samples: Array=await run_cycles(actor,3)
+	check(samples.size()<TORSO_TICK_CAP and samples.all(func(s): return s.clip=="run"),label+" runs three wraps on the armed run clip (%d ticks)" % samples.size())
+	check(absf(actor.body.speed_scale-1.0)<.001,label+" cadence is 1.0 at full stick")
+	var backward := 0
+	var unreadable := 0
+	var worst_back := 0.0
+	for i in range(1,samples.size()):
+		if is_nan(samples[i].x) or is_nan(samples[i-1].x):
+			unreadable+=1
+			continue
+		var delta: float=(samples[i].x-samples[i-1].x)*facing
+		if delta<-0.001:
+			backward+=1
+			worst_back=minf(worst_back,delta)
+	var worst_tick := 0.0
+	for i in range(1,samples.size()):
+		if is_nan(samples[i].x) or is_nan(samples[i-1].x): continue
+		var tick_dt: float=samples[i].t-samples[i-1].t
+		worst_tick=maxf(worst_tick,absf((samples[i].x-samples[i-1].x)*facing-RUN_PX_PER_S*tick_dt))
+	check(worst_tick<=TORSO_TICK_SLACK,label+" each physics tick moves the torso by 240*dt (worst %.2f px off, slack %.1f)" % [worst_tick,TORSO_TICK_SLACK])
+	check(unreadable==0,label+" every drawn run frame has a readable shirt")
+	check(backward==0,label+" drawn torso never steps backward (%d backward ticks, worst %.2f px)" % [backward,worst_back])
+	# Animation-frame steps: the first tick of each frame, skipping the partial first interval.
+	var starts := []
+	for i in range(1,samples.size()):
+		if samples[i].frame!=samples[i-1].frame: starts.append(i)
+	var expected := RUN_PX_PER_S/RUN_FPS
+	var worst_step := 0.0
+	for k in range(1,starts.size()):
+		var a: Dictionary=samples[starts[k-1]]
+		var b: Dictionary=samples[starts[k]]
+		if is_nan(a.x) or is_nan(b.x): continue
+		worst_step=maxf(worst_step,absf((b.x-a.x)*facing-expected))
+	check(starts.size()>=13,label+" shows at least 2 full run cycles after the partial one (%d frame changes)" % starts.size())
+	check(worst_step<=TORSO_STEP_SLACK,label+" each frame step is near %.1f px (worst %.1f px off, slack %.1f)" % [expected,worst_step,TORSO_STEP_SLACK])
+	var firsts := starts.filter(func(i): return samples[i].frame==0)
+	if firsts.size()>=2:
+		var first: Dictionary=samples[firsts[0]]
+		var last: Dictionary=samples[firsts[firsts.size()-1]]
+		var travelled: float=(last.x-first.x)*facing
+		var wanted: float=RUN_PX_PER_S*(last.t-first.t)
+		check(not is_nan(travelled) and absf(travelled-wanted)<=1.0,label+" torso travels %.2f px over %d cycles, ground covered is %.2f" % [travelled,firsts.size()-1,wanted])
+		var per_frame := travelled/float((firsts.size()-1)*6)
+		check(not is_nan(per_frame) and absf(per_frame-expected)<=1.0,label+" cycle average is %.2f px per animation frame, 240/13 is %.2f" % [per_frame,expected])
+	var run_offset: float=samples[samples.size()-1].x-samples[samples.size()-1].pos
+	check(absf(run_offset)<=TORSO_POSE_SLACK,label+" side run torso sits on the pivot (%.2f px)" % run_offset)
+	# Every switch is judged from its first new pose, with no ticks skipped.
+	for move in [["","hold_idle"],[run_action,"run"],["move_up","walk_up"],["move_down","walk_down"],[run_action,"run"]]:
+		hold_move(move[0])
+		var first_ticks: Array=await run_samples(actor,6)
+		var worst := 0.0
+		var wrong := ""
+		for sample in first_ticks:
+			if sample.clip!=move[1]:
+				wrong=sample.clip
+				break
+			if is_nan(sample.x):
+				wrong="unreadable"
+				break
+			worst=maxf(worst,absf(sample.x-sample.pos))
+		check(wrong=="" and worst<=TORSO_POSE_SLACK,label+" switch to "+move[1]+" holds the torso within %.1f px of the pivot from its first tick (worst %.2f, wrong '%s')" % [TORSO_POSE_SLACK,worst,wrong])
+	hold_move("")
+	actor.controlled=false
+
+func check_torso_motion_all(actor) -> void:
+	var saved_fps := Engine.max_fps
+	Engine.max_fps=60
+	for weapon in Catalog.WEAPONS:
+		for facing in [1.0,-1.0]:
+			await check_torso_motion(actor,weapon,facing)
+	hold_move("")
+	Engine.max_fps=saved_fps
+
+## `-- --capture-running [--capture-path=<png>]` renders the real player running through the game
+## scene. For each weapon and facing, one row shows ghost copies of the body every few physics ticks
+## in world x across: run, stop, start, then side to up and back. Red ticks mark the drawn shirt x.
+## Needs a rendered run (use --always-on-top); the suite does not run.
+const RUNNING_PATH := "res://../docs/previews/code-city-motion/running_world_space.png"
+const RUNNING_ROW := 200
+const RUNNING_GHOST_EVERY := 9
+const RUNNING_SEGMENTS := [["run",54,""],["stop",9,""],["start",27,""],["up",18,""],["side",18,""]]
+
+func running_target() -> String:
+	var args := OS.get_cmdline_user_args()
+	if not args.has("--capture-running"): return ""
+	for i in args.size():
+		if args[i].begins_with("--capture-path="): return args[i].trim_prefix("--capture-path=")
+		if args[i]=="--capture-path" and i+1<args.size(): return args[i+1]
+	return RUNNING_PATH
+
+func ghost(stage: Node2D, actor, at: Vector2, alpha: float) -> void:
+	var sprite := AnimatedSprite2D.new()
+	sprite.sprite_frames=actor.body.sprite_frames
+	sprite.animation=actor.body.animation
+	sprite.frame=actor.body.frame
+	sprite.pause()
+	sprite.flip_h=actor.body.flip_h
+	sprite.offset=actor.body.offset
+	sprite.scale=actor.body.scale
+	sprite.modulate=Color(1,1,1,alpha)
+	sprite.z_index=0
+	sprite.position=at
+	stage.add_child(sprite)
+
+func capture_running(path: String) -> void:
+	if DisplayServer.get_name()=="headless":
+		printerr("FAIL: --capture-running needs a rendered run, not --headless")
+		quit(1)
+		return
+	var weapons: Array=Catalog.WEAPONS.keys()
+	var rows := weapons.size()*2
+	var viewport := SubViewport.new()
+	viewport.size=Vector2i(1280,rows*RUNNING_ROW)
+	viewport.render_target_update_mode=SubViewport.UPDATE_DISABLED
+	var stage := Node2D.new()
+	stage.texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
+	viewport.add_child(stage)
+	var backdrop := ColorRect.new()
+	backdrop.color=Color(.18,.2,.24)
+	backdrop.size=Vector2(viewport.size)
+	stage.add_child(backdrop)
+	game.add_child(viewport)
+	var saved_fps := Engine.max_fps
+	Engine.max_fps=60
+	var actor=game.player
+	var row := 0
+	for weapon in weapons:
+		for facing in [1.0,-1.0]:
+			var base_y := row*RUNNING_ROW+RUNNING_ROW-30.0
+			var run_action := "move_right" if facing>0 else "move_left"
+			actor.equip(weapon);actor.pickup_time=0;actor.stagger=0;actor.input_lock=0
+			actor.swing_left=0;actor.combo_window=0;actor.held.show();actor.controlled=true
+			actor.facing=facing;actor.steer=facing
+			var start_x: float=game.room_start()+(140 if facing>0 else 1000)
+			actor.position=Vector2(start_x,560)
+			var label := Label.new()
+			label.text="%s facing %d" % [weapon,int(facing)]
+			label.position=Vector2(6,row*RUNNING_ROW+2)
+			stage.add_child(label)
+			var ground := ColorRect.new()
+			ground.color=Color(.32,.35,.4)
+			ground.position=Vector2(0,base_y)
+			ground.size=Vector2(1280,1)
+			stage.add_child(ground)
+			var tick := 0
+			var drawn_marks := 0
+			for segment in RUNNING_SEGMENTS:
+				var action: String={"run":run_action,"stop":"","start":run_action,"up":"move_up","side":run_action}[segment[0]]
+				hold_move(action)
+				for _i in segment[1]:
+					await step_player(actor)
+					tick+=1
+					var world_x: float=actor.position.x-game.room_start()
+					var at := Vector2(world_x,base_y+(actor.position.y-560.0)*0.5)
+					if tick%RUNNING_GHOST_EVERY==0: ghost(stage,actor,at,.75)
+					var torso := drawn_torso(actor)
+					if not is_nan(torso):
+						var mark := ColorRect.new()
+						mark.color=Color(1,.2,.3,.9)
+						mark.position=Vector2(torso-game.room_start(),base_y-110)
+						mark.size=Vector2(1,16)
+						stage.add_child(mark)
+						drawn_marks+=1
+				var tag := Label.new()
+				tag.text=segment[0]
+				tag.add_theme_font_size_override("font_size",11)
+				tag.position=Vector2(actor.position.x-game.room_start()-14,row*RUNNING_ROW+RUNNING_ROW-16-(10 if segment[0]=="stop" or segment[0]=="up" else 0))
+				stage.add_child(tag)
+			check(drawn_marks>40,"%s facing %d running capture has %d torso marks" % [weapon,int(facing),drawn_marks])
+			row+=1
+	hold_move("")
+	Engine.max_fps=saved_fps
+	actor.controlled=false
+	await process_frame
+	viewport.render_target_update_mode=SubViewport.UPDATE_ONCE
+	var rid := viewport.get_viewport_rid()
+	await RenderingServer.frame_post_draw
+	var drawn := 0
+	while RenderingServer.viewport_get_update_mode(rid)!=RenderingServer.VIEWPORT_UPDATE_DISABLED and drawn<DRAW_FRAMES:
+		await RenderingServer.frame_post_draw
+		drawn+=1
+	var drew: bool=RenderingServer.viewport_get_update_mode(rid)==RenderingServer.VIEWPORT_UPDATE_DISABLED
+	check(drew,"The running world-space viewport draws within %d frames" % DRAW_FRAMES)
+	if drew:
+		var viewport_texture := viewport.get_texture()
+		var image: Image=viewport_texture.get_image() if viewport_texture!=null else null
+		if image==null:
+			check(false,"The running world-space viewport produced an image")
+		else:
+			DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path).get_base_dir())
+			check(image.save_png(ProjectSettings.globalize_path(path))==OK,"Running world-space sheet saved with %d rows to %s" % [rows,path])
+	viewport.queue_free()
+	await finish_capture()
+
 func run() -> void:
+	var target := capture_target()
+	if target!="":
+		await capture_locomotion(target)
+		return
+	if running_target()!="" and not await autoloads_ready():
+		printerr("FAIL: root and its autoloads were not ready within %d frames" % READY_FRAMES)
+		quit(1)
+		return
 	change_scene_to_file("res://scenes/beatem_up/code_city_brawl.tscn")
 	await process_frame;await process_frame
 	game=current_scene
@@ -193,6 +740,8 @@ func run() -> void:
 	if game.state=="paused": game.resume()
 	game.begin_play()
 	game.set_physics_process(false)
+	var running := running_target()
+	if running=="": check_armed_locomotion_clips()
 	var p=game.player
 	p.set_physics_process(false);p.controlled=false
 	for e in game.enemies: e.queue_free()
@@ -201,6 +750,9 @@ func run() -> void:
 	game.props.clear()
 	for item in game.pickups: item.node.queue_free()
 	game.pickups.clear()
+	if running!="":
+		await capture_running(running)
+		return
 	var players: Array=[]
 	var i:=0
 	for weapon in Catalog.WEAPONS:
@@ -278,6 +830,7 @@ func run() -> void:
 	if carrier!=null:
 		for pose in ["walk_up","walk_down","jump"]:
 			carrier.show_pose(pose)
+			if check_armed_pose(carrier,pose): continue
 			carrier.held.animate(carrier.weapon,1,0.0,false,Vector2.ZERO,0.0,0.0)
 			# Jump draws behind with the back view. Toward the camera only the shield reaches the cheek.
 			var behind: bool=pose=="walk_up" or pose=="jump" or (pose=="walk_down" and carrier.weapon=="firewall_shield")
@@ -290,6 +843,7 @@ func run() -> void:
 	var whip_actor=players.filter(func(a): return a.weapon=="api_key_whip")[0]
 	for pose in ["walk_up","walk_down","jump"]:
 		whip_actor.show_pose(pose)
+		if check_armed_pose(whip_actor,pose): continue
 		whip_actor.held.animate(whip_actor.weapon,1,0.0,false,Vector2.ZERO,0.0,0.0)
 		check(whip_actor.held.carry.visible and whip_actor.held.carry.offset==-Vector2(8,24),"Whip carry on "+pose+" is gripped at texel (8, 24)")
 	var whip_icon: Image=Art.carry("api_key_whip").get_image()
@@ -307,6 +861,7 @@ func run() -> void:
 	var hammer_actor=players.filter(func(a): return a.weapon=="refactor_hammer")[0]
 	for pose in ["walk_up","walk_down","jump"]:
 		hammer_actor.show_pose(pose)
+		if check_armed_pose(hammer_actor,pose): continue
 		hammer_actor.held.animate(hammer_actor.weapon,1,0.0,false,Vector2.ZERO,0.0,0.0)
 		check(hammer_actor.held.carry.visible and hammer_actor.held.carry.offset==-Vector2(8,38),"Hammer carry on "+pose+" is gripped at texel (8, 38)")
 	var hammer_icon: Image=Art.carry("refactor_hammer").get_image()
@@ -372,6 +927,8 @@ func run() -> void:
 		check(p.armed_sheet()==null and not p.armed and p.body.sprite_frames==PLATFORMER_FRAMES and p.body.animation=="run","Hiding the weapon returns the finisher to the unarmed platformer frames")
 	for actor in players:
 		if actor!=p: actor.queue_free()
+	p.hp=3;p.invulnerable=0
+	await check_torso_motion_all(p)
 	game.start_stage(2)
 	await process_frame;await process_frame
 	game.begin_play();game.set_physics_process(false)

@@ -47,6 +47,8 @@ func run() -> void:
 	var config: Resource = (load(CONFIG_PATH) as Resource).duplicate()
 	config.set(&"stage_base_distance", STAGE_DISTANCE)
 	config.set(&"boss_hp_scale", 0.4)
+	# The scripted run is a draw-state census, not an intro. Open it on `run`.
+	config.set(&"run_intro_enabled", false)
 	game.config = config
 	game.leaderboard_path = OS.get_temp_dir().path_join("runner_warmup_check_leaderboard.cfg")
 	var started := Time.get_ticks_usec()
@@ -61,9 +63,12 @@ func run() -> void:
 		check(cache.has(kind), "cue cached before play: " + kind)
 	for kind in [&"powerup", &"nitro", &"lgtm", &"auto_fix", &"tool_pickup", &"shield_block"]:
 		check(cache.has(kind), "pickup cue cached before play: " + kind)
-	for kind in [&"projectile_whoosh", &"turn_whoosh"]:
-		for mask in 8:
-			check(cache.has(StringName("%s_pan_%d" % [kind, mask])), "panned %s %d cached" % [kind, mask])
+	for key in Synth.get("RECIPES"):
+		check(not String(key).contains("turn"), "RECIPES has no seam cue " + String(key))
+	for mask in 8:
+		check(cache.has(StringName("projectile_whoosh_pan_%d" % mask)), "panned projectile_whoosh %d cached" % mask)
+	for key in cache:
+		check(not String(key).contains("turn"), "synth cache has no seam cue " + String(key))
 	for surface in 3:
 		for strike in 2:
 			check(cache.has(StringName("footstep_surface_%d_variant_%d" % [surface, strike])), "footstep variant cached")
@@ -88,6 +93,7 @@ func run() -> void:
 		check(stage.get_child_count() == 2, "batch %s mounted into one group" % batch)
 		stage.call("clear")
 		check(stage.get_child_count() == 1, "batch %s cleared" % batch)
+	check_boss_scenes_retained(GpuWarmup, "after clearing all warm-up batches")
 	var expected := {"pickup": 20, "burst": 2, "hazard": 42, "boss": 12, "boss_fx": 5, "boss_marks": 1,
 		"boss_projectile": 8, "projectile_swatch": 13, "pursuer": 2, "hoppy": 8, "canvas": 1}
 	for category in expected:
@@ -111,19 +117,38 @@ func run() -> void:
 	game.free()
 	var Cleanup: Script = load("res://scenes/runner/environment/hifi/fixture_cleanup.gd")
 	await Cleanup.call("release", self, [] as Array[Node])
+	GpuWarmup.call("release")
+	check((GpuWarmup.get("retained") as Dictionary).is_empty(), "GPU warm-up release drops retained boss scenes and draw materials")
 	if failures == 0: print("RUNNER WARMUP: PASS (%d checks)" % checks)
 	else: print("RUNNER WARMUP: FAIL (%d failures / %d checks)" % [failures, checks])
 	quit(0 if failures == 0 else 2)
 
+func check_boss_scenes_retained(GpuWarmup: Script, context: String) -> void:
+	var retained: Dictionary = GpuWarmup.get("retained")
+	var BossDefs: Script = load("res://scenes/runner/boss/boss_defs.gd")
+	for slot: Dictionary in BossDefs.get("SLOTS"):
+		var kind: StringName = slot.get("kind", &"")
+		var visual_path := "res://scenes/runner/boss/visuals/%s_visual.tscn" % String(kind)
+		var visual_scene := load(visual_path) as PackedScene
+		check(visual_scene != null, "%s loads boss visual scene: %s" % [context, visual_path])
+		if visual_scene == null:
+			continue
+		var visual := visual_scene.instantiate()
+		var model_path: String = visual.get_script().get_script_constant_map().get("MODEL_PATH", "")
+		visual.free()
+		var model := load(model_path) as PackedScene if not model_path.is_empty() else null
+		check(model != null and retained.has(model), "%s retains imported boss model scene: %s" % [context, model_path])
+
 ## The scene at bind time (graybox detached, as run() does), with the live Hoppy dressed and the
-## corridor posed mid-turn, plus every batch the stage mounts. Also the explicit C1/C2/C4 checks.
+## corridor at rest, plus every batch the stage mounts. Also the explicit C1/C2/C4 checks.
 func warm_census(game: Node, GpuWarmup: Script) -> Dictionary:
 	var warmed := {}
 	GpuWarmup.call("_drop_doomed", game)
 	collect(game, warmed)
 	var hoppy: Node3D = GpuWarmup.call("_hoppy", game)
 	var corridor: Node = GpuWarmup.call("_corridor", game)
-	check(hoppy != null and corridor != null, "census finds the live Hoppy and corridor")
+	check(hoppy != null and corridor != null and corridor.has_method("set_phase") and corridor.has_method("set_boss_arena"),
+		"census finds the live Hoppy and the corridor by its phase hooks")
 	var camera := Camera3D.new()
 	root.add_child(camera)
 	var stage: Node3D = GpuWarmup.call("stage_for", game, camera, hoppy.global_position)
@@ -141,7 +166,6 @@ func warm_census(game: Node, GpuWarmup: Script) -> Dictionary:
 	for batch: StringName in GpuWarmup.call("batches"):
 		stage.call("build", batch)
 		if batch == &"characters": GpuWarmup.call("_dress", hoppy, true)
-		if batch == &"canvas": GpuWarmup.call("show_turn", game, corridor, true)
 		collect(game, warmed)
 		for node in stage.find_children("*", "", true, false):
 			if node.get_script() == ProjectileArt: looks[node.get(&"look")] = true
@@ -159,7 +183,6 @@ func warm_census(game: Node, GpuWarmup: Script) -> Dictionary:
 					led_lit = led_lit or (level != null and float(level) > 0.0)
 			if node.name == &"SignatureMarks" and node.is_visible_in_tree() and int(node.get(&"used")) > 0: marks_lit = true
 		if batch == &"characters": GpuWarmup.call("_dress", hoppy, false)
-		if batch == &"canvas": GpuWarmup.call("show_turn", game, corridor, false)
 		stage.call("clear")
 	print("RUNNER WARMUP: stage build of every batch %.0f ms (headless)" % ((Time.get_ticks_usec() - started) / 1000.0))
 	stage.free()

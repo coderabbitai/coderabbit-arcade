@@ -15,6 +15,7 @@ const ToolDefs = preload("res://scenes/runner/powerups/tool_defs.gd")
 const HazardDefs = preload("res://scenes/runner/hazards/hazard_defs.gd")
 const BossDefs = preload("res://scenes/runner/boss/boss_defs.gd")
 const Palette = preload("res://scenes/runner/environment/runner_palette.gd")
+const DefeatBurst = preload("res://scenes/runner/boss/defeat_burst.gd")
 const Burst = preload("res://scenes/runner/powerups/visuals/hifi/collect_burst.gd")
 const Telegraph = preload("res://scenes/runner/boss/telegraph.tscn")
 const Tracer = preload("res://scenes/runner/boss/tool_tracer.gd")
@@ -36,7 +37,7 @@ const HOPPY_CLIPS: Array[StringName] = [&"lane_dash_left", &"lane_dash_right", &
 ## One copy per boss per state: a signature telegraph (commit, DANGER heat, charge), the attack
 ## after it (ring, slam, recoil, all phases' heads), the hurt flash (a BaseMaterial3D emission
 ## variant) and the defeat.
-const BOSS_STATES: Array[StringName] = [&"telegraph", &"attack", &"hurt", &"defeated"]
+const BOSS_STATES: Array[StringName] = [&"telegraph", &"attack", &"hurt", &"defeated", &"dissolve"]
 ## The boss-attack signals BossFX binds to (contract 2.4 §11.8); the warm-up emits them itself.
 const FX_SIGNALS: Array[StringName] = [&"boss_attack_planned", &"boss_attack_telegraph"]
 const Vignette = preload("res://scenes/runner/shaders/vignette.gdshader")
@@ -68,7 +69,7 @@ static var done: bool:
 static var build_ms := 0.0
 static var draw_ms := 0.0
 static var census: Dictionary = {}
-## Process-lifetime references to every material the warm-up drew. BaseMaterial3D,
+## Process-lifetime references to boss PackedScenes and every material the warm-up drew. BaseMaterial3D,
 ## ParticleProcessMaterial and code-built shaders free their compiled program with their last
 ## user, so a warmed program would otherwise be recompiled by the next pickup, pit or burst
 ## (measured: a new spark system cost 75 ms again once every earlier one was freed).
@@ -123,10 +124,6 @@ static func run(host: Node, camera: Camera3D = null) -> bool:
 		stage.build(batch)
 		build_ms += (Time.get_ticks_usec() - started) / 1000.0
 		started = Time.get_ticks_usec()
-		# The corridor's turn corner, chevron and streaks only show mid-turn, the HUD's floor
-		# chevrons only once a turn is announced.
-		var turn: bool = corridor != null and batch == &"canvas"
-		if turn: show_turn(host, corridor, true)
 		# The live Hoppy's auras and shield, under its own lights (restored below; a run opens bare).
 		if hoppy != null and batch == &"characters": _dress(hoppy, true)
 		_sync_transforms(host)
@@ -134,7 +131,6 @@ static func run(host: Node, camera: Camera3D = null) -> bool:
 			stage._light.visible = lit
 			for i in FRAMES: RenderingServer.force_draw(false, 1.0 / 60.0)
 		if hoppy != null and batch == &"characters": _dress(hoppy, false)
-		if turn: show_turn(host, corridor, false)
 		draw_ms += (Time.get_ticks_usec() - started) / 1000.0
 		retain(stage)
 		labels._copy_labels(stage._group, [])
@@ -215,7 +211,7 @@ static func _drop_doomed(host: Node) -> void:
 		if is_instance_valid(node) and node.is_queued_for_deletion() and node.is_inside_tree():
 			node.get_parent().remove_child(node)
 
-## Application exit: drop the retained materials while the RenderingServer still exists.
+## Application exit: drop retained scenes and materials while the RenderingServer still exists.
 static func release() -> void:
 	retained.clear()
 
@@ -258,26 +254,11 @@ static func _dress(hoppy: Node3D, on: bool) -> void:
 	# The orbit glyphs follow the aura from the visual's next _process; apply it now, as play would.
 	hoppy.notification(Node.NOTIFICATION_PROCESS)
 
-## The mounted corridor, found by its public turn hook rather than by path.
+## The mounted corridor, found by its public StageManager hooks rather than by path.
 static func _corridor(host: Node) -> Node:
 	for node in host.find_children("*", "Node3D", true, false):
-		if node.has_method(&"set_turn") and node.has_method(&"set_boss_arena"): return node
+		if node.has_method(&"set_phase") and node.has_method(&"set_boss_arena"): return node
 	return null
-
-## Mid-turn pose plus the announced floor chevrons (runner_hud.gd's turn_fx.gd, found by its
-## announce/clear hooks); `on` false restores the straight corridor and hides the chevrons.
-static func show_turn(host: Node, corridor: Node, on: bool) -> void:
-	_pose_turn(corridor, 0.5 if on else 0.0)
-	for node in host.find_children("*", "MultiMeshInstance3D", true, false):
-		if node.has_method(&"announce") and node.has_method(&"clear"):
-			if on: node.call(&"announce", 1)
-			else: node.call(&"clear")
-
-## set_turn() is the StageManager's public hook; one process notification applies the pose the
-## way the next frame would. Progress 0 restores the straight corridor.
-static func _pose_turn(corridor: Node, progress: float) -> void:
-	corridor.call(&"set_turn", progress, 1 if progress > 0.0 else 0)
-	corridor.notification(Node.NOTIFICATION_PROCESS)
 
 ## Builds an empty stage under `host`, oriented like `camera`, with the (hidden) warm omni light.
 ## `focus` is where Hoppy stands; without one the near copy goes 6 m ahead of the camera.
@@ -483,13 +464,19 @@ static func _signature_variants(kind: StringName) -> Array[StringName]:
 func _boss(kind: StringName, state: StringName) -> void:
 	var visual := _instance(BOSS_DIR + String(kind) + "_visual.tscn")
 	if visual == null: return
+	# Keep the imported scene itself alive after these transient copies are freed, so the next
+	# intro reuses its meshes and animation data without reparsing the GLB at the cut.
+	var model_path: String = visual.get_script().get_script_constant_map().get("MODEL_PATH", "")
+	if not model_path.is_empty() and ResourceLoader.exists(model_path):
+		var model := load(model_path) as PackedScene
+		if model != null: retained[model] = true
 	var values := {&"kind": kind, &"boss_name": String(kind), &"max_hp": 10, &"phase_count": BossDefs.PHASE_COUNT,
 		&"hover_z": 0.0, &"sway_amplitude": 0.0, &"sway_period": 1.0}
 	for key: StringName in values:
 		if key in visual: visual.set(key, values[key])
 	_place(visual, "boss")
 	_hook(visual, &"on_spawned")
-	var late := state in [&"attack", &"defeated"]
+	var late := state in [&"attack", &"defeated", &"dissolve"]
 	_hook(visual, &"set_phase", [BossDefs.PHASE_COUNT if late else 1])
 	_hook(visual, &"set_health", [3 if late else 10, 10])
 	var variants := _signature_variants(kind)
@@ -501,13 +488,16 @@ func _boss(kind: StringName, state: StringName) -> void:
 		&"hurt":
 			_hook(visual, &"play_attack", [variant])
 			_hook(visual, &"play_hit", [&"unit_test", 1])
-		&"defeated":
-			_hook(visual, &"play_resist", [&"lint_rule"])
-			_hook(visual, &"play_defeat")
+		&"defeated", &"dissolve":
+			_hook(visual, &"play_cinematic", [&"defeat_full", 3.6])
+			_hook(visual, &"set_cinematic_progress", [&"defeat_full", 0.03 if state == &"defeated" else 0.74])
 	# One art tick applies the state (DANGER heat, ring, slam, hurt emission flash) to the materials.
 	_hook(visual, &"_process", [0.05])
 
 func _boss_fx() -> void:
+	var explosions := DefeatBurst.new()
+	_place(explosions, "boss_explosions")
+	explosions.sample(0.32)
 	var telegraph := Telegraph.instantiate() as Node3D
 	_place(telegraph, "boss_fx")
 	_hook(telegraph, &"start", [1, &"orb", 1.0])
@@ -586,4 +576,29 @@ func _canvas() -> void:
 			rect.material = material
 			rect.size = Vector2(64, 64)
 			layer.add_child(rect)
+	_warm_run_intro_fonts(layer)
 	_place(layer, "canvas")
+
+## Contract 2.7 §11.15: the run intro's title card and countdown draw in their own emboldened
+## FontVariation at roughly 50 and 150 px, so their glyphs would otherwise be rasterised on the
+## intro's first title and count frames. Copies of the mounted labels (the same font resource, size
+## and outline) draw once here, invisibly, like the HUD's own font warm. A no-op without the mount.
+func _warm_run_intro_fonts(layer: CanvasLayer) -> void:
+	var host := get_parent()
+	var ui: Node = host.get_node_or_null(^"HUD/RunIntro") if host != null else null
+	if ui == null:
+		return
+	for entry: Array in [[&"title", "THE CODEBASE CORRIDOR"], [&"count_label", "READY 3 2 1 GO!"]]:
+		var source: Label = ui.get(entry[0]) as Label if entry[0] in ui else null
+		if source == null:
+			continue
+		var copy := Label.new()
+		copy.text = source.text if not source.text.is_empty() else String(entry[1])
+		if entry[0] == &"count_label":
+			copy.text = String(entry[1])
+		copy.add_theme_font_override("font", source.get_theme_font("font"))
+		copy.add_theme_font_size_override("font_size", source.get_theme_font_size("font_size"))
+		copy.add_theme_constant_override("outline_size", source.get_theme_constant("outline_size"))
+		copy.add_theme_color_override("font_outline_color", source.get_theme_color("font_outline_color"))
+		copy.modulate.a = 0.0
+		layer.add_child(copy)

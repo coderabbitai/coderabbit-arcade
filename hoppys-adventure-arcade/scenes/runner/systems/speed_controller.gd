@@ -1,7 +1,8 @@
 extends Node
 ## Single owner of the authoritative corridor speed and difficulty (systems spec §1.2, §10.2).
 ## speed = lerp(base + b, max + b, smoothstep(0, 1, run_clock / time_to_max_speed)), then
-## +1 m/s per 60 s of tail up to hard_cap + b, then the Nitro multiplier clamped to nitro_speed_cap.
+## +1 m/s per 60 s of tail up to hard_cap + b, then the Nitro multiplier clamped to nitro_speed_cap,
+## then the boss-cinematic scale (contract 2.6 §11.14, 1 outside a cinematic).
 ##
 ## v2: the curve is read at `run_clock` (RUN-phase seconds), not `elapsed`, so speed holds at the
 ## value it reached through a turn, a boss fight and the stage-clear card. The stage bonus b and the
@@ -11,6 +12,8 @@ const RunnerGame = preload("res://scenes/runner/runner_game.gd")
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
 ## The frontend only needs to hear about difficulty when it actually moves (contract §4.1).
 const DIFFICULTY_EPSILON := 0.01
+## Seconds set_cinematic_scale() takes to reach its target by default (contract 2.6 §11.14).
+const CINEMATIC_EASE_SECONDS := 0.35
 
 var game: RunnerGame
 var config: RunConfig
@@ -29,11 +32,18 @@ var difficulty_floor := 0.0
 var max_speed_reached := 0.0
 var stopping := false
 var stop_seconds := 0.0
+## 0..1 multiplier on the curve while a boss cinematic holds the player (contract 2.6 §11.14),
+## eased toward its target; 1 the rest of the time. It never touches run_clock, so the curve picks
+## up exactly where it was once the cinematic lets go.
+var cinematic_scale := 1.0
 
 ## Difficulty last pushed through difficulty_changed.
 var _emitted_difficulty := 0.0
 ## Speed the catch deceleration started from, so begin_stop() reaches 0 in stop_seconds.
 var _stop_from_speed := 0.0
+var _cinematic_target := 1.0
+## Scale units per second toward _cinematic_target.
+var _cinematic_rate := 0.0
 
 func setup(runner: RunnerGame) -> void:
 	game = runner
@@ -50,6 +60,9 @@ func reset() -> void:
 	stop_seconds = 0.0
 	_stop_from_speed = 0.0
 	_emitted_difficulty = 0.0
+	cinematic_scale = 1.0
+	_cinematic_target = 1.0
+	_cinematic_rate = 0.0
 	speed = base_for_stage()
 	max_speed_reached = speed
 
@@ -60,6 +73,17 @@ func set_stage_bonus(bonus: float) -> void:
 ## The floor the difficulty curve can never fall below on this stage (contract §11.2).
 func set_difficulty_floor(value: float) -> void:
 	difficulty_floor = clampf(value, 0.0, 1.0)
+
+## Contract 2.6 §11.14: ease the corridor to `target` x its curve speed over `seconds` (the
+## StageManager asks for boss_cinematic_speed_scale while a cinematic holds the player, then 1).
+## A non-positive `seconds` snaps straight to the target.
+func set_cinematic_scale(target: float, seconds := CINEMATIC_EASE_SECONDS) -> void:
+	_cinematic_target = clampf(target, 0.0, 1.0)
+	if seconds <= 0.0:
+		cinematic_scale = _cinematic_target
+		_cinematic_rate = 0.0
+		return
+	_cinematic_rate = absf(_cinematic_target - cinematic_scale) / seconds
 
 ## Base corridor speed for the current stage: what stage_started reports (systems spec §10.1).
 func base_for_stage() -> float:
@@ -112,19 +136,31 @@ func _physics_process(delta: float) -> void:
 		# The StageManager owns the RUN-phase clock; mirror it so a standalone controller in a unit
 		# test still advances on its own. A frozen run_clock holds the speed where it was.
 		run_clock = float(game.run_clock) if game != null else run_clock + delta
+		_ease_cinematic_scale(delta)
 		_advance()
 	elif stopping and state == &"caught":
+		# A catch lets go of a cinematic hold too (contract §11.14): the scale still eases home,
+		# while the stop itself decelerates from the speed the corridor had already reached.
+		_ease_cinematic_scale(delta)
 		_decelerate(delta)
 	else:
 		return
 	max_speed_reached = maxf(max_speed_reached, speed)
 	_publish()
 
-## The difficulty curve, the tail and the Nitro clamp (contract §7 Speed row, §11.2).
+## The difficulty curve, the tail and the Nitro clamp (contract §7 Speed row, §11.2), then the
+## cinematic scale (§11.14), which can only ever slow the corridor.
 func _advance() -> void:
 	var curve := speed_at(run_clock)
 	speed = curve if is_equal_approx(multiplier, 1.0) else minf(curve * multiplier, float(config.nitro_speed_cap))
+	speed *= cinematic_scale
 	difficulty = difficulty_at(run_clock)
+
+func _ease_cinematic_scale(delta: float) -> void:
+	if is_equal_approx(cinematic_scale, _cinematic_target):
+		cinematic_scale = _cinematic_target
+		return
+	cinematic_scale = move_toward(cinematic_scale, _cinematic_target, _cinematic_rate * delta)
 
 func _decelerate(delta: float) -> void:
 	if stop_seconds <= 0.0:

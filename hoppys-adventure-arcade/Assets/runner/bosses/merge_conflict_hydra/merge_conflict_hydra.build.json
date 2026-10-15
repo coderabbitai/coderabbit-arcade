@@ -1,0 +1,147 @@
+{
+  "action_seconds": {
+    "attack": 0.5,
+    "defeat": 1.8,
+    "hurt": 0.35,
+    "idle": 3.2,
+    "intro": 2.4,
+    "phase_change": 1.2,
+    "retreat": 1.0,
+    "telegraph": 0.8
+  },
+  "actions": [
+    "intro",
+    "idle",
+    "telegraph",
+    "attack",
+    "hurt",
+    "phase_change",
+    "defeat",
+    "retreat"
+  ],
+  "animation_sample_rate": 120,
+  "blender": "5.2.2 LTS",
+  "bone_names": [
+    "root",
+    "knot",
+    "branch_0",
+    "neck_lo_0",
+    "neck_hi_0",
+    "head_0",
+    "jaw_0",
+    "branch_1",
+    "neck_lo_1",
+    "neck_hi_1",
+    "head_1",
+    "jaw_1",
+    "branch_2",
+    "neck_lo_2",
+    "neck_hi_2",
+    "head_2",
+    "jaw_2",
+    "branch_3",
+    "neck_lo_3",
+    "neck_hi_3",
+    "head_3",
+    "jaw_3"
+  ],
+  "bones": 22,
+  "budget": {
+    "bones": 40,
+    "materials": 4,
+    "surfaces": 6,
+    "triangles": 18000
+  },
+  "glb": {
+    "bytes": 4327608,
+    "file": "merge_conflict_hydra.glb",
+    "sha256": "663fe26c4f057c91bff9d8a68fcbb929574de8db8d3cd8517dcd173e89a05782"
+  },
+  "glyph_font": {
+    "license": "Bitstream Vera and DejaVu Fonts License",
+    "name": "DejaVu Sans Mono",
+    "sha256": "eb072b01f0f06ce11530a90cc11f094c60819d65ed47156540e23198ae149612",
+    "source": "Blender DATAFILES/fonts/DejaVuSansMono.woff2",
+    "usage": "Converted glyph outlines only; font file is not redistributed."
+  },
+  "image_report": [
+    {
+      "bytes": 75487,
+      "height": 1024,
+      "index": 0,
+      "name": "surface_emission",
+      "sha256": "596779dcb3a190749909a46d9402bf3c6983c099b673a143f953193806c3745c",
+      "width": 1024
+    },
+    {
+      "bytes": 962270,
+      "height": 1024,
+      "index": 1,
+      "name": "surface_normal",
+      "sha256": "f36720fba729ee758a0c50b7677de3f1660cf8d22efd65fd0c7fd2ccd8bb6338",
+      "width": 1024
+    },
+    {
+      "bytes": 682778,
+      "height": 1024,
+      "index": 2,
+      "name": "surface_albedo",
+      "sha256": "d6d491b0172463c85557aa122e1513aebba6e81611995bf485e7387fd73e817a",
+      "width": 1024
+    },
+    {
+      "bytes": 650291,
+      "height": 1024,
+      "index": 3,
+      "name": "surface_orm",
+      "sha256": "24291cedc30b55c7167bcf14c776f70a578bdb69f932600ddb97cfec3c815584",
+      "width": 1024
+    }
+  ],
+  "kind": "merge_conflict_hydra",
+  "kit_revision": 2,
+  "materials": 1,
+  "quick": false,
+  "recipe_revision": 6,
+  "rest_position_encoding": "TEXCOORD_1.xy,TEXCOORD_2.x;TEXCOORD_2.y=1",
+  "seed": 73019,
+  "sockets": [
+    "fx_core",
+    "fx_0",
+    "fx_1",
+    "fx_2",
+    "fx_3",
+    "fx_4",
+    "fx_5",
+    "muzzle_0",
+    "muzzle_1",
+    "muzzle_2"
+  ],
+  "source_hashes": {
+    "tools/blender/bosses/boss_kit.py": "35977f71b3d34da34ef7a0bfe064bb840ead47a679277dac4e4d366590a44d4d",
+    "tools/blender/bosses/bosses_budget.json": "01bdf13be27dbdf54cbb1846cc765978c8c97bb9c951c3867e55f891987a84b8",
+    "tools/blender/bosses/build_merge_conflict_hydra.py": "4ed6a734f4778676e23312731b78a73ea5a045239e4fb2bf835eb2d24ccf5d8c",
+    "tools/blender/glb_atlas.py": "6e9467f0befabed73b075a4184ab7cc5aa864649d008b7be24d313726920e35a",
+    "tools/blender/props/props_kit.py": "30ec723c38e818b659075007c71300e994f5c41a36c6e343e17080c203ccc1ad"
+  },
+  "surfaces": 1,
+  "textures": {
+    "albedo": {
+      "file": "merge_conflict_hydra_surface_albedo.png",
+      "sha256": "d6d491b0172463c85557aa122e1513aebba6e81611995bf485e7387fd73e817a"
+    },
+    "emission": {
+      "file": "merge_conflict_hydra_surface_emission.png",
+      "sha256": "596779dcb3a190749909a46d9402bf3c6983c099b673a143f953193806c3745c"
+    },
+    "normal": {
+      "file": "merge_conflict_hydra_surface_normal.png",
+      "sha256": "f36720fba729ee758a0c50b7677de3f1660cf8d22efd65fd0c7fd2ccd8bb6338"
+    },
+    "orm": {
+      "file": "merge_conflict_hydra_surface_orm.png",
+      "sha256": "24291cedc30b55c7167bcf14c776f70a578bdb69f932600ddb97cfec3c815584"
+    }
+  },
+  "triangles": 16918
+}

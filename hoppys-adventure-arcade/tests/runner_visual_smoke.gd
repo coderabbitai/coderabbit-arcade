@@ -1,6 +1,5 @@
 extends SceneTree
-const TurnPreview = preload("res://scenes/runner/environment/dev/turn_preview.gd")
-const CorridorScript = preload("res://scenes/runner/environment/corridor.gd")
+const BossBounds = preload("res://tests/boss_pose_bounds.gd")
 const SignatureDefs = preload("res://scenes/runner/boss/boss_defs.gd")
 const SignatureAttacks = preload("res://scenes/runner/boss/boss_attacks.gd")
 const SignatureArt = preload("res://scenes/runner/boss/visuals/boss_projectile_art.gd")
@@ -27,6 +26,18 @@ class LegacyPursuitGame extends Node:
 	signal caught
 	var paused := false
 
+class CinematicAudioGame extends "res://scenes/runner/ui/dev/mock_runner_game.gd":
+	signal boss_cinematic(kind: StringName, mode: StringName, seconds: float)
+	signal boss_cinematic_skipped(mode: StringName)
+	signal boss_cinematic_ended(mode: StringName)
+	signal run_intro(mode: StringName, seconds: float)
+	signal run_intro_beat(index: int, label: String)
+	signal run_intro_skipped
+	signal run_intro_ended
+	var boss_cinematic_mode: StringName = &""
+	var boss_cinematic_progress := 0.0
+	var boss_time_factor := 1.0
+
 var failures := 0
 var _logger := ErrorCapture.new()
 
@@ -38,6 +49,16 @@ func check(condition: bool, message: String) -> void:
 	if not condition:
 		failures += 1
 		print("VISUAL CHECK FAILED: ", message)
+
+## A real RunnerGame loads run_config.tres when config is null. Duplicate first, then turn the run
+## intro off, so a check that is not about the intro still opens on `run` and the .tres stays put.
+func _without_run_intro(game: Node) -> void:
+	var source: Resource = game.config as Resource
+	if source == null:
+		source = load("res://scenes/runner/data/run_config.tres")
+	var config := source.duplicate()
+	config.set(&"run_intro_enabled", false)
+	game.config = config
 
 func frames() -> void:
 	await process_frame
@@ -373,15 +394,6 @@ func check_dev_scenes() -> void:
 		# Isolate later sections even when a scene fails its restoration checks.
 		paused = previous_paused
 		root.scaling_3d_scale = previous_scale
-	var entry_paused := paused
-	for initial_pause in [false, true]:
-		paused = initial_pause
-		var preview := preload("res://scenes/runner/environment/dev/turn_preview.tscn").instantiate()
-		root.add_child(preview)
-		paused = not initial_pause
-		preview.free()
-		check(paused == initial_pause, "turn preview restores entry pause state")
-	paused = entry_paused
 	if failures == before:
 		print("RUNNER DEV SCENES: PASS (%d scenes)" % instantiated)
 
@@ -906,6 +918,7 @@ func check_runner_ui() -> void:
 	var game := scene.instantiate()
 	game.autostart = false
 	game.leaderboard_path = "user://test_runner_visual_smoke_%d.cfg" % OS.get_process_id()
+	_without_run_intro(game)
 	root.add_child(game)
 	game.start_run(4704)
 	game.set_autopilot(true)
@@ -941,7 +954,7 @@ func check_runner_audio() -> void:
 	const Mock = preload("res://scenes/runner/ui/dev/mock_runner_game.gd")
 	var music := load("res://Assets/Backgrounds/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg") as AudioStreamOggVorbis
 	check(music != null and music.loop == true, "imported runner OGG loops before audio bind")
-	var mock := Mock.new()
+	var mock := CinematicAudioGame.new()
 	mock.autoplay = false
 	root.add_child(mock)
 	var audio := RunnerAudio.instantiate()
@@ -954,6 +967,7 @@ func check_runner_audio() -> void:
 		peak[0] = maxi(peak[0], audio.active_voice_count())
 		check(audio.active_voice_count() <= 10, "audio hard ten voice cap")
 	)
+	mock.boss_intro.connect(func(kind, _name, seconds): mock.boss_cinematic.emit(kind, &"intro_full", seconds))
 	audio.bind(mock)
 	audio.bind(mock)
 	audio.set_process(false)
@@ -964,9 +978,10 @@ func check_runner_audio() -> void:
 	var service := root.get_node("AudioService")
 	check(service.music.stream.resource_path == audio.MUSIC_PATH and service.music.stream.loop, "runner BGM loaded and looping")
 	check(service.music.volume_db == -12.0, "runner BGM level")
-	check(Synth.RECIPES.size() == 32, "F10 has exactly 32 recipes")
+	check(Synth.RECIPES.size() == 39, "39 recipes remain once the run-intro cues are in")
 	check(audio.HIGH_PRIORITY.has(&"alert_sting"), "alert sting is high priority")
 	for kind: StringName in Synth.RECIPES:
+		check(not String(kind).contains("turn"), "recipe names stay clear of the removed phase: " + kind)
 		var stream := Synth.sound(kind)
 		check(stream == Synth.sound(kind), "cached PCM: " + kind)
 		check(stream.format == AudioStreamWAV.FORMAT_16_BITS and stream.mix_rate == 22050, "PCM format: " + kind)
@@ -995,6 +1010,41 @@ func check_runner_audio() -> void:
 		mock.advance_demo(0.1)
 		audio._process(0.1)
 	check(mock.state == &"finished", "audio demo completes")
+	# New contract 2.6 cues use the real progress feed, including a skip and seven bursts.
+	mock.state_changed.emit(&"running")
+	for mode in [&"intro_full", &"intro_short", &"defeat_full"]:
+		audio.one_shots.stop()
+		audio.one_shots.play()
+		audio._playback = audio.one_shots.get_stream_playback()
+		audio._voices.clear()
+		audio._voice_kinds.clear()
+		mock.boss_cinematic_progress = 0.0
+		mock.boss_cinematic.emit(&"flaky_test_swarm", mode, 5.0)
+		for i in 20:
+			audio.one_shots.stop()
+			audio.one_shots.play()
+			audio._playback = audio.one_shots.get_stream_playback()
+			audio._voices.clear()
+			audio._voice_kinds.clear()
+			mock.boss_cinematic_progress = float(i) / 20
+			audio._process(0.15)
+			await process_frame
+		if mode == &"intro_short": mock.boss_cinematic_skipped.emit(mode)
+		mock.boss_cinematic_ended.emit(mode)
+	# Contract 2.7 §11.15: the four new recipes go through the real handlers, not _play.
+	audio.one_shots.stop()
+	audio.one_shots.play()
+	audio._playback = audio.one_shots.get_stream_playback()
+	audio._voices.clear()
+	audio._voice_kinds.clear()
+	mock.run_intro.emit(&"full", 6.0)
+	mock.run_intro_beat.emit(0, "title")
+	mock.run_intro_beat.emit(1, "3")
+	mock.run_intro_beat.emit(2, "READY")
+	mock.run_intro_beat.emit(4, "GO!")
+	mock.run_intro_skipped.emit()
+	mock.run_intro_ended.emit()
+	audio._process(0.15)
 	for kind: StringName in Synth.RECIPES:
 		check(int(counts.get(kind, 0)) > 0, "demo played trigger: " + kind)
 	check(counts.get(&"heartbeat", 0) == 1, "demo heartbeat starts exactly once across low progress ticks")
@@ -1163,17 +1213,6 @@ func check_runner_audio() -> void:
 	mock.boss_spawned.emit(&"flaky_test_swarm", 100)
 	mock.boss_retreated.emit(&"flaky_test_swarm", 0)
 	check(is_equal_approx(service.music_volume_db, -12.0) and audio._boss_pitch_offset == 0, "boss retreat releases mix offsets")
-	mock.turn_started.emit(-1, 2.5)
-	check(is_equal_approx(service.music_volume_db, -17.0), "turn holds minus 5 dB")
-	mock.turn_finished.emit()
-	check(is_equal_approx(service.music_volume_db, -12.0), "turn restores music")
-	for mask in [1, 4]:
-		var pan := Synth.panned_whoosh(mask, &"turn_whoosh")
-		var energy := [0.0, 0.0]
-		for i in range(0, pan.data.size(), 4):
-			energy[0] += absf(pan.data.decode_s16(i))
-			energy[1] += absf(pan.data.decode_s16(i + 2))
-		check((energy[0] > energy[1]) == (mask == 1), "turn directional stereo pan")
 	mock.stage_cleared.emit(1, 400)
 	audio._process(1.0)
 	check(is_equal_approx(service.music_volume_db, -22.0) and audio._pitch == 1.0, "stage card holds minus 10 dB and pitch 1")
@@ -1184,7 +1223,7 @@ func check_runner_audio() -> void:
 	mock.paused_changed.emit(false)
 	audio._process(2.0)
 	check(is_equal_approx(service.music_volume_db, -12.0), "stage card releases hold")
-	print("RUNNER AUDIO: 32 recipes/triggers; demo heartbeat starts=1; peak voices=", peak[0], "; AudioService players=", service.get_child_count())
+	print("RUNNER AUDIO: 39 recipes/triggers; demo heartbeat starts=1; peak voices=", peak[0], "; AudioService players=", service.get_child_count())
 	mock.free()
 	await frames()
 	check(is_equal_approx(service.music.pitch_scale, 1.0), "audio teardown resets pitch")
@@ -1198,6 +1237,7 @@ func _isolate_routed_game(node: Node) -> void:
 		return
 	node.autostart = false
 	node.leaderboard_path = loop_board_path
+	_without_run_intro(node)
 	loop_instances += 1
 	node.ready.connect(func() -> void:
 		node.start_run(4706 + loop_instances)
@@ -1214,6 +1254,13 @@ func _force_loop_hit(game: Node) -> void:
 	hazard.kind = &"pr_backlog_low"
 	check(game.hit_manager.report_hit(hazard) == &"damaged", "full loop forced hazard applies damage")
 	hazard.free()
+
+func _remove_temporary_leaderboard(board_path: String) -> void:
+	for suffix in ["", ".tmp", ".bak"]:
+		var path: String = board_path + suffix
+		if FileAccess.file_exists(path):
+			check(DirAccess.remove_absolute(path) == OK, "temporary leaderboard cleanup: " + path)
+		check(not FileAccess.file_exists(path), "temporary leaderboard removed: " + path)
 
 func check_runner_full_loop() -> void:
 	var before := failures
@@ -1288,11 +1335,7 @@ func check_runner_full_loop() -> void:
 	check(current_scene.name == &"MainMenu", "hub is MainMenu")
 	check(audio.music.stream == audio.default_track and audio.music.playing, "hub restores default music")
 	node_added.disconnect(_isolate_routed_game)
-	for suffix in ["", ".tmp", ".bak"]:
-		var path: String = loop_board_path + suffix
-		if FileAccess.file_exists(path):
-			check(DirAccess.remove_absolute(path) == OK, "temporary leaderboard cleanup")
-	check(not FileAccess.file_exists(loop_board_path), "temporary leaderboard removed")
+	_remove_temporary_leaderboard(loop_board_path)
 	print("RUNNER FULL LOOP: ", "PASS" if before == failures else "FAIL", " (menu, play, hit, pursuit, %ss timer recovery, hit, hit, caught, finished, game over, Codex, retry, menu, hub, default music; isolated board removed)" % recovery_seconds)
 	current_scene.free()
 	await frames()
@@ -1603,7 +1646,11 @@ func boss_geometry_bounds(visual: Node3D) -> AABB:
 					var box: AABB = visual.global_transform.affine_inverse() * node.global_transform * pose * AABB(-Vector3.ONE * 0.5, Vector3.ONE)
 					result = box if first else result.merge(box)
 					first = false
-		else:
+		elif node is MeshInstance3D and node.skin != null:
+			var box: AABB = visual.global_transform.affine_inverse() * BossBounds.mesh_bounds(node)
+			result = box if first else result.merge(box)
+			first = false
+		elif not node is Label3D:
 			var box: AABB = visual.global_transform.affine_inverse() * node.global_transform * node.get_aabb()
 			result = box if first else result.merge(box)
 			first = false
@@ -1640,16 +1687,17 @@ func check_bosses() -> void:
 		visual.sway_amplitude = 2.4
 		visual.sway_period = 3.2
 		visual.on_spawned()
-		check(visual._art.tag.text.replace("\n", " ") == visual.boss_name, "boss plate reads boss_name")
-		check(visual._art.tag.font_size >= 40 and visual._art.tag.position.y >= 3.15 and visual._art.tag.texture_filter == BaseMaterial3D.TEXTURE_FILTER_LINEAR, "gallery plate above body and linearly filtered")
+		check(visual._tag.text.replace("\n", " ") == visual.boss_name, "boss plate reads boss_name")
+		check(visual._tag.font_size >= 40 and visual._tag.position.y >= 3.15 and visual._tag.texture_filter == BaseMaterial3D.TEXTURE_FILTER_LINEAR, "gallery plate above body and linearly filtered")
 		var count := visual.find_children("*", "", true, false).size()
 		visual.on_spawned()
 		check(count == visual.find_children("*", "", true, false).size(), "idempotent boss spawn " + kind)
 		check(visual.process_mode == Node.PROCESS_MODE_PAUSABLE, "boss PAUSABLE " + kind)
-		visual.play_intro(3.0)
+		check(visual._model != null, "accepted GLB mounted " + kind)
+		visual.play_cinematic(&"intro_full", 3.0)
 		for frame in 181:
 			check_boss_envelope(visual, "%s intro frame %d" % [kind, frame], true)
-			if frame < 180: visual._process(1.0 / 60.0)
+			if frame < 180: visual.set_cinematic_progress(&"intro_full", float(frame + 1) / 180)
 		visual.on_spawned()
 		var boss_peak := 0
 		for phase in [1, 2, 3]:
@@ -1699,12 +1747,14 @@ func check_bosses() -> void:
 		for ending in [&"play_defeat", &"play_retreat"]:
 			visual.on_spawned()
 			visual.call(ending)
+			if ending == &"play_defeat": visual.play_cinematic(&"defeat_full", 3.6)
 			for i in 20:
-				visual._process(0.045)
+				if ending == &"play_defeat": visual.set_cinematic_progress(&"defeat_full", float(i + 1) / 20)
+				else: visual._process(0.05)
 				check_boss_envelope(visual, String(kind) + " " + String(ending))
 				boss_peak = maxi(boss_peak, hazard_draw_count(visual))
 			visual._process(0.1)
-			check(not visual._art.visible, "boss outro fits backend second")
+			check(not visual.is_visible_in_tree() or not visual._model.visible or float(visual._model.materials[0].get_shader_parameter("dissolve")) >= 0.999, "boss terminal hides or fully dissolves")
 		check(boss_peak <= 40, "boss peak draw budget " + kind)
 		peak = maxi(peak, boss_peak)
 		print("BOSS DRAW CENSUS: ", kind, "=", boss_peak)
@@ -1877,7 +1927,17 @@ func check_tools_and_projectiles() -> void:
 	# Exercise the actual backend mount and signals without simulating collisions by hand.
 	var game := (load("res://scenes/runner/runner_game.tscn") as PackedScene).instantiate()
 	game.autostart = false
+	var board_path := "user://test_runner_boss_mount_%d.cfg" % OS.get_process_id()
+	game.leaderboard_path = board_path
 	root.add_child(game)
+	# Keep teardown in the caller so a failed check or early return cannot bypass it.
+	_check_boss_mount_game(game)
+	game.free()
+	_remove_temporary_leaderboard(board_path)
+	await frames()
+	print("TOOLS AND PROJECTILES: ", "PASS" if failures == before else "FAIL")
+
+func _check_boss_mount_game(game: Node) -> void:
 	var arena: Node = game.boss_encounter
 	var boss_hud: Control
 	for node in game.find_children("*", "Control", true, false):
@@ -1887,27 +1947,24 @@ func check_tools_and_projectiles() -> void:
 	for stage in [1, 2, 3]:
 		arena.start(stage)
 		check(arena.visual.get_script().resource_path.contains("boss/visuals/"), "backend mounts shipped boss visual")
-		check(boss_hud.intro_card.visible and not boss_hud.visible and boss_hud.intro_name.text == String(game.get_boss_info().name), "real facade intro precedes fight name plate")
-		check(arena.visual.intro_calls == 1 and arena.visual._art.state == &"intro", "real facade forwards entrance")
-		boss_hud._process(float(game.config.boss_intro_seconds))
-		arena.visual._process(float(game.config.boss_intro_seconds))
+		var cinematic: Node = game.get_node("HUD/BossCinematic")
+		check(cinematic.root.visible and not boss_hud.visible and cinematic.boss_name.text == String(game.get_boss_info().name).to_upper(), "real facade cinematic precedes HP plate")
+		check(arena.visual.intro_calls == 1 and arena.visual._state == &"intro", "encounter forwards one cinematic entrance")
+		arena.tick(float(game.config.boss_intro_seconds))
 		check(boss_hud.visible and boss_hud.title.text.contains(String(game.get_boss_info().name).to_upper()), "real fight name plate after intro")
 		while arena.phase < 2: arena.apply_tool(&"unit_test")
 		check(boss_hud.pips[1].filled, "real fight phase pip")
 		var previous_hp: int = arena.hp
-		check(not arena.visual._art.tag.visible, "mounted boss HUD suppresses 3D name plate")
+		check(not arena.visual._tag.visible, "mounted boss HUD suppresses 3D name plate")
 		if stage == 2: arena.apply_tool(&"review_comment")
 		elif stage == 3: arena.apply_tool(&"unit_test")
-		if stage > 1: check(arena.hp == previous_hp and arena.visual._art.state == &"resist", "real phase resists wrong tool")
+		if stage > 1: check(arena.hp == previous_hp and arena.visual._model != null, "real phase resists wrong tool")
 		arena.apply_tool(&"review_comment" if stage == 3 else &"unit_test")
 		check(arena.hp < previous_hp, "real phase accepts correct tool")
 		arena.abort()
-	game.free()
-	await frames()
-	print("TOOLS AND PROJECTILES: ", "PASS" if failures == before else "FAIL")
 
 func check_turn() -> void:
-	var before := failures
+	var geometry_before := failures
 	root.size = Vector2i(1280, 720)
 	var corridor := preload("res://scenes/runner/environment/corridor.tscn").instantiate()
 	root.add_child(corridor)
@@ -1918,70 +1975,68 @@ func check_turn() -> void:
 	camera.look_at(Vector3(0, 1, -8))
 	var camera_rest := camera.rotation
 	var rest := hazard_draw_count(corridor)
-	var peak := rest
-	for name in ["Floor", "Ceiling", "WallL", "WallR"]:
-		check(corridor.get_node(name).mesh.subdivide_depth == 72, "turn mesh subdivisions " + name)
-	for direction in [-1, 1]:
-		var endpoint_pose: Transform3D
-		var endpoint_pillars: Array[Transform3D] = []
-		var previous := 0.0
-		for progress in [0.0, 0.15, 0.3, 0.5, 0.7, 0.85, 1.0]:
-			corridor.set_turn(progress, direction)
-			corridor._process(0.0)
-			if progress == 0.0:
-				endpoint_pose = corridor.transform
-				for i in 24: endpoint_pillars.append(corridor._pillars.get_instance_transform(i))
-			elif progress == 1.0:
-				check(corridor.transform == endpoint_pose, "turn endpoint transform equals start")
-				for i in 24:
-					check(corridor._pillars.get_instance_transform(i) == endpoint_pillars[i], "turn endpoint pillar equals start")
-			TurnPreview.apply_camera_swing(camera, camera_rest, progress, direction)
-			if progress >= 0.3 and progress <= 0.7:
-				var angle := rad_to_deg((-camera.basis.z).angle_to(-corridor.basis.z))
-				check(angle <= 15.0, "camera looks down turned corridor through hold")
-				print("TURN CAMERA ALIGNMENT: direction=%+d p=%.1f angle=%.3f degrees" % [direction, progress, angle])
-				check(is_equal_approx(absf(corridor.rotation_degrees.y), 55.0) and is_equal_approx(absf(corridor.bend), 0.010), "turn reaches sharp peak at 0.3 and holds through 0.7")
-			var magnitude := absf(corridor.bend)
-			check(magnitude >= previous - 0.000001 if progress <= 0.5 else magnitude <= previous + 0.000001, "turn bend monotone around peak")
-			previous = magnitude
-			var pose: Transform3D = corridor.transform
-			corridor.set_turn(progress, direction)
-			corridor._process(0.0)
-			check(corridor.transform == pose, "turn idempotent")
-			var opacity: float = corridor._corner_material.get_shader_parameter("opacity")
-			var far: float = corridor._far_material.get_shader_parameter("opacity")
-			check(is_equal_approx(opacity + far, 1.0), "corner and far crossfade complement")
-			peak = maxi(peak, hazard_draw_count(corridor))
-		check(is_zero_approx(corridor.rotation.y) and is_zero_approx(corridor.bend), "turn endpoint is straight")
-	corridor.set_turn(0.5, 1)
-	corridor._process(0.0)
+	check(corridor.rotation == Vector3.ZERO, "corridor stays square")
+	check(_straight_modules(corridor), "racks and pillars stay square")
+	check(is_equal_approx(corridor._rain.amount_ratio, 0.55), "rain amount stays constant")
+	var bulkhead: MeshInstance3D = corridor.starship.get_node_or_null("EntryBulkhead")
+	check(bulkhead != null and bulkhead.get_node_or_null("EntryDoorGlow") != null, "entry bulkhead closes the near end")
+	if bulkhead != null:
+		var hull: ShaderMaterial = bulkhead.material_override
+		check(is_equal_approx(float(hull.get_shader_parameter("metallic")), 0.68)
+			and not bool(hull.get_shader_parameter("window_mode"))
+			and is_zero_approx(float(hull.get_shader_parameter("glow")))
+			and not hull.shader.code.contains("blend_"),
+			"entry bulkhead is opaque hull")
+		var beyond := false
+		var sleeve := false
+		var z_min := 1000.0
+		var z_max := -1000.0
+		for vertex in bulkhead.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]:
+			z_min = minf(z_min, vertex.z)
+			z_max = maxf(z_max, vertex.z)
+			beyond = beyond or vertex.z > 24.0
+			sleeve = sleeve or (vertex.z < 24.0 and vertex.z >= 11.0)
+		check(beyond and z_max > 24.0, "entry door sits beyond z +24 (max %.2f)" % z_max)
+		check(sleeve and z_min > 10.0 and z_min < 12.5, "entry sleeve reaches back over the near modules (min %.2f)" % z_min)
+	corridor.set_scroll_speed(32.0)
+	var pose_before: Transform3D = corridor.global_transform
+	corridor._refresh_dressing()
+	var dressed: Transform3D = corridor._dressing_frame
+	corridor._refresh_dressing()
+	check(dressed == corridor._dressing_frame and corridor.global_transform == pose_before, "dressing refresh is idempotent")
+	check(corridor._dressing_frame == corridor.global_transform, "dressing frame tracks the corridor")
+	corridor._process(0.05)
+	check(not corridor._rain.visible and not corridor._rain.emitting, "legacy rain stays hidden at speed")
+	check(not corridor._speed_lines.visible and not corridor._speed_lines.emitting, "legacy speed lines stay hidden at speed")
+	check(is_equal_approx(corridor._rain.amount_ratio, 0.55), "rain amount stays constant at speed")
+	check(corridor.rotation == Vector3.ZERO and _straight_modules(corridor), "scroll leaves the corridor square")
+	check(camera.rotation == camera_rest, "fixture camera stays at the rest pose")
 	corridor.set_process(true)
 	var pose: Transform3D = corridor.transform
 	var offset: float = corridor._offset
 	paused = true
 	for i in 10: await process_frame
-	check(corridor.transform == pose and corridor._offset == offset, "ten paused frames freeze turn and scroll")
+	check(corridor.transform == pose and is_equal_approx(corridor._offset, offset), "ten paused frames freeze the corridor and its scroll")
 	paused = false
-	corridor.set_turn(0.0, 0)
-	corridor._process(0.0)
-	check(corridor.rotation == Vector3.ZERO and not corridor.get_node("CornerWall").visible, "explicit turn reset")
+	var peak := hazard_draw_count(corridor)
 	check(rest <= 14 and peak <= 18, "corridor draw census budget")
-	print("CORRIDOR DRAW CENSUS: rest=", rest, "; mid-turn=", peak, " (headless geometry census; host GPU measurement pending)")
+	print("CORRIDOR DRAW CENSUS: rest=", rest, "; straight=", peak, " (headless geometry census; host GPU measurement pending)")
+	print("STRAIGHT CORRIDOR: ", "PASS" if failures == geometry_before else "FAIL")
 	camera.free()
 	corridor.free()
+	var seam_before := failures
 	var mock := preload("res://scenes/runner/ui/dev/mock_runner_game.gd").new()
 	mock.autoplay = false
 	root.add_child(mock)
 	mock.start_run()
 	mock.stage_banner.bind(mock)
-	mock.turn_started.emit(1, 2.5)
 	mock.stage_started.emit(2, &"Merge Conflict Hydra", 13.0)
-	check(not mock.stage_banner.visible and is_equal_approx(mock.hud.time_label.get_parent().modulate.a, 0.55), "turn defers banner and dims HUD")
-	mock.turn_finished.emit()
-	check(mock.stage_banner.title.text == "S T A G E  2", "stage title letter spacing")
-	check(mock.stage_banner.visible and mock.hud.time_label.get_parent().modulate.a == 1.0, "turn finish reveals banner and restores HUD")
+	check(mock.stage_banner.visible and mock.stage_banner.title.text == "S T A G E  2", "stage card shows immediately")
+	check(mock.hud.time_label.get_parent().modulate.a == 1.0, "stage card leaves the HUD at full strength")
 	mock.boss_spawned.emit(&"merge_conflict_hydra", 100)
 	check(not mock.stage_banner.visible, "boss suppresses banner")
+	mock.stage_started.emit(3, &"Legacy Monolith", 13.0)
+	check(not mock.stage_banner.visible, "a visible boss keeps the next stage card hidden")
 	mock.stage_clear.bind(mock)
 	mock.stage_cleared.emit(2, 550)
 	mock.stage_clear._process(0.5)
@@ -1999,8 +2054,21 @@ func check_turn() -> void:
 	mock.stage_clear._process(2.31)
 	check(not mock.stage_clear.visible, "stage card closes after hold and exit")
 	mock.free()
-	print("TURN: ", "PASS" if before == failures else "FAIL")
+	print("HUD SEAM: ", "PASS" if failures == seam_before else "FAIL")
 	await frames()
+
+func _straight_modules(corridor: Node3D) -> bool:
+	corridor._update_pillars()
+	for i in 12:
+		var data: Color = corridor._rack_data[i]
+		if not is_zero_approx(data.g) or not is_equal_approx(data.b, 1.0):
+			return false
+		if not corridor._rack_poses[i].basis.is_equal_approx(Basis.IDENTITY):
+			return false
+	for i in 24:
+		if not corridor._pillars.get_instance_transform(i).basis.is_equal_approx(Basis.IDENTITY):
+			return false
+	return true
 
 func check_stage_seam() -> void:
 	var before := failures
@@ -2009,18 +2077,15 @@ func check_stage_seam() -> void:
 	game.config = game.config.duplicate()
 	game.leaderboard_path = "user://test_runner_stage_seam_%d.cfg" % OS.get_process_id()
 	game.config.stage_base_distance = 260.0
+	game.config.run_intro_enabled = false
 	game.config.time_to_max_speed = 20.0
 	game.config.boss_hp_scale = 0.4
 	root.add_child(game)
-	var corridor: Node = game.turn_rig.corridor
 	var banner := game.get_node("HUD/StageBanner")
 	var card := game.get_node("HUD/StageClear")
-	var events := {"started": 0, "finished": 0, "one": false, "reset": false, "banner_open": 0, "banner_close": 0, "card_open": 0, "card_close": 0}
-	game.turn_started.connect(func(_d: int, _s: float) -> void: events.started += 1)
-	game.turn_finished.connect(func() -> void: events.finished += 1)
-	corridor.turn_applied.connect(func(p: float, d: int) -> void:
-		if p == 1.0: events.one = true
-		if events.one and p == 0.0 and d == 0: events.reset = true)
+	var events := {"banner_open": 0, "banner_close": 0, "card_open": 0, "card_close": 0}
+	var phases: Array[StringName] = []
+	game.phase_changed.connect(func(phase: StringName) -> void: phases.append(phase))
 	banner.opened.connect(func() -> void: events.banner_open += 1)
 	banner.closed.connect(func() -> void: events.banner_close += 1)
 	card.opened.connect(func() -> void: events.card_open += 1)
@@ -2034,15 +2099,36 @@ func check_stage_seam() -> void:
 	Engine.physics_ticks_per_second = 240
 	Engine.max_physics_steps_per_frame = 32
 	Engine.time_scale = 4.0
-	await _wait_for(func() -> bool: return game.stage_index >= 2 or game.state != &"running", 35.0, "real stage seam reaches stage two")
+	# A lambda captures these by value, so the samples live in a dictionary the closure can mutate.
+	var watched := {"saw_run": false, "straight": true, "rested": true}
+	var reached := await wait_until(func() -> bool:
+		if game.phase == &"run":
+			watched.saw_run = true
+			if not game.turn_rig.rotation.is_equal_approx(Vector3.ZERO):
+				watched.straight = false
+			var mounted: Node = game.turn_rig.get("corridor")
+			if mounted is Node3D and not (mounted as Node3D).rotation.is_equal_approx(Vector3.ZERO):
+				watched.straight = false
+			var rig: Node = game.camera_rig
+			if rig != null and rig.get("camera") is Camera3D:
+				var lens := rig.get("camera") as Camera3D
+				if not lens.rotation.is_equal_approx(rig.get("_base_rotation") as Vector3):
+					watched.rested = false
+		return game.stage_index >= 2 or game.state != &"running"
+	, 35.0)
 	Engine.time_scale = old_scale
 	Engine.physics_ticks_per_second = old_ticks
 	Engine.max_physics_steps_per_frame = old_steps
+	check(reached, "real stage seam reaches stage two")
 	check(game.stage_index >= 2, "shortened smoke config crosses stage seam")
-	check(events.started > 0 and events.finished > 0 and events.one and events.reset, "backend forwards turn one then reset")
+	check(phases.size() >= 4 and phases[0] == &"run" and phases[1] == &"boss" and phases[2] == &"stage_clear" and phases[3] == &"run",
+		"phase order is run, boss, stage clear, run, got %s" % [phases])
+	check(bool(watched.saw_run) and bool(watched.straight), "the corridor or the TurnRig rotated during the run")
+	check(bool(watched.rested), "the camera left its rest pose during run and drain")
 	check(events.banner_open > 0 and events.banner_close > 0, "real banner appears and closes")
 	check(events.card_open > 0 and events.card_close > 0 and not card.visible, "real stage card appears and closes")
-	check(game.turn_rig.rotation == Vector3.ZERO, "frontend hook prevents fallback rig yaw")
+	var mounted_corridor: Node = game.turn_rig.get("corridor")
+	check(game.turn_rig.rotation == Vector3.ZERO and mounted_corridor is Node3D and (mounted_corridor as Node3D).rotation == Vector3.ZERO, "the corridor and the TurnRig stay square through the stage")
 	var seam_board: String = game.leaderboard_path
 	game.free()
 	for suffix in ["", ".tmp", ".bak"]:
@@ -2100,111 +2186,89 @@ func check_turn_warning() -> void:
 	mock.autoplay = false
 	root.add_child(mock)
 	mock.start_run()
+	_check_clear_of_removed_phase(mock.hud, "HUD")
+	check(mock.hud.ready_panel.visible, "GET READY stays up with nothing to replace it")
 	var audio := preload("res://scenes/runner/audio/runner_audio.tscn").instantiate()
 	mock.add_child(audio)
 	audio.bind(mock)
-	var cues: Array[StringName] = []
-	audio.sound_played.connect(func(kind: StringName, _stream: AudioStream) -> void: cues.append(kind))
-	for direction in [-1, 1]:
-		audio._clock += 4.0
-		var warning_count_before: int = cues.count(&"turn_warning")
-		mock.turn_incoming.emit(direction, 3.0)
-		check(mock.hud.turn_panel.visible and mock.hud.turn_label.text.contains("LEFT" if direction < 0 else "RIGHT"), "directional turn banner")
-		check(mock.hud.turn_label.get_theme_font_size("font_size") >= 34, "warning legibility")
-		check(mock.hud.turn_fx.visible and mock.hud.turn_fx.direction == direction and mock.hud.turn_fx.multimesh.instance_count == 18, "pooled chevrons in three lanes")
-		check(mock.hud.turn_fx.get_parent() is CorridorScript, "chevrons are children of mounted corridor")
-		check(cues.count(&"turn_warning") == warning_count_before + 1, "warning signal plays audio exactly once")
-		for tick in 3:
-			mock.hud.warning_age = float(tick)
-			mock.hud._update_turn_warning()
-			check(mock.hud.turn_label.text.ends_with(str(3 - tick)), "three countdown ticks")
-		mock.pause()
-		var age: float = mock.hud.warning_age
-		mock.hud._process(1.0)
-		check(mock.hud.warning_age == age, "warning pause freeze")
-		mock.resume()
-		mock.turn_started.emit(direction, 2.5)
-		check(not mock.hud.turn_fx.visible and mock.hud.turn_fx.direction == 0, "turn started clears chevrons before end wall takes over")
-		mock.turn_finished.emit()
-		check(not mock.hud.turn_panel.visible and not mock.hud.turn_fx.visible, "turn finish clears warning and chevrons")
-		check(not audio._pending.has(&"turn_warning"), "turn finish clears pending warning audio")
-	for seconds in [0.4, 1.2, 2.0, 4.5]:
-		mock.turn_incoming.emit(1, seconds)
-		for age in [0.0, 0.5, seconds, seconds + 0.5]:
-			mock.hud.warning_age = age
-			mock.hud._update_turn_warning()
-			check(mock.hud.turn_label.text.ends_with(str(maxi(1, ceili(seconds - age)))), "countdown uses actual drain duration")
+	var script: Script = audio.get_script()
+	while script != null:
+		for method in script.get_script_method_list():
+			check(not String(method["name"]).contains("turn"), "runner audio still handles %s" % method["name"])
+		script = script.get_base_script()
+	var synth := preload("res://scenes/runner/audio/sfx_synth.gd")
+	for key in synth.RECIPES:
+		check(not String(key).contains("turn"), "synth recipes stay clear of the removed phase")
 	mock.free()
 	await frames()
-	print("TURN WARNING: ", "PASS" if before == failures else "FAIL")
+	print("HUD PLATE: ", "PASS" if before == failures else "FAIL")
+
+func _check_clear_of_removed_phase(node: Node, tag: String) -> void:
+	var script: Script = node.get_script()
+	while script != null:
+		for prop in script.get_script_property_list():
+			var prop_name := String(prop["name"])
+			if prop_name == "turn_rig":
+				continue
+			check(not prop_name.contains("turn"), "%s still exposes %s" % [tag, prop_name])
+		script = script.get_base_script()
+	for child in node.find_children("*", "Node", true, false):
+		check(not String(child.name).to_lower().contains("turn"), "%s still builds %s" % [tag, child.name])
 
 func check_boss_intro() -> void:
 	var before := failures
-	var mock := preload("res://scenes/runner/ui/dev/mock_runner_game.gd").new()
-	mock.autoplay = false
-	root.add_child(mock)
-	mock.start_run()
-	var audio := preload("res://scenes/runner/audio/runner_audio.tscn").instantiate()
-	mock.add_child(audio)
-	audio.bind(mock)
-	audio.set_process(false)
-	var overlay: Control = mock.boss_overlay
-	overlay.set_process(false)
-	var expected_taunts := {
-		&"flaky_test_swarm": "PASSED LOCALLY. FAILS ON CI.",
-		&"merge_conflict_hydra": "<<<<<<< HEAD  \u2014  3 BRANCHES, SOON 4. ZERO AGREEMENT.",
-		&"legacy_monolith": "@deprecated SINCE 2011. STILL IN PRODUCTION.",
-	}
-	for kind: StringName in expected_taunts:
-		mock.boss_kind = kind
-		mock.mount_demo_boss()
-		var visual: Node3D = mock.boss.get_child(0)
-		visual.set_process(false)
-		mock.boss_hp = 140
-		mock.boss_intro.emit(kind, "Test Boss", 3.0)
-		mock.boss_spawned.emit(kind, 140)
-		await frames()
-		check(overlay.intro_card.size.x <= 680.0 and overlay.intro_card.position.y >= 0.0 and overlay.intro_card.get_global_rect().end.y <= 130.0, "intro card stays in top band")
-		check(overlay.intro_name.get_theme_font_size("font_size") == 24, "intro name retains compact 24 unit layout")
-		check(overlay.intro_card.visible and overlay.intro_name.text == "Test Boss", "intro card shows facade name")
-		check(overlay.intro_taunt.text == expected_taunts[kind] and overlay.intro_taunt.visible_characters == 0, "correct typed taunt " + kind)
-		mock.stage_started.emit(2, &"Queued stage", 13.0)
-		check(not overlay.visible and not mock.stage_banner.visible, "intro suppresses HP and stage banner")
-		check(visual.intro_calls == 1 and visual._art.state == &"intro", "boss FX forwards optional entrance " + kind)
-		check(audio._boss_duck == -12.0, "intro heavier music duck survives spawned")
-		overlay._process(1.0)
-		visual._process(1.0)
-		if kind == &"flaky_test_swarm":
-			check(visual._art.batches[0].poses[0].origin.z < -1.0, "swarm tiles fly from vanishing point")
-		elif kind == &"merge_conflict_hydra":
-			check(visual._art.heads[0].position.y < 1.75 and visual._art.heads[2].scale.y < 1.0, "hydra rises and unfurls heads")
-		else:
-			check(visual._art.position.z < -10.0, "monolith approaches from far end")
-		check(overlay.intro_taunt.visible_characters == overlay.intro_taunt.text.length(), "taunt typed within one second")
-		mock.pause()
-		var age: float = overlay.intro_age
-		overlay._process(1.0)
-		audio._process(1.0)
-		check(overlay.intro_age == age and audio._intro_remaining == 3.0, "pause freezes intro card and duck")
-		visual.set_process(true)
-		paused = true
-		var visual_age: float = visual._art.age
-		for i in 4: await process_frame
-		check(visual._art.age == visual_age, "scene pause freezes boss entrance")
-		paused = false
-		visual.set_process(false)
-		mock.resume()
-		overlay._process(1.4)
-		check(overlay.intro_flash.color.a > 0.0 and overlay.intro_vignette.visible, "entrance impact uses screen flash and vignette")
-		overlay._process(0.6)
-		visual._process(2.0)
-		audio._process(3.0)
-		check(not overlay.intro_card.visible and overlay.visible, "HP enters only at end of intro")
-		check(visual._art.state == &"idle" and visual._art.position == Vector3.ZERO, "entrance restores idle exactly at duration")
-		check(audio._boss_duck == -4.0 and audio.active_voice_count() <= 10, "intro releases into boss duck with voice cap")
-		check_boss_envelope(visual, "post intro " + kind)
-	mock.boss_intro.emit(&"unknown", "Unknown Bug", 1.0)
-	check(overlay.intro_name.text == "Unknown Bug" and overlay.intro_taunt.text.is_empty(), "unknown boss name-only fallback")
-	mock.free()
+	var game: Node = load("res://scenes/runner/runner_game.tscn").instantiate()
+	game.autostart = false
+	var board_path := "user://test_runner_boss_intro_%d.cfg" % OS.get_process_id()
+	game.leaderboard_path = board_path
+	_without_run_intro(game)
+	root.add_child(game)
+	# Keep teardown in the caller so a failed check or early return cannot bypass it.
+	_check_boss_intro_game(game)
+	game.free()
+	_remove_temporary_leaderboard(board_path)
 	await frames()
 	print("BOSS INTRO: ", "PASS" if before == failures else "FAIL")
+
+func _check_boss_intro_game(game: Node) -> void:
+	var copy := preload("res://scenes/runner/ui/boss_copy.gd")
+	game.start_run(721)
+	game.set_process(false)
+	game.set_physics_process(false)
+	var overlay: Node = game.get_node("HUD/BossCinematic")
+	var hud: Node = game.get_node("HUD/BossHud")
+	var audio: Node = game.get_node("Audio/RunnerAudio")
+	var arena: Node = game.boss_encounter
+	for stage in [1, 2, 3]:
+		arena.start(stage)
+		var kind: StringName = game.get_boss_info().kind
+		check(overlay.root.visible and not hud.visible, "cinematic replaces HP before spawn")
+		check(overlay.epithet.text == copy.epithet(kind).to_upper(), "single epithet source " + kind)
+		check(overlay.threat.text == copy.threat(kind), "single threat source " + kind)
+		check(arena.visual._model != null and arena.visual.intro_calls == 1, "GLB cinematic receives one start")
+		check(audio._boss_duck == -18.0, "cinematic duck survives spawn")
+		arena.tick(2.0)
+		game.stage_manager._publish()
+		overlay._process(0)
+		check(overlay.title_group.visible and overlay.title_group.scale.x > 1.7, "title slams during camera hold")
+		arena.tick(0.75)
+		game.stage_manager._publish()
+		overlay._process(0)
+		check(overlay.threat.visible_characters >= 22 and overlay.threat.visible_characters <= 23, "threat types at 40 characters per second")
+		game.pause()
+		var frozen: int = overlay.threat.visible_characters
+		var duck: float = audio._boss_duck
+		overlay._process(1)
+		audio._process(1)
+		check(overlay.threat.visible_characters == frozen and audio._boss_duck == duck, "pause freezes clock-driven UI and mix")
+		game.resume()
+		arena.tick(0.9)
+		game.stage_manager._publish()
+		overlay._process(0)
+		check(overlay.hints.visible and overlay.threat.visible, "hint row and complete threat coexist for the wide shot")
+		arena.tick(1.35)
+		game.stage_manager._publish()
+		check(not overlay.root.visible and hud.visible, "HP plate enters on cinematic end")
+		check(audio._boss_duck == -4.0, "intro releases into fight mix")
+		arena.abort()
+	check(copy.threat(&"unknown") == "Review required.", "unknown boss has safe fallback copy")

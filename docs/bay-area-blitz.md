@@ -70,3 +70,17 @@ Summer Sunday plays during normal traversal. The intro fades to c64_uptempo_chip
 The MERGE button has a one-way top aligned to its green cap. After boss defeat, either a nearby swipe or a descending landing completes the level. Standing nearby, rising through it, and landing before the boss is defeated do not complete the level.
 
 `tests/platformer_boss.gd` covers encounter entry, inactive boss protection, intro pause, fixed camera, arena boundaries, pursuit, volley creation/damage/pause, defeat cleanup, both music transitions, landing activation, locked-exit rejection and fresh retry. Run without `--headless` for intro/volley/result screenshots under `/tmp/hoppy-boss-*.png`. Pause/resume calls in this harness are issued from a process frame, outside the physics-frame signal, to avoid the engine's documented physics-query ordering issue ([Godot issue #122378](https://github.com/godotengine/godot/issues/122378)).
+
+### Knockout cutaway
+
+All three platformer levels share a 3.5-second knockout cutaway for fatal hits and pit falls.
+The level freezes and its HUD disappears while an enlarged Hoppy plays the knockout sprite
+animation in place, with fixed position, rotation and scale, and sees stars beneath a K.O.
+callout. The current level or boss music keeps playing, ducked by 12 dB,
+through the existing results menu. Retry creates a fresh run; leaving restores menu audio.
+Gameplay inputs cannot skip the cutaway, but can still finish the results fade once it appears.
+
+Run `godot --headless --path hoppys-adventure-arcade --script res://tests/platformer_knockout.gd`
+for all three levels, pit falls, audio continuity, retry and early-exit cleanup. Omit `--headless`
+for screenshots under `/tmp/platformer-ko-*.png`. The `platformer_knockout` and
+`platformer_results` scenarios in `tools/checks/exit_leak.py` cover audio shutdown during both phases.

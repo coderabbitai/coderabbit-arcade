@@ -117,24 +117,50 @@ extends Resource
 ## hazard is still this much travel away (contract §11.1).
 @export var stage_banner_reaction_seconds := 1.0
 
-@export_group("Turn")
-@export var turn_seconds := 2.4
-## Seconds of warning turn_incoming gives before the bend is expected to start (contract §11.4).
-@export var turn_warning_seconds := 3.0
-## Graybox fallback only: the yaw the TurnRig sweeps when the corridor has no set_turn (§11.9).
-@export var turn_yaw_degrees := 90.0
-@export var turn_camera_yaw_degrees := 55.0
-@export var turn_camera_bank_degrees := 12.0
-## Fractions of the bend the camera swing spends ramping to the peak and returning from it; it
-## holds at the peak in between (contract §11.9).
-@export var turn_swing_in_fraction := 0.3
-@export var turn_swing_out_fraction := 0.3
+@export_group("Run intro")
+## The in-engine cinematic before a run (contract 2.7 §11.15). Tests that drive the run from its first
+## tick turn it off on a duplicated config.
+@export var run_intro_enabled := true
+## The full intro on a fresh run from the menu, and the short lead-in on a retry. A boss-checkpoint
+## retry plays no run intro; the boss's own short intro cinematic is its lead-in.
+@export var run_intro_full_seconds := 6.0
+@export var run_intro_short_seconds := 2.2
+## An intro can be skipped once it has played this long; a skip jumps to the last run_intro_skip_tail
+## seconds, so the camera still lands behind Hoppy.
+@export var run_intro_skip_after := 0.3
+@export var run_intro_skip_tail := 0.4
+## run_intro_beat labels and the intro seconds they land at, in order. The last beat is GO: controls
+## (and the corridor's speed) come back on it.
+@export var run_intro_full_beats := PackedStringArray(["title", "3", "2", "1", "GO!"])
+@export var run_intro_full_beat_times := PackedFloat32Array([1.0, 3.0, 3.8, 4.6, 5.4])
+@export var run_intro_short_beats := PackedStringArray(["READY", "GO!"])
+@export var run_intro_short_beat_times := PackedFloat32Array([1.0, 1.6])
 
 @export_group("Boss")
 @export var boss_z := -14.0
 @export var boss_sway_amplitude := 2.4
 @export var boss_sway_period := 3.2
-@export var boss_intro_seconds := 3.0
+## The full boss intro cinematic, played the first time a run meets each boss (contract 2.6 §11.14).
+@export var boss_intro_seconds := 5.0
+## The intro on every later meeting in the run, a checkpoint retry included; played as
+## min(boss_intro_short_seconds, boss_intro_seconds).
+@export var boss_intro_short_seconds := 2.5
+## The defeat cinematic the first time a run beats each boss, and on every later defeat (played as
+## min(short, full)). It holds the boss phase open, so stage_clear waits it out.
+@export var boss_defeat_seconds := 3.6
+@export var boss_defeat_short_seconds := 2.0
+## An intro can be skipped once it has played this long (a defeat never can); a skip jumps to the
+## last boss_cinematic_skip_tail seconds, so the camera return still plays.
+@export var boss_cinematic_skip_after := 0.5
+@export var boss_cinematic_skip_tail := 0.3
+## The corridor eases to this fraction of its speed while a cinematic holds the player.
+@export var boss_cinematic_speed_scale := 0.25
+## The defeat's time factor (boss_time_factor, never Engine.time_scale): a 0.05 hit-stop for
+## boss_hitstop_seconds, then slow-mo from boss_slowmo_factor eased back to 1 over boss_slowmo_seconds.
+@export var boss_hitstop_seconds := 0.12
+@export var boss_slowmo_seconds := 0.8
+@export var boss_slowmo_factor := 0.4
+## The retreat outro only; a defeat holds for its cinematic instead (contract 2.6 §11.14).
 @export var boss_outro_seconds := 1.0
 @export var boss_timeout_seconds := 55.0
 ## HP fractions that open phases 1, 2 and 3 (contract §11.10).

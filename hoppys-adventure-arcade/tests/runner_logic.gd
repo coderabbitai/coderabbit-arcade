@@ -22,8 +22,9 @@ const ARENA_SCENE := "res://scenes/runner/boss/boss_arena.tscn"
 const TICK := 1.0 / 60.0
 ## The timed laser slot with the hitbox off (hazard.gd OFF_STATE).
 const OFF_STATE: StringName = &"off"
-## Contract §11.1 phases, in the order one stage runs through them.
-const STAGE_PHASES: Array[StringName] = [&"run", &"turn", &"boss", &"stage_clear"]
+## Contract §11.1 phases, in the order one stage runs through them. The drain is the tail of `run`
+## and hands straight to `boss` on the tick it ends.
+const STAGE_PHASES: Array[StringName] = [&"run", &"boss", &"stage_clear"]
 
 ## RunnerGame with a countable catch hook: HitManager calls _on_caught(), the facade emits `caught`.
 const FAKE_GAME_SOURCE := "extends \"res://scenes/runner/runner_game.gd\"\nvar caught_calls := 0\nfunc _on_caught() -> void:\n\tcaught_calls += 1\n\tcaught.emit()\n"
@@ -43,9 +44,9 @@ const FAKE_PROJECTILE_SOURCE := "extends Node3D\nvar kind: StringName = &\"proje
 ## window opened after the corridor was already topped up is visible; `spawn_calls` stays exactly
 ## what the drain checks have always read.
 const FAKE_SPAWNER_SOURCE := "extends Node\nvar cleared := 0\nvar calls := 0\nvar spawning := true\nvar spawn_calls: Array = []\nvar clear_road_calls: Array = []\nvar call_log: Array = []\nfunc clear_hazards_in_range() -> int:\n\tcalls += 1\n\treturn cleared\nfunc set_spawning(on: bool) -> void:\n\tspawning = on\n\tspawn_calls.append(on)\n\tcall_log.append(&\"spawning_on\" if on else &\"spawning_off\")\nfunc begin_clear_road(seconds: float) -> void:\n\tclear_road_calls.append(seconds)\n\tcall_log.append(&\"clear_road\")\n"
-## TurnRig / CameraRig stand-in: set_turn is the only hook the StageManager drives (systems §10.5),
-## and shake() is what the catch cinematic reaches for on the camera.
-const FAKE_RIG_SOURCE := "extends Node3D\nvar turns: Array = []\nvar turn_progress := 0.0\nvar turn_direction := 0\nvar shakes: Array = []\nfunc set_turn(progress: float, direction: int) -> void:\n\tturn_progress = progress\n\tturn_direction = direction\n\tturns.append([progress, direction])\nfunc shake(strength: float, _duration := 0.35) -> void:\n\tshakes.append(strength)\n"
+## TurnRig / CameraRig stand-in. The rig is a static mount: nothing in the stage machine rotates it.
+## shake() is what the catch cinematic reaches for on the camera.
+const FAKE_RIG_SOURCE := "extends Node3D\nvar shakes: Array = []\nfunc shake(strength: float, _duration := 0.35) -> void:\n\tshakes.append(strength)\n"
 ## The contract §5.1 visual hooks reset() has to clear, recorded instead of drawn.
 const FAKE_VISUAL_SOURCE := "extends Node3D\nvar auras: Array = []\nvar shields: Array = []\nfunc show_aura(kind: StringName, on: bool) -> void:\n\tauras.append([kind, on])\nfunc show_shield(on: bool) -> void:\n\tshields.append(on)\n"
 ## The contract §5.2 hazard visual hooks, recorded. It extends the real hazard_visual_base.gd, so a
@@ -102,6 +103,9 @@ func check(condition: bool, message: String) -> void:
 func run() -> void:
 	temp_paths.append(scratch_leaderboard)
 	base_config = (load(CONFIG_PATH) as RunConfig).duplicate()
+	# Contract 2.7 §11.15 plays a run intro in front of every facade start_run. This suite is about
+	# the corridor and the boss machine, so the duplicate it hands out turns that intro off.
+	base_config.run_intro_enabled = false
 	hit_manager_script = load("res://scenes/runner/systems/hit_manager.gd") as GDScript
 	score_manager_script = load("res://scenes/runner/systems/score_manager.gd") as GDScript
 	effect_manager_script = load("res://scenes/runner/systems/effect_manager.gd") as GDScript
@@ -160,7 +164,7 @@ func run() -> void:
 	_test_boss_stage_seed()
 	_test_stage_speed_and_floor()
 	_test_leaderboard_migration()
-	_test_turn_camera_profile()
+	_test_camera_rest_pose()
 	_test_boss_intro()
 	_test_boss_signatures()
 	# Last: this is the only section that drives a real chunk_spawner.gd, and the hazards it sweeps
@@ -825,22 +829,46 @@ func _test_config_sanity() -> void:
 		and is_equal_approx(float(c.despawn_z), 12.0), "9: spawner tuning matches contract §7")
 	check(is_equal_approx(c.lane_x(0), -2.0) and is_equal_approx(c.lane_x(1), 0.0)
 		and is_equal_approx(c.lane_x(2), 2.0), "9: lane centres are -2 / 0 / +2")
-	# Contract §11.9/§11.10 v2.1: the corner is announced and then committed to — a 55 deg swing over
-	# 2.4 s, warned 3 s out, and a 3 s boss entrance.
-	check(is_equal_approx(float(c.turn_seconds), 2.4)
-		and is_equal_approx(float(c.turn_warning_seconds), 3.0),
-		"9: turn timing matches contract §11.10 (%.2f s bend, %.2f s warning)"
-			% [float(c.turn_seconds), float(c.turn_warning_seconds)])
-	check(is_equal_approx(float(c.turn_camera_yaw_degrees), 55.0)
-		and is_equal_approx(float(c.turn_camera_bank_degrees), 12.0),
-		"9: the camera swing is %.1f deg yaw / %.1f deg bank, expected 55 / 12"
-			% [float(c.turn_camera_yaw_degrees), float(c.turn_camera_bank_degrees)])
-	check(float(c.turn_swing_in_fraction) > 0.0 and float(c.turn_swing_out_fraction) > 0.0
-		and float(c.turn_swing_in_fraction) + float(c.turn_swing_out_fraction) < 1.0,
-		"9: the swing ramps must leave a hold window, got %.2f + %.2f"
-			% [float(c.turn_swing_in_fraction), float(c.turn_swing_out_fraction)])
-	check(is_equal_approx(float(c.boss_intro_seconds), 3.0),
-		"9: the boss entrance runs %.2f s, expected 3.0" % float(c.boss_intro_seconds))
+	# The corridor stays straight: RunConfig no longer carries a bend, and the drain / camera rest
+	# are what a stage seam is measured against.
+	var bend_exports: Array[String] = []
+	for prop in c.get_script().get_script_property_list():
+		var prop_name := String(prop["name"])
+		if prop_name.begins_with("turn_"):
+			bend_exports.append(prop_name)
+	check(bend_exports.is_empty(), "9: RunConfig still exports %s" % [bend_exports])
+	check(is_equal_approx(float(c.stage_drain_distance), 120.0)
+		and is_equal_approx(float(c.stage_drain_timeout), 6.0)
+		and is_equal_approx(float(c.stage_clear_line_z), 8.0),
+		"9: the drain is %.0f m / %.0f s with the clear line at z %.0f, expected 120 / 6 / 8"
+			% [float(c.stage_drain_distance), float(c.stage_drain_timeout), float(c.stage_clear_line_z)])
+	check(c.camera_position.is_equal_approx(Vector3(0, 4, 8))
+		and c.camera_look_at.is_equal_approx(Vector3(0, 1, -8))
+		and is_equal_approx(float(c.camera_fov), 60.0),
+		"9: the camera rests at %s looking at %s with fov %.0f, expected (0, 4, 8) / (0, 1, -8) / 60"
+			% [c.camera_position, c.camera_look_at, float(c.camera_fov)])
+	# Contract 2.6 §11.14: a 5 s first-meeting intro, 2.5 s repeats, a 3.6 / 2.0 s defeat, and the
+	# 1 s outro left to the retreat alone.
+	check(is_equal_approx(float(c.boss_intro_seconds), 5.0)
+		and is_equal_approx(float(c.boss_intro_short_seconds), 2.5),
+		"9: the boss intro runs %.2f s full / %.2f s short, expected 5.0 / 2.5"
+			% [float(c.boss_intro_seconds), float(c.boss_intro_short_seconds)])
+	check(is_equal_approx(float(c.boss_defeat_seconds), 3.6)
+		and is_equal_approx(float(c.boss_defeat_short_seconds), 2.0)
+		and is_equal_approx(float(c.boss_outro_seconds), 1.0),
+		"9: the defeat runs %.2f / %.2f s and the retreat outro %.2f s, expected 3.6 / 2.0 / 1.0"
+			% [float(c.boss_defeat_seconds), float(c.boss_defeat_short_seconds), float(c.boss_outro_seconds)])
+	check(is_equal_approx(float(c.boss_cinematic_skip_after), 0.5)
+		and is_equal_approx(float(c.boss_cinematic_skip_tail), 0.3)
+		and is_equal_approx(float(c.boss_cinematic_speed_scale), 0.25),
+		"9: the skip opens at %.2f s with a %.2f s tail and the corridor slows to %.2fx, expected 0.5 / 0.3 / 0.25"
+			% [float(c.boss_cinematic_skip_after), float(c.boss_cinematic_skip_tail),
+				float(c.boss_cinematic_speed_scale)])
+	check(is_equal_approx(float(c.boss_hitstop_seconds), 0.12)
+		and is_equal_approx(float(c.boss_slowmo_seconds), 0.8)
+		and is_equal_approx(float(c.boss_slowmo_factor), 0.4),
+		"9: the defeat hit-stop is %.2f s and the slow-mo %.2f s from %.2f, expected 0.12 / 0.8 / 0.4"
+			% [float(c.boss_hitstop_seconds), float(c.boss_slowmo_seconds), float(c.boss_slowmo_factor)])
 	# Contract §11.1/§11.10 v2.3: the stage banner covers the lanes, so the corridor stays clear
 	# across it and still owes the player a reaction once it lifts.
 	check(is_equal_approx(float(c.stage_banner_clear_seconds), 3.5)
@@ -1463,22 +1491,19 @@ func _test_player_reset_clears_visual_state() -> void:
 	player.reset()
 	check(true, "16: reset() survives a player with no visual")
 
-# --- 17. The stage machine: run -> turn -> boss -> stage_clear -> run (systems spec §10.1) ---
+# --- 17. The stage machine: run -> boss -> stage_clear -> run (systems spec §10.1) ---
 
 ## One whole lap of the phase machine on a shortened stage, driven tick by tick: the distance target
-## and the drain gate, the silent timeout clear, the turn signals and the rigs coming back to zero,
-## `run_clock` freezing everywhere but `run`, and stage 2 opening with the next boss's name.
+## and the drain gate, the silent timeout clear, the drain handing straight into the boss, the rigs
+## staying square, `run_clock` freezing everywhere but `run`, and stage 2 opening with the next
+## boss's name.
 func _test_stage_machine() -> void:
-	# turn_warning_seconds 1.0 at the 12 m/s base speed is a 12 m lead, well inside the 20 m drain, so
-	# this rig exercises the warning landing *after* the drain gate rather than on the same tick.
 	var rig := _stage_rig({
 		"stage_base_distance": 60.0,
 		"stage_distance_step": 20.0,
 		"stage_drain_distance": 20.0,
 		"stage_drain_timeout": 0.5,
 		"stage_clear_seconds": 0.5,
-		"turn_seconds": 0.4,
-		"turn_warning_seconds": 1.0
 	})
 	var game: Node3D = rig["game"]
 	var stage: Node = rig["stage"]
@@ -1504,8 +1529,10 @@ func _test_stage_machine() -> void:
 	check(events["phase_changed"] == [&"run"], "17: idle -> run is the only phase change so far, got %s"
 		% [events["phase_changed"]])
 	check(spawner.spawn_calls == [true], "17: opening a stage turns the spawner on, got %s" % [spawner.spawn_calls])
-	check(int(game.next_turn_direction) == 0,
-		"17: no turn is pending at the top of a stage, got %d" % int(game.next_turn_direction))
+	check(turn_rig.rotation.is_equal_approx(Vector3.ZERO) and camera.rotation.is_equal_approx(Vector3.ZERO),
+		"17: both rigs open square")
+	_check_no_turn_fields(game, "17")
+	_check_no_turn_fields(stage, "17 stage")
 
 	# The drain gate: the spawner stops a drain's worth of metres before the target.
 	_tick(drivers, _ticks(1.0))
@@ -1518,16 +1545,12 @@ func _test_stage_machine() -> void:
 		% float(stage.stage_distance))
 	check(spawner.spawn_calls == [true, false], "17: the drain gate fires once, got %s" % [spawner.spawn_calls])
 	check(float(game.run_clock) > clock_before_drain, "17: the drain is still part of the run clock")
-	# The direction is drawn at the drain gate, a warning's worth of metres before it is announced.
-	var pending := int(game.next_turn_direction)
-	check(pending == -1 or pending == 1,
-		"17: the drain gate picks the seam's direction, got %d" % pending)
-	check(events["turn_incoming"].is_empty(),
-		"17: the warning waits for its 12 m lead, %.1f m in with 60 m asked for and %s"
-			% [float(stage.stage_distance), events["turn_incoming"]])
+	check(turn_rig.rotation.is_equal_approx(Vector3.ZERO) and camera.rotation.is_equal_approx(Vector3.ZERO),
+		"17: the rigs stay square through the drain")
 
 	# A blocking hazard short of the clear line holds the stage open until the drain times out, and
-	# then it is taken out silently: no dodge, no bonus, no hazard_cleared.
+	# then it is taken out silently: no dodge, no bonus, no hazard_cleared. With no arena mounted,
+	# the boss phase is the documented fallback and ends on the same tick the drain does.
 	var straggler := _hazard(&"pr_backlog_low")
 	straggler.add_to_group(&"runner_hazards")
 	straggler.position = Vector3(0.0, 0.0, 4.0)
@@ -1536,57 +1559,22 @@ func _test_stage_machine() -> void:
 	_tick_stage(drivers, game, _ticks(0.2))
 	check(stage.phase == &"run", "17: a blocking hazard inside the clear line holds the run open")
 	check(int(straggler.cleared) == 0, "17: the straggler is left alone while the drain still has time")
+	check(events["bonus_awarded"].is_empty(), "17: a silent drain clear pays no bonus")
 	_tick_stage(drivers, game, _ticks(0.45))
 	check(int(straggler.cleared) == 1, "17: the drain timeout clears the straggler exactly once, got %d"
 		% int(straggler.cleared))
-	check(stage.phase == &"turn", "17: the drain timeout moves the stage on, got %s" % stage.phase)
-	check(events["bonus_awarded"].is_empty(), "17: a silent drain clear pays no bonus")
-
-	# The turn: announced once, one signal each way, both rigs swept and both back at square.
-	check(events["turn_started"].size() == 1, "17: turn_started fires once, got %d"
-		% events["turn_started"].size())
-	var direction := int(events["turn_started"][0][0])
-	check(direction == -1 or direction == 1, "17: the turn direction is -1 or +1, got %d" % direction)
-	check(is_equal_approx(float(events["turn_started"][0][1]), 0.4),
-		"17: turn_started carries turn_seconds, got %.2f" % float(events["turn_started"][0][1]))
-	check(events["turn_incoming"].size() == 1, "17: turn_incoming fires once per seam, got %d"
-		% events["turn_incoming"].size())
-	check(events["turn_log"] == [&"incoming", &"started"],
-		"17: the corner is announced before it is taken, got %s" % [events["turn_log"]])
-	check(int(events["turn_incoming"][0][0]) == direction and pending == direction,
-		"17: the warning, the pending direction and the bend disagree: %d / %d / %d"
-			% [int(events["turn_incoming"][0][0]), pending, direction])
-	var lead := float(events["turn_incoming"][0][1])
-	check(lead >= 0.0 and lead <= float(game.config.turn_warning_seconds) + 0.5,
-		"17: turn_incoming promised %.3f s, expected 0 .. %.1f"
-			% [lead, float(game.config.turn_warning_seconds) + 0.5])
-	check(int(game.next_turn_direction) == direction,
-		"17: next_turn_direction holds through the bend, got %d" % int(game.next_turn_direction))
-	var clock_at_turn := float(game.run_clock)
-	var turns_before: int = turn_rig.turns.size()
-	_tick_stage(drivers, game, _ticks(0.2))
-	check(turn_rig.turns.size() > turns_before and camera.turns.size() > turns_before,
-		"17: both rigs are driven every tick of the bend")
-	check(float(turn_rig.turn_progress) > 0.0 and int(turn_rig.turn_direction) == direction,
-		"17: the rig sweeps in the direction the turn announced")
-	check(is_equal_approx(float(game.run_clock), clock_at_turn),
-		"17: run_clock is frozen through the turn, %.3f -> %.3f" % [clock_at_turn, float(game.run_clock)])
-	check(bool(spawner.spawning) == false, "17: nothing is placed during the bend")
-	_tick_stage(drivers, game, _ticks(0.3))
-	check(events["turn_finished"] == 1, "17: turn_finished fires once, got %d" % events["turn_finished"])
-	check(is_zero_approx(float(turn_rig.turn_progress)) and int(turn_rig.turn_direction) == 0,
-		"17: the turn rig ends square, got %.3f / %d" % [float(turn_rig.turn_progress), int(turn_rig.turn_direction)])
-	check(is_zero_approx(float(camera.turn_progress)) and int(camera.turn_direction) == 0,
-		"17: the camera ends square, got %.3f / %d" % [float(camera.turn_progress), int(camera.turn_direction)])
-	check(int(game.next_turn_direction) == 0,
-		"17: no turn is pending once the bend is over, got %d" % int(game.next_turn_direction))
-	check(int(stage.turns_taken) == 1, "17: the turn is counted for the result, got %d" % int(stage.turns_taken))
+	check(stage.phase == &"stage_clear", "17: the drain timeout hands straight through the boss fallback, got %s"
+		% stage.phase)
+	check(events["phase_changed"] == [&"run", &"boss", &"stage_clear"],
+		"17: the phases go round in order, got %s" % [events["phase_changed"]])
+	check(not bool(spawner.spawning) and spawner.spawn_calls == [true, false],
+		"17: the spawner stays off once the drain hands off, got %s" % [spawner.spawn_calls])
+	check(turn_rig.rotation.is_equal_approx(Vector3.ZERO) and camera.rotation.is_equal_approx(Vector3.ZERO),
+		"17: the rigs are still square once the drain has handed off")
 
 	# No arena is mounted here, so the boss phase is the documented fallback: it ends on the tick it
 	# starts, no boss_retreated goes out, and the stage clears anyway.
 	check(stage.phase == &"stage_clear", "17: a missing arena clears the stage straight away, got %s" % stage.phase)
-	check(events["phase_changed"] == [&"run", &"turn", &"boss", &"stage_clear"],
-		"17: the phases go round in order, got %s" % [events["phase_changed"]])
 	check(events["boss_retreated"].is_empty() and events["boss_defeated"].is_empty(),
 		"17: a fallback boss phase resolves no fight")
 	check(events["stage_cleared"].size() == 1 and int(events["stage_cleared"][0][0]) == 1,
@@ -1729,7 +1717,8 @@ func _test_escalation() -> void:
 # --- 19 / 20. Boss HP, phases and tool damage (systems spec §10.3) ---
 
 func _test_boss_fight() -> void:
-	var rig := _boss_rig({"boss_intro_seconds": 0.0, "boss_outro_seconds": 0.2})
+	# Contract 2.6 §11.14: a kill holds the fight for its defeat cinematic, shortened here to 0.2 s.
+	var rig := _boss_rig({"boss_intro_seconds": 0.0, "boss_defeat_seconds": 0.2, "boss_outro_seconds": 0.0})
 	var game: Node3D = rig["game"]
 	var arena: Node3D = rig["arena"]
 	var score: Node = rig["score"]
@@ -1785,8 +1774,11 @@ func _test_boss_fight() -> void:
 	check(_bonus_reasons(events) == [&"tool", &"tool", &"tool", &"tool", &"tool", &"boss_kill"],
 		"19: the bonus reasons are five tools and a kill, got %s" % [_bonus_reasons(events)])
 
-	# The outro holds the fight open so the visual gets its play_defeat time.
+	# The defeat cinematic holds the fight open so the visual gets its play_defeat time.
 	check(not bool(arena.finished), "19: the fight is not finished until the outro is over")
+	check(StringName(arena.cinematic_mode) == &"defeat_full" and is_equal_approx(float(arena.cinematic_seconds), 0.2),
+		"19: the kill opens a %.2f s %s cinematic, expected a 0.20 s defeat_full"
+			% [float(arena.cinematic_seconds), arena.cinematic_mode])
 	arena.tick(0.1)
 	check(not bool(arena.finished), "19: the outro is still running at 0.1 s")
 	arena.tick(0.15)
@@ -1800,7 +1792,7 @@ func _test_boss_fight() -> void:
 	_free_rig(rig)
 
 	# Resisted phases: the tool is still collected and still paid for, it just deals nothing.
-	var hydra_rig := _boss_rig({"boss_intro_seconds": 0.0, "boss_outro_seconds": 0.0})
+	var hydra_rig := _boss_rig({"boss_intro_seconds": 0.0, "boss_defeat_seconds": 0.0, "boss_outro_seconds": 0.0})
 	var hydra: Node3D = hydra_rig["arena"]
 	var hydra_events: Dictionary = hydra_rig["events"]
 	var hydra_score: Node = hydra_rig["score"]
@@ -1832,6 +1824,7 @@ func _test_boss_fight() -> void:
 func _test_boss_timeout() -> void:
 	var rig := _boss_rig({
 		"boss_intro_seconds": 0.0,
+		"boss_defeat_seconds": 0.0,
 		"boss_outro_seconds": 0.0,
 		"boss_timeout_seconds": 1.0
 	})
@@ -1945,8 +1938,8 @@ func _test_caught_mid_boss() -> void:
 		"stage_base_distance": 12.0,
 		"stage_drain_distance": 6.0,
 		"stage_drain_timeout": 0.2,
-		"turn_seconds": 0.2,
 		"boss_intro_seconds": 0.0,
+		"boss_defeat_seconds": 0.0,
 		"boss_outro_seconds": 0.0,
 		"stage_clear_seconds": 0.5
 	}, true, true)
@@ -1999,8 +1992,7 @@ func _test_caught_mid_boss() -> void:
 	check(game.state == &"finished", "24: the run ends finished, got %s" % game.state)
 	check(int(result.get("stage_reached", 0)) == 1, "24: the result reached stage %s"
 		% result.get("stage_reached", "<missing>"))
-	check(int(result.get("turns_taken", 0)) == 1, "24: the result counted %s turns"
-		% result.get("turns_taken", "<missing>"))
+	_check_no_turn_keys(result, "24 result")
 	check(int(result.get("tools_used", 0)) == 1, "24: the result counted %s tools"
 		% result.get("tools_used", "<missing>"))
 	check(int(result.get("boss_damage_dealt", 0)) == 10, "24: the result carries %s boss damage"
@@ -2018,8 +2010,8 @@ func _checkpoint_overrides() -> Dictionary:
 		"stage_base_distance": 12.0,
 		"stage_drain_distance": 6.0,
 		"stage_drain_timeout": 0.2,
-		"turn_seconds": 0.2,
 		"boss_intro_seconds": 0.0,
+		"boss_defeat_seconds": 0.0,
 		"boss_outro_seconds": 0.0,
 		"stage_clear_seconds": 0.5
 	}
@@ -2079,12 +2071,10 @@ func _test_boss_checkpoint() -> void:
 	check(not checkpoint.is_empty(), "24b: boss entry took a checkpoint")
 	check(int(checkpoint.get("stage_index", 0)) == 1 and int(checkpoint.get("seed", 0)) == seed,
 		"24b: the checkpoint is stage 1 of seed %d, got %s" % [seed, checkpoint])
-	check(int(checkpoint.get("turns_taken", 0)) == 1, "24b: the checkpoint counts the bend just taken")
+	_check_no_turn_keys(checkpoint, "24b checkpoint")
 	check(absf(float(checkpoint.get("run_clock", -1.0)) - float(game.run_clock)) < 0.0001,
 		"24b: the checkpoint holds the frozen run_clock")
 	check(float(checkpoint.get("score_exact", 0.0)) > 0.0, "24b: the checkpoint carries the score so far")
-	check(int(checkpoint.get("next_turn_direction", 0)) in [-1, 1],
-		"24b: the checkpoint remembers the bend's direction, got %s" % checkpoint.get("next_turn_direction"))
 	for key in ["score", "multiplier", "best_multiplier", "bonus_total", "elapsed", "distance",
 			"hazards_dodged", "hazards_blasted_total", "stages_cleared", "bosses_defeated",
 			"bosses_escaped", "tools_used", "boss_damage_dealt", "power_ups", "hits_taken", "recoveries",
@@ -2115,7 +2105,7 @@ func _test_boss_checkpoint() -> void:
 	check(_pending_checkpoint() == checkpoint, "24b: a second action mid-route keeps the pending checkpoint")
 	_free_rig(rig)
 
-	# --- retry_boss reloads into turn -> boss with the run intact and full HP, twice over ---
+	# --- retry_boss reloads straight into the boss with the run intact and full HP, twice over ---
 	var previous_run_id := first_run_id
 	for attempt in [1, 2]:
 		var tag := "24b retry %d" % attempt
@@ -2128,7 +2118,7 @@ func _test_boss_checkpoint() -> void:
 		check(_pending_checkpoint().is_empty(), "%s: start_run consumed the pending checkpoint" % tag)
 		check(bool(game.checkpoint_retry), "%s: the run knows it is a checkpoint retry" % tag)
 		check(game.seed == seed, "%s: the retry keeps seed %d, got %d" % [tag, seed, game.seed])
-		check(stage.phase == &"turn", "%s: the retry opens on the turn lead-in, got %s" % [tag, stage.phase])
+		check(stage.phase == &"boss", "%s: the retry opens in the boss phase, got %s" % [tag, stage.phase])
 		check(int(game.stage_index) == 1, "%s: the retry is on stage %d" % [tag, int(game.stage_index)])
 		check(int(game.score) == int(checkpoint["score"]) or int(game.score) == floori(float(checkpoint["score_exact"])),
 			"%s: the score is back at %d, got %d" % [tag, int(checkpoint["score"]), int(game.score)])
@@ -2141,8 +2131,6 @@ func _test_boss_checkpoint() -> void:
 			"%s: elapsed and distance are restored" % tag)
 		check(int(game.hp) == int(game.config.max_hp) and int(hits.hp) == int(game.config.max_hp),
 			"%s: the retry starts at full HP, got %d / %d" % [tag, int(game.hp), int(hits.hp)])
-		check(int(game.next_turn_direction) == int(checkpoint["next_turn_direction"]),
-			"%s: the lead-in takes the same bend" % tag)
 		check(int(rig["effects"].power_ups_collected) == int(checkpoint["power_ups"])
 			and int(hits.hits_taken) == int(checkpoint["hits_taken"])
 			and int(hits.recoveries) == int(checkpoint["recoveries"])
@@ -2150,25 +2138,28 @@ func _test_boss_checkpoint() -> void:
 			"%s: power-ups, hits, recoveries and blocks are restored" % tag)
 		check(float(rig["speed"].max_speed_reached) >= float(checkpoint["max_speed_reached"]) - 0.0001,
 			"%s: the top speed carries over, got %.3f" % [tag, float(rig["speed"].max_speed_reached)])
-		check(events["stage_started"].size() == 1 and events["turn_incoming"].size() == 1
-			and events["turn_started"].size() == 1, "%s: one stage_started, turn_incoming and turn_started" % tag)
-		check(game.boss_checkpoint.is_empty(), "%s: no checkpoint until the boss is entered again" % tag)
-		check(_drive_to_phase(rig, &"boss", 5.0), "%s: the lead-in reached the boss, got %s" % [tag, stage.phase])
-		check(events["boss_spawned"].size() == 1, "%s: the boss fight really started" % tag)
+		check(events["stage_started"].size() == 1, "%s: stage_started fired %d times, expected one"
+			% [tag, events["stage_started"].size()])
+		check(events["boss_spawned"].size() == 1, "%s: the boss fight opened with the phase, got %d"
+			% [tag, events["boss_spawned"].size()])
 		var again: Dictionary = game.boss_checkpoint
-		check(not again.is_empty(), "%s: boss entry took a fresh checkpoint" % tag)
-		check(int(again.get("stage_index", 0)) == 1 and int(again.get("turns_taken", 0)) == 1,
-			"%s: the fresh checkpoint is the same stage and bend count, got %s" % [tag, again])
+		check(not again.is_empty(), "%s: boss entry re-took the checkpoint" % tag)
+		_check_no_turn_keys(again, tag)
+		check(int(again.get("stage_index", 0)) == 1,
+			"%s: the fresh checkpoint is the same stage, got %s" % [tag, again])
 		check(absf(float(again.get("run_clock", -1.0)) - float(checkpoint["run_clock"])) < 0.0001,
-			"%s: run_clock stayed frozen through the lead-in" % tag)
-		check(float(again.get("score_exact", 0.0)) >= float(checkpoint["score_exact"]),
-			"%s: the score only grew over the lead-in" % tag)
+			"%s: run_clock stayed frozen, %.4f vs %.4f"
+				% [tag, float(again.get("run_clock", -1.0)), float(checkpoint["run_clock"])])
+		check(is_equal_approx(float(again.get("score_exact", 0.0)), float(checkpoint["score_exact"])),
+			"%s: the score did not grow before the fight, %.3f vs %.3f"
+				% [tag, float(again.get("score_exact", 0.0)), float(checkpoint["score_exact"])])
 		result = _catch_and_finish(rig)
 		check(bool(result.get("checkpoint_retry", false)), "%s: the result is flagged checkpoint_retry" % tag)
 		check(String(result.get("run_id", "")) != previous_run_id and not String(result.get("run_id", "")).is_empty(),
 			"%s: the retry wrote under a fresh run_id" % tag)
-		check(int(result.get("stage_reached", 0)) == 1 and int(result.get("turns_taken", 0)) == 1,
-			"%s: the result tallies stage 1 and one turn" % tag)
+		_check_no_turn_keys(result, tag + " result")
+		check(int(result.get("stage_reached", 0)) == 1,
+			"%s: the result tallies stage %s" % [tag, result.get("stage_reached", "<missing>")])
 		check(int(result.get("score", 0)) >= int(checkpoint["score"]), "%s: the score continued" % tag)
 		check(int(result.get("power_ups", -1)) == int(checkpoint["power_ups"])
 			and int(result.get("hits_taken", -1)) == int(checkpoint["hits_taken"]) + 2
@@ -2245,7 +2236,7 @@ func _test_boss_checkpoint() -> void:
 ## The fight seed is a function of the run seed and the stage alone (contract §11.13): stage 2 reached
 ## after a whole stage-1 fight draws the same lane and tool streams as a checkpoint retry into stage 2.
 func _test_boss_stage_seed() -> void:
-	var overrides := {"boss_intro_seconds": 0.0, "boss_outro_seconds": 0.0}
+	var overrides := {"boss_intro_seconds": 0.0, "boss_defeat_seconds": 0.0, "boss_outro_seconds": 0.0}
 	var seed := 4242
 	var played := _boss_rig(overrides)
 	var retried := _boss_rig(overrides)
@@ -2408,69 +2399,41 @@ func _test_leaderboard_migration() -> void:
 	check(RunnerLeaderboard.SUPPORTED_VERSIONS == [1, 2],
 		"26: exactly versions 1 and 2 are readable, got %s" % [RunnerLeaderboard.SUPPORTED_VERSIONS])
 
-# --- 27. The camera turn swing is ramp-hold-return, not a wave (contract §11.9, systems §10.5) ---
+# --- 27. The camera stays on its rest pose except during a boss shot (systems §10.5) ---
 
-func _test_turn_camera_profile() -> void:
-	# The real camera_rig.gd, kept out of the tree on purpose: the profile is pure, and _ready() would
-	# go looking for a $Camera this bare Node3D does not have.
+func _test_camera_rest_pose() -> void:
+	# @onready $Camera only assigns inside the tree, and _physics_process is what writes the pose.
+	var game := _tree_game()
 	var rig := Node3D.new()
 	rig.set_script(camera_rig_script)
-	rig.config = base_config.duplicate()
-	var rise := float(rig.config.turn_swing_in_fraction)
-	var fall := float(rig.config.turn_swing_out_fraction)
-
-	check(is_zero_approx(rig.turn_swing_profile(0.0)) and is_zero_approx(rig.turn_swing_profile(1.0)),
-		"27: the swing is zero at both ends, got %.4f / %.4f"
-			% [rig.turn_swing_profile(0.0), rig.turn_swing_profile(1.0)])
-	# Out of range on either side is the same rest pose, so a caller that overshoots cannot displace
-	# the camera either.
-	check(is_zero_approx(rig.turn_swing_profile(-0.5)) and is_zero_approx(rig.turn_swing_profile(1.5)),
-		"27: a progress outside 0..1 still rests at zero")
-
-	# The hold: at the peak from the end of the ramp to the start of the return, which is where the
-	# corner reads as "you are turning LEFT" rather than as a wave through the middle.
-	for p in [rise, 0.5, 1.0 - fall]:
-		check(is_equal_approx(rig.turn_swing_profile(p), 1.0),
-			"27: the swing holds at the peak at p = %.2f, got %.4f" % [p, rig.turn_swing_profile(p)])
-	check(rig.turn_swing_profile(rise * 0.5) < 1.0 and rig.turn_swing_profile(1.0 - fall * 0.5) < 1.0,
-		"27: the ramps are below the peak, got %.4f / %.4f"
-			% [rig.turn_swing_profile(rise * 0.5), rig.turn_swing_profile(1.0 - fall * 0.5)])
-
-	# Monotone in and monotone out, sampled across each ramp.
-	var steps := 24
-	var previous := float(rig.turn_swing_profile(0.0))
-	var climbing := true
-	for i in range(1, steps + 1):
-		var value := float(rig.turn_swing_profile(rise * float(i) / float(steps)))
-		if value < previous - 0.0001:
-			climbing = false
-		previous = value
-	check(climbing, "27: the swing must never fall while it is ramping in")
-	previous = float(rig.turn_swing_profile(1.0 - fall))
-	var falling := true
-	for i in range(1, steps + 1):
-		var value := float(rig.turn_swing_profile(1.0 - fall + fall * float(i) / float(steps)))
-		if value > previous + 0.0001:
-			falling = false
-		previous = value
-	check(falling, "27: the swing must never rise while it is returning")
-
-	# The direction is a plain sign on top of the profile, and set_turn clamps both inputs.
-	rig.set_turn(1.4, -3)
-	check(is_equal_approx(float(rig.turn_progress), 1.0) and int(rig.turn_direction) == -1,
-		"27: set_turn clamps to 0..1 and to a sign, got %.2f / %d"
-			% [float(rig.turn_progress), int(rig.turn_direction)])
-	# A config with no hold window left still answers zero at the ends: the fractions are scaled to
-	# fit rather than allowed to overlap into a step.
-	var crowded: RunConfig = base_config.duplicate()
-	crowded.turn_swing_in_fraction = 0.9
-	crowded.turn_swing_out_fraction = 0.9
-	rig.config = crowded
-	check(is_zero_approx(rig.turn_swing_profile(0.0)) and is_zero_approx(rig.turn_swing_profile(1.0))
-		and is_equal_approx(rig.turn_swing_profile(0.5), 1.0),
-		"27: overlapping ramps are scaled to meet at the middle, got %.4f / %.4f / %.4f"
-			% [rig.turn_swing_profile(0.0), rig.turn_swing_profile(0.5), rig.turn_swing_profile(1.0)])
-	rig.free()
+	var lens := Camera3D.new()
+	lens.name = "Camera"
+	rig.add_child(lens)
+	root.add_child(rig)
+	junk.append(rig)
+	rig.set_physics_process(false)
+	rig.setup(game)
+	var rest: Vector3 = rig._base_rotation
+	var stayed := true
+	for _i in 30:
+		rig._physics_process(TICK)
+		if not rig.camera.rotation.is_equal_approx(rest):
+			stayed = false
+	check(stayed, "27: the camera left its rest pose with no boss shot, got %s vs %s"
+		% [rig.camera.rotation, rest])
+	rig.set_boss_cinematic(0.5, &"intro_full", Vector3(0.0, 2.0, -30.0))
+	rig._physics_process(TICK)
+	check(not rig.camera.rotation.is_equal_approx(rest),
+		"27: a mid intro_full shot leaves the rest pose")
+	for sample in [0.0, 1.0]:
+		rig.set_boss_cinematic(sample, &"intro_full", Vector3(0.0, 2.0, -30.0))
+		rig._physics_process(TICK)
+		check(rig.camera.rotation.is_equal_approx(rest),
+			"27: intro_full at p=%.1f returns to the rest pose, got %s" % [sample, rig.camera.rotation])
+	rig.set_boss_cinematic(0.5, &"", Vector3.ZERO)
+	rig._physics_process(TICK)
+	check(rig.camera.rotation.is_equal_approx(rest),
+		"27: an empty boss mode stays on the rest pose, got %s" % rig.camera.rotation)
 
 # --- 28. The boss entrance: boss_intro opens the fight, boss_spawned follows (contract §11.4) ---
 
@@ -2480,8 +2443,12 @@ func _test_boss_intro() -> void:
 	var arena: Node3D = rig["arena"]
 	var events: Dictionary = rig["events"]
 	arena.start(1)
-	check(events["boss_log"] == [&"intro", &"spawned"],
-		"28: the entrance card precedes the boss, got %s" % [events["boss_log"]])
+	# Contract 2.6 §11.14: the intro cinematic opens between the card and the boss.
+	check(events["boss_log"] == [&"intro", &"cinematic", &"spawned"],
+		"28: the entrance card and its cinematic precede the boss, got %s" % [events["boss_log"]])
+	check(events["boss_cinematic"].size() == 1 and StringName(events["boss_cinematic"][0][1]) == &"intro_full"
+		and is_equal_approx(float(events["boss_cinematic"][0][2]), intro_seconds),
+		"28: a first meeting plays the full %.1f s intro, got %s" % [intro_seconds, events["boss_cinematic"]])
 	check(events["boss_intro"].size() == 1, "28: boss_intro fires once per fight, got %d"
 		% events["boss_intro"].size())
 	check(StringName(events["boss_intro"][0][0]) == &"flaky_test_swarm"
@@ -2503,8 +2470,8 @@ func _test_boss_intro() -> void:
 		arena.tick(TICK)
 	check(not events["boss_attack_telegraph"].is_empty(),
 		"28: the fight never opened fire after the %.1f s intro" % intro_seconds)
-	check(events["boss_log"] == [&"intro", &"spawned"],
-		"28: neither entrance signal repeats, got %s" % [events["boss_log"]])
+	check(events["boss_log"] == [&"intro", &"cinematic", &"spawned", &"cinematic_ended"],
+		"28: no entrance signal repeats and the intro ends once, got %s" % [events["boss_log"]])
 	_free_rig(rig)
 
 # --- 30. Boss signature attacks: beat data, shot motion, live encounter (contract 2.4 §11.6) ---
@@ -2901,8 +2868,6 @@ func _check_banner_window_gate() -> void:
 		"stage_drain_distance": 15.0,
 		"stage_drain_timeout": 0.2,
 		"stage_clear_seconds": 0.2,
-		"turn_seconds": 0.2,
-		"turn_warning_seconds": 0.5
 	})
 	var game: Node3D = rig["game"]
 	var stage: Node = rig["stage"]
@@ -2932,7 +2897,7 @@ func _check_banner_window_gate() -> void:
 	_free_rig(rig)
 
 ## The spawner end, on the corridor a stage seam actually leaves behind: no chunks and a frontier
-## that scrolled past the player while the turn, the boss and the clear card ran.
+## that scrolled past the player while the boss and the clear card ran.
 func _check_banner_window_placement() -> void:
 	for stale in [8.0, -3.0]:
 		var rig := _spawner_rig({})
@@ -3445,7 +3410,7 @@ func _tree_game(script: GDScript = null) -> Node3D:
 	return game
 
 ## A live StageManager with the collaborators it drives: the v1 systems, a spawner that records the
-## drain gate, and TurnRig / CameraRig stand-ins that record every set_turn. `with_arena` mounts a
+## drain gate, and TurnRig / CameraRig stand-ins that stay square. `with_arena` mounts a
 ## real boss_arena.tscn where contract §11.3 puts it; `real_catch` swaps in the facade that runs the
 ## catch cinematic instead of only counting it, and `script` overrides the facade script outright.
 ## The StageManager sits in the tree (its drain scans runner_hazards through get_tree()) with its
@@ -3596,21 +3561,38 @@ func _tick_stage(nodes: Array, game: Node3D, count: int) -> void:
 		for node in nodes:
 			node._physics_process(TICK)
 
+## A record must not carry a bend tally. The corridor no longer counts one.
+func _check_no_turn_keys(record: Dictionary, tag: String) -> void:
+	for key in record:
+		check(not String(key).contains("turn"), "%s still records %s" % [tag, key])
+
+## The facade must not still expose a bend signal or property. `turn_rig` is the static mount and
+## stays. The script chain is walked because a test facade extends runner_game.gd.
+func _check_no_turn_fields(node: Object, tag: String) -> void:
+	if node is Node:
+		for info in (node as Node).get_signal_list():
+			var signal_name := String(info["name"])
+			check(not signal_name.contains("turn"), "%s still signals %s" % [tag, signal_name])
+	var script: Script = node.get_script()
+	while script != null:
+		for prop in script.get_script_property_list():
+			var prop_name := String(prop["name"])
+			if prop_name == "turn_rig":
+				continue
+			check(not prop_name.contains("turn"), "%s still exposes %s" % [tag, prop_name])
+		script = script.get_base_script()
+
 ## Record every contract §11.4 signal the stage machine and the boss encounter emit.
 func _watch_stage(game: Node) -> Dictionary:
 	var events := {
 		"phase_changed": [],
 		"stage_started": [],
 		"stage_cleared": [],
-		"turn_incoming": [],
-		"turn_started": [],
-		"turn_finished": 0,
-		## The order the seam's two turn signals actually arrived in, so "the warning came first" is
-		## proven rather than inferred from two independent counts (contract §11.4).
-		"turn_log": [],
 		"boss_intro": [],
-		## Same idea for the fight: boss_intro must precede boss_spawned.
+		## Same idea for the fight: boss_intro must precede boss_spawned, with the contract 2.6
+		## §11.14 cinematic between them.
 		"boss_log": [],
+		"boss_cinematic": [],
 		"boss_spawned": [],
 		"boss_health_changed": [],
 		"boss_phase_changed": [],
@@ -3626,20 +3608,17 @@ func _watch_stage(game: Node) -> Dictionary:
 		events["stage_started"].append([index, name, speed]))
 	game.stage_cleared.connect(func(index: int, bonus: int) -> void:
 		events["stage_cleared"].append([index, bonus]))
-	game.turn_incoming.connect(func(direction: int, seconds: float) -> void:
-		events["turn_incoming"].append([direction, seconds])
-		events["turn_log"].append(&"incoming"))
-	game.turn_started.connect(func(direction: int, seconds: float) -> void:
-		events["turn_started"].append([direction, seconds])
-		events["turn_log"].append(&"started"))
-	game.turn_finished.connect(func() -> void:
-		events["turn_finished"] += 1)
 	game.boss_intro.connect(func(kind: StringName, name: String, seconds: float) -> void:
 		events["boss_intro"].append([kind, name, seconds])
 		events["boss_log"].append(&"intro"))
 	game.boss_spawned.connect(func(kind: StringName, hp: int) -> void:
 		events["boss_spawned"].append([kind, hp])
 		events["boss_log"].append(&"spawned"))
+	game.boss_cinematic.connect(func(kind: StringName, mode: StringName, seconds: float) -> void:
+		events["boss_cinematic"].append([kind, mode, seconds])
+		events["boss_log"].append(&"cinematic"))
+	game.boss_cinematic_ended.connect(func(_mode: StringName) -> void:
+		events["boss_log"].append(&"cinematic_ended"))
 	game.boss_health_changed.connect(func(hp: int, max_hp: int) -> void:
 		events["boss_health_changed"].append([hp, max_hp]))
 	game.boss_phase_changed.connect(func(phase: int) -> void:

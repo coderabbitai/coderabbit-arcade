@@ -26,16 +26,17 @@ const PAUSE_SECONDS := 1.0
 ## Wall-clock ceiling for any wait, so a stuck run fails instead of hanging.
 const WALL_TIMEOUT := 40.0
 ## Systems spec §10.8 shortened stage: 260 m of RUN phase instead of the authored 900, so a whole
-## seam (run -> turn -> boss -> stage clear -> run) fits inside the smoke run.
+## seam (run -> boss -> stage clear -> run) fits inside the smoke run.
 const STAGE_DISTANCE := 260.0
 ## The stage-1 boss the shortened config opens on: its authored 100 hp times boss_hp_scale, which
 ## the smoke config drops to BOSS_HP_SCALE so the fight fits inside the wall clock.
 const BOSS_HP_SCALE := 0.4
 const SMOKE_BOSS_HP := 40
 ## Wall-clock ceilings for the two v2 phases. The stage seam is the long one: a 260 m run, the
-## drain, the bend, the 3 s boss entrance, the fight and the card. Every wait below carries its own
-## copy of this budget, and at TIME_SCALE 6 it buys 240 game seconds each — so the v2.1 entrance
-## (boss_intro_seconds 1.2 -> 3.0, half a wall-clock second) needs no more room here.
+## drain, the 5 s boss intro, the fight, the 3.6 s defeat and the card. Every wait below
+## carries its own copy of this budget, and at TIME_SCALE 6 it buys 240 game seconds each — so the
+## contract 2.6 cinematics (8.6 game seconds, under a wall-clock second and a half) need no more
+## room here.
 const STAGE_WALL_TIMEOUT := 40.0
 const BOSS_WALL_TIMEOUT := 20.0
 
@@ -134,11 +135,13 @@ func _smoke_config() -> RunConfig:
 	config.stage_base_distance = STAGE_DISTANCE
 	# Stage 1 is cycle 0, so the scale alone decides the fight: 100 hp x 0.4 = SMOKE_BOSS_HP.
 	config.boss_hp_scale = BOSS_HP_SCALE
+	# The intro is its own suite. A smoke run has to open in `run` on the first tick.
+	config.run_intro_enabled = false
 	return config
 
 ## Systems spec §10.8: one whole stage seam under the shortened config. Stage 1 runs its 260 m,
-## drains, bends into the turn, spawns its boss, is brought down by tools, clears and hands over to
-## stage 2 — all inside a bounded wall clock, with the fair bot taking no hit at all on the way.
+## drains straight into its boss, is brought down by tools, clears and hands over to stage 2 — all
+## inside a bounded wall clock, with the fair bot taking no hit at all on the way.
 func _stage_phase() -> void:
 	game.set_autopilot(true)
 	if game.autopilot != null and game.autopilot.has_method("set_mode"):
@@ -150,35 +153,31 @@ func _stage_phase() -> void:
 	check(is_equal_approx(float(game.stage_distance_target), STAGE_DISTANCE),
 		"stage 1 asks for %.0f m, expected %.0f" % [float(game.stage_distance_target), STAGE_DISTANCE])
 
-	check(await _wait_until(func() -> bool: return not events["turn_started"].is_empty(), STAGE_WALL_TIMEOUT),
-		"stage 1 never drained into the turn (%.0f/%.0f m, phase %s)"
+	# A lambda captures these by value, so the samples live in a dictionary the closure can mutate.
+	var watched := {"saw_run": false, "straight": true, "rested": true}
+	check(await _wait_until(func() -> bool:
+		if game.phase == &"run":
+			watched.saw_run = true
+			if not game.turn_rig.rotation.is_equal_approx(Vector3.ZERO):
+				watched.straight = false
+			var corridor: Node = game.turn_rig.get("corridor")
+			if corridor is Node3D and not (corridor as Node3D).rotation.is_equal_approx(Vector3.ZERO):
+				watched.straight = false
+			var rig: Node = game.camera_rig
+			if rig != null and rig.get("camera") is Camera3D:
+				var lens := rig.get("camera") as Camera3D
+				if not lens.rotation.is_equal_approx(rig.get("_base_rotation") as Vector3):
+					watched.rested = false
+		return not events["boss_spawned"].is_empty()
+	, STAGE_WALL_TIMEOUT),
+		"stage 1 never drained into the boss (%.0f/%.0f m, phase %s)"
 			% [float(game.stage_distance), float(game.stage_distance_target), game.phase])
-	if events["turn_started"].is_empty():
-		return
-	var direction := int(events["turn_started"][0][0])
-	check(direction == -1 or direction == 1, "the turn went in direction %d" % direction)
-	# Contract §11.4: the corner is announced before it is taken, once, and on the same direction.
-	check(events["turn_log"].size() >= 2 and StringName(events["turn_log"][0]) == &"incoming"
-		and StringName(events["turn_log"][1]) == &"started",
-		"the seam's turn signals arrived as %s, expected the warning first" % [events["turn_log"]])
-	check(events["turn_incoming"].size() == 1, "turn_incoming fired %d times for one seam"
-		% events["turn_incoming"].size())
-	if events["turn_incoming"].is_empty():
-		return
-	check(int(events["turn_incoming"][0][0]) == direction,
-		"the warning announced direction %d and the bend went %d"
-			% [int(events["turn_incoming"][0][0]), direction])
-	var lead := float(events["turn_incoming"][0][1])
-	var warning := float(game.config.turn_warning_seconds)
-	check(lead >= 0.0 and lead <= warning + 0.5,
-		"turn_incoming promised the corner in %.2f s, expected 0 .. %.1f" % [lead, warning + 0.5])
-	check(await _wait_until(func() -> bool: return events["turn_finished"] > 0, STAGE_WALL_TIMEOUT),
-		"the turn never finished")
-	check(events["turn_started"].size() == 1 and events["turn_finished"] == 1,
-		"the seam turned %d / %d times" % [events["turn_started"].size(), events["turn_finished"]])
-
-	check(await _wait_until(func() -> bool: return not events["boss_spawned"].is_empty(), STAGE_WALL_TIMEOUT),
-		"the turn did not hand over to a boss (phase %s)" % game.phase)
+	check(bool(watched.saw_run) and bool(watched.straight), "the corridor or the TurnRig rotated during the run")
+	check(bool(watched.rested), "the camera left its rest pose during the run")
+	check(events["phase_changed"].size() >= 2
+		and events["phase_changed"][0] == &"run"
+		and events["phase_changed"][1] == &"boss",
+		"the drain handed stage 1 from run to boss, got %s" % [events["phase_changed"]])
 	if events["boss_spawned"].is_empty():
 		return
 	check(game.phase == &"boss", "the boss spawned outside the boss phase (phase %s)" % game.phase)
@@ -187,6 +186,15 @@ func _stage_phase() -> void:
 	check(game.boss_max_hp == SMOKE_BOSS_HP,
 		"the smoke fight opened on %d hp, expected the scaled %d" % [game.boss_max_hp, SMOKE_BOSS_HP])
 	check(game.boss != null, "the fight has no boss node")
+	# Contract 2.6 §11.14: the run's first meeting plays the full intro, and it holds the player.
+	check(not events["boss_cinematic"].is_empty() and StringName(events["boss_cinematic"][0][0]) == &"intro_full"
+		and is_equal_approx(float(events["boss_cinematic"][0][1]), float(game.config.boss_intro_seconds)),
+		"stage 1 did not open on a %.1f s intro_full, got %s"
+			% [float(game.config.boss_intro_seconds), events["boss_cinematic"]])
+	check(game.boss_cinematic_mode == &"intro_full" and bool(game.stage_manager.cinematic_hold)
+		and not bool(game.player.controls_enabled),
+		"the intro does not hold the player (mode %s, hold %s, controls %s)"
+			% [game.boss_cinematic_mode, game.stage_manager.cinematic_hold, game.player.controls_enabled])
 
 	check(await _wait_until(func() -> bool: return _damaging_tools() > 0, STAGE_WALL_TIMEOUT),
 		"the greedy bot never landed a tool on the boss (hp %d/%d)" % [game.boss_hp, game.boss_max_hp])
@@ -215,6 +223,7 @@ func _stage_phase() -> void:
 	# wait above can time out, and an empty array here would fault instead of failing the check.
 	check(not events["stage_cleared"].is_empty() and int(events["stage_cleared"][0][1]) > 0,
 		"the stage clear paid no bonus across %d stage_cleared event(s)" % events["stage_cleared"].size())
+	_check_seam_cinematics()
 
 	# The whole point of the fair bot: the shots are telegraphed and it answers every one of them.
 	check(events["damage_taken"].is_empty(),
@@ -605,7 +614,6 @@ func _boss_catch_phase() -> void:
 	config.stage_base_distance = 1.0
 	config.stage_drain_distance = 1.0
 	config.stage_drain_timeout = 0.4
-	config.turn_seconds = 0.2
 	config.boss_intro_seconds = 0.2
 	probe.config = config
 	probe.leaderboard_path = leaderboard_path
@@ -626,8 +634,7 @@ func _boss_catch_phase() -> void:
 		await process_frame
 		return
 	check(probe.phase == &"boss", "boss catch: the probe is in phase %s" % probe.phase)
-	check(int(probe.stage_manager.turns_taken) == 1,
-		"boss catch: %d turns were taken on the way in" % int(probe.stage_manager.turns_taken))
+	_check_no_turn_fields(probe, "boss catch")
 	# A tool lands by hand, so the boss block of the result is populated whatever the bot does.
 	var arena: Node = probe.get_node_or_null(NodePath(ARENA_PATH))
 	check(arena != null and arena.has_method("apply_tool"), "boss catch: the arena has no apply_tool")
@@ -659,8 +666,7 @@ func _boss_catch_phase() -> void:
 		"boss catch: the outcome is %s" % result.get("outcome", "<missing>"))
 	check(int(result.get("stage_reached", 0)) == 1,
 		"boss catch: the result reached stage %s" % result.get("stage_reached", "<missing>"))
-	check(int(result.get("turns_taken", 0)) == 1,
-		"boss catch: the result counted %s turns" % result.get("turns_taken", "<missing>"))
+	_check_no_turn_keys(result, "boss catch result")
 	check(int(result.get("tools_used", 0)) >= 1,
 		"boss catch: the result counted %s tools" % result.get("tools_used", "<missing>"))
 	check(int(result.get("boss_damage_dealt", 0)) >= 15,
@@ -674,6 +680,7 @@ func _boss_catch_phase() -> void:
 	var checkpoint: Dictionary = probe.boss_checkpoint.duplicate(true)
 	check(not checkpoint.is_empty() and int(checkpoint.get("stage_index", 0)) == 1,
 		"boss catch: the catch left no stage-1 boss checkpoint (%s)" % [checkpoint])
+	_check_no_turn_keys(checkpoint, "boss catch checkpoint")
 	var retry_boss_button: Button = null
 	for overlay in probe.get_node(^"Overlays").get_children():
 		if &"retry_boss_button" in overlay:
@@ -687,14 +694,13 @@ func _boss_catch_phase() -> void:
 		await _boss_retry_phase(runner_script, checkpoint)
 
 ## What retry_boss() hands the next session, minus the scene change: a fresh runner_game.tscn that
-## finds the static checkpoint must open on the turn into the same boss, at full HP, with the score
-## and run_clock the checkpoint carried, and reach the fight.
+## finds the static checkpoint must open in front of the same boss, at full HP, with the score and
+## run_clock the checkpoint carried. The fight starts on that same call.
 func _boss_retry_phase(runner_script: Script, checkpoint: Dictionary) -> void:
 	var packed := load(GAME_PATH) as PackedScene
 	var probe := packed.instantiate() as Node3D
 	probe.autostart = false
 	var config := _smoke_config()
-	config.turn_seconds = 0.2
 	config.boss_intro_seconds = 0.2
 	probe.config = config
 	probe.leaderboard_path = leaderboard_path
@@ -708,21 +714,21 @@ func _boss_retry_phase(runner_script: Script, checkpoint: Dictionary) -> void:
 	check(pending is Dictionary and (pending as Dictionary).is_empty(), "boss retry: the checkpoint was not consumed")
 	check(bool(probe.checkpoint_retry), "boss retry: the run is not flagged as a checkpoint retry")
 	check(probe.seed == int(checkpoint["seed"]), "boss retry: seed %d, expected %d" % [probe.seed, int(checkpoint["seed"])])
-	check(probe.phase == &"turn", "boss retry: the run opened in phase %s, not the turn" % probe.phase)
+	check(probe.phase == &"boss", "boss retry: the run opened in phase %s, expected boss" % probe.phase)
 	check(probe.stage_index == 1, "boss retry: the run opened on stage %d" % probe.stage_index)
 	check(probe.hp == int(config.max_hp), "boss retry: HP %d, expected full %d" % [probe.hp, int(config.max_hp)])
 	check(probe.score == floori(float(checkpoint["score_exact"])),
 		"boss retry: score %d, expected %d" % [probe.score, floori(float(checkpoint["score_exact"]))])
 	check(absf(probe.run_clock - float(checkpoint["run_clock"])) < 0.0001, "boss retry: run_clock was not restored")
-	var spawned := await _wait_until(func() -> bool: return int(seen["spawned"]) > 0, BOSS_WALL_TIMEOUT)
-	check(spawned, "boss retry: the lead-in never reached the fight (phase %s)" % probe.phase)
-	if spawned:
-		check(probe.phase == &"boss" and probe.stage_index == 1, "boss retry: in phase %s of stage %d"
-			% [probe.phase, probe.stage_index])
-		check(not probe.boss_checkpoint.is_empty(), "boss retry: the fight took no fresh checkpoint")
-		check(absf(probe.run_clock - float(checkpoint["run_clock"])) < 0.0001,
-			"boss retry: run_clock moved during the lead-in")
-		check(probe.score >= int(checkpoint["score"]), "boss retry: the score went backwards")
+	check(int(seen["spawned"]) == 1, "boss retry: the fight did not open with the boss phase (spawned %d)"
+		% int(seen["spawned"]))
+	check(not probe.boss_checkpoint.is_empty(), "boss retry: boss entry re-took no checkpoint")
+	_check_no_turn_keys(probe.boss_checkpoint, "boss retry checkpoint")
+	check(absf(float(probe.boss_checkpoint.get("run_clock", -1.0)) - float(checkpoint["run_clock"])) < 0.0001,
+		"boss retry: the fresh checkpoint did not keep run_clock")
+	check(is_equal_approx(float(probe.boss_checkpoint.get("score_exact", -1.0)), float(checkpoint["score_exact"])),
+		"boss retry: the score grew before the fight")
+	check(probe.turn_rig.rotation.is_equal_approx(Vector3.ZERO), "boss retry: the TurnRig rotated")
 	runner_script.set(&"pending_boss_checkpoint", {})
 	probe.free()
 	await process_frame
@@ -794,15 +800,17 @@ func _watch() -> void:
 		"power_up_collected": [],
 		"stage_started": [],
 		"stage_cleared": [],
-		"turn_incoming": [],
-		"turn_started": [],
-		"turn_finished": 0,
-		# The order the seam's two turn signals actually arrived in: the announcement has to precede
-		# the bend in the real stage machine, not merely to have happened (contract §11.4).
-		"turn_log": [],
+		"phase_changed": [],
 		"boss_spawned": [],
 		"boss_defeated": [],
 		"boss_retreated": [],
+		## Contract 2.6 §11.14: [mode, seconds, elapsed at the signal] per cinematic, and the elapsed of
+		## each ending, so the seam can prove the defeat really held the stage clear.
+		"boss_cinematic": [],
+		"boss_cinematic_skipped": [],
+		"boss_cinematic_ended": [],
+		"boss_defeated_at": [],
+		"stage_cleared_at": [],
 		"tool_collected": [],
 		"caught": 0,
 		"run_finished": 0,
@@ -812,19 +820,21 @@ func _watch() -> void:
 		events["stage_started"].append([index, name, speed])
 		_open_banner_window(index))
 	game.stage_cleared.connect(func(index: int, bonus: int) -> void:
-		events["stage_cleared"].append([index, bonus]))
-	game.turn_incoming.connect(func(direction: int, seconds: float) -> void:
-		events["turn_incoming"].append([direction, seconds])
-		events["turn_log"].append(&"incoming"))
-	game.turn_started.connect(func(direction: int, seconds: float) -> void:
-		events["turn_started"].append([direction, seconds])
-		events["turn_log"].append(&"started"))
-	game.turn_finished.connect(func() -> void:
-		events["turn_finished"] += 1)
+		events["stage_cleared"].append([index, bonus])
+		events["stage_cleared_at"].append(float(game.elapsed)))
+	game.phase_changed.connect(func(phase: StringName) -> void:
+		events["phase_changed"].append(phase))
 	game.boss_spawned.connect(func(kind: StringName, hp: int) -> void:
 		events["boss_spawned"].append([kind, hp]))
 	game.boss_defeated.connect(func(kind: StringName, bonus: int) -> void:
-		events["boss_defeated"].append([kind, bonus]))
+		events["boss_defeated"].append([kind, bonus])
+		events["boss_defeated_at"].append(float(game.elapsed)))
+	game.boss_cinematic.connect(func(_kind: StringName, mode: StringName, seconds: float) -> void:
+		events["boss_cinematic"].append([mode, seconds, float(game.elapsed)]))
+	game.boss_cinematic_skipped.connect(func(mode: StringName) -> void:
+		events["boss_cinematic_skipped"].append(mode))
+	game.boss_cinematic_ended.connect(func(mode: StringName) -> void:
+		events["boss_cinematic_ended"].append([mode, float(game.elapsed)]))
 	game.boss_retreated.connect(func(kind: StringName, bonus: int) -> void:
 		events["boss_retreated"].append([kind, bonus]))
 	game.tool_collected.connect(func(kind: StringName, damage: int) -> void:
@@ -857,6 +867,45 @@ func _watch() -> void:
 		events["run_finished"] += 1)
 	game.leaderboard_saved.connect(func(_entries: Array, _rank: int) -> void:
 		events["leaderboard_saved"] += 1)
+
+## Contract 2.6 §11.14 across the stage-1 seam: the intro played its full length, the kill opened a
+## defeat_full on the same tick, the stage clear waited that cinematic out, the bot never skipped,
+## and the hold let go of the corridor speed. Times are game seconds off `elapsed`, so a slow frame
+## cannot stretch them; two physics ticks of slack cover the tick boundary and the float countdown.
+func _check_seam_cinematics() -> void:
+	var slack := 2.0 / 60.0 + 0.001
+	var cinematics: Array = events["boss_cinematic"]
+	var ended: Array = events["boss_cinematic_ended"]
+	check(cinematics.size() >= 2 and ended.size() >= 2,
+		"the seam played %d cinematic(s) and ended %d, expected the intro and the defeat"
+			% [cinematics.size(), ended.size()])
+	if cinematics.size() < 2 or ended.size() < 2:
+		return
+	var intro: Array = cinematics[0]
+	var intro_end: Array = ended[0]
+	check(StringName(intro_end[0]) == &"intro_full"
+		and absf(float(intro_end[1]) - float(intro[2]) - float(intro[1])) <= slack,
+		"the intro ran %.3f s, expected %.1f" % [float(intro_end[1]) - float(intro[2]), float(intro[1])])
+	var defeat: Array = cinematics[1]
+	var defeat_seconds := float(game.config.boss_defeat_seconds)
+	check(StringName(defeat[0]) == &"defeat_full" and is_equal_approx(float(defeat[1]), defeat_seconds),
+		"the kill opened %s for %.2f s, expected defeat_full for %.2f" % [defeat[0], float(defeat[1]), defeat_seconds])
+	var killed_at: Array = events["boss_defeated_at"]
+	var cleared_at: Array = events["stage_cleared_at"]
+	if killed_at.is_empty() or cleared_at.is_empty():
+		return
+	check(is_equal_approx(float(defeat[2]), float(killed_at[0])),
+		"the defeat cinematic opened %.3f s after boss_defeated, expected the same tick"
+			% (float(defeat[2]) - float(killed_at[0])))
+	var held := float(cleared_at[0]) - float(killed_at[0])
+	check(held >= defeat_seconds - slack and held <= defeat_seconds + slack,
+		"the stage cleared %.3f s after the kill, expected the %.2f s defeat hold" % [held, defeat_seconds])
+	check(events["boss_cinematic_skipped"].is_empty(),
+		"the autopilot skipped %s; nothing but a player press may skip" % [events["boss_cinematic_skipped"]])
+	check(game.boss_cinematic_mode == &"" and not bool(game.stage_manager.cinematic_hold)
+		and is_equal_approx(float(game.speed_controller.cinematic_scale), 1.0),
+		"the hold outlived the fight (mode %s, hold %s, scale %.2f)"
+			% [game.boss_cinematic_mode, game.stage_manager.cinematic_hold, float(game.speed_controller.cinematic_scale)])
 
 ## Tools whose damage actually landed on the boss (a resisting phase reports 0).
 func _damaging_tools() -> int:
@@ -962,6 +1011,23 @@ func _wait_wall_seconds(seconds: float) -> void:
 func _wait_frames(count: int) -> void:
 	for i in count:
 		await process_frame
+
+func _check_no_turn_keys(record: Dictionary, tag: String) -> void:
+	for key in record:
+		check(not String(key).contains("turn"), "%s still records %s" % [tag, key])
+
+func _check_no_turn_fields(node: Object, tag: String) -> void:
+	if node is Node:
+		for info in (node as Node).get_signal_list():
+			check(not String(info["name"]).contains("turn"), "%s still signals %s" % [tag, info["name"]])
+	var script: Script = node.get_script()
+	while script != null:
+		for prop in script.get_script_property_list():
+			var prop_name := String(prop["name"])
+			if prop_name == "turn_rig":
+				continue
+			check(not prop_name.contains("turn"), "%s still exposes %s" % [tag, prop_name])
+		script = script.get_base_script()
 
 ## Returns true when the predicate came true before the wall-clock timeout.
 func _wait_until(predicate: Callable, wall_timeout: float) -> bool:

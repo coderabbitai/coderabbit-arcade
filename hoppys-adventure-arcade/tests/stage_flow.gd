@@ -39,6 +39,28 @@ func clear_enemies() -> void:
 			e.set_physics_process(false)
 			e.queue_free()
 	game.enemies.clear()
+## Room 3 of districts 1 and 2 has no walk-out: its cleared wave calls in the district boss,
+## whose defeat runs the victory hop and then the exit. Drops the boss in, past its entrance,
+## and lands the killing blow; play stops in boss_victory. Without a district boss it fails the
+## suite and returns false, so no caller waits on an exit that cannot come.
+func defeat_district_boss() -> bool:
+	var boss = game.boss
+	if not is_instance_valid(boss) or not game.has_mini_boss():
+		check(false, "Room 3 of district %d has its district boss to defeat" % (game.stage_index+1))
+		quit(1)
+		return false
+	boss.set_physics_process(false)
+	var guard := 0
+	while boss.state=="intro" and guard<200:
+		boss.tick(DT)
+		guard += 1
+	boss.take_hit(999, 0, game.player.position)
+	# The drop-in shrugs off hits, so a boss still in its intro never starts the hop.
+	if game.state!="boss_victory":
+		check(false, "The district boss is defeated into the victory hop (boss %s, game %s)" % [boss.state, game.state])
+		quit(1)
+		return false
+	return true
 ## Right edge sits at room_start()+1280, so exit_x is room_start()+1340 on any viewport.
 func frame_room() -> void:
 	var width: float = game.get_viewport().get_visible_rect().size.x
@@ -130,7 +152,7 @@ func check_retry() -> void:
 	p.take_hit(p.position+Vector2(-40, 0))
 	check(game.state=="knockout", "A last hit starts the knockout")
 	var ko_guard := 0
-	while game.state=="knockout" and ko_guard<200:
+	while game.state=="knockout" and ko_guard<400:
 		game._physics_process(DT)
 		ko_guard += 1
 	check(game.state=="game_over", "A last hit opens the retry overlay")
@@ -156,9 +178,11 @@ func check_exit() -> void:
 	freeze()
 	clear_enemies()
 	game._physics_process(DT)
-	check(game.room==2 and game.gate_open and game.state=="combat", "Clearing room 3 opens the gate")
+	check(game.room==2 and not game.gate_open and game.has_mini_boss() and game.state=="combat", "Clearing room 3 calls in the district boss instead of opening the gate")
 	frame_room()
 	game.player.position = Vector2(game.room_start()+1210, 580)
+	if not defeat_district_boss(): return
+	check(game.state=="boss_victory" and not game.playing, "The district boss's defeat starts the victory hop")
 	game.score = 480
 	var volume_ok := true
 	var spent := {}
@@ -189,8 +213,11 @@ func check_exit() -> void:
 	encounter_overlap = false
 	ticks_since_clear = -1
 	shown_after = -1
-	game._physics_process(DT)
-	check(game.state=="stage_exit" and game.flow.phase=="exit_run", "Crossing the gate starts the exit run")
+	var hop := 0
+	while game.state=="boss_victory" and hop<200:
+		game._physics_process(DT)
+		hop += 1
+	check(game.state=="stage_exit" and game.flow.phase=="exit_run" and absi(hop-int(round(Catalog.FLOW.boss_victory/DT)))<=1, "The victory hop starts the exit run after %ss with no input (%d ticks)" % [Catalog.FLOW.boss_victory, hop])
 	if order.is_empty() or order.back()!=game.flow.phase: order.append(game.flow.phase)
 	game.toast("x", 1.0)
 	var guard := 0
@@ -384,6 +411,7 @@ func reach(phase: String) -> void:
 	game._physics_process(DT)
 	frame_room()
 	game.player.position = Vector2(game.room_start()+1210, 580)
+	if not defeat_district_boss(): return
 	guard = 0
 	while not (game.flow.phase==phase and game.flow.clock>=0.1) and guard<400:
 		game._physics_process(DT)
@@ -587,10 +615,14 @@ func check_armed_overlays() -> void:
 		p.take_hit(p.position+Vector2(-40, 0))
 		check(game.state=="knockout", "A last hit starts the knockout before the menu")
 		waited = 0
-		while game.state=="knockout" and waited<200:
+		while game.state=="knockout" and waited<400:
 			game._physics_process(DT)
 			waited += 1
 		check(game.state=="game_over" and game.primary.has_focus(), "Game over focuses Retry")
+		# The menu checks below press the overlay's buttons; without game over there are none.
+		if game.state!="game_over":
+			quit(1)
+			return
 		await guarded("Game over", activate)
 		check(game.state=="stage_enter", "A %s after 0.5 s presses Retry" % activate)
 	for activate in ["click", "touch"]:
@@ -604,9 +636,13 @@ func check_armed_overlays() -> void:
 			boss.take_hit(damage, 0, Vector2.ZERO, true)
 		freeze()
 		var guard := 0
-		while game.state in ["finisher","ending"] and guard<2000:
+		while game.state in ["finisher","celebration","ending"] and guard<2000:
 			game._physics_process(DT)
 			guard += 1
-		check(game.state=="won" and game.victory.visible and not game.victory.landed and game.victory.action.disabled, "The Force Merge hands off through the ending to the results screen mid-count")
+		check(game.state=="won" and game.victory.visible and not game.victory.landed and game.victory.action.disabled, "The Force Merge hands off through the celebration and the ending to the results screen mid-count")
+		# The results checks press the results screen's button; without it they have nothing to press.
+		if game.state!="won":
+			quit(1)
+			return
 		await guarded_results(activate)
 		await reload()

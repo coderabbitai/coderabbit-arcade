@@ -36,6 +36,12 @@ const FRONTEND_MOUNTS := {
 		"res://scenes/runner/ui/boss_hud.tscn",
 		"res://scenes/runner/ui/stage_banner.tscn",
 		"res://scenes/runner/ui/stage_clear.tscn",
+		## Contract 2.6 §11.14: the boss cinematic title card / chyron / skip prompt, driven only off
+		## boss_cinematic_progress and boss_time_factor.
+		"res://scenes/runner/ui/boss_cinematic.tscn",
+		## Contract 2.7 §11.15: the run intro's title card, countdown and skip prompt, driven only off
+		## run_intro_progress and the run_intro_* signals.
+		"res://scenes/runner/ui/run_intro.tscn",
 		## Full-screen post-processing pass (colour grade, grain, vignette, letterbox, speed
 		## streaks) on its own layer below the panels; optional like the rest (contract §11.8).
 		"res://scenes/runner/ui/post_fx.tscn"
@@ -84,9 +90,6 @@ signal paused_changed(paused: bool)
 signal phase_changed(phase: StringName)
 signal stage_started(index: int, name: StringName, speed: float)
 signal stage_cleared(index: int, bonus: int)
-signal turn_incoming(direction: int, seconds: float)
-signal turn_started(direction: int, seconds: float)
-signal turn_finished
 signal boss_intro(kind: StringName, name: String, seconds: float)
 signal boss_spawned(kind: StringName, hp: int)
 signal boss_health_changed(hp: int, max_hp: int)
@@ -101,6 +104,25 @@ signal boss_attack_planned(attack: Dictionary)
 signal boss_attack_committed(lane_mask: int, kind: StringName, seconds: float)
 signal boss_defeated(kind: StringName, bonus: int)
 signal boss_retreated(kind: StringName, bonus: int)
+## Contract 2.6 §11.14: a boss cinematic of `seconds` opens. `mode` is intro_full / intro_short
+## (right after boss_intro, before boss_spawned) or defeat_full / defeat_short (right after
+## boss_defeated, on the same tick).
+signal boss_cinematic(kind: StringName, mode: StringName, seconds: float)
+## The player skipped an intro (a defeat is never skippable): it jumps to its last
+## boss_cinematic_skip_tail seconds.
+signal boss_cinematic_skipped(mode: StringName)
+## It is over (played out, skipped tail done, or aborted by a catch / a new run).
+signal boss_cinematic_ended(mode: StringName)
+## Contract 2.7 §11.15: the run intro of `seconds` opens (`mode` &"full" or &"short"), with phase
+## already &"intro" and the run_intro_* mirrors set.
+signal run_intro(mode: StringName, seconds: float)
+## Each beat as the intro's clock reaches it, in index order: full "title", "3", "2", "1", "GO!";
+## short "READY", "GO!". Controls come back on the last one (GO). Beats a skip jumps over are never sent.
+signal run_intro_beat(index: int, label: String)
+## The player skipped: the intro jumps to its last run_intro_skip_tail seconds and the GO beat follows.
+signal run_intro_skipped
+## Exactly once per run_intro: played out, skipped tail done, or aborted (a catch, a new run).
+signal run_intro_ended
 signal tool_collected(kind: StringName, damage: int)
 signal pursuit_alert(kind: StringName, seconds_to_catch: float)
 signal pursuer_distance_changed(normalized: float)
@@ -117,7 +139,7 @@ var state: StringName = &"ready"
 var paused := false
 var seed := 0
 var run_id := ""
-## Unpaused running seconds.
+## Unpaused running seconds, the run intro excluded (contract 2.7 §11.15).
 var elapsed := 0.0
 ## Metres travelled. RunnerGame owns this accumulator; the spawner moves chunks by the same dz but
 ## must not add to it, or the distance would double-count.
@@ -137,7 +159,7 @@ var cosmetic_rng := RandomNumberGenerator.new()
 
 # Read-only v2 properties (contract §11.4). The StageManager writes the stage block every tick and
 # the boss block is mirrored off the boss signals, so both survive the encounter being freed.
-## idle / run / turn / boss / stage_clear, orthogonal to `state`.
+## idle / run / boss / stage_clear, orthogonal to `state`.
 var phase: StringName = &"idle"
 ## 1-based, never resets between stages; 0 before the first stage starts.
 var stage_index := 0
@@ -147,10 +169,6 @@ var stage_distance := 0.0
 var stage_distance_target := 0.0
 ## RUN-phase seconds only; drives speed and difficulty (contract §11.1).
 var run_clock := 0.0
-## -1 left, +1 right for the turn this seam is about to take; 0 when none is pending. Set when the
-## stage enters its drain window, which is before turn_incoming announces it, and back to 0 once
-## the bend is over (contract §11.4).
-var next_turn_direction := 0
 ## The live boss node, or null outside a fight.
 var boss: Node3D = null
 var boss_kind: StringName = &""
@@ -158,6 +176,16 @@ var boss_hp := 0
 var boss_max_hp := 0
 ## 1-based; 0 outside a fight.
 var boss_phase := 0
+## Contract 2.6 §11.14, mirrored by the StageManager off the encounter's clock: the cinematic
+## playing (&"" when none), 0..1 through it, and the factor visuals, effects and HUD multiply into
+## their own delta (1 outside a defeat; the engine time scale is never touched).
+var boss_cinematic_mode: StringName = &""
+var boss_cinematic_progress := 0.0
+var boss_time_factor := 1.0
+## Contract 2.7 §11.15, mirrored by the StageManager: the run intro playing (&"" when none) and 0..1
+## through it, frozen by a pause and jumped by a skip.
+var run_intro_mode: StringName = &""
+var run_intro_progress := 0.0
 
 ## Boss checkpoint (contract §11.13). The StageManager snapshots the run here on every boss entry
 ## and empties it when the stage clears, so it is non-empty only while a fight is live, or after a
@@ -168,6 +196,12 @@ var checkpoint_retry := false
 ## The checkpoint retry_boss() hands to the next runner_game instance. Static because the retry is
 ## a fresh scene through AppRouter, like retry(); start_run() consumes it and empties it at once.
 static var pending_boss_checkpoint := {}
+## Contract 2.7 §11.15: the run intro the next start_run() opens with. A fresh run from the menu gets
+## the full one; retry() asks for the short one; &"" opens the next run with no intro (capture
+## tools). A boss-checkpoint retry never plays one, whatever this holds: the boss's own short intro is
+## its lead-in. Static for the same reason as pending_boss_checkpoint, and consumed (back to full) by
+## start_run().
+static var pending_intro_mode: StringName = &"full"
 
 @onready var systems: Node = $Systems
 @onready var speed_controller: Node = $Systems/SpeedController
@@ -215,9 +249,9 @@ func _ready() -> void:
 		config = load(CONFIG_PATH) as RunConfig
 	hp = int(config.max_hp)
 	speed = float(config.base_speed)
-	# The TurnRig and the boss arena are set up before the StageManager, so the machine finds a
-	# square rig and a live encounter; the frontend mounts come last, because a corridor is handed
-	# to the rig only once it exists.
+	# The TurnRig and the boss arena are set up before the StageManager, so the machine finds its
+	# mount and a live encounter; the frontend mounts come last, because a corridor is handed to the
+	# rig only once it exists.
 	for node in [speed_controller, hit_manager, score_manager, effect_manager, spawner, turn_rig,
 			boss_encounter, stage_manager, autopilot, player, pursuer, camera_rig, debug_overlay]:
 		if node != null and node.has_method("setup"):
@@ -236,6 +270,8 @@ func start_run(run_seed := 0) -> void:
 	# Consumed before anything else, so a checkpoint can never leak into a later run.
 	var checkpoint: Dictionary = pending_boss_checkpoint
 	pending_boss_checkpoint = {}
+	var intro_mode: StringName = pending_intro_mode
+	pending_intro_mode = &"full"
 	checkpoint_retry = not checkpoint.is_empty()
 	boss_checkpoint = {}
 	if checkpoint_retry:
@@ -265,7 +301,8 @@ func start_run(run_seed := 0) -> void:
 	run_clock = 0.0
 	stage_distance = 0.0
 	stage_distance_target = 0.0
-	next_turn_direction = 0
+	run_intro_mode = &""
+	run_intro_progress = 0.0
 	_clear_boss_state()
 	for node in [speed_controller, hit_manager, score_manager, effect_manager, autopilot,
 			player, pursuer, camera_rig, turn_rig]:
@@ -286,11 +323,12 @@ func start_run(run_seed := 0) -> void:
 	speed_changed.emit(speed, normalized_speed)
 	# Stage 1 opens only once every system is back at zero and the run is live, so the first
 	# stage_started lands after run_started and the spawner fills against a running phase. A boss
-	# checkpoint opens on the turn into that stage's boss instead.
+	# checkpoint opens in front of that stage's boss instead, with no run intro: the boss's short
+	# intro cinematic is the lead-in, so the player is not handed control at GO only to lose it again.
 	if checkpoint_retry and stage_manager != null and stage_manager.has_method("begin_at_boss"):
 		stage_manager.begin_at_boss(checkpoint)
 	elif stage_manager != null and stage_manager.has_method("begin"):
-		stage_manager.begin()
+		stage_manager.begin(intro_mode)
 
 ## Put the facade, the ScoreManager and the systems' Game Over tallies back where the checkpoint
 ## left them. HP, running power-up effects and the pursuit are not restored: a checkpoint retry
@@ -364,10 +402,12 @@ func retry() -> void:
 	resume()
 	# A full restart always starts from zero, even after a Retry Boss that never got to route.
 	pending_boss_checkpoint = {}
+	# The player has just seen the full intro; a retry opens on the short lead-in.
+	pending_intro_mode = &"short"
 	_take_route("runner_game")
 
-## Contract §11.13: a fresh session that opens on the turn into the boss the checkpoint was taken
-## at, with the score, clocks and tallies it held and full HP. Without a checkpoint this is retry().
+## Contract §11.13: a fresh session that opens in front of the boss the checkpoint was taken at,
+## with the score, clocks and tallies it held and full HP. Without a checkpoint this is retry().
 func retry_boss() -> void:
 	if _route_in_flight():
 		return
@@ -383,6 +423,7 @@ func go_to_menu() -> void:
 		return
 	resume()
 	pending_boss_checkpoint = {}
+	pending_intro_mode = &"full"
 	_take_route("runner")
 
 ## The first route asked for wins. AppRouter ignores a go() while its veil is fading, but Game Over
@@ -498,8 +539,9 @@ func _empty_boss_info() -> Dictionary:
 		"pending_attacks": empty_attacks
 	}
 
-## Rig-local z for anything on the track (systems spec §10.5). Gameplay never rotates, so this is
-## the identity today; it exists so a bent corridor can never skew a z test.
+## Rig-local z for anything on the track (systems spec §10.5). The TurnRig is a static mount and
+## gameplay never rotates, so this is the identity; z tests still go through it rather than
+## assuming the rig sits at the origin.
 func track_z(node: Node3D) -> float:
 	if node == null or not is_instance_valid(node):
 		return 0.0
@@ -525,13 +567,67 @@ func on_tool_hit() -> void:
 	if camera_rig != null and is_instance_valid(camera_rig) and camera_rig.has_method("shake"):
 		camera_rig.shake(SHAKE_ON_TOOL_HIT)
 
+## Contract 2.6 §11.14: skip the boss intro playing now. It only takes once the intro has run
+## boss_cinematic_skip_after seconds, while running and unpaused, and never during a defeat; returns
+## true when it did. Jump and ui_accept reach it through _unhandled_input; the autopilot never calls
+## it.
+func skip_boss_cinematic() -> bool:
+	if not _can_skip_boss_cinematic():
+		return false
+	return bool(boss_encounter.skip_cinematic())
+
+## Contract 2.6 §11.14: true while skip_boss_cinematic() would take — running, unpaused, and an intro
+## past boss_cinematic_skip_after but not yet inside its tail. Read-only, for a skip prompt.
+func can_skip_boss_cinematic() -> bool:
+	return _can_skip_boss_cinematic()
+
+func _can_skip_boss_cinematic() -> bool:
+	if state != &"running" or paused:
+		return false
+	if boss_encounter == null or not is_instance_valid(boss_encounter):
+		return false
+	if not boss_encounter.has_method("can_skip_cinematic") or not boss_encounter.has_method("skip_cinematic"):
+		return false
+	return bool(boss_encounter.can_skip_cinematic())
+
+## Contract 2.7 §11.15: skip the run intro playing now. It only takes while running and unpaused, once
+## the intro has played run_intro_skip_after seconds and before its tail; returns true when it did.
+## Jump and ui_accept reach it through _unhandled_input; the autopilot never calls it.
+func skip_run_intro() -> bool:
+	if not can_skip_run_intro():
+		return false
+	return bool(stage_manager.skip_run_intro())
+
+## Contract 2.7 §11.15: true while skip_run_intro() would take. Read-only, for a skip prompt.
+func can_skip_run_intro() -> bool:
+	if state != &"running" or paused:
+		return false
+	if stage_manager == null or not is_instance_valid(stage_manager) or not stage_manager.has_method("can_skip_run_intro"):
+		return false
+	return bool(stage_manager.can_skip_run_intro())
+
 ## Tests and the F7 debug key drive the bot through here. The bot owns the player while it is on,
-## so manual input is disabled for as long as it runs and comes back when it is switched off.
+## so manual input is disabled for as long as it runs and comes back when it is switched off —
+## unless a boss cinematic is holding the player (contract §11.14), which hands it back itself.
 func set_autopilot(enabled: bool) -> void:
 	if autopilot != null and autopilot.has_method("set_enabled"):
 		autopilot.set_enabled(enabled)
-	if player != null and player.has_method("set_controls_enabled"):
-		player.set_controls_enabled(not enabled and state == &"running")
+	_apply_player_controls(not enabled)
+
+## Manual controls are live while the run is, the bot is off and no cinematic holds the player (a boss
+## cinematic, contract 2.6 §11.14, or the run intro up to its GO beat, 2.7 §11.15). The StageManager
+## calls this whenever a cinematic takes or gives back control, so the one rule decides every hand-back.
+func refresh_player_controls() -> void:
+	var bot_on := autopilot != null and is_instance_valid(autopilot) and &"enabled" in autopilot \
+		and bool(autopilot.get(&"enabled"))
+	_apply_player_controls(not bot_on)
+
+func _apply_player_controls(manual: bool) -> void:
+	if player == null or not is_instance_valid(player) or not player.has_method("set_controls_enabled"):
+		return
+	var held := stage_manager != null and is_instance_valid(stage_manager) \
+		and &"cinematic_hold" in stage_manager and bool(stage_manager.get(&"cinematic_hold"))
+	player.set_controls_enabled(manual and state == &"running" and not held)
 
 # --- run loop ---
 
@@ -540,8 +636,11 @@ func _physics_process(delta: float) -> void:
 	if paused:
 		return
 	if state == &"running":
-		elapsed += delta
-		distance += speed * delta
+		# The run intro is a cinematic, not run time: the clock and the distance start at GO's
+		# hand-over to `run` (contract 2.7 §11.15), as the ScoreManager's base rate does.
+		if run_intro_mode == &"":
+			elapsed += delta
+			distance += speed * delta
 		_track_dodges()
 	elif state == &"caught":
 		distance += speed * delta
@@ -680,6 +779,9 @@ func _clear_boss_state() -> void:
 	boss_hp = 0
 	boss_max_hp = 0
 	boss_phase = 0
+	boss_cinematic_mode = &""
+	boss_cinematic_progress = 0.0
+	boss_time_factor = 1.0
 
 ## The encounter may expose the boss as a property or as a child named Boss; either is accepted and
 ## a missing one just leaves `boss` null.
@@ -746,7 +848,7 @@ func _finish_run(outcome: StringName) -> void:
 		"max_speed_reached": _system_float(speed_controller, &"max_speed_reached", speed),
 		"best_multiplier": _system_float(score_manager, &"best_multiplier", multiplier),
 		"chunks_spawned": _system_int(spawner, &"chunks_spawned", 0),
-		# Contract §11.4. The StageManager tallies all seven off the facade signals, so they are
+		# Contract §11.4. The StageManager tallies all six off the facade signals, so they are
 		# right whether or not a boss encounter was ever mounted.
 		"stages_cleared": _system_int(stage_manager, &"stages_cleared", 0),
 		"stage_reached": _system_int(stage_manager, &"stage_index", stage_index),
@@ -754,7 +856,6 @@ func _finish_run(outcome: StringName) -> void:
 		"bosses_escaped": _system_int(stage_manager, &"bosses_escaped", 0),
 		"tools_used": _system_int(stage_manager, &"tools_used", 0),
 		"boss_damage_dealt": _system_int(stage_manager, &"boss_damage_dealt", 0),
-		"turns_taken": _system_int(stage_manager, &"turns_taken", 0),
 		# Contract §11.13: true when this run was started from a boss checkpoint.
 		"checkpoint_retry": checkpoint_retry,
 		"score_rule_revision": int(config.score_rule_revision),
@@ -827,8 +928,8 @@ func _mount_frontend() -> void:
 				instance.process_mode = Node.PROCESS_MODE_PAUSABLE
 			if instance.has_method("bind"):
 				instance.bind(self)
-			# A real corridor replaces the backend graybox lighting and grid (contract §3), and the
-			# TurnRig hands it the bend instead of yawing the graybox itself (contract §11.9).
+			# A real corridor replaces the backend graybox lighting and grid (contract §3); the
+			# StageManager reaches it through the TurnRig mount (contract §11.9).
 			if mount == environment_mount:
 				_corridor = instance
 				if turn_rig != null and is_instance_valid(turn_rig) and turn_rig.has_method("set_corridor"):
@@ -852,6 +953,18 @@ func _instantiate_frontend(path: String) -> Node:
 	return instance
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Contract 2.6 §11.14 / 2.7 §11.15: jump or confirm skips the run intro or a boss intro once it may
+	# be skipped. The press is consumed here, and the controls the skip hands back re-sync held input,
+	# so it never also lands as a jump.
+	var skip_press := event.is_action_pressed("jump") or event.is_action_pressed("ui_accept")
+	if skip_press and can_skip_run_intro():
+		skip_run_intro()
+		get_viewport().set_input_as_handled()
+		return
+	if skip_press and _can_skip_boss_cinematic():
+		skip_boss_cinematic()
+		get_viewport().set_input_as_handled()
+		return
 	# The backend owns `pause`; it toggles only while running, so Space on a focused Game Over
 	# button can never jump and Esc never double-fires with the overlays.
 	if not event.is_action_pressed("pause") or state != &"running":

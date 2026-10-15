@@ -15,6 +15,10 @@ extends SceneTree
 ## B6 (contract 2.4) every signature event — a flaky commit, a scatter split, a rebase sweep, a legacy
 ##    gap shift, a debris shadow and its landing, a branching volley — leaves, from every lane, a
 ##    survivable answer that can still be started boss_signature_reaction_min (0.35 s) after it.
+## B7 (contract 2.6 §11.14) the cinematic copy table (ui/boss_copy.gd, frontend-owned) names every
+##    boss in the roster, and only those, with a real epithet (REGRESSED vN from the second lap), threat
+##    line and source path. Each phase gets a hint row whose tools are exactly BossDefs.accepted_tools,
+##    so the "how to resolve" row can never contradict the fight.
 ##
 ## Since contract 2.4 the shots are not assumed to fly straight: every beat is resolved through
 ## boss/boss_attacks.gd (the same code boss_encounter.gd fires from), the bot hears the encounter's
@@ -53,6 +57,11 @@ const STEP_GUARD := 4000
 ## Board the facade points at. Nothing here finishes a run, so the file is never created; the
 ## override exists so no code path can ever reach the real board.
 const SCRATCH_BOARD := "user://boss_validator_leaderboard.cfg"
+## B7: the frontend copy table. It is loaded at run time, so a missing file is a failed check rather
+## than a compile error that would stop the whole validator.
+const COPY_PATH := "res://scenes/runner/ui/boss_copy.gd"
+## A kind no roster will ever hold, whose answers are boss_copy's own fallbacks.
+const NO_SUCH_BOSS: StringName = &"__no_such_boss__"
 
 ## The contract §7 kinematics runner_chunk_validator.gd simulates (gravity 28, jump 9.8 / 0.70 s
 ## airtime, roll 0.70 s, lane tween 0.13 s ease-out), as a CharacterBody3D the real autopilot can
@@ -251,6 +260,7 @@ func run() -> void:
 			_validate_fight(stage_index)
 	_check_escalation_floors()
 	_check_signature_coverage()
+	_check_copy()
 	_report()
 
 ## Every phase of one stage's fight: the beat sweep, the pattern sweep and the tool guarantee.
@@ -772,6 +782,95 @@ func _check_signature_coverage() -> void:
 	for name in event_min:
 		tightest.append("%s %.3f s" % [name, float(event_min[name])])
 	print("RUNNER BOSS: B6 events measured %s; tightest windows: %s" % [event_counts, ", ".join(tightest)])
+
+# --- B7: the cinematic copy table agrees with the roster and the fight (contract 2.6 §11.14) ---
+
+## Every roster boss at every cycle, through boss_copy's own API: epithet / threat / source path are
+## real (not the fallback an unknown kind gets), the epithet carries "REGRESSED vN" from the second
+## lap on, and hint_rows() gives one row per phase whose tools are BossDefs.accepted_tools exactly
+## and whose text names them (or says every tool lands). The copy table ships with contract 2.6, so a
+## tree without it fails: renaming or dropping the file must not silently drop this check.
+func _check_copy() -> void:
+	check(ResourceLoader.exists(COPY_PATH), "B7: %s is missing, so the cinematic copy cannot be checked" % COPY_PATH)
+	if not ResourceLoader.exists(COPY_PATH):
+		return
+	var copy := load(COPY_PATH) as GDScript
+	check(copy != null, "B7: %s did not load as a script" % COPY_PATH)
+	if copy == null:
+		return
+	var table: Dictionary = copy.get_script_constant_map().get("COPY", {})
+	var roster := {}
+	for entry in BossDefs.SLOTS:
+		roster[StringName(entry["kind"])] = true
+	check(table.size() == roster.size(), "B7: the copy table has %d rows for a %d-boss roster" % [table.size(), roster.size()])
+	for row_kind in table:
+		check(roster.has(StringName(row_kind)), "B7: the copy table carries %s, which no stage fights" % row_kind)
+	var fallback_epithet := String(copy.epithet(NO_SUCH_BOSS))
+	var fallback_threat := String(copy.threat(NO_SUCH_BOSS))
+	var fallback_path := String(copy.source_path(NO_SUCH_BOSS))
+	var every_tool := ToolDefs.kinds().size()
+	var samples := PackedStringArray()
+	for slot in BossDefs.SLOTS.size():
+		var kind: StringName = BossDefs.SLOTS[slot]["kind"]
+		check(table.has(kind), "B7: %s has no copy row" % kind)
+		var first_epithet := String(copy.epithet(kind, 1))
+		check(not first_epithet.is_empty() and first_epithet != fallback_epithet,
+			"B7: %s epithet is the fallback %s" % [kind, first_epithet])
+		var threat := String(copy.threat(kind))
+		check(not threat.is_empty() and threat != fallback_threat, "B7: %s threat is the fallback %s" % [kind, threat])
+		var path := String(copy.source_path(kind))
+		check(path != fallback_path and path.contains(":"), "B7: %s source path is %s, expected a path:line" % [kind, path])
+		for cycle in CYCLES:
+			var stage_index := cycle * BossDefs.SLOTS.size() + slot + 1
+			var def := BossDefs.fight_def(stage_index, config)
+			var lap := cycle + 1
+			var epithet := String(copy.epithet(kind, lap))
+			var tag := "REGRESSED v%d" % lap
+			check(epithet.begins_with(first_epithet) and (epithet.contains(tag) == (lap >= 2)),
+				"B7: %s lap %d epithet is %s" % [kind, lap, epithet])
+			_check_hint_rows(copy, def, kind, cycle, every_tool, samples)
+	print("RUNNER BOSS: B7 copy covers %d bosses x %d cycles; hints %s" % [roster.size(), CYCLES, "; ".join(samples)])
+
+## One fight's hint rows against BossDefs: one per phase, in order, with the accepted tools and the
+## all-tools flag the fight really has, and text that names those tools and no other.
+func _check_hint_rows(copy: GDScript, def: Dictionary, kind: StringName, cycle: int, every_tool: int,
+		samples: PackedStringArray) -> void:
+	var rows: Array = copy.hint_rows(def)
+	var phases := int(def.get("phase_count", BossDefs.PHASE_COUNT))
+	check(rows.size() == phases, "B7: %s c%d has %d hint rows for %d phases" % [kind, cycle, rows.size(), phases])
+	for index in mini(rows.size(), phases):
+		var row: Dictionary = rows[index]
+		var phase := index + 1
+		var accepted := _sorted_names(BossDefs.accepted_tools(def, phase))
+		var tag := "%s c%d p%d" % [kind, cycle, phase]
+		check(int(row.get("phase", 0)) == phase, "B7: %s row is for phase %s" % [tag, row.get("phase", "<missing>")])
+		check(_sorted_names(row.get("accepted_tools", [])) == accepted and _sorted_names(row.get("tools", [])) == accepted,
+			"B7: %s hint tools %s / %s, BossDefs accepts %s"
+				% [tag, row.get("accepted_tools", []), row.get("tools", []), accepted])
+		var all_tools := accepted.size() == every_tool
+		check(bool(row.get("all_tools", not all_tools)) == all_tools,
+			"B7: %s all_tools is %s, but %d of %d tools land" % [tag, row.get("all_tools", "<missing>"), accepted.size(), every_tool])
+		var text := String(row.get("text", ""))
+		check(not text.is_empty(), "B7: %s hint row has no text" % tag)
+		if all_tools:
+			check(text.contains("EVERY TOOL LANDS"), "B7: %s accepts every tool but its hint reads %s" % [tag, text])
+		else:
+			for tool_kind in ToolDefs.kinds():
+				var label := ToolDefs.label(tool_kind).to_upper()
+				var named := text.contains(label)
+				check(named == accepted.has(String(tool_kind)),
+					"B7: %s hint %s %s %s, BossDefs accepts %s"
+						% [tag, text, "names" if named else "omits", label, accepted])
+		if cycle == 0:
+			samples.append("%s p%d \"%s\"" % [kind, phase, text])
+
+func _sorted_names(tools: Variant) -> PackedStringArray:
+	var names := PackedStringArray()
+	if tools is Array:
+		for tool_kind in tools:
+			names.append(String(tool_kind))
+	names.sort()
+	return names
 
 # --- harness ---
 

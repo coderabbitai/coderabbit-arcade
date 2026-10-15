@@ -164,9 +164,9 @@ func run() -> void:
 	check(paused and level.player.sprite.animation == &"death", "Death freezes the world and plays the knockout")
 	check(not level.overlay.visible, "Results wait for the knockout")
 	await create_timer(0.6).timeout
-	check(level.player.sprite.position.y < -10 or level.player.sprite.frame > 0, "Knockout animates while the tree is paused")
+	check(level.knockout.active and level.knockout.elapsed > 0.4 and level.knockout.rabbit.frame > 0, "Knockout animates while the tree is paused")
 	await capture("/tmp/hoppy-death-knockout.png")
-	await create_timer(1.2).timeout
+	await create_timer(3.0).timeout
 	await capture("/tmp/hoppy-death-results-fading.png")
 	await create_timer(0.6).timeout
 	var retry: Button = level.resume_button.get_parent().get_child(3)

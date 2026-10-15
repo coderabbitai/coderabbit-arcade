@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "animation_sample_rate": 120,
+  "atlas_resolution": 1024,
+  "limits": {"triangles": 18000, "materials": 4, "bones": 40, "surfaces": 6},
+  "kinds": ["kit_selftest", "flaky_test_swarm", "merge_conflict_hydra", "legacy_monolith"],
+  "actions": ["intro", "idle", "telegraph", "attack", "hurt", "phase_change", "defeat", "retreat"],
+  "sockets": ["fx_core", "fx_0", "fx_1", "fx_2", "fx_3", "fx_4", "fx_5", "muzzle_0", "muzzle_1", "muzzle_2"]
+}

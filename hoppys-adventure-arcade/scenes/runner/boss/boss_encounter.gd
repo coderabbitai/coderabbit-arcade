@@ -20,6 +20,9 @@ const ScoreManager = preload("res://scenes/runner/systems/score_manager.gd")
 ## script preloads this one back, so there is no cycle).
 const Projectile = preload("res://scenes/runner/hazards/projectile.gd")
 const ToolPickup = preload("res://scenes/runner/powerups/tool_pickup.gd")
+## The cinematic-focus default (contract §11.5) for a visual without the hook, the graybox included;
+## the base preloads nothing, so there is no cycle.
+const BossVisualBase = preload("res://scenes/runner/boss/boss_visual_base.gd")
 const PROJECTILE_SCENE := "res://scenes/runner/hazards/projectile.tscn"
 const TOOL_SCENE := "res://scenes/runner/powerups/tool_pickup.tscn"
 const VISUAL_DIR := "res://scenes/runner/boss/visuals/"
@@ -45,6 +48,14 @@ const PHASE_CHANGE_ATTACK_DELAY := 0.6
 const CAMERA_SHAKE_ON_TOOL := 0.35
 ## Lanes 0/1/2 (contract §11.7).
 const LANE_COUNT := 3
+## Contract 2.6 §11.14 cinematic modes: a full intro on the run's first meeting with a boss, a short
+## one on every later meeting, and the same split for the defeat.
+const CINEMATIC_INTRO_FULL: StringName = &"intro_full"
+const CINEMATIC_INTRO_SHORT: StringName = &"intro_short"
+const CINEMATIC_DEFEAT_FULL: StringName = &"defeat_full"
+const CINEMATIC_DEFEAT_SHORT: StringName = &"defeat_short"
+## The time factor during the defeat's hit-stop (contract §11.14 boss_time_factor).
+const HIT_STOP_FACTOR := 0.05
 
 # --- read-only state (the facade mirrors these into contract §11.4 properties) ---
 
@@ -72,6 +83,15 @@ var visual: Node3D
 ## The live boss node (the Boss mount) during a fight, null outside one: the facade mirrors this
 ## into its own `boss` property (contract §11.4).
 var boss: Node3D
+## The cinematic playing now (contract 2.6 §11.14), &"" when none, and its whole length. An intro
+## runs on the `_intro` countdown and a defeat on `_outro`, so the cinematic clock and the fight's
+## own windows can never drift apart.
+var cinematic_mode: StringName = &""
+var cinematic_seconds := 0.0
+## Where the cinematic camera aims, in the Boss mount's space (contract §11.5): the visual's
+## cinematic_focus(), read once straight after on_spawned() at its rest pose and kept for the fight.
+## Zero outside a fight.
+var cinematic_focus := Vector3.ZERO
 
 @onready var boss_root: Node3D = $Boss
 @onready var projectiles_root: Node3D = $Projectiles
@@ -96,6 +116,14 @@ var _last_mask := 0
 var _last_tool_lane := -1
 var _graybox: Node3D
 var _scene_cache := {}
+## Per-run kind -> true sets (contract §11.14): a boss already met plays the short intro, and one
+## already beaten plays the short defeat.
+var _met := {}
+var _defeated_kinds := {}
+## Set by mark_met() / mark_defeated(): the next start() keeps the restored sets even on stage 1,
+## where it would otherwise reset the run's tallies.
+var _met_restored := false
+var _cinematic_skipped := false
 
 # --- StageManager entry points ---
 
@@ -127,15 +155,52 @@ func _find_facade() -> RunnerGame:
 func reset() -> void:
 	abort()
 	_reset_run_stats()
+	_met_restored = false
+
+## Contract §11.13/§11.14: a checkpoint retry restores the bosses its run had already met, so the
+## retried boss counts as a repeat meeting and plays the short intro. Kept by the next start(),
+## stage 1 included.
+func mark_met(kinds: Array) -> void:
+	_mark(_met, kinds)
+
+## The same for the bosses the run had already beaten (bosses_defeated_kinds), so a retry that
+## kills one of them again plays the short defeat.
+func mark_defeated(kinds: Array) -> void:
+	_mark(_defeated_kinds, kinds)
+
+## The kinds this run has met so far, for the boss checkpoint (contract §11.13 bosses_met).
+func met_kinds() -> Array[StringName]:
+	return _kinds(_met)
+
+## The kinds this run has beaten so far (contract §11.13 bosses_defeated_kinds).
+func defeated_kinds() -> Array[StringName]:
+	return _kinds(_defeated_kinds)
+
+func _mark(into: Dictionary, kinds: Array) -> void:
+	for entry in kinds:
+		var restored := StringName(entry)
+		if restored != &"":
+			into[restored] = true
+	_met_restored = true
+
+func _kinds(from: Dictionary) -> Array[StringName]:
+	var kinds: Array[StringName] = []
+	for entry in from:
+		kinds.append(entry)
+	return kinds
 
 ## Enter the fight for `index` (contract §11.1 stage index, 1-based and never reset inside a run).
 func start(index: int) -> void:
 	if game == null or not is_instance_valid(game) or config == null:
 		return
+	# A fight started over a live one still closes the old cinematic, so a hold never outlives it.
+	_end_cinematic()
 	stage_index = maxi(index, 1)
-	# Stage 1 is the first fight of a run, so it is also where a restart's counters start again.
-	if stage_index <= 1:
+	# Stage 1 is the first fight of a run, so it is also where a restart's counters start again —
+	# unless a checkpoint retry has just restored this run's meetings.
+	if stage_index <= 1 and not _met_restored:
 		_reset_run_stats()
+	_met_restored = false
 	_seed_rng()
 	def = BossDefs.fight_def(stage_index, config)
 	var def_kind: StringName = def.get("kind", &"")
@@ -151,7 +216,11 @@ func start(index: int) -> void:
 	_last_tool_lane = -1
 	_fight_timer = 0.0
 	_since_tool = 0.0
-	_intro = maxf(float(config.boss_intro_seconds), 0.0)
+	# Contract §11.14: the first meeting this run plays the full intro, every later one the short.
+	var first_meeting := not _met.has(kind)
+	_met[kind] = true
+	_intro = _cinematic_length(float(config.boss_intro_seconds), float(config.boss_intro_short_seconds),
+		first_meeting)
 	_outro = 0.0
 	_attack_timer = _attack_interval()
 	_tool_timer = _tool_interval() * 0.5
@@ -160,12 +229,16 @@ func start(index: int) -> void:
 	_mount_boss()
 	boss = boss_root
 	_active = true
-	# The entrance card goes out first (contract §11.4): boss_intro opens the intro, boss_spawned
-	# right behind it is the moment the boss is visible and armed, and the attacks start once the
-	# _intro seconds boss_intro carries have run down.
+	# The entrance card goes out first (contract §11.4): boss_intro opens the intro, the cinematic
+	# that plays it follows (§11.14), boss_spawned right behind them is the moment the boss is
+	# visible and armed, and the attacks start once the _intro seconds boss_intro carries have run
+	# down.
 	_emit(&"boss_intro", [kind, boss_name, _intro])
+	_begin_cinematic(CINEMATIC_INTRO_FULL if first_meeting else CINEMATIC_INTRO_SHORT, _intro)
 	_emit(&"boss_spawned", [kind, hp])
 	_emit(&"boss_health_changed", [hp, max_hp])
+	# Contract §11.5: the visual hears every boss_health_changed, the opening full-HP one included.
+	_visual_call(&"set_health", [hp, max_hp])
 
 ## One physics tick of the `boss` phase. Projectiles and tools move themselves; this drives the
 ## intro, the telegraph queue, the attack and tool clocks, the timeout and the outro.
@@ -175,10 +248,18 @@ func tick(delta: float) -> void:
 	if _outro > 0.0:
 		_outro -= delta
 		if _outro <= 0.0:
+			_end_cinematic()
 			_finish()
+		else:
+			_push_cinematic_state()
 		return
 	if _intro > 0.0:
 		_intro -= delta
+		if _intro <= 0.0:
+			_intro = 0.0
+			_end_cinematic()
+		else:
+			_push_cinematic_state()
 		return
 	_fight_timer += delta
 	_advance_telegraphs(delta)
@@ -187,8 +268,11 @@ func tick(delta: float) -> void:
 	if _fight_timer >= float(config.boss_timeout_seconds):
 		_retreat()
 
-## The run was lost mid-fight: everything goes, with no signal and no bonus (systems spec §10.1).
+## The run was lost mid-fight: everything goes, with no bonus and no fight signal (systems spec
+## §10.1). A cinematic that was playing still closes with boss_cinematic_ended (contract §11.14), so
+## every listener that froze for it lets go.
 func abort() -> void:
+	_end_cinematic()
 	_active = false
 	finished = false
 	boss = null
@@ -219,6 +303,7 @@ func apply_tool(tool_kind: StringName) -> void:
 		_visual_call(&"play_resist", [tool_kind])
 	_add_bonus(int(config.tool_bonus), ScoreManager.REASON_TOOL)
 	_emit(&"boss_health_changed", [hp, max_hp])
+	_visual_call(&"set_health", [hp, max_hp])
 	_advance_phase()
 	if hp <= 0:
 		_defeat()
@@ -295,6 +380,122 @@ func projectile_count() -> int:
 ## Live tools, same.
 func tool_count() -> int:
 	return _live_children(tools_root).size()
+
+# --- cinematics (contract 2.6 §11.14) ---
+
+## 0..1 through the cinematic playing now, 0 when none is.
+func cinematic_progress() -> float:
+	if cinematic_mode == &"" or cinematic_seconds <= 0.0:
+		return 0.0
+	return clampf(_cinematic_elapsed() / cinematic_seconds, 0.0, 1.0)
+
+## True once an intro has played boss_cinematic_skip_after seconds, until it is skipped or is already
+## inside its last boss_cinematic_skip_tail seconds. A defeat is never skippable (contract §11.14):
+## the fight's jump mashing would otherwise eat the payoff.
+func can_skip_cinematic() -> bool:
+	if not _active or not _is_intro(cinematic_mode) or _cinematic_skipped or config == null:
+		return false
+	var elapsed := _cinematic_elapsed()
+	return elapsed >= float(config.boss_cinematic_skip_after) and elapsed < cinematic_seconds - _skip_tail()
+
+## Jump to the last boss_cinematic_skip_tail seconds, so the camera return still plays, and announce
+## it with boss_cinematic_skipped. The intro window shrinks with it: the attacks follow the tail.
+## Returns false when the cinematic cannot be skipped right now (always, for a defeat).
+func skip_cinematic() -> bool:
+	if not can_skip_cinematic():
+		return false
+	_cinematic_skipped = true
+	_intro = _skip_tail()
+	_emit(&"boss_cinematic_skipped", [cinematic_mode])
+	# A zero tail has nothing left to play: the intro ends on the spot, since tick() would otherwise
+	# step straight into the fight and never close it (contract §11.14: ended follows the tail).
+	if _intro <= 0.0:
+		_intro = 0.0
+		_end_cinematic()
+	else:
+		_push_cinematic_state()
+	return true
+
+## The factor the visuals, effects and HUD multiply into their own delta (boss_time_factor; the
+## engine time scale is never touched). 1 outside a defeat cinematic.
+func time_factor() -> float:
+	if config == null or not _is_defeat(cinematic_mode):
+		return 1.0
+	return time_factor_profile(_cinematic_elapsed(), float(config.boss_hitstop_seconds),
+		float(config.boss_slowmo_seconds), float(config.boss_slowmo_factor))
+
+## The defeat's time factor `elapsed` seconds in (contract §11.14): HIT_STOP_FACTOR for `hitstop`
+## seconds, then `slowmo_factor` smoothstepped back to 1 over `slowmo` seconds, and 1 after. Pure,
+## so a test or a preview can read the profile without a fight.
+static func time_factor_profile(elapsed: float, hitstop: float, slowmo: float, slowmo_factor: float) -> float:
+	if elapsed < 0.0:
+		return 1.0
+	var stop := maxf(hitstop, 0.0)
+	if elapsed < stop:
+		return HIT_STOP_FACTOR
+	var span := maxf(slowmo, 0.0)
+	var t := elapsed - stop
+	if span <= 0.0 or t >= span:
+		return 1.0
+	return lerpf(clampf(slowmo_factor, HIT_STOP_FACTOR, 1.0), 1.0, smoothstep(0.0, 1.0, t / span))
+
+## Seconds into the cinematic, measured off the countdown it rides (`_intro` or `_outro`).
+func _cinematic_elapsed() -> float:
+	if cinematic_mode == &"":
+		return 0.0
+	var remaining := _intro if _is_intro(cinematic_mode) else _outro
+	return clampf(cinematic_seconds - remaining, 0.0, cinematic_seconds)
+
+func _skip_tail() -> float:
+	var tail := float(config.boss_cinematic_skip_tail) if config != null else 0.0
+	return clampf(tail, 0.0, cinematic_seconds)
+
+## The full length on a first meeting / first defeat, else min(short, full); never negative.
+func _cinematic_length(full_seconds: float, short_seconds: float, first: bool) -> float:
+	var full := maxf(full_seconds, 0.0)
+	return full if first else minf(maxf(short_seconds, 0.0), full)
+
+## Open a cinematic of `seconds` (contract §11.14). A zero-length one is not played at all: no
+## boss_cinematic, no boss_cinematic_ended, and nothing for the stage machine to hold.
+func _begin_cinematic(mode: StringName, seconds: float) -> void:
+	# A kill landed inside the intro (a tool collected by hand) closes the intro before the defeat.
+	_end_cinematic()
+	if seconds <= 0.0:
+		return
+	cinematic_mode = mode
+	cinematic_seconds = seconds
+	_cinematic_skipped = false
+	_emit(&"boss_cinematic", [kind, mode, seconds])
+	_visual_call(&"play_cinematic", [mode, seconds])
+	_push_cinematic_state()
+
+## Close the cinematic, if one is playing, with boss_cinematic_ended. The visual hears progress 1.0
+## and a time factor of 1.0 first, so its last pose is the end of the shot. Idempotent.
+func _end_cinematic() -> void:
+	if cinematic_mode == &"":
+		return
+	var mode := cinematic_mode
+	cinematic_mode = &""
+	cinematic_seconds = 0.0
+	_cinematic_skipped = false
+	_visual_call(&"set_cinematic_progress", [mode, 1.0])
+	_visual_call(&"set_time_factor", [1.0])
+	_emit(&"boss_cinematic_ended", [mode])
+
+## The visual's per-tick cinematic feed (contract §11.5): where the cinematic is, then the factor for
+## its ambient motion. Sent on the opening tick (progress 0), every tick it runs and after a skip —
+## and never without a cinematic, so a retreat's outro feeds the visual nothing.
+func _push_cinematic_state() -> void:
+	if cinematic_mode == &"":
+		return
+	_visual_call(&"set_cinematic_progress", [cinematic_mode, cinematic_progress()])
+	_visual_call(&"set_time_factor", [time_factor()])
+
+static func _is_intro(mode: StringName) -> bool:
+	return mode == CINEMATIC_INTRO_FULL or mode == CINEMATIC_INTRO_SHORT
+
+static func _is_defeat(mode: StringName) -> bool:
+	return mode == CINEMATIC_DEFEAT_FULL or mode == CINEMATIC_DEFEAT_SHORT
 
 # --- attacks ---
 
@@ -598,13 +799,22 @@ func _thresholds() -> Array[float]:
 			return rows
 	return [1.0, 0.66, 0.33]
 
+## The kill pays and announces itself on this tick, exactly as before the cinematics (contract
+## §11.14 leaves scoring alone); the defeat cinematic follows and holds the outro for its length.
+## The outro is armed first, so a boss_cinematic listener already reads progress 0 and the hit-stop.
 func _defeat() -> void:
 	var bonus := _kill_bonus()
 	_add_bonus(bonus, ScoreManager.REASON_BOSS_KILL)
 	bosses_defeated += 1
 	_emit(&"boss_defeated", [kind, bonus])
 	_visual_call(&"play_defeat", [])
-	_end_fight()
+	var first_defeat := not _defeated_kinds.has(kind)
+	_defeated_kinds[kind] = true
+	var seconds := _cinematic_length(float(config.boss_defeat_seconds),
+		float(config.boss_defeat_short_seconds), first_defeat)
+	_end_fight(seconds)
+	if _active:
+		_begin_cinematic(CINEMATIC_DEFEAT_FULL if first_defeat else CINEMATIC_DEFEAT_SHORT, seconds)
 
 ## The fight ran out of time: a part of the kill bonus, in proportion to the damage that landed.
 func _retreat() -> void:
@@ -615,21 +825,24 @@ func _retreat() -> void:
 	bosses_escaped += 1
 	_emit(&"boss_retreated", [kind, bonus])
 	_visual_call(&"play_retreat", [])
-	_end_fight()
+	_end_fight(float(config.boss_outro_seconds))
 
 func _kill_bonus() -> int:
 	return int(config.boss_kill_bonus_base) + int(config.boss_kill_bonus_per_stage) * (stage_index - 1)
 
-## Both endings clear the arena and hold the fight open for the outro; the StageManager waits for
-## `finished` rather than for the signal, so the visual gets its play_defeat / play_retreat time.
-func _end_fight() -> void:
+## Both endings clear the arena and hold the fight open for `outro_seconds`: the defeat cinematic's
+## length after a kill, boss_outro_seconds after a retreat (contract §11.14). The StageManager waits
+## for `finished` rather than for the signal, so the visual gets its play_defeat / play_retreat time.
+func _end_fight(outro_seconds: float) -> void:
 	_pending.clear()
 	_clear_projectiles()
 	_free_tools()
 	_attack_timer = 0.0
 	_tool_timer = 0.0
-	_outro = maxf(float(config.boss_outro_seconds), 0.0)
+	_intro = 0.0
+	_outro = maxf(outro_seconds, 0.0)
 	if _outro <= 0.0:
+		_end_cinematic()
 		_finish()
 
 func _finish() -> void:
@@ -644,6 +857,8 @@ func _reset_run_stats() -> void:
 	bosses_escaped = 0
 	tools_used = 0
 	boss_damage_dealt = 0
+	_met.clear()
+	_defeated_kinds.clear()
 
 # --- the boss node ---
 
@@ -666,6 +881,7 @@ func _mount_boss() -> void:
 				_apply_visual_vars()
 				if visual.has_method("on_spawned"):
 					visual.on_spawned()
+				_read_cinematic_focus()
 				return
 			if instance != null:
 				push_warning("Runner boss visual at %s root is %s, expected Node3D; using graybox" % [path, instance.get_class()])
@@ -673,6 +889,21 @@ func _mount_boss() -> void:
 	_graybox = _build_graybox()
 	visual = _graybox
 	boss_root.add_child(visual)
+	_read_cinematic_focus()
+
+## The camera's aim for this fight (contract §11.5), taken at the rest pose on_spawned() leaves and
+## before any cinematic cue: the visual's own cinematic_focus() when it has one (a Vector3), else the
+## shared rest_focus() default, carried into the mount's space through the visual's transform.
+func _read_cinematic_focus() -> void:
+	cinematic_focus = Vector3.ZERO
+	if not is_instance_valid(visual):
+		return
+	var local := BossVisualBase.rest_focus(visual)
+	if visual.has_method("cinematic_focus"):
+		var value: Variant = visual.call(&"cinematic_focus")
+		if value is Vector3:
+			local = value
+	cinematic_focus = visual.transform * local
 
 ## The contract §11.5 base vars, set before on_spawned(). A visual that does not extend
 ## boss_visual_base.gd simply does not receive them.
@@ -727,6 +958,7 @@ func _free_visual() -> void:
 		visual.queue_free()
 	visual = null
 	_graybox = null
+	cinematic_focus = Vector3.ZERO
 
 # --- arena housekeeping ---
 

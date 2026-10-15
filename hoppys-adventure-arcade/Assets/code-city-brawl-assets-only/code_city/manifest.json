@@ -6399,6 +6399,891 @@
           "loop": true
         }
       ]
+    },
+    "stack_overflow": {
+      "file": "stack_overflow.png",
+      "resource": "stack_overflow.tres",
+      "cell": [
+        256,
+        256
+      ],
+      "grid": [
+        4,
+        4
+      ],
+      "pivot": [
+        128,
+        230
+      ],
+      "facing": "left",
+      "source": "stack_overflow",
+      "source_scale": 0.4529680365296804,
+      "frames": [
+        {
+          "index": 0,
+          "rect": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            74,
+            132,
+            183,
+            231
+          ],
+          "source_rect_ltrb": [
+            83,
+            5,
+            332,
+            232
+          ]
+        },
+        {
+          "index": 1,
+          "rect": [
+            256,
+            0,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            71,
+            130,
+            185,
+            231
+          ],
+          "source_rect_ltrb": [
+            468,
+            1,
+            729,
+            232
+          ]
+        },
+        {
+          "index": 2,
+          "rect": [
+            512,
+            0,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            68,
+            131,
+            187,
+            231
+          ],
+          "source_rect_ltrb": [
+            842,
+            7,
+            1113,
+            236
+          ]
+        },
+        {
+          "index": 3,
+          "rect": [
+            768,
+            0,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            68,
+            129,
+            188,
+            231
+          ],
+          "source_rect_ltrb": [
+            1220,
+            3,
+            1494,
+            237
+          ]
+        },
+        {
+          "index": 4,
+          "rect": [
+            0,
+            256,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            70,
+            121,
+            187,
+            231
+          ],
+          "source_rect_ltrb": [
+            68,
+            250,
+            335,
+            501
+          ]
+        },
+        {
+          "index": 5,
+          "rect": [
+            256,
+            256,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            70,
+            127,
+            185,
+            231
+          ],
+          "source_rect_ltrb": [
+            460,
+            260,
+            722,
+            499
+          ]
+        },
+        {
+          "index": 6,
+          "rect": [
+            512,
+            256,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            60,
+            139,
+            197,
+            231
+          ],
+          "source_rect_ltrb": [
+            811,
+            286,
+            1122,
+            499
+          ]
+        },
+        {
+          "index": 7,
+          "rect": [
+            768,
+            256,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            80,
+            115,
+            175,
+            231
+          ],
+          "source_rect_ltrb": [
+            1246,
+            238,
+            1465,
+            504
+          ]
+        },
+        {
+          "index": 8,
+          "rect": [
+            0,
+            512,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            60,
+            148,
+            197,
+            231
+          ],
+          "source_rect_ltrb": [
+            43,
+            539,
+            354,
+            730
+          ]
+        },
+        {
+          "index": 9,
+          "rect": [
+            256,
+            512,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            62,
+            158,
+            194,
+            231
+          ],
+          "source_rect_ltrb": [
+            442,
+            559,
+            743,
+            730
+          ]
+        },
+        {
+          "index": 10,
+          "rect": [
+            512,
+            512,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            74,
+            153,
+            183,
+            231
+          ],
+          "source_rect_ltrb": [
+            840,
+            544,
+            1089,
+            725
+          ]
+        },
+        {
+          "index": 11,
+          "rect": [
+            768,
+            512,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            68,
+            135,
+            189,
+            231
+          ],
+          "source_rect_ltrb": [
+            1222,
+            519,
+            1499,
+            740
+          ]
+        },
+        {
+          "index": 12,
+          "rect": [
+            0,
+            768,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            60,
+            131,
+            196,
+            231
+          ],
+          "source_rect_ltrb": [
+            47,
+            764,
+            356,
+            993
+          ]
+        },
+        {
+          "index": 13,
+          "rect": [
+            256,
+            768,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            70,
+            125,
+            187,
+            231
+          ],
+          "source_rect_ltrb": [
+            461,
+            743,
+            728,
+            985
+          ]
+        },
+        {
+          "index": 14,
+          "rect": [
+            512,
+            768,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            64,
+            127,
+            193,
+            231
+          ],
+          "source_rect_ltrb": [
+            830,
+            747,
+            1124,
+            985
+          ]
+        },
+        {
+          "index": 15,
+          "rect": [
+            768,
+            768,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            46,
+            155,
+            209,
+            231
+          ],
+          "source_rect_ltrb": [
+            1146,
+            823,
+            1515,
+            999
+          ]
+        }
+      ],
+      "clips": [
+        {
+          "name": "idle",
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 3,
+          "loop": true
+        },
+        {
+          "name": "walk",
+          "frames": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "fps": 6,
+          "loop": true
+        },
+        {
+          "name": "slam_warning",
+          "frames": [
+            6,
+            7
+          ],
+          "fps": 5,
+          "loop": false
+        },
+        {
+          "name": "slam",
+          "frames": [
+            8,
+            9
+          ],
+          "fps": 10,
+          "loop": false
+        },
+        {
+          "name": "dash_warning",
+          "frames": [
+            10
+          ],
+          "fps": 1,
+          "loop": false
+        },
+        {
+          "name": "dash",
+          "frames": [
+            11,
+            12
+          ],
+          "fps": 10,
+          "loop": false
+        },
+        {
+          "name": "recover",
+          "frames": [
+            13
+          ],
+          "fps": 1,
+          "loop": false
+        },
+        {
+          "name": "hurt",
+          "frames": [
+            14
+          ],
+          "fps": 1,
+          "loop": false
+        },
+        {
+          "name": "defeat",
+          "frames": [
+            15
+          ],
+          "fps": 1,
+          "loop": false
+        }
+      ],
+      "source_flip_h": [],
+      "standing_height_ratio": 1.6,
+      "display_name": "STACK OVERFLOW"
+    },
+    "zero_day": {
+      "file": "zero_day.png",
+      "resource": "zero_day.tres",
+      "cell": [
+        256,
+        256
+      ],
+      "grid": [
+        4,
+        4
+      ],
+      "pivot": [
+        128,
+        230
+      ],
+      "facing": "left",
+      "source": "zero_day",
+      "source_scale": 0.5248677248677249,
+      "frames": [
+        {
+          "index": 0,
+          "rect": [
+            0,
+            0,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            58,
+            132,
+            199,
+            231
+          ],
+          "source_rect_ltrb": [
+            85,
+            28,
+            362,
+            225
+          ]
+        },
+        {
+          "index": 1,
+          "rect": [
+            256,
+            0,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            52,
+            132,
+            203,
+            231
+          ],
+          "source_rect_ltrb": [
+            506,
+            28,
+            801,
+            225
+          ]
+        },
+        {
+          "index": 2,
+          "rect": [
+            512,
+            0,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            51,
+            132,
+            205,
+            231
+          ],
+          "source_rect_ltrb": [
+            941,
+            28,
+            1242,
+            225
+          ]
+        },
+        {
+          "index": 3,
+          "rect": [
+            768,
+            0,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            48,
+            132,
+            209,
+            231
+          ],
+          "source_rect_ltrb": [
+            1396,
+            28,
+            1711,
+            225
+          ]
+        },
+        {
+          "index": 4,
+          "rect": [
+            0,
+            256,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            50,
+            132,
+            205,
+            231
+          ],
+          "source_rect_ltrb": [
+            87,
+            251,
+            389,
+            448
+          ]
+        },
+        {
+          "index": 5,
+          "rect": [
+            256,
+            256,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            52,
+            132,
+            205,
+            231
+          ],
+          "source_rect_ltrb": [
+            528,
+            251,
+            827,
+            448
+          ]
+        },
+        {
+          "index": 6,
+          "rect": [
+            512,
+            256,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            64,
+            124,
+            191,
+            231
+          ],
+          "source_rect_ltrb": [
+            1011,
+            240,
+            1261,
+            452
+          ]
+        },
+        {
+          "index": 7,
+          "rect": [
+            768,
+            256,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            60,
+            124,
+            196,
+            231
+          ],
+          "source_rect_ltrb": [
+            1423,
+            240,
+            1689,
+            451
+          ]
+        },
+        {
+          "index": 8,
+          "rect": [
+            0,
+            512,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            43,
+            142,
+            214,
+            231
+          ],
+          "source_rect_ltrb": [
+            53,
+            486,
+            389,
+            664
+          ]
+        },
+        {
+          "index": 9,
+          "rect": [
+            256,
+            512,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            42,
+            147,
+            213,
+            231
+          ],
+          "source_rect_ltrb": [
+            499,
+            495,
+            832,
+            662
+          ]
+        },
+        {
+          "index": 10,
+          "rect": [
+            512,
+            512,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            34,
+            151,
+            223,
+            231
+          ],
+          "source_rect_ltrb": [
+            942,
+            495,
+            1309,
+            655
+          ]
+        },
+        {
+          "index": 11,
+          "rect": [
+            768,
+            512,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            34,
+            141,
+            223,
+            231
+          ],
+          "source_rect_ltrb": [
+            1368,
+            479,
+            1735,
+            658
+          ]
+        },
+        {
+          "index": 12,
+          "rect": [
+            0,
+            768,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            22,
+            141,
+            233,
+            231
+          ],
+          "source_rect_ltrb": [
+            15,
+            684,
+            425,
+            864
+          ]
+        },
+        {
+          "index": 13,
+          "rect": [
+            256,
+            768,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            47,
+            135,
+            209,
+            231
+          ],
+          "source_rect_ltrb": [
+            526,
+            673,
+            842,
+            864
+          ]
+        },
+        {
+          "index": 14,
+          "rect": [
+            512,
+            768,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            58,
+            135,
+            198,
+            231
+          ],
+          "source_rect_ltrb": [
+            978,
+            678,
+            1253,
+            868
+          ]
+        },
+        {
+          "index": 15,
+          "rect": [
+            768,
+            768,
+            256,
+            256
+          ],
+          "visible_bounds": [
+            28,
+            181,
+            228,
+            231
+          ],
+          "source_rect_ltrb": [
+            1352,
+            766,
+            1741,
+            869
+          ]
+        }
+      ],
+      "clips": [
+        {
+          "name": "idle",
+          "frames": [
+            0,
+            1
+          ],
+          "fps": 3,
+          "loop": true
+        },
+        {
+          "name": "walk",
+          "frames": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "fps": 6,
+          "loop": true
+        },
+        {
+          "name": "slam_warning",
+          "frames": [
+            6,
+            7
+          ],
+          "fps": 5,
+          "loop": false
+        },
+        {
+          "name": "slam",
+          "frames": [
+            8,
+            9
+          ],
+          "fps": 10,
+          "loop": false
+        },
+        {
+          "name": "dash_warning",
+          "frames": [
+            10
+          ],
+          "fps": 1,
+          "loop": false
+        },
+        {
+          "name": "dash",
+          "frames": [
+            11,
+            12
+          ],
+          "fps": 10,
+          "loop": false
+        },
+        {
+          "name": "recover",
+          "frames": [
+            13
+          ],
+          "fps": 1,
+          "loop": false
+        },
+        {
+          "name": "hurt",
+          "frames": [
+            14
+          ],
+          "fps": 1,
+          "loop": false
+        },
+        {
+          "name": "defeat",
+          "frames": [
+            15
+          ],
+          "fps": 1,
+          "loop": false
+        }
+      ],
+      "source_flip_h": [
+        4,
+        5
+      ],
+      "standing_height_ratio": 1.6,
+      "display_name": "ZERO-DAY"
     }
   },
   "backgrounds": {

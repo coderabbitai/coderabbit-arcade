@@ -20,8 +20,9 @@ const TICK := 1.0 / 60.0
 const LANE_COUNT := 3
 ## Seed for the placement checks; any fixed value makes the run reproducible.
 const SPAWN_SEED := 4242
-## Phases the spawner must stay quiet in (contract §11.1, systems spec §10.6).
-const IDLE_PHASES: Array[StringName] = [&"turn", &"boss", &"stage_clear", &"idle"]
+## Phases the spawner must stay quiet in (contract §11.1, systems spec §10.6). The drain is still
+## inside `run` and is closed by set_spawning(false), which the block below checks on its own.
+const IDLE_PHASES: Array[StringName] = [&"boss", &"stage_clear", &"idle"]
 ## chunk_spawner.gd's BREATHER_TAG: the rest beats it falls back to when nothing may block.
 const BREATHER_TAG := "breather"
 ## Tool draws the no-repeat / height rules are sampled over.
@@ -163,9 +164,9 @@ func _check_phase_gate() -> void:
 
 # --- V12: the boss arena carries no chunk (contract §11.3) ---
 
-## Gameplay never rotates, so `World/Chunks` stays outside the TurnRig and the arena holds only the
-## boss, its projectiles and its tools. A chunk parked under the arena would be yawed by the bend
-## and every z test in the backend would drift with it.
+## The TurnRig is a static mount, so `World/Chunks` stays outside it and the arena holds only the
+## boss, its projectiles and its tools. A chunk parked under the arena would share the rig's
+## transform, and every z test in the backend would drift with it.
 func _check_arena_is_chunk_free() -> void:
 	var packed := load(ARENA_SCENE) as PackedScene
 	check(packed != null, "boss_arena.tscn failed to load")
@@ -194,7 +195,7 @@ func _check_arena_is_chunk_free() -> void:
 	arena.free()
 
 	# The other half of the rule, read off runner_game.tscn without instantiating it: Chunks hangs
-	# under World, never under the rig the turn rotates.
+	# under World, never under the static TurnRig.
 	var game_packed := load(GAME_SCENE) as PackedScene
 	check(game_packed != null, "runner_game.tscn failed to load")
 	if game_packed == null:
@@ -209,7 +210,7 @@ func _check_arena_is_chunk_free() -> void:
 	for path in paths:
 		if not path.begins_with("World/TurnRig"):
 			continue
-		check(not path.ends_with("/Chunks"), "runner_game.tscn parks %s under the turn rig" % path)
+		check(not path.ends_with("/Chunks"), "runner_game.tscn parks %s under the TurnRig" % path)
 
 # --- V13: tool spawns (contract §11.7, systems spec §10.3) ---
 

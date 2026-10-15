@@ -25,11 +25,23 @@ func capture(name: String) -> void:
 	DirAccess.make_dir_recursive_absolute("res://../docs/previews/code-city")
 	root.get_texture().get_image().save_png("res://../docs/previews/code-city/"+name+".png")
 func run() -> void:
+	# A rendered start is still adding the autoloads' nodes to root for its first frames, and a
+	# scene change then fails ("Parent node is busy setting up children"). Let it settle.
+	await create_timer(.5).timeout
 	change_scene_to_file("res://scenes/beatem_up/beatem_menu.tscn")
 	await process_frame;await process_frame
 	await capture("menu")
 	change_scene_to_file("res://scenes/beatem_up/code_city_brawl.tscn")
 	await process_frame;await process_frame
+	# A rendered start can take longer than two frames to build the stage; wait on the scene itself.
+	var loading := 0
+	while (current_scene==null or current_scene.get("player")==null) and loading<600:
+		await process_frame
+		loading+=1
+	if current_scene==null or current_scene.get("player")==null:
+		check(false,"Code City loads within 600 frames")
+		quit(1)
+		return
 	game=current_scene
 	game.test_mode=true
 	# A window that starts unfocused can focus-pause the game before test_mode is set.
@@ -47,6 +59,10 @@ func run() -> void:
 	game.player.tick(.05)
 	check(game.player.position.y<before.y and game.player.height==0,"Keyboard W moves in depth without jumping")
 	key.pressed=false;Input.parse_input_event(key)
+	# The pad's bottom button is also ui_accept (as Space is), so with the intro's Next button
+	# focused these mapping checks would turn the page. Test the bindings with nothing focused.
+	var focused := root.gui_get_focus_owner()
+	root.gui_release_focus()
 	var joy := InputEventJoypadButton.new()
 	joy.device=0;joy.button_index=JOY_BUTTON_A;joy.pressed=true
 	Input.parse_input_event(joy)
@@ -63,6 +79,8 @@ func run() -> void:
 	game.player.tick(.02)
 	check(game.player.swing_left>0,"Gamepad X mapping attacks")
 	attack_event.pressed=false;Input.parse_input_event(attack_event)
+	await process_frame
+	if focused: focused.grab_focus()
 	game.player.controlled=false
 	var max_enemies := 0
 	var max_bullets := 0
@@ -73,6 +91,8 @@ func run() -> void:
 	var combat_starts := 0
 	var combat_from_enter := true
 	var first_enter_step := -1
+	var mini_bosses := {}
+	var boss_victories := {}
 	# This bot tests reachability/cleanup with invulnerability, not game balance.
 	# 24000 steps covers the 13.5s intro plus about 2.1s for each of the two transitions.
 	Engine.physics_ticks_per_second = 240
@@ -89,7 +109,7 @@ func run() -> void:
 		if step%120==0:
 			# Stage previews show combat, not the intro or the run-in (stage_banner covers that).
 			if game.room==0 and game.playing and not game.flow.banner_panel.visible: await capture("stage_%d" % (game.stage_index+1))
-			if is_instance_valid(game.boss): await capture("boss_phase_%d" % game.boss.phase)
+			if is_instance_valid(game.boss) and not game.has_mini_boss(): await capture("boss_phase_%d" % game.boss.phase)
 		if game.playing:
 			var target=null
 			var best=INF
@@ -112,7 +132,10 @@ func run() -> void:
 				if is_instance_valid(e): e.tick(1.0/60.0)
 			if is_instance_valid(game.boss): game.boss.tick(1.0/60.0)
 		var prev: String = game.state
+		if game.has_mini_boss(): mini_bosses[game.stage_index] = true
 		game._physics_process(1.0/60.0)
+		# The bot's own swing can land the last hit before prev is read; note the stage instead.
+		if game.state=="boss_victory": boss_victories[game.stage_index] = true
 		# The intro preview is the first story scene once its caption is typed (it opens on black).
 		if game.state=="intro" and game.intro_page==0 and game.intro_clock>=3.0: await capture("intro")
 		# The minimap mid-room with enemies about, and in the boss room under the boss bar, once the
@@ -141,6 +164,7 @@ func run() -> void:
 	check(max_enemies<=12 and max_bullets<=32,"Combat pools remain bounded")
 	check(game.completion_count==1,"Full run reports one completion")
 	check(stage_exits==2 and stage_enters==3,"Passed through stage_exit twice and stage_enter three times")
+	check(mini_bosses.keys()==[0,1] and boss_victories.keys()==[0,1],"Districts 1 and 2 each end on their district boss and a victory hop (bosses in %s, hops in %s)" % [mini_bosses.keys(),boss_victories.keys()])
 	check(combat_starts==3 and combat_from_enter,"Every combat start was preceded by stage_enter")
 	check(first_enter_step>=780,"No confirm input; intro auto-advanced into stage_enter")
 	if game.state=="won":
