@@ -43,11 +43,10 @@ Versioned macOS, Windows, Linux and Web builds come from the [Build workflow](.g
 ## Tests
 
 ```sh
-godot --headless --path hoppys-adventure-arcade --import
-godot --headless --path hoppys-adventure-arcade --script res://tests/runner_logic.gd
+python3 tools/tests/run_tests.py --godot /path/to/Godot
 ```
 
-Each file in `hoppys-adventure-arcade/tests/` is a standalone script that exits nonzero on failure. CI runs the headless suites on every PR. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
+CI discovers the suites in `hoppys-adventure-arcade/tests/`: every script that extends `SceneTree` or `MainLoop`. Helpers such as `tests/support/` are not suites. It runs all of them on every PR, except the few listed with a reason in [`tools/tests/suites.toml`](tools/tests/suites.toml). A suite fails on a nonzero exit, an engine or script error, or a leak. See [CONTRIBUTING.md](CONTRIBUTING.md#tests) for details.
 
 ## Contributing
 

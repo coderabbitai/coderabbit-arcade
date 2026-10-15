@@ -222,6 +222,5 @@ func run() -> void:
 			check(InputMap.event_is_action(pad,binding[0]),"%s answers pad %d" % [binding[0],device])
 	print("Code City logic failures: ",failures)
 	game.queue_free()
-	root.get_node("AudioService").shutdown()
-	await create_timer(.4).timeout
+	await root.get_node("AudioService").settle()
 	quit(1 if failures else 0)

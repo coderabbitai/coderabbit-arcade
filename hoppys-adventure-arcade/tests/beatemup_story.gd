@@ -84,8 +84,7 @@ func run() -> void:
 	print("Story checks: ", checks, " failures: ", failures)
 	paused = false
 	if is_instance_valid(current_scene): current_scene.queue_free()
-	root.get_node("AudioService").shutdown()
-	await create_timer(0.4).timeout
+	await root.get_node("AudioService").settle()
 	quit(1 if failures else 0)
 
 func check_textures() -> void:

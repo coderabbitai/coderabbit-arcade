@@ -247,6 +247,7 @@ func _run() -> void:
 	check(runtime_errors.count == 0,"no runtime errors during asset checks")
 	preload("res://scenes/runner/hazards/visuals/hazard_art.gd").release_caches()
 	print("ASSET A3: %s (%d checks)" % ["PASS" if failures == 0 else "FAIL",checks])
+	await root.get_node("AudioService").settle()
 	quit(0 if failures == 0 else 1)
 
 func _round_two(visual: Base, title: String) -> void:

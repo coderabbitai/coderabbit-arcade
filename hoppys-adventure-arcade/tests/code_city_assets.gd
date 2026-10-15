@@ -253,6 +253,5 @@ func piece(key: String, clip: String, pos: Vector2, size: Vector2) -> void:
 	stage.add_child(sprite)
 
 func finish(code: int = 0) -> void:
-	root.get_node("AudioService").shutdown()
-	await create_timer(0.3).timeout
+	await root.get_node("AudioService").settle()
 	quit(code)

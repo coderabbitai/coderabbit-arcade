@@ -422,9 +422,9 @@ func run() -> void:
 	print("Heroes vs. Villains motion failures: ",failures)
 	for voice in game.sound_pool: voice.stop()
 	game.music.stop()
-	root.get_node("AudioService").shutdown()
 	game.queue_free()
 	await process_frame;await process_frame
+	await root.get_node("AudioService").settle()
 	quit(1 if failures else 0)
 
 const ENCOUNTER := "ENCOUNTER 1 / 3 — clear the blockers"

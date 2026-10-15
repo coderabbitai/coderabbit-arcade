@@ -284,6 +284,5 @@ func shutdown() -> void:
 	paused=false
 	change_scene_to_file("res://scenes/platformer/platformer_menu.tscn")
 	await frames(2)
-	root.get_node("AudioService").shutdown()
-	await create_timer(.3).timeout
+	await root.get_node("AudioService").settle()
 	quit(failures)

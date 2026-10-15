@@ -104,8 +104,7 @@ func run() -> void:
 	await check_armed_overlays()
 	print("Stage flow failures: ", failures)
 	if is_instance_valid(current_scene): current_scene.queue_free()
-	root.get_node("AudioService").shutdown()
-	await create_timer(.4).timeout
+	await root.get_node("AudioService").settle()
 	quit(1 if failures else 0)
 ## Accumulated 1/60 steps land one ulp under 4.5, so the page turns on the next tick.
 func cross_intro(page: int) -> void:

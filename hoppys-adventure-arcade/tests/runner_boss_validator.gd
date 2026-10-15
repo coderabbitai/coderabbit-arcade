@@ -915,4 +915,8 @@ func _report() -> void:
 	player = null
 	tool_node = null
 	print("RUNNER BOSS: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures / ", checks, " checks)")
-	quit(failures)
+	_quit_quietly(failures)
+
+func _quit_quietly(code: int) -> void:
+	await root.get_node("AudioService").settle()
+	quit(code)

@@ -427,7 +427,6 @@ func run() -> void:
 	game.victory._input(advance_key())
 	check(game.leaving,"Dedicated advance presses Return once the count has landed")
 	game.queue_free();await process_frame
-	root.get_node("AudioService").shutdown()
-	await create_timer(.3).timeout
+	await root.get_node("AudioService").settle()
 	print("Heroes vs. Villains logic failures: ",failures)
 	quit(0 if failures==0 else 1)

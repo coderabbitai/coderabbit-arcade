@@ -182,6 +182,5 @@ func run() -> void:
 	check(not root.get_node("AudioService").music.stream_paused, "Menu music restored")
 	print("PLATFORMER SMOKE: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
 	await frames(35)
-	root.get_node("AudioService").shutdown()
-	await create_timer(0.3).timeout
+	await root.get_node("AudioService").settle()
 	quit(failures)

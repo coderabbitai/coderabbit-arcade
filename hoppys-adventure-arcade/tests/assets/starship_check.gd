@@ -105,4 +105,5 @@ func run() -> void:
 	print("STARSHIP TOTAL: %d triangles including deck, far bulkhead, entry bulkhead and reactor dock" % (triangles + extra_triangles))
 	print("STARSHIP GEOMETRY: repeated modules=%d triangles; 6 batches; 1 shared 256x256 texture" % triangles)
 	print("STARSHIP CHECK: %s (%d checks, %d failures)" % ["PASS" if failures == 0 else "FAIL",checks,failures])
+	await root.get_node("AudioService").settle()
 	quit(0 if failures == 0 else 1)

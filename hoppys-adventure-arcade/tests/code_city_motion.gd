@@ -1007,6 +1007,5 @@ func run() -> void:
 	check(boss.position==transition_pos and not boss.leaping and not boss.core_cue.visible,"Defeat clears movement and the exposed-core cue")
 	print("Code City motion failures: ",failures)
 	game.queue_free()
-	root.get_node("AudioService").shutdown()
-	await create_timer(.4).timeout
+	await root.get_node("AudioService").settle()
 	quit(1 if failures else 0)

@@ -44,74 +44,27 @@ jobs:
           unzip -q /tmp/godot.zip -d ~/godot
           mv ~/godot/Godot_v${GODOT_VERSION}_linux.x86_64 ~/godot/godot
 
-      - name: Import project
-        run: ~/godot/godot --headless --path "$PROJECT" --import
+      - name: Cache imported resources
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.PROJECT }}/.godot
+          key: godot-import-${{ env.GODOT_VERSION }}-${{ hashFiles('hoppys-adventure-arcade/project.godot', 'hoppys-adventure-arcade/**/*.import') }}
+          # A stale cache is safe: Godot reimports any source whose hash changed.
+          restore-keys: godot-import-${{ env.GODOT_VERSION }}-
 
-      # Headless suites only. Not listed here:
-      # - capture_runner_menu_previews, perf_probe, runner_perf_probe, runner_pickup_hitch
-      #   need a real window/GPU and are run locally (see CONTRIBUTING.md).
-      # - menu_smoke and menu_hoppy_smoke rely on pointer hover, which doesn't happen headless
-      #   (2 failures each, also on main).
-      - name: Run headless suites
-        run: |
-          suites=(
-            code_city_assets
-            code_city_celebration
-            code_city_logic
-            code_city_mini_boss
-            code_city_motion
-            code_city_smoke
-            controller_service
-            stage_flow
-            beatemup_knockout
-            beatemup_story
-            beatemup_minimap
-            heroes_villains_assets
-            heroes_villains_logic
-            heroes_villains_motion
-            heroes_villains_smoke
-            hoppy_armed_assets
-            enchanted_assets
-            enchanted_boundaries
-            enchanted_repo_smoke
-            menu_return_layout
-            orbital_assets
-            orbital_ops_smoke
-            platformer_boss
-            platformer_knockout
-            platformer_smoke
-            platformer_traversal
-            runner_boss_validator
-            runner_chunk_validator
-            runner_logic
-            runner_run_intro
-            runner_run_intro_ui
-            runner_scaffold_check
-            runner_smoke
-            runner_synth_threads
-            runner_visual_smoke
-            runner_warmup_check
-          )
-          failed=()
-          for suite in "${suites[@]}"; do
-            echo "::group::$suite"
-            log="/tmp/$suite.log"
-            set +e
-            timeout 600 ~/godot/godot --headless --path "$PROJECT" \
-              --script "res://tests/$suite.gd" 2>&1 | tee "$log"
-            rc=${PIPESTATUS[0]}
-            set -e
-            echo "::endgroup::"
-            # A script that fails to parse can still exit 0, so treat SCRIPT ERROR as a failure too.
-            if [ "$rc" -ne 0 ] || grep -q "SCRIPT ERROR" "$log"; then
-              echo "::error title=$suite::failed (exit $rc)"
-              failed+=("$suite")
-            fi
-          done
-          if [ ${#failed[@]} -gt 0 ]; then
-            echo "Failed suites: ${failed[*]}"
-            exit 1
-          fi
+      # The runner imports first (failing on any engine error), then runs every tests/**/*.gd;
+      # tools/tests/suites.toml lists the few skipped or serial suites and why.
+      - name: Import and run headless suites
+        run: python3 tools/tests/run_tests.py --godot ~/godot/godot --jobs 4
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-results
+          path: build/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
       # Quits from the hub, fights, the Code City celebration, the runner intro and mid-transition
       # with their audio playing. Godot prints its exit-leak lines only after the script is gone,
@@ -133,6 +86,8 @@ jobs:
       - run: pip install ruff gdtoolkit==4.*
       - name: Ruff (tools)
         run: ruff check tools hoppys-adventure-arcade/tools
+      - name: Test runner unit tests
+        run: python -m unittest discover -s tools/tests -v
       # Advisory until the existing code is formatted; make it blocking afterwards.
       - name: gdlint (advisory)
         continue-on-error: true

@@ -1,3 +1,9 @@
 # Baseline: pyflakes errors only (undefined names, unused imports). Tighten over time.
 [lint]
 select = ["F"]
+
+[lint.per-file-ignores]
+# Each boss GLB records the SHA-256 of these recipe sources (boss_kit.py export), and
+# tests/assets/boss_legacy_monolith_check.gd fails when a source no longer matches. Leave their
+# unused imports until the next rebake, so a lint fix doesn't drift them from the committed models.
+"hoppys-adventure-arcade/tools/blender/bosses/{boss_kit,build_legacy_monolith,build_merge_conflict_hydra}.py" = ["F401"]

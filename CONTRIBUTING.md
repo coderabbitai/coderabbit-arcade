@@ -29,14 +29,26 @@ Thanks for helping out! This guide covers setup, workflow, testing and the asset
 
 ## Tests
 
-The tests are standalone `SceneTree` scripts. Each one exits nonzero on failure:
+The tests are standalone `SceneTree` scripts under `hoppys-adventure-arcade/tests/`. Run them all the way CI does:
+
+```sh
+python3 tools/tests/run_tests.py --godot /path/to/Godot      # or set $GODOT
+python3 tools/tests/run_tests.py -k runner                   # suites whose name contains "runner"
+python3 tools/tests/run_tests.py --list                      # what runs and what is skipped
+```
+
+- **Every new `.gd` file under `tests/` that `extends SceneTree` or `MainLoop` runs automatically.** Shared helpers that extend anything else, such as `tests/support/`, are never run as suites. There's no list to update. To keep a suite out of CI (it needs a GPU, a window or pointer hover), add it to `[skip]` in [`tools/tests/suites.toml`](tools/tests/suites.toml) with the reason.
+- **A suite fails if it exits nonzero, times out, or prints an engine or script error or an exit-time leak.** Suites run with `--verbose`, so a leak names the objects involved. The one tolerated shape is the engine's audio-teardown race: only `AudioStream*` playbacks and audio files, reported as a note. Anything else that leaks fails. That includes `ERROR:`, `SCRIPT ERROR`, parse errors and "leaked at exit". If a test provokes an engine error on purpose, list a pattern for it under `[expected_errors]`; the runner fails if that pattern stops matching.
+- **Finish a suite with `await root.get_node("AudioService").settle()` before `quit()`.** It stops the shared music and waits until the audio thread has released it. A fixed delay is not enough under parallel load.
+- Each suite gets a private user-data root (`HOME`, the XDG directories, and `APPDATA` on Windows), so `user://` files (settings, leaderboards) never touch your real ones. The runner checks this with Godot before starting and refuses to run if `user://` would escape. Suites listed under `[serial]` (wall-clock budgets, or suites that occupy every core) run alone after the parallel batch. Results are written to `build/test-results/summary.json`.
+
+To run a single suite directly:
 
 ```sh
 godot --headless --path hoppys-adventure-arcade --script res://tests/runner_logic.gd
-godot --headless --path hoppys-adventure-arcade --script res://tests/platformer_smoke.gd
 ```
 
-CI runs every headless suite listed in `.github/workflows/ci.yml`. It also runs `python3 tools/checks/exit_leak.py --godot <godot>`, which quits from screens with audio playing and fails on Godot's "leaked at exit" lines. Add a focused regression test when you change behavior. Some suites capture screenshots when run without `--headless`; include those in the PR for visual changes. On macOS, pass `--always-on-top` for graphical runs so the capture doesn't stall when the window is covered.
+CI also runs `python3 tools/checks/exit_leak.py --godot <godot>`, which quits from screens with audio playing and fails on Godot's "leaked at exit" lines. Add a focused regression test when you change behavior. Some suites capture screenshots when run without `--headless`; include those in the PR for visual changes. On macOS, pass `--always-on-top` for graphical runs so the capture doesn't stall when the window is covered.
 
 Per-mode notes and test details live in [`docs/`](docs/).
 

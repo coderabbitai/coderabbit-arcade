@@ -1,0 +1,27 @@
+# Configuration for tools/tests/run_tests.py.
+#
+# Every suite (a script under hoppys-adventure-arcade/tests/ that extends SceneTree or MainLoop)
+# runs headless in CI by default.
+# A [skip] entry is the only way to keep a suite out, and it must say why.
+
+[skip]
+capture_runner_menu_previews = "Writes menu preview screenshots; needs a window and GPU. Run it locally without --headless."
+perf_probe = "Measures GPU frame times, which are meaningless headless. Run it locally."
+runner_perf_probe = "Measures runner frame times on a GPU. Run it locally."
+runner_pickup_hitch = "Measures GPU hitches during pickups. Run it locally."
+menu_smoke = "Drives the menu with pointer hover, which a headless run never produces."
+menu_hoppy_smoke = "Drives the menu with pointer hover, which a headless run never produces."
+capture_code_city_bosses = "Writes the Code City boss stills into docs/previews/; a graphical run only."
+exit_leak = "Needs a --scenario per process; CI runs every scenario through tools/checks/exit_leak.py."
+
+# Suites with wall-clock budgets, or that occupy every core, run alone after the parallel
+# batch, so CPU contention from other suites can't fail them (or them, the others).
+[serial]
+"assets/prewarm_check" = "Asserts the runner's synchronous cold warm finishes under 1000 ms."
+"assets/a2_check" = "Waits at most 15 s for the asynchronous prewarm, which the parallel batch starves on a 2-core runner."
+runner_synth_threads = "Parks a thread on every core and releases them together; it needs idle cores and starves other suites."
+
+# Engine errors a suite triggers on purpose. Each pattern must match at least one line of
+# that suite's output, so the list can't outlive the behavior it describes.
+[expected_errors]
+runner_logic = ['^ERROR: ConfigFile parse error at user://test_leaderboard_']

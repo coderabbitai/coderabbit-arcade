@@ -90,8 +90,7 @@ func run() -> void:
 			child.stream = null
 	level.music.stop()
 	level.music.stream = null
-	root.get_node("AudioService").shutdown()
-	await create_timer(0.3).timeout
-	# Audio cleanup uses wall time even in accelerated --fixed-fps test runs.
+	await root.get_node("AudioService").settle()
+	# The level's own player still releases on wall time in accelerated --fixed-fps runs.
 	OS.delay_msec(300)
 	quit(failures)

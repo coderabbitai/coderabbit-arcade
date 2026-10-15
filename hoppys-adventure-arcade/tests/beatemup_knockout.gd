@@ -192,8 +192,7 @@ func run() -> void:
 	await run_mode("res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn", true)
 	print("Knockout passes: ", passes, " failures: ", failures)
 	if is_instance_valid(current_scene): current_scene.queue_free()
-	root.get_node("AudioService").shutdown()
-	await create_timer(.4).timeout
+	await root.get_node("AudioService").settle()
 	quit(1 if failures else 0)
 ## Takes the scene just changed to as `game` once it has built. Without it the suite cannot go
 ## on: records a failure, quits 1 and returns false.

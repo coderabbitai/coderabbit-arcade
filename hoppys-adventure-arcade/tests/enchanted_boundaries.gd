@@ -80,6 +80,5 @@ func run() -> void:
 	check(current_scene.boss.hp==12 and current_scene.boss.armor_stage==0,"Actor state never mutates shared SpriteFrames")
 	change_scene_to_file("res://scenes/platformer/platformer_menu.tscn")
 	await frames(3)
-	root.get_node("AudioService").shutdown()
-	await create_timer(.3).timeout
+	await root.get_node("AudioService").settle()
 	quit(failures)
