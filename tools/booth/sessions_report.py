@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import statistics
 import sys
 from collections import Counter
@@ -66,13 +67,15 @@ def read(paths: list[Path]) -> Log:
                         if session is None:
                             skipped.append(f"{where}: end without a start")
                             continue
-                        session.end = str(event["time"])
-                        session.duration_s = float(event["duration_s"])
-                        session.ended_by = str(event["ended_by"])
-                        session.retries = int(event.get("retries", 0))
+                        # Convert every field first, so a malformed end leaves the session as it was.
+                        end, ended_by = str(event["time"]), str(event["ended_by"])
+                        duration_s, retries = float(event["duration_s"]), int(event.get("retries", 0))
+                        if not math.isfinite(duration_s) or duration_s < 0:
+                            raise ValueError(f"duration_s must be a finite, non-negative number, not {duration_s}")
+                        session.end, session.duration_s, session.ended_by, session.retries = end, duration_s, ended_by, retries
                     else:
                         skipped.append(f"{where}: unknown event {kind!r}")
-                except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+                except (json.JSONDecodeError, KeyError, TypeError, ValueError, OverflowError) as error:
                     skipped.append(f"{where}: {type(error).__name__}: {error}")
     ordered = sorted(sessions.values(), key=lambda s: (s.start, s.source, s.launch, s.number))
     return Log(ordered, launches, skipped)
@@ -98,15 +101,19 @@ def summary(log: Log) -> str:
         f"Launches: {log.launches}",
         f"Sessions: {len(log.sessions)} ({len(finished)} finished, {unfinished} unfinished)",
     ]
-    if finished:
-        lines += ["", f"{'Game':<20} {'Sessions':>8} {'Median':>7} {'Mean':>7} {'P90':>7} {'Retries':>8}"]
-        for game in sorted({s.game for s in finished}):
-            durations = [s.duration_s for s in finished if s.game == game]
-            retries = sum(s.retries for s in finished if s.game == game)
+    if log.sessions:
+        # Sessions and Unfinished count every visit; lengths and retries come from finished ones.
+        lines += ["", f"{'Game':<20} {'Sessions':>8} {'Unfinished':>10} {'Median':>7} {'Mean':>7} {'P90':>7} {'Retries':>8}"]
+        for game in sorted({s.game for s in log.sessions}):
+            visits = [s for s in log.sessions if s.game == game]
+            durations = [s.duration_s for s in visits if s.duration_s is not None]
+            lengths = (clock(statistics.median(durations)), clock(statistics.fmean(durations)), clock(p90(durations))) \
+                if durations else ("-", "-", "-")
             lines.append(
-                f"{game:<20} {len(durations):>8} {clock(statistics.median(durations)):>7}"
-                f" {clock(statistics.fmean(durations)):>7} {clock(p90(durations)):>7} {retries:>8}"
+                f"{game:<20} {len(visits):>8} {len(visits) - len(durations):>10} {lengths[0]:>7} {lengths[1]:>7}"
+                f" {lengths[2]:>7} {sum(s.retries for s in visits if s.duration_s is not None):>8}"
             )
+    if finished:
         ended = Counter(s.ended_by for s in finished)
         lines += ["", "Ended by: " + ", ".join(f"{reason} {count}" for reason, count in sorted(ended.items()))]
     if log.sessions:
@@ -135,6 +142,9 @@ def main(argv: list[str] | None = None) -> int:
     missing = [str(path) for path in args.logs if not path.is_file()]
     if missing:
         print("No such log: " + ", ".join(missing), file=sys.stderr)
+        return 2
+    if args.csv and any(args.csv.resolve() == path.resolve() for path in args.logs):
+        print(f"--csv {args.csv} is one of the logs; pick another file so the log isn't overwritten", file=sys.stderr)
         return 2
     log = read(args.logs)
     print(summary(log))

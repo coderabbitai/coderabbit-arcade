@@ -48,12 +48,15 @@ class SessionsReportTest(unittest.TestCase):
             start(3, "runner_game", "2026-11-30T11:00:00"),
             end(3, "runner_game", "2026-11-30T11:01:00", 60.0, "quit"),
             start(4, "code_city_brawl", "2026-11-30T11:30:00"),
+            start(5, "code_city_brawl", "2026-11-30T11:45:00"),
+            end(5, "code_city_brawl", "2026-11-30T11:46:30", 90.0, "menu"),
         ])
 
     def test_pairs_starts_and_ends_and_keeps_unfinished_sessions(self) -> None:
         log = sessions_report.read([self.sample()])
         self.assertEqual(log.launches, 1)
-        self.assertEqual([s.game for s in log.sessions], ["heroes_vs_villains", "heroes_vs_villains", "runner_game", "code_city_brawl"])
+        self.assertEqual([s.game for s in log.sessions],
+                         ["heroes_vs_villains", "heroes_vs_villains", "runner_game", "code_city_brawl", "code_city_brawl"])
         self.assertEqual(log.sessions[1].retries, 2)
         self.assertEqual(log.sessions[0].ended_by, "idle")
         self.assertIsNone(log.sessions[3].duration_s, "a start without an end is unfinished")
@@ -61,12 +64,19 @@ class SessionsReportTest(unittest.TestCase):
 
     def test_summary_reports_games_reasons_and_hours(self) -> None:
         text = sessions_report.summary(sessions_report.read([self.sample()]))
-        self.assertIn("Sessions: 4 (3 finished, 1 unfinished)", text)
-        hvv = next(line for line in text.splitlines() if line.startswith("heroes_vs_villains"))
+        self.assertIn("Sessions: 5 (4 finished, 1 unfinished)", text)
+        rows = {line.split()[0]: line.split() for line in text.splitlines() if line.split() and "_" in line.split()[0]}
         # Two sessions: 143.2 s and 180 s. Median and mean 161.6 s; P90 interpolates to 176.3 s.
-        self.assertEqual(hvv.split(), ["heroes_vs_villains", "2", "2:42", "2:42", "2:56", "2"])
-        self.assertIn("Ended by: idle 1, menu 1, quit 1", text)
-        self.assertIn("Starts by hour: 10:00 2, 11:00 2", text)
+        self.assertEqual(rows["heroes_vs_villains"], ["heroes_vs_villains", "2", "0", "2:42", "2:42", "2:56", "2"])
+        # One finished (90 s) and one unfinished visit: both count, the lengths come from the finished one.
+        self.assertEqual(rows["code_city_brawl"], ["code_city_brawl", "2", "1", "1:30", "1:30", "1:30", "0"])
+        self.assertIn("Ended by: idle 1, menu 2, quit 1", text)
+        self.assertIn("Starts by hour: 10:00 2, 11:00 3", text)
+
+    def test_a_game_with_only_unfinished_sessions_is_listed(self) -> None:
+        path = self.write("crash.jsonl", [start(1, "orbital_ops", "2026-11-30T10:00:00")])
+        rows = [line.split() for line in sessions_report.summary(sessions_report.read([path])).splitlines()]
+        self.assertIn(["orbital_ops", "1", "1", "-", "-", "-", "0"], rows)
 
     def test_same_launch_in_two_files_stays_separate(self) -> None:
         first = self.write("a.jsonl", [start(1, "runner_game", "2026-11-30T10:00:00"), end(1, "runner_game", "2026-11-30T10:01:00", 60, "menu")])
@@ -89,13 +99,35 @@ class SessionsReportTest(unittest.TestCase):
         self.assertIn("bad.jsonl:3: end without a start", log.skipped[2])
         self.assertIn("Skipped 4 line(s):", sessions_report.summary(log))
 
+    def test_a_rejected_end_leaves_its_session_unfinished(self) -> None:
+        path = self.write("rejected.jsonl", [
+            start(1, "runner_game", "2026-11-30T10:00:00"),
+            end(1, "runner_game", "2026-11-30T10:01:00", "soon", "menu"),  # type: ignore[arg-type]
+            event("end", session=1, game="runner_game", time="2026-11-30T10:01:00", duration_s=float("nan"), ended_by="menu"),
+            event("end", session=1, game="runner_game", time="2026-11-30T10:01:00", duration_s=1e400, ended_by="menu"),
+            event("end", session=1, game="runner_game", time="2026-11-30T10:01:00", duration_s=-5, ended_by="menu"),
+        ])
+        log = sessions_report.read([path])
+        session = log.sessions[0]
+        self.assertEqual((session.end, session.duration_s, session.ended_by, session.retries), ("", None, "", 0))
+        self.assertEqual(len(log.skipped), 4)
+        self.assertIn("Sessions: 1 (0 finished, 1 unfinished)", sessions_report.summary(log))
+
+    def test_csv_target_cannot_be_a_log(self) -> None:
+        log = self.sample()
+        original = log.read_bytes()
+        with redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(sessions_report.main([str(log), "--csv", str(log.parent / "." / log.name)]), 2)
+        self.assertIn("is one of the logs", err.getvalue())
+        self.assertEqual(log.read_bytes(), original)
+
     def test_csv_has_one_row_per_session(self) -> None:
         target = Path(self.folder.name) / "out.csv"
         with redirect_stdout(io.StringIO()):
             self.assertEqual(sessions_report.main([str(self.sample()), "--csv", str(target)]), 0)
         with target.open(encoding="utf-8") as handle:
             rows = list(csv.DictReader(handle))
-        self.assertEqual(len(rows), 4)
+        self.assertEqual(len(rows), 5)
         self.assertEqual(rows[0]["duration_s"], "143.2")
         self.assertEqual(rows[3]["ended_by"], "unfinished")
         self.assertEqual(rows[3]["duration_s"], "")

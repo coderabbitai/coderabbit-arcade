@@ -2,11 +2,11 @@ extends RefCounted
 ## Local booth analytics: an append-only JSON Lines file, one line per event. Nothing leaves the
 ## machine and nothing identifies a player. The only fields are the game, local times, the session
 ## length and how it ended:
-##   {"event":"launch","launch":"2026-11-30T09:58:12","time":"2026-11-30T09:58:12",
+##   {"event":"launch","launch":"2026-11-30T09:58:12.345","time":"2026-11-30T09:58:12",
 ##    "version":"0.1.0"}
-##   {"event":"start","launch":"2026-11-30T09:58:12","session":1,"game":"heroes_vs_villains",
+##   {"event":"start","launch":"2026-11-30T09:58:12.345","session":1,"game":"heroes_vs_villains",
 ##    "time":"2026-11-30T10:02:03"}
-##   {"event":"end","launch":"2026-11-30T09:58:12","session":1,"game":"heroes_vs_villains",
+##   {"event":"end","launch":"2026-11-30T09:58:12.345","session":1,"game":"heroes_vs_villains",
 ##    "time":"2026-11-30T10:04:26","duration_s":143.2,"ended_by":"idle","retries":0}
 ## A session is one visit to a game route. Re-entering the same game (the runner's or a platformer
 ## level's Retry) counts as a retry within it. `ended_by` is "menu" (the player left through the
@@ -18,7 +18,8 @@ extends RefCounted
 const GAMES: Array[String] = ["heroes_vs_villains", "code_city_brawl", "bay_area_blitz",
 	"orbital_ops", "enchanted_repo", "runner_game"]
 var path := ""
-## When this run of the game started; with `session` it identifies a session across restarts.
+## When this run of the game started, to the millisecond, so two runs logging to one file (a
+## watchdog relaunch, or a second copy) stay apart. With `session` it identifies a session.
 var launch := ""
 ## The game being played, or "" between sessions.
 var game := ""
@@ -30,11 +31,13 @@ var failed := false
 
 func _init(log_path: String) -> void:
 	path = log_path
-	launch = Time.get_datetime_string_from_system()
+	var now := Time.get_unix_time_from_system()
+	var local := int(now) + int(Time.get_time_zone_from_system().bias) * 60
+	launch = "%s.%03d" % [Time.get_datetime_string_from_unix_time(local), int(fmod(now, 1.0) * 1000.0)]
 	var directory := path.get_base_dir()
 	if directory != "" and not DirAccess.dir_exists_absolute(directory):
 		DirAccess.make_dir_recursive_absolute(directory)
-	_write({"event": "launch", "time": launch,
+	_write({"event": "launch", "time": launch.get_slice(".", 0),
 		"version": str(ProjectSettings.get_setting("application/config/version", ""))})
 
 ## AppRouter calls this after each successful route change. `reason` is how the session in

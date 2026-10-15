@@ -2,11 +2,18 @@ extends SceneTree
 ## Booth session log (app/booth_log.gd): each visit to a game writes a start and an end line,
 ## re-entering the same game counts as a retry, menus never start a session, idle and quit say how
 ## a session ended, and nothing is written unless --booth or --session-log asks for it. The flags
-## are checked by launching the game as a child process, so _ready()'s argument handling is covered.
-## Run headless with --script res://tests/booth_session_log.gd.
+## and the window-close quit are checked in child processes, so _ready()'s argument handling and
+## quit_game() are covered. Child launches get a throwaway user-data root, so a standalone run never
+## reads or writes a real booth log. Run headless with --script res://tests/booth_session_log.gd.
 const BoothLog := preload("res://app/booth_log.gd")
 const LOG := "user://test_booth_sessions.jsonl"
 const CHILD_LOG := "user://test_booth_child_sessions.jsonl"
+const QUIT_LOG := "user://test_booth_quit_sessions.jsonl"
+const RELAUNCH_LOG := "user://test_booth_relaunch_sessions.jsonl"
+const BLOCKER := "user://test_booth_blocker"
+const CHILD_HOME := "user://test_booth_home"
+const ISOLATED := ["HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "APPDATA", "LOCALAPPDATA",
+	"USERPROFILE"]
 ## Every field the log may contain. Anything else would be new data about players: review it first.
 const FIELDS := ["event", "launch", "time", "version", "session", "game", "duration_s", "ended_by",
 	"retries"]
@@ -35,13 +42,41 @@ func visit(route: String) -> void:
 	router.go(route)
 	await settle_route()
 
-## Launch the game headless with user args for two simulated seconds and return its exit code.
-func launch(user_args: Array[String]) -> int:
-	var args: Array[String] = ["--headless", "--path", ProjectSettings.globalize_path("res://"),
-		"--fixed-fps", "60", "--quit-after", "120", "--"]
-	args.append_array(user_args)
+## Run Godot on this project and return its exit code and output.
+func godot(args: Array[String]) -> Dictionary:
+	var full: Array[String] = ["--headless", "--path", ProjectSettings.globalize_path("res://")]
+	full.append_array(args)
 	var output: Array = []
-	return OS.execute(OS.get_executable_path(), args, output, true)
+	var code := OS.execute(OS.get_executable_path(), full, output, true)
+	return {"code": code, "log": "\n".join(output)}
+
+## Launch the game for two simulated seconds with a throwaway user-data root (the variables Godot
+## reads on each OS), so the default booth log is never a real one.
+func launch(user_args: Array[String]) -> Dictionary:
+	var home := ProjectSettings.globalize_path(CHILD_HOME)
+	var saved := {}
+	for variable in ISOLATED:
+		saved[variable] = OS.get_environment(variable) if OS.has_environment(variable) else null
+	var values := [home, home.path_join(".local/share"), home.path_join(".config"),
+		home.path_join("AppData/Roaming"), home.path_join("AppData/Local"), home]
+	for i in ISOLATED.size():
+		OS.set_environment(ISOLATED[i], values[i])
+	var args: Array[String] = ["--fixed-fps", "60", "--quit-after", "120", "--"]
+	args.append_array(user_args)
+	var result := godot(args)
+	for variable in saved:
+		if saved[variable] == null:
+			OS.unset_environment(variable)
+		else:
+			OS.set_environment(variable, saved[variable])
+	return result
+
+## The log path a child printed at startup, or "".
+func logged_path(output: String) -> String:
+	for line in output.split("\n"):
+		if line.begins_with("AppRouter: session log at "):
+			return line.trim_prefix("AppRouter: session log at ").strip_edges()
+	return ""
 
 ## The log's records in order; a line that isn't a JSON object is a failed check.
 func records(path: String) -> Array[Dictionary]:
@@ -62,8 +97,38 @@ func records(path: String) -> Array[Dictionary]:
 func events(entries: Array[Dictionary], kind: String) -> Array[Dictionary]:
 	return entries.filter(func(record: Dictionary) -> bool: return record.event == kind)
 
+func find_file(directory: String, file_name: String) -> bool:
+	var dir := DirAccess.open(directory)
+	if dir == null:
+		return false
+	dir.include_hidden = true
+	if file_name in dir.get_files():
+		return true
+	for child in dir.get_directories():
+		if find_file(directory.path_join(child), file_name):
+			return true
+	return false
+
+func remove_tree(directory: String) -> void:
+	var dir := DirAccess.open(directory)
+	if dir == null:
+		return
+	dir.include_hidden = true
+	for file_name in dir.get_files():
+		dir.remove(file_name)
+	for child in dir.get_directories():
+		remove_tree(directory.path_join(child))
+	DirAccess.remove_absolute(directory)
+
+func clean() -> void:
+	for path in [LOG, CHILD_LOG, QUIT_LOG, RELAUNCH_LOG, BLOCKER]:
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)
+	remove_tree(ProjectSettings.globalize_path(CHILD_HOME))
+
 func run() -> void:
 	router = root.get_node("AppRouter")
+	clean()
 	await wait(0.3)
 	check(router.session_log == null, "No session log without --booth or --session-log")
 	check(router.session_log_path(PackedStringArray(), false) == "",
@@ -75,28 +140,52 @@ func run() -> void:
 	check(router.session_log_path(PackedStringArray(["--session-log="]), false) == "",
 		"An empty --session-log is ignored")
 
-	check(launch(["--route=bay_area_blitz"]) == 0, "A plain launch exits cleanly")
-	check(not FileAccess.file_exists(router.SESSION_LOG_DEFAULT),
+	var plain := launch(["--route=bay_area_blitz"])
+	check(plain.code == 0, "A plain launch exits cleanly")
+	check(logged_path(plain.log) == ""
+		and not find_file(ProjectSettings.globalize_path(CHILD_HOME), "sessions.jsonl"),
 		"A launch without --booth writes no session log")
-	check(launch(["--booth", "--route=heroes_vs_villains"]) == 0, "A booth launch exits cleanly")
-	var booth_log := records(router.SESSION_LOG_DEFAULT)
+	var kiosk := launch(["--booth", "--route=heroes_vs_villains"])
+	var booth_path := logged_path(kiosk.log)
+	check(kiosk.code == 0, "A booth launch exits cleanly")
+	check(booth_path.begins_with(ProjectSettings.globalize_path(CHILD_HOME))
+		and booth_path.ends_with("booth/sessions.jsonl"),
+		"--booth logs to booth/sessions.jsonl in the user data (%s)" % booth_path)
+	var booth_log := records(booth_path)
 	check(booth_log.size() == 2 and booth_log[0].event == "launch"
 		and booth_log[0].version == ProjectSettings.get_setting("application/config/version")
 		and booth_log[1].event == "start" and booth_log[1].game == "heroes_vs_villains",
 		"--booth logs the launch and the launch route's session start")
 	# --quit-after stops the child without a quit request, as a crash would: the start stays open.
 	check(events(booth_log, "end").is_empty(), "A run that stops without quitting leaves no end")
-	check(launch(["--session-log=" + ProjectSettings.globalize_path(CHILD_LOG),
-		"--route=orbital_ops"]) == 0, "A --session-log launch exits cleanly")
+	var child := launch(["--session-log=" + ProjectSettings.globalize_path(CHILD_LOG),
+		"--route=orbital_ops"])
 	var child_log := records(CHILD_LOG)
-	check(child_log.size() == 2 and child_log[1].game == "orbital_ops",
+	check(child.code == 0 and child_log.size() == 2 and child_log[1].game == "orbital_ops",
 		"--session-log logs without --booth")
+	var closed := godot(["--script", "res://tests/support/session_log_quit.gd", "--",
+		ProjectSettings.globalize_path(QUIT_LOG)])
+	var quit_ends := events(records(QUIT_LOG), "end")
+	check(closed.code == 0 and quit_ends.size() == 1 and quit_ends[0].ended_by == "quit"
+		and quit_ends[0].game == "bay_area_blitz",
+		"A window close (quit_game(true)) ends the session as quit")
+
+	var first := BoothLog.new(RELAUNCH_LOG)
+	first.route_changed("runner_game", "menu")
+	OS.delay_msec(5)  # Real relaunches are seconds apart; launch ids have millisecond resolution.
+	var second := BoothLog.new(RELAUNCH_LOG)
+	second.route_changed("runner_game", "menu")
+	var relaunched := records(RELAUNCH_LOG)
+	var launches := events(relaunched, "launch")
+	check(relaunched.size() == 4 and launches.size() == 2
+		and launches[0].launch != launches[1].launch,
+		"A relaunch appends to the same log under a new launch id")
 
 	# A file where the log's folder should be: logging switches itself off with a warning.
-	var blocker := FileAccess.open("user://test_booth_blocker", FileAccess.WRITE)
+	var blocker := FileAccess.open(BLOCKER, FileAccess.WRITE)
 	blocker.store_line("not a folder")
 	blocker.close()
-	var broken := BoothLog.new("user://test_booth_blocker/sessions.jsonl")
+	var broken := BoothLog.new(BLOCKER + "/sessions.jsonl")
 	broken.route_changed("heroes_vs_villains", "menu")
 	broken.end("quit")
 	check(broken.failed and broken.game == "",
@@ -119,7 +208,7 @@ func run() -> void:
 	check(router.session_log.game == "code_city_brawl",
 		"The menu's Quit, ignored in booth mode, leaves the session open")
 	router.set_booth(false)
-	# quit_game(true) would end this suite; it calls the same end("quit").
+	# The child above covers quit_game(true); here the session just needs an end.
 	router.session_log.end("quit")
 
 	var entries := records(LOG)
@@ -130,7 +219,7 @@ func run() -> void:
 		== ["bay_area_blitz", "heroes_vs_villains", "code_city_brawl"],
 		"Each game visit starts one session; menus and the hub start none")
 	check(ends.size() == 3, "Every session ends")
-	if ends.size() == 3:
+	if ends.size() == 3 and starts.size() == 3:
 		check(ends[0].ended_by == "menu" and int(ends[0].retries) == 1,
 			"Re-entering a game is a retry; leaving for a menu ends the session")
 		check(ends[1].ended_by == "idle", "Booth mode's idle return ends a session as idle")
@@ -142,12 +231,14 @@ func run() -> void:
 				and float(ends[i].duration_s) > 0.0
 		check(numbered, "Starts and ends pair by launch and session, with a positive duration")
 	var extra := []
-	for record in entries:
-		for key in record:
-			if key not in FIELDS:
-				extra.append(key)
-	check(extra.is_empty(), "The log holds only the documented fields (found %s)" % [extra])
+	for path in [LOG, CHILD_LOG, QUIT_LOG, booth_path]:
+		for record in records(path):
+			for key in record:
+				if key not in FIELDS:
+					extra.append(key)
+	check(extra.is_empty(), "The logs hold only the documented fields (found %s)" % [extra])
 
+	clean()
 	await root.get_node("AudioService").settle()
 	print("Booth session log failures: ", failures)
 	quit(1 if failures else 0)
