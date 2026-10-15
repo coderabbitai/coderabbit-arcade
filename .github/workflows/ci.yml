@@ -104,6 +104,8 @@ jobs:
         run: python tools/vendor/vendor_lock.py --check
       - name: Vendor lock unit tests
         run: python -m unittest discover -s tools/vendor -v
+      - name: Booth tools unit tests
+        run: python -m unittest discover -s tools/booth -v
 
   gitleaks:
     name: gitleaks

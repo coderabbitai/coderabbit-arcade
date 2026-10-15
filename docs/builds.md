@@ -36,6 +36,14 @@ open -a "Hoppy’s Adventure Arcade.app" --args -- --booth --route=heroes_vs_vil
 - **Idle reset.** After 90 seconds with no keyboard, mouse, touch or controller input, any game returns to the hub, whose rotating previews act as the attract screen.
 - **No quitting from the menu.** The menu's **Quit Game** does nothing in booth mode; staff close the window (Cmd+Q, Alt+F4).
 - **Launch route.** `--route=<name>` opens a route at launch (`heroes_vs_villains`, `code_city_brawl`, `bay_area_blitz`, `orbital_ops`, `enchanted_repo`, `runner`, `platformer`, `beatem_up`, `hub`), with or without `--booth`. An unknown name logs an error and opens the hub.
+- **Session log.** Booth mode records each game session's start and end in `user://booth/`, one file per run of the game (`sessions-<date and time>-<process id>.jsonl`). Each entry records the game, the local start and end times, the duration, how the session ended (`menu`, `idle` or `quit`) and how many times the player retried. It records nothing about players and never uses the network. A start with no end means the game stopped without quitting: a crash, a power cut or a forced kill. The game prints its file's full path at startup. `--session-log=<folder>` writes to another folder and works without `--booth`, for playtests.
+
+`user://` is `~/Library/Application Support/Godot/app_userdata/Hoppy’s Adventure Arcade/` on macOS, `%APPDATA%\Godot\app_userdata\Hoppy’s Adventure Arcade\` on Windows and `~/.local/share/godot/app_userdata/Hoppy’s Adventure Arcade/` on Linux. To summarize the logs, copy each machine's `booth` folder and run:
+
+```sh
+python3 tools/booth/sessions_report.py booth/                               # sessions per game, durations, end reasons, starts by hour
+python3 tools/booth/sessions_report.py booth-a/ booth-b/ --csv sessions.csv # combine machines; one CSV row per session
+```
 
 ## Build locally
 
