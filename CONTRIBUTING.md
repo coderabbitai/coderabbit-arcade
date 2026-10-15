@@ -66,7 +66,7 @@ Every new asset must be redistributable in a public repository.
 - Accepted: third-party assets under **CC0** or **CC BY 4.0**.
 - Original art, audio or models made for the project: please **open an issue first**. The license for project-original assets hasn't been finalized yet (see [`ASSETS_LICENSES.md`](ASSETS_LICENSES.md#project-original)), so we can't merge original-art contributions until it is. Procedural assets generated in GDScript count as code and fall under the MIT license.
 - Not accepted: "free for use but no redistribution" packs, which covers most free marketplace packs. Also not accepted: NC/ND licenses, and assets of unknown origin.
-- Add a row to [`ASSETS_LICENSES.md`](ASSETS_LICENSES.md) in the same PR, and include the upstream license file next to the asset.
+- Add a row to [`ASSETS_LICENSES.md`](ASSETS_LICENSES.md) in the same PR, and include the upstream license file next to the asset. Then run `python3 tools/credits/build_credits.py`, which regenerates the in-game credits from that table; CI fails if they differ.
 - AI-generated assets: record the tool and prompts, following the existing `PROMPTS.md` / `generation.json` convention. Don't record local machine paths.
 
 ## Reporting bugs and security issues

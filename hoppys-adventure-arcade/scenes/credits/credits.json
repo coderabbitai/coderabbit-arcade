@@ -1,0 +1,12 @@
+{
+ "about": "Hand-written credits, shown before the asset credits that tools/credits/build_credits.py generates from ASSETS_LICENSES.md (asset_credits.json). Each section has a title, optional lines, and optional tracks: {\"title\": ..., \"used_by\": ...}. Add a section, or add tracks to one.",
+ "sections": [
+  {
+   "title": "Original music",
+   "lines": [
+    "Music by Erik Thorelli"
+   ],
+   "tracks": []
+  }
+ ]
+}

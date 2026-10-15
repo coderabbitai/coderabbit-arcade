@@ -20,7 +20,7 @@ const PLAYER := &"p1"
 ## tests/controller_service.gd fails when a route is in neither list.
 const GAMEPLAY_ROUTES: Array[String] = [
 	"heroes_vs_villains", "code_city_brawl", "enchanted_repo", "orbital_ops", "bay_area_blitz", "runner_game"]
-const MENU_ROUTES: Array[String] = ["hub", "platformer", "runner", "beatem_up"]
+const MENU_ROUTES: Array[String] = ["hub", "platformer", "runner", "beatem_up", "credits"]
 ## Godot ships ui_accept and ui_cancel without pad buttons, so a pad could not confirm or go back
 ## in menus. These match the prompts: the bottom face button confirms, the right one goes back.
 const MENU_BINDINGS := {
