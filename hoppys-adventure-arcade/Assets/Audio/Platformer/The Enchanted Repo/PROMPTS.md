@@ -1,6 +1,6 @@
 # The Enchanted Repo music
 
-Music by Erik Thorelli, made with Suno v6 on his Premier plan for Hoppy's Adventure Arcade. Erik grants their use in the game. The soundtrack plan is [`docs/soundtrack.md`](../../../../../docs/soundtrack.md).
+Music by Erik Thorelli, made with Suno v6 on his Premier plan for Hoppy's Adventure Arcade. Erik holds the rights and grants their use in the game and in this repository. The soundtrack plan is [`docs/soundtrack.md`](../../../../../docs/soundtrack.md).
 
 | File | Plays | Suno song | Measured tempo and key | Loop |
 |---|---|---|---|---|
