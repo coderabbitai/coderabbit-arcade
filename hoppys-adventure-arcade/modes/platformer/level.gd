@@ -297,6 +297,7 @@ func _cancel_knockout() -> void:
 
 ## The cutaway holds its final pose behind the existing results fade.
 func _reveal_results(delay: float) -> void:
+	if not won_run and AppRouter.booth_game_over("%06d POINTS" % score): return # Booth: next player.
 	if not won_run: knockout.callout.hide()
 	overlay.color = RESULTS_SHADE
 	overlay.modulate.a = 0.0

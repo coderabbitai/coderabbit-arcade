@@ -102,6 +102,10 @@ func bind(runner: Node) -> void:
 	game.run_finished.connect(_finished)
 
 func _finished(value: Dictionary) -> void:
+	# Booth mode: once the player has used their retries, AppRouter shows the next-player card.
+	var router := get_node_or_null(^"/root/AppRouter")
+	if router != null and router.booth_game_over("SCORE %08d" % int(value.get("score", 0))):
+		return
 	show_result(value, game.get_leaderboard())
 
 func show_result(value: Dictionary, leaderboard: Array) -> void:

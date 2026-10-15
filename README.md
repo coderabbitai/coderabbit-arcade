@@ -40,7 +40,7 @@ HoppysAdventureArcade.exe -- --booth --route=heroes_vs_villains                 
 ./HoppysAdventureArcade.x86_64 -- --booth --route=heroes_vs_villains                  # Linux
 ```
 
-Booth mode runs fullscreen and ignores the menu's **Quit Game**, so staff close the window instead. After 90 seconds without input, any game returns to the hub's attract screen. [Run it at a booth](docs/builds.md#run-it-at-a-booth) lists every route and flag.
+Booth mode runs fullscreen and ignores the menu's **Quit Game**, so staff close the window instead. After 90 seconds without input, any game returns to the hub's attract screen, and a lost game sends the player there after a thank-you card instead of offering endless retries. [Run it at a booth](docs/builds.md#run-it-at-a-booth) lists every route and flag.
 
 For a machine that runs unattended all day, follow the [booth runbook](docs/booth-runbook.md). It sets up a watchdog that restarts the game if it closes or freezes, along with the Mac's kiosk settings, and covers the staff checklist.
 

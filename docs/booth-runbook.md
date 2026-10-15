@@ -17,7 +17,7 @@ This runbook is for the staff who run Hoppy’s Adventure Arcade unattended at a
    ```sh
    tools/booth/macos/setup.sh --app "/Applications/Hoppy’s Adventure Arcade.app" --route heroes_vs_villains
    ```
-   Nothing changes yet. To apply it, run the same command with `--apply` and enter the administrator password when asked. The game starts.
+   Nothing changes yet. To apply it, run the same command with `--apply` and enter the administrator password when asked. The game starts. To give each player a retry or change the attract screen, add game flags after `--`, for example `-- --retries=1 --attract=beatem_up` ([booth flags](builds.md#run-it-at-a-booth)).
 4. Do the manual steps the script lists at the end: automatic login, Do Not Disturb, the display, the volume and the controllers.
 5. Restart the Mac. The game should start on its own within a minute.
 
@@ -27,7 +27,7 @@ The setup does the following:
 - It keeps the Mac awake and turns it back on after a power cut.
 - It turns off the screen saver, automatic updates and crash dialogs.
 
-Booth mode itself runs fullscreen, ignores the menu's **Quit Game**, and sends a game nobody has touched for 90 seconds back to the hub's attract screen ([details](builds.md#run-it-at-a-booth)).
+Booth mode itself runs fullscreen and ignores the menu's **Quit Game**. A game nobody has touched for 90 seconds goes back to the hub's attract screen, and so does a lost game, after a thank-you card for the player ([details](builds.md#run-it-at-a-booth)).
 
 ## Every morning
 
@@ -40,6 +40,7 @@ Booth mode itself runs fullscreen, ignores the menu's **Quit Game**, and sends a
 | What happens | What you'll see |
 |---|---|
 | A player walks away mid-game | After 90 seconds the game returns to the hub. |
+| A player loses | A **GAME OVER** card thanks them and shows their score, and after six seconds the hub opens for the next player. |
 | The game crashes or closes | The watchdog opens it again within a few seconds. |
 | The game freezes | The watchdog restarts it within about a minute. |
 | Someone presses Cmd+Q | The game closes, and the watchdog opens it again. |

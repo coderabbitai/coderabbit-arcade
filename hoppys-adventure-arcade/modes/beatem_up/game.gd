@@ -603,6 +603,7 @@ func game_over() -> void:
 	playing = false
 	state = "game_over"
 	_update_hud()
+	if AppRouter.booth_game_over("SCORE %05d" % score): return # Booth: the next player's turn.
 	show_overlay("REVIEW FAILED", "Retry %s with 3 HP and fresh equipment." % Catalog.TITLES[stage_index],"Retry current stage",retry_stage)
 
 func boss_defeated() -> void:

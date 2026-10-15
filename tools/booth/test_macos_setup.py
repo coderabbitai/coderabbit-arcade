@@ -102,6 +102,12 @@ class MacSetupTest(unittest.TestCase):
         self.assertEqual(agent["KeepAlive"], {"SuccessfulExit": False})
         self.assertEqual(agent["LimitLoadToSessionType"], "Aqua")
 
+    def test_arguments_after_the_separator_go_to_the_game(self) -> None:
+        result = self.setup("--app", str(self.app), "--route", "heroes_vs_villains", "--", "--retries=1",
+                            "--attract=beatem_up")
+        self.assertEqual(self.agent(result.stdout)["ProgramArguments"][-5:],
+                         ["--", "--booth", "--route=heroes_vs_villains", "--retries=1", "--attract=beatem_up"])
+
     def test_route_is_optional(self) -> None:
         agent = self.agent(self.setup("--app", str(self.app)).stdout)
         self.assertEqual(agent["ProgramArguments"][-2:], ["--", "--booth"])

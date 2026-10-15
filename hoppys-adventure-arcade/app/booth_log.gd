@@ -12,7 +12,8 @@ extends RefCounted
 ##    "time":"2026-11-30T10:04:26","duration_s":143.2,"ended_by":"idle","retries":0}
 ## A session is one visit to a game route. Re-entering the same game (the runner's or a platformer
 ## level's Retry) counts as a retry within it. `ended_by` is "menu" (the player left through the
-## game's own menu), "idle" (booth mode's idle return) or "quit". A start with no end means the game
+## game's own menu), "idle" (booth mode's idle return), "game_over" (booth mode sent a player who had
+## used their retries back to the attract route) or "quit". A start with no end means the game
 ## stopped without quitting: a crash, a power cut or a forced kill.
 ## tools/booth/sessions_report.py summarizes a folder of these files.
 
