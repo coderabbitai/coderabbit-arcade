@@ -106,6 +106,10 @@ jobs:
         run: python -m unittest discover -s tools/vendor -v
       - name: Booth tools unit tests
         run: python -m unittest discover -s tools/booth -v
+      - name: Shellcheck booth scripts
+        run: |
+          command -v shellcheck >/dev/null || sudo apt-get install -y shellcheck
+          shellcheck tools/booth/watchdog.sh tools/booth/macos/setup.sh
 
   gitleaks:
     name: gitleaks
