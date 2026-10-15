@@ -141,10 +141,16 @@ def write_csv(log: Log, target: Path) -> None:
 
 
 def expand(paths: list[Path]) -> list[Path]:
-    """The log files: each file as given, and every .jsonl file in each folder."""
+    """The log files: each file as given, and every .jsonl file in each folder. A file reached twice
+    (named and inside a named folder, or through a link) is read once."""
     files: list[Path] = []
+    seen: set[tuple[int, int]] = set()
     for path in paths:
-        files.extend(sorted(path.glob("*.jsonl")) if path.is_dir() else [path])
+        for file in sorted(path.glob("*.jsonl")) if path.is_dir() else [path]:
+            identity = (file.stat().st_dev, file.stat().st_ino)
+            if identity not in seen:
+                seen.add(identity)
+                files.append(file)
     return files
 
 

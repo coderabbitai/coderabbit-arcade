@@ -128,6 +128,11 @@ class SessionsReportTest(unittest.TestCase):
         with redirect_stdout(io.StringIO()) as out:
             self.assertEqual(sessions_report.main([str(folder)]), 0)
         self.assertIn("Sessions: 2 (0 finished, 2 unfinished)", out.getvalue())
+        # The folder and a file inside it, and the same file again: each file is read once.
+        with redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(sessions_report.main([str(folder), str(folder / "sessions-a.jsonl"),
+                                                   str(folder / "." / "sessions-a.jsonl")]), 0)
+        self.assertIn("Sessions: 2 (0 finished, 2 unfinished)", out.getvalue())
 
     def test_csv_target_cannot_be_a_hardlink_to_a_log(self) -> None:
         log = self.sample()
