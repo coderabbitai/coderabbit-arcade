@@ -1,4 +1,5 @@
 extends CanvasLayer
+const BoothLog := preload("res://app/booth_log.gd")
 const ROUTES := {
 	"heroes_vs_villains": "res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn",
 	"code_city_brawl": "res://scenes/beatem_up/code_city_brawl.tscn",
@@ -23,11 +24,17 @@ const BOOTH_FLAG := "--booth"
 const ROUTE_PREFIX := "--route="
 const IDLE_SECONDS := 90.0
 const STICK_DEADZONE := 0.4
+## Booth analytics (app/booth_log.gd): with --booth, each game session's start and end are appended
+## to SESSION_LOG_DEFAULT. `--session-log=<path>` (absolute or user://) picks another file and also
+## works without --booth, for playtests. Nothing is logged unless one of them is passed.
+const SESSION_LOG_PREFIX := "--session-log="
+const SESSION_LOG_DEFAULT := "user://booth/sessions.jsonl"
 var busy := false
 var veil: ColorRect
 var booth := false
 var idle_limit := IDLE_SECONDS
 var idle_seconds := 0.0
+var session_log: BoothLog
 func _ready() -> void:
 	# The veil tween must keep running while a microgame has the tree paused.
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -44,10 +51,15 @@ func _ready() -> void:
 		smoke_routes.call_deferred()
 		return
 	set_booth(BOOTH_FLAG in args)
+	var log_path := session_log_path(args, booth)
+	if log_path != "":
+		start_session_log(log_path)
 	var start := launch_route(args)
 	if start != "":
 		_launch.call_deferred(start)
-func go(route: String) -> void:
+## `reason` is how a game session in progress ends, for the session log: "menu" unless the router
+## itself is leaving the game (booth mode's idle return passes "idle").
+func go(route: String, reason := "menu") -> void:
 	if busy or not ROUTES.has(route) or not ResourceLoader.exists(ROUTES[route]):
 		return
 	busy = true
@@ -60,6 +72,8 @@ func go(route: String) -> void:
 	else:
 		# A microgame may have paused the tree; never hand a paused tree to the next scene.
 		get_tree().paused = false
+		if session_log:
+			session_log.route_changed(route, reason)
 		if route == "hub":
 			AudioService.play_default_music()
 	await create_tween().tween_property(veil, "modulate:a", 0.0, 0.25).finished
@@ -70,10 +84,13 @@ func go(route: String) -> void:
 func quit_game(force := false) -> void:
 	if booth and not force:
 		return
+	if busy and not force:
+		return
+	if session_log:
+		session_log.end("quit")
 	if busy:
-		if force:
-			AudioService.shutdown()
-			get_tree().quit()
+		AudioService.shutdown()
+		get_tree().quit()
 		return
 	busy = true
 	veil.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -94,6 +111,18 @@ static func launch_route(args: PackedStringArray) -> String:
 				return route
 			push_error("Unknown --route %s; expected one of %s" % [route, ", ".join(ROUTES.keys())])
 	return ""
+
+## The session log these arguments ask for: `--session-log=<path>`, else the default file in booth
+## mode, else "" (no logging).
+static func session_log_path(args: PackedStringArray, booth_mode: bool) -> String:
+	for arg in args:
+		if arg.begins_with(SESSION_LOG_PREFIX) and arg.length() > SESSION_LOG_PREFIX.length():
+			return arg.trim_prefix(SESSION_LOG_PREFIX)
+	return SESSION_LOG_DEFAULT if booth_mode else ""
+
+func start_session_log(path: String) -> void:
+	session_log = BoothLog.new(path)
+	print("AppRouter: session log at %s" % ProjectSettings.globalize_path(path))
 
 func _launch(route: String) -> void:
 	await go(route)
@@ -123,7 +152,7 @@ func _process(delta: float) -> void:
 	idle_seconds = 0.0
 	var scene := get_tree().current_scene
 	if scene == null or scene.scene_file_path != ROUTES["hub"]:
-		go("hub")
+		go("hub", "idle")
 
 func smoke_routes() -> void:
 	# Let the launch scene finish its opening frames, as a player would, before switching.

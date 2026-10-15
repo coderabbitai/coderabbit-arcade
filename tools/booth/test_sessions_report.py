@@ -1,0 +1,118 @@
+"""Unit tests for sessions_report.py. Run: python3 -m unittest discover -s tools/booth -v"""
+from __future__ import annotations
+
+import csv
+import io
+import json
+import sys
+import tempfile
+import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import sessions_report  # noqa: E402
+
+LAUNCH = "2026-11-30T09:58:12"
+
+
+def event(kind: str, **fields: object) -> str:
+    return json.dumps({"event": kind, "launch": LAUNCH, **fields})
+
+
+def start(session: int, game: str, time: str) -> str:
+    return event("start", session=session, game=game, time=time)
+
+
+def end(session: int, game: str, time: str, duration: float, ended_by: str, retries: int = 0) -> str:
+    return event("end", session=session, game=game, time=time, duration_s=duration, ended_by=ended_by, retries=retries)
+
+
+class SessionsReportTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+
+    def write(self, name: str, lines: list[str]) -> Path:
+        path = Path(self.folder.name) / name
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return path
+
+    def sample(self) -> Path:
+        return self.write("booth.jsonl", [
+            event("launch", time=LAUNCH, version="0.1.0"),
+            start(1, "heroes_vs_villains", "2026-11-30T10:02:03"),
+            end(1, "heroes_vs_villains", "2026-11-30T10:04:26", 143.2, "idle"),
+            start(2, "heroes_vs_villains", "2026-11-30T10:05:00"),
+            end(2, "heroes_vs_villains", "2026-11-30T10:08:00", 180.0, "menu", retries=2),
+            start(3, "runner_game", "2026-11-30T11:00:00"),
+            end(3, "runner_game", "2026-11-30T11:01:00", 60.0, "quit"),
+            start(4, "code_city_brawl", "2026-11-30T11:30:00"),
+        ])
+
+    def test_pairs_starts_and_ends_and_keeps_unfinished_sessions(self) -> None:
+        log = sessions_report.read([self.sample()])
+        self.assertEqual(log.launches, 1)
+        self.assertEqual([s.game for s in log.sessions], ["heroes_vs_villains", "heroes_vs_villains", "runner_game", "code_city_brawl"])
+        self.assertEqual(log.sessions[1].retries, 2)
+        self.assertEqual(log.sessions[0].ended_by, "idle")
+        self.assertIsNone(log.sessions[3].duration_s, "a start without an end is unfinished")
+        self.assertEqual(log.skipped, [])
+
+    def test_summary_reports_games_reasons_and_hours(self) -> None:
+        text = sessions_report.summary(sessions_report.read([self.sample()]))
+        self.assertIn("Sessions: 4 (3 finished, 1 unfinished)", text)
+        hvv = next(line for line in text.splitlines() if line.startswith("heroes_vs_villains"))
+        # Two sessions: 143.2 s and 180 s. Median and mean 161.6 s; P90 interpolates to 176.3 s.
+        self.assertEqual(hvv.split(), ["heroes_vs_villains", "2", "2:42", "2:42", "2:56", "2"])
+        self.assertIn("Ended by: idle 1, menu 1, quit 1", text)
+        self.assertIn("Starts by hour: 10:00 2, 11:00 2", text)
+
+    def test_same_launch_in_two_files_stays_separate(self) -> None:
+        first = self.write("a.jsonl", [start(1, "runner_game", "2026-11-30T10:00:00"), end(1, "runner_game", "2026-11-30T10:01:00", 60, "menu")])
+        second = self.write("b.jsonl", [start(1, "orbital_ops", "2026-11-30T10:00:30")])
+        log = sessions_report.read([first, second])
+        self.assertEqual([(s.game, s.duration_s) for s in log.sessions], [("runner_game", 60.0), ("orbital_ops", None)])
+
+    def test_bad_lines_are_skipped_and_named(self) -> None:
+        path = self.write("bad.jsonl", [
+            "not json",
+            json.dumps({"event": "start", "launch": LAUNCH}),
+            end(9, "runner_game", "2026-11-30T10:01:00", 60, "menu"),
+            event("mystery"),
+            "",
+            start(1, "runner_game", "2026-11-30T10:00:00"),
+        ])
+        log = sessions_report.read([path])
+        self.assertEqual(len(log.sessions), 1)
+        self.assertEqual(len(log.skipped), 4)
+        self.assertIn("bad.jsonl:3: end without a start", log.skipped[2])
+        self.assertIn("Skipped 4 line(s):", sessions_report.summary(log))
+
+    def test_csv_has_one_row_per_session(self) -> None:
+        target = Path(self.folder.name) / "out.csv"
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(sessions_report.main([str(self.sample()), "--csv", str(target)]), 0)
+        with target.open(encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(rows[0]["duration_s"], "143.2")
+        self.assertEqual(rows[3]["ended_by"], "unfinished")
+        self.assertEqual(rows[3]["duration_s"], "")
+
+    def test_missing_log_is_an_error(self) -> None:
+        with redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(sessions_report.main([str(Path(self.folder.name) / "nope.jsonl")]), 2)
+        self.assertIn("No such log", err.getvalue())
+
+    def test_empty_log_prints_counts_only(self) -> None:
+        text = sessions_report.summary(sessions_report.read([self.write("empty.jsonl", [])]))
+        self.assertEqual(text, "Launches: 0\nSessions: 0 (0 finished, 0 unfinished)")
+
+    def test_clock(self) -> None:
+        self.assertEqual(sessions_report.clock(143.2), "2:23")
+        self.assertEqual(sessions_report.clock(59.6), "1:00")
+
+
+if __name__ == "__main__":
+    unittest.main()
