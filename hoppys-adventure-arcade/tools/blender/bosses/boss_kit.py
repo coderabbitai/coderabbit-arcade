@@ -7,6 +7,7 @@ ORM use glb_atlas. Seeded recipes are stable, but Blender's UV solver can vary b
 """
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import random
@@ -17,14 +18,14 @@ import sys
 import tempfile
 
 import bpy
-from mathutils import Matrix, Vector
+from mathutils import Euler, Matrix, Vector
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_ASSET_DIR = HERE.parent.parent.parent / 'Assets' / 'runner' / 'bosses'
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE.parent / 'props'))
 import props_kit as P
-from props_kit import Part as Part, linear, xform, G2B, B2G
+from props_kit import Part, linear, xform, G2B, B2G
 from glb_atlas import consolidate_atlases
 
 SEED = 73019

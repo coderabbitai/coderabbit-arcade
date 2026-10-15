@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from boss_kit import DEFAULT_ASSET_DIR, BossBuilder, Part, xform
+from boss_kit import DEFAULT_ASSET_DIR, BossBuilder, Part, xform, require
 
 RECIPE_REVISION = 3
 RACK_Y = (-0.47, 0.34, 1.32, 2.68)
