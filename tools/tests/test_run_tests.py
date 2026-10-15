@@ -116,6 +116,23 @@ class SetupFailures(unittest.TestCase):
             self.assertIn("/real", summary["setup_error"])
             self.assertEqual(summary["suites"], [])
 
+    def test_a_probe_that_cannot_start_is_an_isolation_failure(self):
+        with mock.patch.object(run_tests.subprocess, "run", side_effect=FileNotFoundError("no godot")):
+            self.assertIn("no godot", run_tests.check_isolation("missing-godot"))
+        timeout = subprocess.TimeoutExpired(["godot"], 120)
+        with mock.patch.object(run_tests.subprocess, "run", side_effect=timeout):
+            self.assertIn("timed out", run_tests.check_isolation("godot"))
+
+    def test_an_import_timeout_writes_the_summary(self):
+        timeout = subprocess.TimeoutExpired(["godot", "--import"], run_tests.TIMEOUT)
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(run_tests.subprocess, "run", side_effect=timeout):
+            results = Path(tmp, "summary.json")
+            code = self.run_main(results, check_isolation=mock.Mock(return_value=None))
+            self.assertEqual(code, 1)
+            summary = json.loads(results.read_text(encoding="utf-8"))
+            self.assertIn("timed out", summary["setup_error"])
+
     def test_an_import_failure_writes_the_summary(self):
         imported = subprocess.CompletedProcess([], 0, stdout="ERROR: Cannot import x.png\n", stderr="")
         with tempfile.TemporaryDirectory() as tmp, \

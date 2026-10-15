@@ -112,8 +112,11 @@ def check_isolation(godot: str) -> str | None:
         probe = Path(home, "probe.gd")
         probe.write_text('extends SceneTree\nfunc _init() -> void:\n\tprint("USER_DIR=", OS.get_user_data_dir())\n'
                          '\tquit()\n', encoding="utf-8")
-        output = subprocess.run([godot, "--headless", "--path", str(PROJECT), "--script", str(probe)],
-                                env=isolated_env(home), capture_output=True, text=True, timeout=120).stdout
+        try:
+            output = subprocess.run([godot, "--headless", "--path", str(PROJECT), "--script", str(probe)],
+                                    env=isolated_env(home), capture_output=True, text=True, timeout=120).stdout
+        except (OSError, subprocess.TimeoutExpired) as error:
+            return f"the user:// probe could not run ({error})"
         match = re.search(r"^USER_DIR=(.+)$", ANSI.sub("", output), re.M)
         user_dir = Path(match.group(1).strip()).resolve() if match else None
         if user_dir is None or Path(home).resolve() not in user_dir.parents:
@@ -253,7 +256,7 @@ def main() -> int:
 
     leak = check_isolation(args.godot)
     if leak:
-        print(f"Refusing to run: {leak}. Suites would touch real settings and leaderboards.", file=sys.stderr)
+        print(f"Refusing to run: {leak}. Suites must not touch real settings or leaderboards.", file=sys.stderr)
         write_summary(args.results, 0.0, skipped, [], f"user:// isolation: {leak}")
         return 2
 
@@ -262,6 +265,10 @@ def main() -> int:
         try:
             imported = subprocess.run([args.godot, "--headless", "--path", str(PROJECT), "--import"],
                                       env=isolated_env(home), capture_output=True, text=True, timeout=TIMEOUT)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            print(f"Resource import failed: {error}", file=sys.stderr)
+            write_summary(args.results, 0.0, skipped, [], f"resource import failed: {error}")
+            return 1
         finally:
             shutil.rmtree(home, ignore_errors=True)
         import_log = ANSI.sub("", imported.stdout + imported.stderr)
