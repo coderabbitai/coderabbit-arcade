@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://bmpm88efydt7n"
+path="res://.godot/imported/send_in_the_rabbit_title_loop.ogg-21ca32b005d2e20581ff9f5b0b2a7cf9.oggvorbisstr"
+
+[deps]
+
+source_file="res://Assets/Audio/Main Menu/send_in_the_rabbit_title_loop.ogg"
+dest_files=["res://.godot/imported/send_in_the_rabbit_title_loop.ogg-21ca32b005d2e20581ff9f5b0b2a7cf9.oggvorbisstr"]
+
+[params]
+
+loop=true
+loop_offset=54.021224
+bpm=118.338
+beat_count=0
+bar_beats=4

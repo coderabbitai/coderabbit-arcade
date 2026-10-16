@@ -134,6 +134,7 @@ func _launch(route: String) -> void:
 func set_booth(enabled: bool) -> void:
 	booth = enabled
 	idle_seconds = 0.0
+	AudioService.set_attract(enabled)
 	set_process(enabled)
 	set_process_input(enabled)
 	if enabled:
