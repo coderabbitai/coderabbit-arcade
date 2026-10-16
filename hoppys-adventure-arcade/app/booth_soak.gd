@@ -1,25 +1,33 @@
 extends Node
 ## Soak test and frame-rate probe for long unattended runs: `<game> -- --soak=<minutes>`. The game
 ## visits every AppRouter route in turn and stays `--soak-dwell=<seconds>` (default 30) on each with
-## nobody playing, for the given minutes. Every SAMPLE_SECONDS it appends a CSV row: the route, the
-## frame rate and frame times, and the engine's memory and object counts. At the end it prints a
-## frame-rate table per route and a leak check, writes both next to the CSV in `--soak-log=<folder>`
-## (default user://soak), and quits: 0 when the counts held steady, 1 when they kept growing.
+## nobody playing, for the given minutes of wall-clock time. Every SAMPLE_SECONDS it appends a CSV
+## row: the route, the frame rate and frame times, and the engine's memory and object counts. At
+## the end it prints a frame-rate table per route and a leak check, writes both next to the CSV in
+## `--soak-log=<folder>` (default user://soak), and quits: 0 when the counts held steady, 1 when
+## they kept growing, 2 when a route failed to open or the results couldn't be written.
+## `--soak-routes=hub,heroes_vs_villains` limits the soak to those routes (the hub is always one).
 ## Run it rendered and fullscreen on the booth machine for frame rates at the booth resolution;
 ## headless runs measure only the leak check. tools/booth/soak.py wraps a run and adds the
-## process's resident memory, which release builds can't report from inside.
+## process's resident memory, which release builds can't report from inside; it reads the
+## "SOAK hub <n>" lines to measure it at the same point of each pass.
 const MINUTES_PREFIX := "--soak="
 const DWELL_PREFIX := "--soak-dwell="
 const FOLDER_PREFIX := "--soak-log="
+const ROUTES_PREFIX := "--soak-routes="
 const DEFAULT_DWELL := 30.0
+const MIN_DWELL := 0.2
 const DEFAULT_FOLDER := "user://soak"
 const SAMPLE_SECONDS := 5.0
-## Frames this soon after a route opens are loading, not play: they count as load hitches.
+## Frames this soon after a route opens are loading, not play: they count as load hitches. Short
+## dwells settle for half the dwell instead.
 const SETTLE_SECONDS := 1.0
 ## Frame-time histogram: BUCKET_MS wide buckets up to BUCKETS * BUCKET_MS, then one overflow bucket.
 const BUCKET_MS := 0.5
 const BUCKETS := 200
-## The leak check needs this many visits to the hub: the first warms caches and is not compared.
+## Frame times the summary reports the share of frames above (60 and 30 fps).
+const SLOW_MS: Array[float] = [16.7, 33.3]
+## The leak check needs this many settled hub visits: the first warms caches and is not compared.
 const MIN_CYCLES := 3
 ## Growth from the second hub visit to the last that counts as a leak: [absolute, fraction].
 const LIMITS := {"objects": [500, 0.05], "nodes": [100, 0.0], "orphan_nodes": [20, 0.0],
@@ -29,32 +37,43 @@ const COLUMNS := ["elapsed_s", "cycle", "route", "frames", "fps", "frame_p50_ms"
 
 var minutes := 0.0
 var dwell := DEFAULT_DWELL
+var settle := SETTLE_SECONDS
 var folder := DEFAULT_FOLDER
+## The routes named by --soak-routes, or empty for all of them.
+var only: PackedStringArray = []
 var csv_path := ""
 var summary_path := ""
 var router: Node
 var routes: Array[String] = []
 var index := -1
 var cycle := 0
+## Wall-clock seconds since the soak began, on the route since it opened, and since the last row.
 var elapsed := 0.0
 var on_route := 0.0
 var since_sample := 0.0
 var last_usec := 0
+## True while a route change is under way; nothing counts towards the dwell then.
+var changing := false
 var window: PackedFloat32Array = []
-## Per route: {"histogram": PackedInt32Array, "frames": int, "ms": total frame time, "max": float}.
+## Per route: {"histogram": PackedInt32Array, "frames": int, "ms": total, "max": float,
+## "slow": [frames over each SLOW_MS]}.
 var stats := {}
 var load_hitch := {"ms": 0.0, "route": ""}
-## Engine counts at the end of each hub visit, for the leak check.
+## Engine counts at the end of each settled hub visit, for the leak check.
 var hub_snapshots: Array[Dictionary] = []
+## Why the soak can't be trusted, if anything went wrong: a route that didn't open, or results
+## that couldn't be written. Either makes the exit status 2.
+var failure := ""
 var finished := false
 
-## The soak length from `--soak=<minutes>`, or 0.0 when absent or not a positive number.
+## The soak length from `--soak=<minutes>`, or 0.0 when absent or not a positive, finite number.
 static func minutes_from(args: PackedStringArray) -> float:
 	for arg in args:
 		if arg.begins_with(MINUTES_PREFIX):
 			var value := arg.trim_prefix(MINUTES_PREFIX)
-			if value.is_valid_float() and value.to_float() > 0.0:
-				return value.to_float()
+			var parsed := value.to_float()
+			if value.is_valid_float() and is_finite(parsed) and parsed > 0.0:
+				return parsed
 			push_warning("--soak needs a positive number of minutes, not %s; no soak" % value)
 	return 0.0
 
@@ -63,16 +82,31 @@ func _init(soak_minutes: float, args: PackedStringArray) -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	minutes = soak_minutes
 	for arg in args:
-		if arg.begins_with(DWELL_PREFIX) and arg.trim_prefix(DWELL_PREFIX).is_valid_float():
-			dwell = maxf(0.2, arg.trim_prefix(DWELL_PREFIX).to_float())
+		if arg.begins_with(DWELL_PREFIX):
+			var value := arg.trim_prefix(DWELL_PREFIX)
+			var parsed := value.to_float()
+			if value.is_valid_float() and is_finite(parsed):
+				dwell = maxf(MIN_DWELL, parsed)
+			else:
+				push_warning("--soak-dwell needs a number of seconds, not %s; using %s" \
+					% [value, dwell])
 		elif arg.begins_with(FOLDER_PREFIX) and arg.length() > FOLDER_PREFIX.length():
 			folder = arg.trim_prefix(FOLDER_PREFIX)
+		elif arg.begins_with(ROUTES_PREFIX):
+			only = arg.trim_prefix(ROUTES_PREFIX).split(",", false)
+	settle = minf(SETTLE_SECONDS, dwell * 0.5)
 
 func _ready() -> void:
 	router = get_parent()
-	routes.assign(router.ROUTES.keys())
-	if not DirAccess.dir_exists_absolute(folder):
-		DirAccess.make_dir_recursive_absolute(folder)
+	for route: String in router.ROUTES:
+		if only.is_empty() or route in only or route == "hub":
+			routes.append(route)
+	for route in only:
+		if not router.ROUTES.has(route):
+			push_warning("--soak-routes: unknown route %s, skipped" % route)
+	if not DirAccess.dir_exists_absolute(folder) \
+			and DirAccess.make_dir_recursive_absolute(folder) != OK:
+		failure = "cannot create %s" % ProjectSettings.globalize_path(folder)
 	# The process id keeps two soaks started in the same second apart.
 	var stamp := "%s-%d" % [Time.get_datetime_string_from_system().replace(":", "-"),
 		OS.get_process_id()]
@@ -84,40 +118,58 @@ func _ready() -> void:
 	last_usec = Time.get_ticks_usec()
 	_next_route()
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	if finished:
 		return
 	var now := Time.get_ticks_usec()
 	var span := (now - last_usec) / 1000.0
 	last_usec = now
-	elapsed += delta
-	if router.busy or on_route < SETTLE_SECONDS:
-		if span > load_hitch.ms:
-			load_hitch = {"ms": span, "route": _route()}
+	var seconds := span / 1000.0
+	elapsed += seconds
+	since_sample += seconds
+	if changing or router.busy:
+		_hitch(span)
 	else:
-		_count(span)
-	on_route += delta
-	since_sample += delta
+		on_route += seconds
+		if on_route < settle:
+			_hitch(span)
+		else:
+			_count(span)
 	if since_sample >= SAMPLE_SECONDS:
 		_sample()
 	if elapsed >= minutes * 60.0:
 		_finish()
-	elif on_route >= dwell and not router.busy:
+	elif not changing and not router.busy and on_route >= dwell:
 		if _route() == "hub":
-			hub_snapshots.append(_counts())
+			_snapshot_hub()
 		_next_route()
 
 func _route() -> String:
 	return routes[index] if index >= 0 else ""
 
+## Open the next route and wait for it. The dwell starts once the scene is there; a route that
+## doesn't open ends the soak, since its samples would carry the wrong label.
 func _next_route() -> void:
 	index = (index + 1) % routes.size()
 	if index == 0:
 		cycle += 1
-		# tools/booth/soak.py times its memory check from these lines.
 		print("SOAK cycle %d at %.1f s" % [cycle, elapsed])
+	var route := routes[index]
 	on_route = 0.0
-	router.go(routes[index])
+	window.clear()
+	changing = true
+	var opened: bool = await router.go(route)
+	changing = false
+	var scene := get_tree().current_scene
+	if finished:
+		return
+	if not opened or scene == null or scene.scene_file_path != router.ROUTES[route]:
+		failure = "route %s did not open" % route
+		_finish()
+
+func _hitch(span: float) -> void:
+	if span > load_hitch.ms:
+		load_hitch = {"ms": span, "route": _route()}
 
 func _count(span: float) -> void:
 	window.append(span)
@@ -125,12 +177,20 @@ func _count(span: float) -> void:
 	if not stats.has(route):
 		var histogram := PackedInt32Array()
 		histogram.resize(BUCKETS + 1)
-		stats[route] = {"histogram": histogram, "frames": 0, "ms": 0.0, "max": 0.0}
+		stats[route] = {"histogram": histogram, "frames": 0, "ms": 0.0, "max": 0.0, "slow": [0, 0]}
 	var entry: Dictionary = stats[route]
 	entry.histogram[mini(int(span / BUCKET_MS), BUCKETS)] += 1
 	entry.frames += 1
 	entry.ms += span
 	entry.max = maxf(entry.max, span)
+	for i in SLOW_MS.size():
+		if span > SLOW_MS[i]:
+			entry.slow[i] += 1
+
+func _snapshot_hub() -> void:
+	hub_snapshots.append(_counts())
+	# tools/booth/soak.py samples resident memory when it reads this line.
+	print("SOAK hub %d at %.1f s" % [hub_snapshots.size(), elapsed])
 
 func _counts() -> Dictionary:
 	return {
@@ -142,6 +202,7 @@ func _counts() -> Dictionary:
 		"resources": int(Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT)),
 	}
 
+## One CSV row for the frames since the last one, which all belong to the current route.
 func _sample() -> void:
 	var sorted := window.duplicate()
 	sorted.sort()
@@ -161,22 +222,17 @@ func _sample() -> void:
 	window.clear()
 	since_sample = 0.0
 
-## The frame time (ms) below which `share` of a route's frames fall, to the bucket's upper edge.
+## The frame time (ms) below which `share` of a route's frames fall, to the bucket's upper edge;
+## INF when it lands in the overflow bucket, whose frames have no upper bound (callers cap it at the
+## route's worst frame).
 static func percentile(histogram: PackedInt32Array, frames: int, share: float) -> float:
 	var target := ceili(frames * share)
 	var seen := 0
 	for i in histogram.size():
 		seen += histogram[i]
 		if seen >= target:
-			return (i + 1) * BUCKET_MS
-	return BUCKETS * BUCKET_MS
-
-## Frames slower than `ms`, as a share of all of the route's frames.
-static func slower_than(histogram: PackedInt32Array, frames: int, ms: float) -> float:
-	var slow := 0
-	for i in range(int(ms / BUCKET_MS), histogram.size()):
-		slow += histogram[i]
-	return float(slow) / maxf(1.0, frames)
+			return INF if i >= BUCKETS else (i + 1) * BUCKET_MS
+	return INF
 
 ## The leak check's findings: "" when steady or too few to compare, else what kept growing.
 static func growth(snapshots: Array[Dictionary]) -> String:
@@ -195,12 +251,8 @@ static func growth(snapshots: Array[Dictionary]) -> String:
 			grew.append(shape % [key, first[key], last[key]])
 	return ", ".join(grew)
 
-func _finish() -> void:
-	finished = true
-	if since_sample > 0.0:
-		_sample()
-	if _route() == "hub":
-		hub_snapshots.append(_counts())
+## The summary lines and exit status: 0 steady (or too short to judge), 1 growing, 2 failed.
+func verdict() -> Dictionary:
 	var size := DisplayServer.window_get_size()
 	var lines := PackedStringArray()
 	lines.append("SOAK %.1f min, %d cycles, window %dx%d, vsync %s, %s" % [elapsed / 60.0, cycle,
@@ -219,10 +271,9 @@ func _finish() -> void:
 			minf(top, percentile(entry.histogram, frames, 0.5)),
 			minf(top, percentile(entry.histogram, frames, 0.95)),
 			minf(top, percentile(entry.histogram, frames, 0.99)), top,
-			100.0 * slower_than(entry.histogram, frames, 16.7),
-			100.0 * slower_than(entry.histogram, frames, 33.3)])
+			100.0 * entry.slow[0] / maxf(1.0, frames), 100.0 * entry.slow[1] / maxf(1.0, frames)])
 	lines.append("SOAK worst load hitch: %.0f ms (%s)" % [load_hitch.ms, load_hitch.route])
-	var verdict := "too short to judge: %d hub visits, needs %d" % [hub_snapshots.size(), MIN_CYCLES]
+	var text := "too short to judge: %d hub visits, needs %d" % [hub_snapshots.size(), MIN_CYCLES]
 	var code := 0
 	if hub_snapshots.size() >= MIN_CYCLES:
 		var first := hub_snapshots[1]
@@ -233,31 +284,53 @@ func _finish() -> void:
 		lines.append("SOAK static memory %s" % ("%.1f MB -> %.1f MB" % [first.static_mb,
 			last.static_mb] if first.static_mb > 0.0 else "not reported by release builds"))
 		var grew := growth(hub_snapshots)
-		verdict = "steady" if grew == "" else "GROWING: " + grew
+		text = "steady" if grew == "" else "GROWING: " + grew
 		code = 0 if grew == "" else 1
-	lines.append("SOAK verdict: " + verdict)
-	var text := "\n".join(lines)
-	print(text)
+	if failure != "":
+		text = "FAILED: " + failure
+		code = 2
+	lines.append("SOAK verdict: " + text)
+	return {"lines": lines, "code": code}
+
+func _finish() -> void:
+	if finished:
+		return
+	finished = true
+	if not window.is_empty():
+		_sample()
+	if _route() == "hub" and not changing and not router.busy and on_route >= dwell:
+		_snapshot_hub()
 	var file := FileAccess.open(summary_path, FileAccess.WRITE)
-	if file:
+	if file == null and failure == "":
+		failure = "cannot write %s" % ProjectSettings.globalize_path(summary_path)
+	var result := verdict()
+	var text := "\n".join(result.lines)
+	if file != null:
 		file.store_string(text + "\n")
 		file.close()
+	print(text)
 	print("SOAK summary at %s" % ProjectSettings.globalize_path(summary_path))
+	if router.busy:
+		await get_tree().create_timer(1.0, true).timeout
 	router.go("hub")
 	await get_tree().create_timer(1.0, true).timeout
 	get_tree().unload_current_scene()
 	# By path: suites preload this script before autoloads exist.
 	get_node(^"/root/AudioService").shutdown()
 	await get_tree().create_timer(0.4, true).timeout
-	get_tree().quit(code)
+	get_tree().quit(result.code)
 
+## Append one line to the CSV; a failure marks the soak failed rather than stopping it.
 func _append(line: String) -> void:
 	var file := FileAccess.open(csv_path, FileAccess.READ_WRITE if FileAccess.file_exists(csv_path)
 		else FileAccess.WRITE)
 	if file == null:
-		push_warning("Soak: cannot write %s (%s)" % [csv_path,
-			error_string(FileAccess.get_open_error())])
+		if failure == "":
+			failure = "cannot write %s (%s)" % [ProjectSettings.globalize_path(csv_path),
+				error_string(FileAccess.get_open_error())]
 		return
 	file.seek_end()
-	file.store_line(line)
+	var written := file.store_line(line)
 	file.close()
+	if not written and failure == "":
+		failure = "cannot write %s" % ProjectSettings.globalize_path(csv_path)

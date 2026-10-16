@@ -105,9 +105,11 @@ func _ready() -> void:
 		_launch.call_deferred(start)
 ## `reason` is how a game session in progress ends, for the session log: "menu" unless the router
 ## itself is leaving the game (booth mode's idle return passes "idle").
-func go(route: String, reason := "menu") -> void:
+## Returns true once the route's scene has opened, false when the change was refused or failed;
+## callers that don't need to know can ignore it.
+func go(route: String, reason := "menu") -> bool:
 	if busy or not ROUTES.has(route) or not ResourceLoader.exists(ROUTES[route]):
-		return
+		return false
 	busy = true
 	veil.mouse_filter = Control.MOUSE_FILTER_STOP
 	AudioService.play_ui(2)
@@ -129,6 +131,7 @@ func go(route: String, reason := "menu") -> void:
 	await create_tween().tween_property(veil, "modulate:a", 0.0, 0.25).finished
 	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	busy = false
+	return error == OK
 ## Visitors can't quit a booth from the menu; staff close the window instead (force = true).
 ## A forced quit wins even mid-transition: auto_accept_quit is off, so nothing else would close.
 func quit_game(force := false) -> void:
