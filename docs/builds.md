@@ -47,6 +47,20 @@ python3 tools/booth/sessions_report.py booth/                               # se
 python3 tools/booth/sessions_report.py booth-a/ booth-b/ --csv sessions.csv # combine machines; one CSV row per session
 ```
 
+## Soak test and frame rate
+
+Before a show, let the build run unattended on the booth machine for a full show day:
+
+```sh
+python3 tools/booth/soak.py --minutes 600 -- "/Applications/Hoppy’s Adventure Arcade.app/Contents/MacOS/<executable>" -- --booth
+python3 tools/booth/soak.py --minutes 10 --godot "$GODOT"     # a quick run of this checkout's project
+```
+
+- **The soak.** The game runs with `--soak=<minutes>`. It visits every route in turn and stays `--soak-dwell=<seconds>` (default 30) on each with nobody playing. A soak turns off the idle return and the game-over card, ignores `--route`, and writes no session log, so its visits never count as booth sessions.
+- **Frame rate.** Every 5 seconds the game appends a CSV row: the route, frames per second, median, 99th-percentile and worst frame times, and the engine's memory and object counts. At the end it prints a table per route with the share of frames slower than 16.7 ms (60 fps) and 33.3 ms (30 fps), plus the worst loading hitch. Run it fullscreen (`--booth`) on the booth hardware to measure at the booth resolution; headless frame times mean nothing.
+- **Leak check.** The game compares its object, node, orphan-node and resource counts at the hub from the second visit to the last; the first visit warms caches. Debug builds also compare static memory, which release builds don't report. Growth beyond small limits makes the game exit 1.
+- **Resident memory.** `soak.py` samples the process's memory with `ps` every 30 seconds (`--rss-every`). The first pass over the routes loads everything once, so the check runs from the start of the second pass to the end, once a third pass has begun, and fails if memory grew more than 25% (`--max-rss-growth`). It stops a run that outlasts its time by 10 minutes (`--grace`). Results land in `soak-results/` (`--out`): the game's CSV and summary, `game.log` and `rss.csv`. macOS and Linux.
+
 ## Build locally
 
 ```sh
