@@ -225,6 +225,8 @@ func _hud() -> void:
 		var button := Style.button(entry[0])
 		col.add_child(button)
 		button.pressed.connect(func():
+			# Leaving the results unpauses the level music; end the stinger before they overlap.
+			stage_clear.stop()
 			get_tree().paused = false
 			AppRouter.go(entry[1]))
 	overlay.hide()

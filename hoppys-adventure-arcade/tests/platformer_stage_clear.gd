@@ -36,6 +36,12 @@ func run() -> void:
 			route + ": MERGE SUCCESSFUL plays the stinger on the Music bus while the results pause the tree")
 		check(game.music.process_mode != Node.PROCESS_MODE_ALWAYS and game.music.can_process() == false,
 			route + ": the level music stays paused under the stinger")
+		var leave := game.find_children("*", "Button", true, false).filter(func(b: Button) -> bool: return b.text == "Return to Platformer Menu")
+		check(not leave.is_empty(), route + ": the results offer a way out")
+		if not leave.is_empty():
+			(leave[0] as Button).pressed.emit()
+			check(not game.stage_clear.playing, route + ": leaving the results stops the stinger before the level music resumes")
+			await create_timer(0.6, true, false, true).timeout
 		paused = false
 		await open_level(route)
 		game.player.position.y = 900
