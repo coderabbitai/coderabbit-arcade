@@ -6,8 +6,8 @@ const THEMES := ["generation_floor", "review_gauntlet", "agentic_core"]
 const KITS := ["generation_kit", "review_kit", "core_kit"]
 const STORIES := ["Untrusted code floods the conference. Defeat AI SLOP to deploy REVIEW.", "Break the pipeline. Face the Coding Agent Army and the 10,000-Line PR together.", "Expose the attack surface. Stop the AI-Augmented Hacker at machine speed."]
 const MUSIC_ROOT := "res://Assets/Audio/Beat'em Up/Hero vs Villian/"
-const MUSIC := [preload(MUSIC_ROOT+"Hero Immortal.mp3"), preload(MUSIC_ROOT+"frivolous_hero.ogg"), preload(MUSIC_ROOT+"synth_type_mix2.ogg")]
-const BOSS_MUSIC := [preload(MUSIC_ROOT+"8-bit_slay_the_evil.ogg"), preload(MUSIC_ROOT+"Heavy Concept A Bass Master.wav"), preload(MUSIC_ROOT+"Zodik - Lord of Zorg I.ogg")]
+const MUSIC := [preload(MUSIC_ROOT+"heroes_villains_generation_floor.ogg"), preload(MUSIC_ROOT+"heroes_villains_review_gauntlet.ogg"), preload(MUSIC_ROOT+"heroes_villains_agentic_core.ogg")]
+const BOSS_MUSIC := [preload(MUSIC_ROOT+"heroes_villains_boss_ai_slop.ogg"), preload(MUSIC_ROOT+"heroes_villains_boss_agent_army.ogg"), preload(MUSIC_ROOT+"heroes_villains_boss_hacker.ogg")]
 const CUE_ROOT := "res://Assets/heroes-vs-villains-assets-only/audio/"
 const CUES := {
 	"reveal_ai_slop": preload(CUE_ROOT+"reveal_ai_slop.wav"),

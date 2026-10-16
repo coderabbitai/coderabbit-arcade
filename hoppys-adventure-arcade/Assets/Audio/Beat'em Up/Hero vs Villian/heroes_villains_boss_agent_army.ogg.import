@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://2kx6x42nsagf"
+path="res://.godot/imported/heroes_villains_boss_agent_army.ogg-ea1c97bd91cb0f5a007e0783a05fae0f.oggvorbisstr"
+
+[deps]
+
+source_file="res://Assets/Audio/Beat'em Up/Hero vs Villian/heroes_villains_boss_agent_army.ogg"
+dest_files=["res://.godot/imported/heroes_villains_boss_agent_army.ogg-ea1c97bd91cb0f5a007e0783a05fae0f.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=10.18195
+bpm=116.009
+beat_count=0
+bar_beats=4

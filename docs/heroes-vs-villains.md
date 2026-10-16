@@ -95,18 +95,18 @@ The v1 resolves the source catalog's timing ambiguities with an eight-second REV
 
 ## Audio
 
-All requested tracks are wired from `Assets/Audio/Beat'em Up/Hero vs Villian/`:
+Original music by Erik Thorelli, in the theme's family (F major for the heroes' stage, F minor for the villains), is wired from `Assets/Audio/Beat'em Up/Hero vs Villian/`; that folder's `PROMPTS.md` records prompts, Suno song IDs and loop points:
 
 | Encounter | File |
 |---|---|
-| The Generation Floor | `Hero Immortal.mp3` |
-| AI SLOP | `8-bit_slay_the_evil.ogg` |
-| The Review Gauntlet | `frivolous_hero.ogg` |
-| Coding Agent Army / 10,000-Line PR | `Heavy Concept A Bass Master.wav` |
-| The Agentic Core | `synth_type_mix2.ogg` |
-| AI-Augmented Hacker | `Zodik - Lord of Zorg I.ogg` |
+| The Generation Floor | `heroes_villains_generation_floor.ogg` |
+| AI SLOP | `heroes_villains_boss_ai_slop.ogg` |
+| The Review Gauntlet | `heroes_villains_review_gauntlet.ogg` |
+| Coding Agent Army / 10,000-Line PR | `heroes_villains_boss_agent_army.ogg` |
+| The Agentic Core | `heroes_villains_agentic_core.ogg` |
+| AI-Augmented Hacker | `heroes_villains_boss_hacker.ogg` |
 
-Each music stream is duplicated before enabling looping, including the WAV track. Music uses the Music bus; pooled impact/jump/pickup effects from Juhani Junkala's collection and the pack's eight original cues use SFX. Imported shared streams are never modified. Track provenance is recorded in `ASSETS_LICENSES.md`.
+Each `.import` sets a `loop_offset` after the track's intro but leaves `loop` off; each music stream is duplicated before enabling looping, and the copy inherits the loop point. Music uses the Music bus; pooled impact/jump/pickup effects from Juhani Junkala's collection and the pack's eight original cues use SFX. Imported shared streams are never modified. Track provenance is recorded in `ASSETS_LICENSES.md`.
 
 ## Runtime and validation
 

@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://c1u43b1oqrn7e"
+path="res://.godot/imported/heroes_villains_generation_floor.ogg-a50c90ddbbe6ec4fb9750f52c54715f8.oggvorbisstr"
+
+[deps]
+
+source_file="res://Assets/Audio/Beat'em Up/Hero vs Villian/heroes_villains_generation_floor.ogg"
+dest_files=["res://.godot/imported/heroes_villains_generation_floor.ogg-a50c90ddbbe6ec4fb9750f52c54715f8.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=9.404082
+bpm=116.851
+beat_count=0
+bar_beats=4
