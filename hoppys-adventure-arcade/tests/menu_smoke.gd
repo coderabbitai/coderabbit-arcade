@@ -1,5 +1,7 @@
 extends SceneTree
-## Run with --path <project> --script res://tests/menu_smoke.gd.
+## Run with --path <project> --script res://tests/menu_smoke.gd. Runs headless in CI; a rendered run
+## also saves screenshots. Pointer moves go through tests/support/pointer.gd so they hover headless.
+const Pointer := preload("res://tests/support/pointer.gd")
 var failures := 0
 func _initialize() -> void:
 	call_deferred("run")
@@ -97,16 +99,10 @@ func run() -> void:
 	Input.parse_input_event(pad)
 	check(root.gui_get_focus_owner() == current_scene.buttons[2], "Gamepad D-pad moves focus")
 	check(current_scene.showcase.focus_group == 2, "Gamepad focus selects brawler")
-	var mouse := InputEventMouseMotion.new()
-	mouse.position = Vector2(200, 430)
-	mouse.relative = Vector2(10, 10)
-	Input.parse_input_event(mouse)
+	Pointer.hover(current_scene.buttons[1])
 	await process_frame
 	check(current_scene.showcase.focus_group == 1, "Mouse hover overrides old gamepad focus")
-	mouse = InputEventMouseMotion.new()
-	mouse.position = Vector2(620, 680)
-	mouse.relative = Vector2(420, 250)
-	Input.parse_input_event(mouse)
+	Pointer.move(root, Pointer.corner(root), Vector2(420, 250))
 	await process_frame
 	check(current_scene.showcase.focus_group == -1, "Pointer exit releases mode preview")
 	current_scene.showcase.select_group(-1)
@@ -130,7 +126,6 @@ func run() -> void:
 	# The verdict is already printed; a missing or renamed autoload must not stop quit(failures)
 	# from running, or the process hangs instead of reporting.
 	var shutdown_audio := root.get_node_or_null("AudioService")
-	if shutdown_audio != null and shutdown_audio.has_method("shutdown"):
-		shutdown_audio.shutdown()
-	await wait(0.3)
+	if shutdown_audio != null and shutdown_audio.has_method("settle"):
+		await shutdown_audio.settle()
 	quit(failures)

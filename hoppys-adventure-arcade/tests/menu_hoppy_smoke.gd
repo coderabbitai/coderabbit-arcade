@@ -1,4 +1,7 @@
 extends SceneTree
+## Hoppy's reactions on the main menu. Runs headless in CI; a rendered run also saves screenshots.
+## Pointer moves go through tests/support/pointer.gd so they hover headless.
+const Pointer := preload("res://tests/support/pointer.gd")
 var failures := 0
 func _initialize() -> void:
 	call_deferred("run")
@@ -20,10 +23,7 @@ func run() -> void:
 	check(hoppy.sprite.animation == &"idle", "Default Hoppy idles in 2D")
 	check(hoppy.runner_view.render_target_update_mode == SubViewport.UPDATE_DISABLED, "Hidden 3D render disabled")
 	await capture("/tmp/menu-hoppy-2d.png")
-	var mouse := InputEventMouseMotion.new()
-	mouse.position = Vector2(200, 430)
-	mouse.relative = Vector2(10, 10)
-	Input.parse_input_event(mouse)
+	Pointer.hover(menu.buttons[1])
 	await wait(1)
 	check(hoppy.runner_image.visible and hoppy.runner_image.modulate.a == 1, "Runner shows 3D")
 	check(hoppy.sprite.modulate.a == 0, "2D fades away")
