@@ -124,13 +124,13 @@ A leap commits to the warned destination; it does not follow Hoppy after takeoff
 
 | Area | Music in `Assets/Audio/Beat'em Up/` |
 |---|---|
-| CLI/IDE and mode menu | `Zodik - Future Travel.ogg` |
-| Security | `helldrake(extended).ogg` |
-| Git HQ | `kim_lightyear_-_angel_eyes_vision_ii.mp3` |
-| District bosses | `Boss Fight 2.mp3` |
-| Boss | `Kim Lightyear - The Final.mp3` |
+| CLI/IDE and mode menu | `code_city_cli_ide_district.ogg` |
+| Security | `code_city_security_sector.ogg` |
+| Git HQ | `code_city_git_hq.ogg` |
+| District bosses | `code_city_district_boss.ogg` |
+| Boss | `code_city_grand_merge_conflict.ogg` |
 
-Music uses independently duplicated looping streams on the Music bus. Ten reusable positional voices play punch, damage, pickup, jump and fanfare sounds from Juhani Junkala's Essential Retro collection on the SFX bus. Shared imported audio resources are not mutated.
+All five are original music by Erik Thorelli; the folder's `PROMPTS.md` records prompts, Suno song IDs and loop points. Each `.import` sets a `loop_offset` after the track's intro but leaves `loop` off, and the game loops a duplicated copy, so the intro plays once and the duplicate inherits the loop point. Music uses independently duplicated looping streams on the Music bus. Ten reusable positional voices play punch, damage, pickup, jump and fanfare sounds from Juhani Junkala's Essential Retro collection on the SFX bus. Shared imported audio resources are not mutated.
 
 The existing [Code City Brawl pack](code-city-brawl-assets.md) supplies environments, enemies, boss, items, weapons and effects. `Assets/code-city-brawl-player/` adds 16 Hoppy combat/depth-movement frames, plus the source image, exact generation prompt and atlas manifest. Side-running and death reuse the Platformer Hoppy resource. Repack the combat source with `tools/build_hoppy_brawler.py` (Pillow required). `Assets/hoppy-armed/code_city/` adds six armed sheets with 30 populated 192×128 cells each (26 active, plus four unused legacy run cells), a six-frame side run and four-frame up/down walks, with the pivot at (72,118). Body registration keeps the torso aligned across movement, idle, equip and hurt while the legs cycle. The pack also includes carry icons, untouched generated masters, exact prompts and a manifest of clips, body landmarks and anchors. Rebuild it with `uvx --with pillow python tools/build_hoppy_armed.py --mode code_city`; the [pack README](../hoppys-adventure-arcade/Assets/hoppy-armed/README.md) describes the layout. `Assets/beatemup-story/code_city/` holds the three generated story scenes and the three victory-epilogue scenes at 1600×900, with their untouched masters, exact prompts and regeneration history. Rebuild them with `uvx --with pillow python tools/build_story_scenes.py`. Licensing and provenance status are recorded in [ASSETS_LICENSES.md](../ASSETS_LICENSES.md).
 

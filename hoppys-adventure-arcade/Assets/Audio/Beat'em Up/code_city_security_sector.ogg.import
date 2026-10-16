@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://udbjg14iwaeh"
+path="res://.godot/imported/code_city_security_sector.ogg-c4cb1efabd554671e8103115c7ebb269.oggvorbisstr"
+
+[deps]
+
+source_file="res://Assets/Audio/Beat'em Up/code_city_security_sector.ogg"
+dest_files=["res://.godot/imported/code_city_security_sector.ogg-c4cb1efabd554671e8103115c7ebb269.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=36.966168
+bpm=138.163
+beat_count=0
+bar_beats=4

@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://2qjv61sxkh1y"
+path="res://.godot/imported/code_city_cli_ide_district.ogg-e9da8e212eefd5d1b7cf64c07fc5b1a8.oggvorbisstr"
+
+[deps]
+
+source_file="res://Assets/Audio/Beat'em Up/code_city_cli_ide_district.ogg"
+dest_files=["res://.godot/imported/code_city_cli_ide_district.ogg-e9da8e212eefd5d1b7cf64c07fc5b1a8.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=36.617868
+bpm=132.425
+beat_count=0
+bar_beats=4

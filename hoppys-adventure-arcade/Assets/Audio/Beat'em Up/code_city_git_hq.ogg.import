@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://ch33ojfqjk7dk"
+path="res://.godot/imported/code_city_git_hq.ogg-0406b1850a9d3262488dfb6ff411855a.oggvorbisstr"
+
+[deps]
+
+source_file="res://Assets/Audio/Beat'em Up/code_city_git_hq.ogg"
+dest_files=["res://.godot/imported/code_city_git_hq.ogg-0406b1850a9d3262488dfb6ff411855a.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=36.629478
+bpm=125.009
+beat_count=0
+bar_beats=4

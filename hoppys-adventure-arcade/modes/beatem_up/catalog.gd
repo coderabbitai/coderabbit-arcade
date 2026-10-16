@@ -3,12 +3,12 @@ const TITLES := ["CLI / IDE DISTRICT", "SECURITY SECTOR", "GIT REPOSITORY HQ"]
 const THEMES := ["district", "security", "hq"]
 const STORIES := ["The terminals have gone dark. Rogue commands are running wild.", "The firewall is down. Injection attacks are flooding the corridors.", "The source repo is under siege. Face the conflict and ship the fix."]
 const MUSIC := [
-	preload("res://Assets/Audio/Beat'em Up/Zodik - Future Travel.ogg"),
-	preload("res://Assets/Audio/Beat'em Up/helldrake(extended).ogg"),
-	preload("res://Assets/Audio/Beat'em Up/kim_lightyear_-_angel_eyes_vision_ii.mp3")]
-const BOSS_MUSIC = preload("res://Assets/Audio/Beat'em Up/Kim Lightyear - The Final.mp3")
+	preload("res://Assets/Audio/Beat'em Up/code_city_cli_ide_district.ogg"),
+	preload("res://Assets/Audio/Beat'em Up/code_city_security_sector.ogg"),
+	preload("res://Assets/Audio/Beat'em Up/code_city_git_hq.ogg")]
+const BOSS_MUSIC = preload("res://Assets/Audio/Beat'em Up/code_city_grand_merge_conflict.ogg")
 ## The district bosses' fight track (mini_boss.gd); BOSS_MUSIC stays the Grand Merge Conflict's.
-const MINI_BOSS_MUSIC = preload("res://Assets/Audio/Beat'em Up/Boss Fight 2.mp3")
+const MINI_BOSS_MUSIC = preload("res://Assets/Audio/Beat'em Up/code_city_district_boss.ogg")
 ## Hands-free stage flow (seconds, world px, px/s, dB). stage_flow.gd reads its DEFAULTS keys;
 ## the rest are game.gd's: intro page hold, room-0 telegraph grace, boss-music dip, exit banner,
 ## the hold of each victory-epilogue page, and the district-boss victory hop (length, height).
