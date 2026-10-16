@@ -4,6 +4,13 @@ extends SceneTree
 ## license; a track added to credits.json shows up; it scrolls by itself and by hand; Esc and the
 ## Back button return to the hub. Run headless with --script res://tests/credits_screen.gd.
 const Credits := preload("res://scenes/credits/credits.gd")
+## The original tracks that play in the game (Assets/Audio/**/PROMPTS.md), kept apart from credits.json
+## so a track dropped from the credits fails the suite.
+const ORIGINAL_TRACKS := ["Send in the Rabbit", "Send in the Rabbit (Instrumental)", "Cable Car Hop",
+	"Merge Conflict Monster", "Zero-G Deploy", "The Deprecated API", "The Enchanted Repo", "The Legacy Monolith",
+	"Stage Clear", "CLI / IDE District", "Security Sector", "Git Repository HQ", "District Boss",
+	"The Grand Merge Conflict", "The Generation Floor", "AI SLOP", "The Review Gauntlet",
+	"Agent Army and the 10,000-Line PR", "The Agentic Core", "Machine-Speed Hacker"]
 var failures := 0
 var router: Node
 
@@ -57,10 +64,16 @@ func run() -> void:
 	var music_tracks: Array = written[0].tracks if not written.is_empty() else []
 	var track_titles := {}
 	for track: Variant in music_tracks:
-		if track is Dictionary and str(track.get("title", "")) != "" and str(track.get("used_by", "")) != "":
+		if track is Dictionary and track.get("title", "") is String and track.get("title", "") != "" \
+				and track.get("used_by", "") is String and track.get("used_by", "") != "":
 			track_titles[track.title] = "%s  ·  %s" % [track.title, track.used_by]
 	check(music_tracks.size() > 0 and track_titles.size() == music_tracks.size(),
 		"Every original track has a unique title and the part of the game it plays in (%d tracks)" % music_tracks.size())
+	var expected_titles := {}
+	for title in ORIGINAL_TRACKS:
+		expected_titles[title] = true
+	check(track_titles.keys().size() == ORIGINAL_TRACKS.size() and track_titles.keys().all(func(t: String) -> bool: return expected_titles.has(t)),
+		"credits.json lists exactly the %d original tracks that play in the game" % ORIGINAL_TRACKS.size())
 	var all_credits: Array = []
 	for section in generated:
 		all_credits.append_array(section.credits)
