@@ -214,7 +214,6 @@ while :; do
   status=$?
   check_stop
   child=""
-stop_requested=0
   ran=$(($(date +%s) - launched))
   if [ "$status" -gt 128 ]; then
     say "the game exited after $ran s (signal $((status - 128)))"
