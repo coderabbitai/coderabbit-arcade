@@ -16,9 +16,10 @@ static func move(viewport: Viewport, point: Vector2, relative := Vector2(10, 10)
 	motion.relative = relative
 	viewport.push_input(motion, true)
 
-## Move the pointer onto the middle of `control`.
+## Move the pointer onto the middle of `control`, in viewport coordinates (through any canvas layer
+## or camera transform above it).
 static func hover(control: Control) -> void:
-	move(control.get_viewport(), control.get_global_rect().get_center())
+	move(control.get_viewport(), control.get_global_transform_with_canvas() * (control.size * 0.5))
 
 ## The bottom-right corner of the visible area, which no menu button covers.
 static func corner(viewport: Viewport) -> Vector2:
