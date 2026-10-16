@@ -9,7 +9,7 @@ const COMBAT := "res://Assets/code-city-brawl-player/combat.tres"
 const MANIFEST := "res://Assets/code-city-brawl-player/manifest.json"
 const JINGLE := "res://Assets/Audio/Beat'em Up/code_city_victory_jingle.wav"
 const LOOP := "res://Assets/Audio/Beat'em Up/code_city_victory_loop.wav"
-const BOSS_MUSIC := "res://Assets/Audio/Beat'em Up/Boss Fight 2.mp3"
+const BOSS_MUSIC := "res://Assets/Audio/Beat'em Up/code_city_district_boss.ogg"
 const CAPTURE_DIR := "/tmp/s3-captures/celebration"
 const DT := 1.0/60.0
 ## Frames to wait for the last autoload before giving up, so a stuck start fails instead of hanging.

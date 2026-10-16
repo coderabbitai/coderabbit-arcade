@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://clvqxaodq3hti"
+path="res://.godot/imported/code_city_grand_merge_conflict.ogg-945bf73f4692310d14907e8d9c84bdeb.oggvorbisstr"
+
+[deps]
+
+source_file="res://Assets/Audio/Beat'em Up/code_city_grand_merge_conflict.ogg"
+dest_files=["res://.godot/imported/code_city_grand_merge_conflict.ogg-945bf73f4692310d14907e8d9c84bdeb.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=6.362268
+bpm=161.004
+beat_count=0
+bar_beats=4

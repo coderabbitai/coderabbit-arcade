@@ -164,7 +164,7 @@ func run() -> void:
 	var boss=game.boss
 	check(game.flow.music_track==Catalog.MUSIC[2],"Stage track plays until the boss-music dip bottoms out")
 	game.flow.tick(.65,game.player)
-	check(game.music.stream is AudioStreamMP3 and game.music.stream.loop and game.music.stream!=Catalog.BOSS_MUSIC and game.flow.music_track==Catalog.BOSS_MUSIC and not Catalog.BOSS_MUSIC.loop,"Boss music dips in as an independent looping stream")
+	check(game.music.stream is AudioStreamOggVorbis and game.music.stream.loop and game.music.stream!=Catalog.BOSS_MUSIC and game.flow.music_track==Catalog.BOSS_MUSIC and not Catalog.BOSS_MUSIC.loop,"Boss music dips in as an independent looping stream")
 	boss.vulnerable=false
 	boss.take_hit(4,0,p.position,true)
 	check(boss.hp==24,"Boss rejects damage outside recovery")
@@ -213,7 +213,10 @@ func run() -> void:
 	check(game.stage_index==2 and game.room==0 and game.player.hp==3 and game.player.weapon=="" and game.score==200,"Retry restores current-stage checkpoint and fresh player state")
 	check(game.bullets.is_empty() and game.warnings.is_empty() and game.player.effects.is_empty(),"Retry clears threats and temporary effects")
 	check(game.screen_fx.material.get_shader_parameter("phase")==0.0 and game.camera.offset==Vector2.ZERO,"Retry clears boss screen effects and camera shake")
-	check(Catalog.MUSIC[0].resource_path.ends_with("Zodik - Future Travel.ogg") and Catalog.MUSIC[1].resource_path.ends_with("helldrake(extended).ogg") and Catalog.MUSIC[2].resource_path.ends_with("kim_lightyear_-_angel_eyes_vision_ii.mp3") and Catalog.BOSS_MUSIC.resource_path.ends_with("Kim Lightyear - The Final.mp3"),"All four user music mappings match")
+	check(Catalog.MUSIC[0].resource_path.ends_with("code_city_cli_ide_district.ogg") and Catalog.MUSIC[1].resource_path.ends_with("code_city_security_sector.ogg") and Catalog.MUSIC[2].resource_path.ends_with("code_city_git_hq.ogg") and Catalog.BOSS_MUSIC.resource_path.ends_with("code_city_grand_merge_conflict.ogg") and Catalog.MINI_BOSS_MUSIC.resource_path.ends_with("code_city_district_boss.ogg"),"All five music mappings match")
+	for track in Catalog.MUSIC+[Catalog.BOSS_MUSIC, Catalog.MINI_BOSS_MUSIC]:
+		var copy: AudioStreamOggVorbis = Catalog.looped(track)
+		check(copy.loop and not track.loop and track.loop_offset>0.0 and track.loop_offset<track.get_length() and is_equal_approx(copy.loop_offset, track.loop_offset), "%s loops after its intro on a private copy" % track.resource_path.get_file())
 	# Code-made bindings must answer every pad, not only device 0 (booths, reconnects).
 	for binding in [["brawl_jump",0],["brawl_attack",2],["brawl_pickup",3]]:
 		for device in [0,1,3]:

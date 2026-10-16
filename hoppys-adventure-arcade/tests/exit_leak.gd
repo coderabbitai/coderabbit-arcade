@@ -111,7 +111,7 @@ func reach() -> bool:
 		"code_city":
 			return await code_city_combat()
 		"mini_boss":
-			# Room 3 of district 1, wave down: the district boss drops in on Boss Fight 2.
+			# Room 3 of district 1, wave down: the district boss drops in on its fight track.
 			if not await code_city_combat(): return false
 			game.enter_room(2)
 			game.player.position = Vector2(game.room_start()+300, 580)
