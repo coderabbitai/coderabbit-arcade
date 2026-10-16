@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://bn7scu5ihuwe1"
+path="res://.godot/imported/heroes_villains_boss_ai_slop.ogg-38e6518e817b3145db1595dfb63a1866.oggvorbisstr"
+
+[deps]
+
+source_file="res://Assets/Audio/Beat'em Up/Hero vs Villian/heroes_villains_boss_ai_slop.ogg"
+dest_files=["res://.godot/imported/heroes_villains_boss_ai_slop.ogg-38e6518e817b3145db1595dfb63a1866.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=13.572063
+bpm=117.375
+beat_count=0
+bar_beats=4

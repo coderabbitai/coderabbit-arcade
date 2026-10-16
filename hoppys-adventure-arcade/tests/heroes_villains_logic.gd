@@ -269,7 +269,7 @@ func run() -> void:
 	game.check_boss_state();finish_cards();freeze()
 	check(game.army_merged and game.bosses.size()==2,"50% total HP merges commander and introduces PR")
 	game.flow.tick(Catalog.FLOW.boss_dip,game.player)
-	check(game.music.stream is AudioStreamWAV and game.music.stream.loop_mode==AudioStreamWAV.LOOP_FORWARD,"Army WAV loops through the dual encounter")
+	check(game.music.stream is AudioStreamOggVorbis and game.music.stream.loop and is_equal_approx(game.music.stream.get_length(),Catalog.BOSS_MUSIC[1].get_length()) and is_equal_approx(game.music.stream.loop_offset,Catalog.BOSS_MUSIC[1].loop_offset) and game.flow.music_track==Catalog.BOSS_MUSIC[1],"Army boss music loops through the dual encounter")
 	game.bosses[0].take_hit(999,0,Vector2.ZERO);game.check_boss_state()
 	check(not game.boss_rewarded and game.alive_bosses()==1,"One dual boss death cannot unlock exit")
 	game.bosses[1].take_hit(999,0,Vector2.ZERO);game.check_boss_state();finish_cards()
@@ -382,6 +382,7 @@ func run() -> void:
 		var looped := Catalog.looped(track)
 		check(looped!=track and looped.get_length()>0,"Mapped music duplicates and loads: "+track.resource_path.get_file())
 		if looped is AudioStreamWAV: check(looped.loop_end>0 and track.loop_mode==AudioStreamWAV.LOOP_DISABLED,"WAV loop does not mutate shared import")
+		if looped is AudioStreamOggVorbis: check(looped.loop and not track.loop and track.loop_offset>0.0 and track.loop_offset<track.get_length() and is_equal_approx(looped.loop_offset, track.loop_offset),"Copy loops after the intro without mutating the shared import: "+track.resource_path.get_file())
 	# Code-made bindings must answer every pad, not only device 0 (booths, reconnects).
 	for binding in [["heroes_popup_advance",4],["review_burst",9]]:
 		for device in [0,1,3]:

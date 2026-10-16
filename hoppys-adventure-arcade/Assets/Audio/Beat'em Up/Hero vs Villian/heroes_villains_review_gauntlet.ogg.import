@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://drj8fvm3bkpvu"
+path="res://.godot/imported/heroes_villains_review_gauntlet.ogg-19d367ca3d02ace6d6d77b2306e95f31.oggvorbisstr"
+
+[deps]
+
+source_file="res://Assets/Audio/Beat'em Up/Hero vs Villian/heroes_villains_review_gauntlet.ogg"
+dest_files=["res://.godot/imported/heroes_villains_review_gauntlet.ogg-19d367ca3d02ace6d6d77b2306e95f31.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=16.323628
+bpm=116.021
+beat_count=0
+bar_beats=4
