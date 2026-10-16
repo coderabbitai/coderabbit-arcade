@@ -2,6 +2,7 @@ extends CanvasLayer
 const BoothLog := preload("res://app/booth_log.gd")
 const BoothHeartbeat := preload("res://app/booth_heartbeat.gd")
 const NextPlayerCard := preload("res://app/next_player_card.gd")
+const BoothSoak := preload("res://app/booth_soak.gd")
 const ROUTES := {
 	"heroes_vs_villains": "res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn",
 	"code_city_brawl": "res://scenes/beatem_up/code_city_brawl.tscn",
@@ -61,6 +62,8 @@ var retry_limit := 0
 var game_overs := 0
 var next_player: NextPlayerCard
 var next_player_left := 0.0
+## The soak test (app/booth_soak.gd), when the game was launched with `--soak=<minutes>`.
+var soak: BoothSoak
 func _ready() -> void:
 	# The veil tween must keep running while a microgame has the tree paused.
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -81,22 +84,32 @@ func _ready() -> void:
 	set_booth(BOOTH_FLAG in args)
 	if booth:
 		print("AppRouter: booth attract route %s, %d retries per player" % [attract, retry_limit])
-	var log_path := session_log_path(args, booth)
-	if log_path != "":
-		start_session_log(log_path)
 	var beat_path := heartbeat_path(args)
 	if beat_path != "":
 		heartbeat = BoothHeartbeat.new(beat_path)
 		add_child(heartbeat)
 		print("AppRouter: heartbeat at %s" % ProjectSettings.globalize_path(beat_path))
+	var soak_minutes := BoothSoak.minutes_from(args)
+	if soak_minutes > 0.0:
+		# The soak changes routes itself: no idle return, no launch route, no next-player card,
+		# and no session log, so its visits never count as booth sessions.
+		idle_limit = INF
+		soak = BoothSoak.new(soak_minutes, args)
+		add_child(soak)
+		return
+	var log_path := session_log_path(args, booth)
+	if log_path != "":
+		start_session_log(log_path)
 	var start := launch_route(args)
 	if start != "":
 		_launch.call_deferred(start)
 ## `reason` is how a game session in progress ends, for the session log: "menu" unless the router
 ## itself is leaving the game (booth mode's idle return passes "idle").
-func go(route: String, reason := "menu") -> void:
+## Returns true once the route's scene has opened, false when the change was refused or failed;
+## callers that don't need to know can ignore it.
+func go(route: String, reason := "menu") -> bool:
 	if busy or not ROUTES.has(route) or not ResourceLoader.exists(ROUTES[route]):
-		return
+		return false
 	busy = true
 	veil.mouse_filter = Control.MOUSE_FILTER_STOP
 	AudioService.play_ui(2)
@@ -118,6 +131,7 @@ func go(route: String, reason := "menu") -> void:
 	await create_tween().tween_property(veil, "modulate:a", 0.0, 0.25).finished
 	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	busy = false
+	return error == OK
 ## Visitors can't quit a booth from the menu; staff close the window instead (force = true).
 ## A forced quit wins even mid-transition: auto_accept_quit is off, so nothing else would close.
 func quit_game(force := false) -> void:
@@ -195,13 +209,13 @@ static func retry_count(args: PackedStringArray) -> int:
 ## Games call this when the player loses, before showing their own retry screen. Returns true when
 ## the booth takes over: the player has used their retries, so the game shows nothing and the
 ## router thanks them and sends the booth to the attract route. Always false outside booth mode,
-## and while a route change is already under way (it takes the player elsewhere anyway). The
-## session log counts every game over, booth or not.
+## while a route change is already under way (it takes the player elsewhere anyway), and during a
+## soak, which changes routes itself. The session log counts every game over, booth or not.
 ## `score_line` is shown on the card, in the game's own style ("SCORE 01234").
 func booth_game_over(score_line := "") -> bool:
 	if session_log:
 		session_log.count_game_over()
-	if not booth or busy:
+	if not booth or busy or soak != null:
 		return false
 	game_overs += 1
 	if game_overs <= retry_limit:
