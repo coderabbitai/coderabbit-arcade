@@ -55,7 +55,7 @@ Updated 2026-10-08: all menu previews now use current stage artwork or captured 
 /Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --script res://tests/menu_smoke.gd
 ```
 
-The behavioral smoke test covers preview timing and preservation, rapid input coalescing, bounded preview count, all thirteen previews, modal focus restoration, invalid routes, duplicate navigation, all three mode round trips, and audio player counts. It also dispatches keyboard, simulated gamepad, and mouse events. A rendered run writes menu/settings screenshots to `/tmp` for layout inspection. It uses the normal settings path, so run against a disposable user profile if preserving settings during tests matters.
+The behavioral smoke test covers preview timing and preservation, rapid input coalescing, bounded preview count, all thirteen previews, modal focus restoration, invalid routes, duplicate navigation, all three mode round trips, and audio player counts. It also dispatches keyboard, simulated gamepad, and mouse events. Mouse hover goes through `tests/support/pointer.gd`, so it and the character check below run headless in CI. A rendered run writes menu/settings screenshots to `/tmp` for layout inspection. It uses the normal settings path, so run against a disposable user profile if preserving settings during tests matters.
 
 Physical controller feel, audio loop quality, and Windows/Linux exports require later hands-on checks; no export presets or platform builds were added.
 
