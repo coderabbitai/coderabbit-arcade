@@ -18,11 +18,13 @@ func check(ok: bool, message: String) -> void:
 func wait(seconds: float) -> void:
 	await create_timer(seconds, true).timeout
 
+## Wait for the route change to finish, up to five seconds of wall time; a change that doesn't
+## finish is a failed check.
 func settle_route() -> void:
-	for i in 300:
-		if not router.busy:
-			break
+	var deadline := Time.get_ticks_msec() + 5000
+	while router.busy and Time.get_ticks_msec() < deadline:
 		await process_frame
+	check(not router.busy, "The route change finishes")
 	await process_frame
 
 func texts(screen: Node) -> PackedStringArray:
@@ -113,10 +115,15 @@ func run() -> void:
 	check(screen.scroll.scroll_vertical > 0, "The credits scroll by themselves")
 	var before: int = screen.scroll.scroll_vertical
 	await press(&"ui_down")
-	check(screen.scroll.scroll_vertical >= before + 80, "Down scrolls by hand")
+	var stepped: int = screen.scroll.scroll_vertical
+	check(stepped >= before + 80, "Down scrolls by hand")
 	await wait(0.5)
-	check(screen.scroll.scroll_vertical == before + 90 or screen.hold > 0.0,
-		"A manual scroll pauses the automatic one")
+	check(screen.scroll.scroll_vertical == stepped, "A manual scroll pauses the automatic one")
+	Input.action_press(&"ui_down")
+	await wait(0.8)
+	var while_held: int = screen.scroll.scroll_vertical
+	Input.action_release(&"ui_down")
+	check(while_held > stepped + screen.STEP, "Holding Down keeps scrolling")
 
 	await press(&"ui_cancel")
 	await settle_route()

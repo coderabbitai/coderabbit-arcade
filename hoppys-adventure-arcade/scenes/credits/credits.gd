@@ -13,6 +13,11 @@ const ASSET_CREDITS := "res://scenes/credits/asset_credits.json"
 const SCROLL_SPEED := 36.0
 ## After a manual scroll, the list waits this long before scrolling by itself again.
 const MANUAL_HOLD := 4.0
+## One press of Up or Down moves the list this far; holding it scrolls this fast. Held D-pad
+## buttons send no repeat events, so holding is polled each frame.
+const STEP := 90.0
+const HELD_SPEED := 540.0
+const HELD_AFTER := 0.3
 ## At the bottom, the list waits this long, then starts again from the top.
 const END_HOLD := 3.0
 const MUTED := Color("afbdc9")
@@ -22,6 +27,8 @@ var back: Button
 var offset := 0.0
 var hold := 1.5
 var leaving := false
+## How long Up or Down has been held, to start continuous scrolling after HELD_AFTER.
+var held := 0.0
 
 func _ready() -> void:
 	theme = Style.theme()
@@ -133,6 +140,11 @@ func _process(delta: float) -> void:
 	if scroll.scroll_vertical != int(offset):
 		offset = scroll.scroll_vertical
 		hold = MANUAL_HOLD
+	var direction := Input.get_axis(&"ui_up", &"ui_down")
+	held = held + delta if absf(direction) > 0.5 else 0.0
+	if held > HELD_AFTER:
+		_scroll_by(signf(direction) * HELD_SPEED * delta)
+		return
 	if hold > 0.0:
 		hold -= delta
 		return
@@ -149,21 +161,26 @@ func _process(delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	for action in [&"ui_up", &"ui_down"]:
 		if event.is_action_pressed(action, true):
-			offset = clampf(offset + (90.0 if action == &"ui_down" else -90.0), 0.0,
-				maxf(0.0, list.size.y - scroll.size.y))
-			scroll.scroll_vertical = int(offset)
-			hold = MANUAL_HOLD
+			_scroll_by(STEP if action == &"ui_down" else -STEP)
 			get_viewport().set_input_as_handled()
 			return
 	if event.is_action_pressed("ui_cancel"):
 		leave()
 		get_viewport().set_input_as_handled()
 
-## AppRouter ignores go() mid-transition, so a press then is dropped rather than latched. The
-## autoload is looked up by path: suites preload this script before autoloads exist.
+## Move the list by `pixels` within its bounds; a manual scroll pauses the automatic one.
+func _scroll_by(pixels: float) -> void:
+	offset = clampf(offset + pixels, 0.0, maxf(0.0, list.size.y - scroll.size.y))
+	scroll.scroll_vertical = int(offset)
+	hold = MANUAL_HOLD
+
+## AppRouter ignores go() mid-transition, so a press then is dropped rather than latched, and a
+## route change that fails lets the player try again. The autoload is looked up by path: suites
+## preload this script before autoloads exist.
 func leave() -> void:
 	var router := get_node(^"/root/AppRouter")
 	if leaving or router.busy:
 		return
 	leaving = true
-	router.go("hub")
+	if not await router.go("hub"):
+		leaving = false

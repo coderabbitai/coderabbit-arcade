@@ -24,6 +24,8 @@ SAMPLE = """# Asset licenses
 | Street | `Backgrounds/street/` | Luis Zuno ([ansimuz.com](https://ansimuz.itch.io/street)) | CC0 (bundled `license.pdf`). Older listing says CC BY 3.0. | Main menu preview | ✅ |
 | Valor of Heroes | `Audio/Orbital/Valor of Heroes.mp3` | Trevor Lentz | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) ([OpenGameArt](https://opengameart.org/content/valor-of-heroes), byte-identical). Credit: "Valor of Heroes" by Trevor Lentz. Preserve ShareAlike terms. | Orbital Ops: boss | ⚠️ |
 | Frivolous Hero | `Audio/HvV/frivolous_hero.ogg` | Alexandr Zhelanov | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) ([OpenGameArt](https://opengameart.org/content/frivolous-hero)). Credit: "Frivolous Hero" by Alexandr Zhelanov; retain the creator link. | Heroes vs. Villains | ✅ |
+| Jump \| Land | `Audio/SFX/jump_land.ogg` | Jane Q. Public | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Credit: "Jump \| Land" by Jane Q. Public. Keep this note. | Platformer jump SFX | ✅ |
+| [Night Loop](https://example.org/night-loop) | `Backgrounds/night/` | Studio | CC0 | Runner background and BGM | ✅ |
 
 ### Notes
 
@@ -53,6 +55,8 @@ class BuildCreditsTest(unittest.TestCase):
         self.assertEqual(self.section_of("Forest"), "Sound effects")
         self.assertEqual(self.section_of("Valor of Heroes"), "Music")
         self.assertEqual(self.section_of("Street"), "Art")
+        self.assertEqual([s["title"] for s in self.data["sections"] if any(c["asset"] == "Night Loop" for c in s["credits"])],
+                         ["Music", "Art"], "an art pack whose music is used too is credited under both")
 
     def test_uses_the_stated_credit_line_and_links(self) -> None:
         valor = self.by_asset["Valor of Heroes"]
@@ -72,11 +76,31 @@ class BuildCreditsTest(unittest.TestCase):
         self.assertEqual(street["creator"], "Luis Zuno (ansimuz.com)")
         self.assertEqual(street["source_url"], "https://ansimuz.itch.io/street", "falls back to the creator's link")
 
+    def test_escaped_pipes_and_initials_survive(self) -> None:
+        jump = self.by_asset["Jump | Land"]
+        self.assertEqual(jump["credit"], '"Jump | Land" by Jane Q. Public')
+        self.assertEqual(jump["creator"], "Jane Q. Public")
+
+    def test_a_link_on_the_asset_name_is_its_source(self) -> None:
+        self.assertEqual(self.by_asset["Night Loop"]["source_url"], "https://example.org/night-loop")
+
+    def test_a_row_with_the_wrong_number_of_cells_is_an_error(self) -> None:
+        broken = SAMPLE.replace("| Retro SFX | `Audio/SFX pack/` |", "| Retro SFX | `Audio/SFX | pack/` |")
+        with self.assertRaisesRegex(ValueError, "has 7 cells, not 6: Retro SFX"):
+            build_credits.build(broken)
+
     def test_missing_section_or_table_is_an_error(self) -> None:
         with self.assertRaisesRegex(ValueError, "no '## Third-party' section"):
             build_credits.build("# Asset licenses\n")
         with self.assertRaisesRegex(ValueError, "no table"):
             build_credits.build("## Third-party\n\nNothing yet.\n")
+
+    def test_the_real_table_parses_every_row(self) -> None:
+        # Counted from the raw lines, not through table(), so a row the parser drops can't hide.
+        markdown = build_credits.LICENSES.read_text(encoding="utf-8")
+        section = markdown.split("## Third-party", 1)[1].split("\n## ", 1)[0]
+        raw_rows = [line for line in section.split("\n\n", 2)[1].splitlines() if line.startswith("|")][2:]
+        self.assertEqual(len(build_credits.table(markdown, "Third-party")), len(raw_rows))
 
     def test_the_real_file_credits_every_cc_by_track(self) -> None:
         markdown = build_credits.LICENSES.read_text(encoding="utf-8")

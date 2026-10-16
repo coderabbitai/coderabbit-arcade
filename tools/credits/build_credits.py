@@ -7,7 +7,8 @@ Usage:
 Every row of the "Third-party" table becomes one credit, except assets the game doesn't use
 ("Not referenced"). A credit carries the asset's title, creator and license, a source and license
 link, and the attribution line the table asks for ("Credit: ..."), or "<title>" by <creator>.
-Rows are grouped into Music, Sound effects and Art. The credits screen
+Rows are grouped into Music, Sound effects and Art; an art pack whose music the game also uses (its
+"Used by" mentions BGM or music) appears under Art and Music. The credits screen
 (hoppys-adventure-arcade/scenes/credits/) shows these after the hand-written sections in
 credits.json. Standard library only.
 """
@@ -27,7 +28,13 @@ SECTIONS = ("Music", "Sound effects", "Art")
 LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
 PARENTHESES = re.compile(r"\s*\([^()]*\)")
 LABELLED = re.compile(r"^[A-Z][A-Za-z ]*: ")
-CREDIT = re.compile(r"Credit: (.+?)(?:;|\.(?:\s|$))")
+# A credit line runs to a semicolon or a sentence-ending period. A period after an initial
+# ("Jane Q. Public") or a common abbreviation doesn't end it.
+CREDIT = re.compile(r"Credit: (.+?)(?:;|(?<! [A-Z])(?<!\bJr)(?<!\bSr)(?<!\bDr)(?<!\bSt)(?<!\bCo)(?<!\bInc)(?<!\bLtd)"
+                    r"\.(?:\s|$))")
+# Cells split on pipes that aren't escaped; "\|" stays in the cell as a pipe.
+CELL_SPLIT = re.compile(r"(?<!\\)\|")
+MUSIC_USE = re.compile(r"\b(?:BGM|music)\b", re.I)
 
 
 def plain(text: str) -> str:
@@ -47,13 +54,17 @@ def table(markdown: str, heading: str) -> list[dict[str, str]]:
         if line.startswith("## "):
             break
         if line.startswith("|"):
-            rows.append([cell.strip() for cell in line.strip().strip("|").split("|")])
+            inner = line.strip()[1:-1] if line.strip().endswith("|") else line.strip()[1:]
+            rows.append([cell.strip().replace("\\|", "|") for cell in CELL_SPLIT.split(inner)])
         elif rows:
             break
     if len(rows) < 2:
         raise ValueError(f"no table under '## {heading}'")
     header, body = rows[0], rows[2:]
-    return [dict(zip(header, row)) for row in body if len(row) == len(header)]
+    for row in body:
+        if len(row) != len(header):
+            raise ValueError(f"a row under '## {heading}' has {len(row)} cells, not {len(header)}: {row[0]}")
+    return [dict(zip(header, row)) for row in body]
 
 
 def license_name(cell: str) -> str:
@@ -73,9 +84,11 @@ def credit(row: dict[str, str]) -> dict[str, str]:
     asset, creator, cell = plain(row["Asset"]), plain(row["Creator"]), row["License"]
     links = [url for _, url in LINK.findall(cell)]
     license_url = next((url for url in links if "creativecommons.org" in url), "")
+    # The source: a non-license link in the License cell, else one on the asset's or creator's name.
     source_url = next((url for url in links if "creativecommons.org" not in url), "")
-    if not source_url:
-        source_url = next((url for _, url in LINK.findall(row["Creator"])), "")
+    for other in ("Asset", "Creator"):
+        if not source_url:
+            source_url = next((url for _, url in LINK.findall(row[other])), "")
     stated = CREDIT.search(plain(cell))
     return {
         "asset": asset,
@@ -88,11 +101,14 @@ def credit(row: dict[str, str]) -> dict[str, str]:
     }
 
 
-def section(row: dict[str, str]) -> str:
+def sections(row: dict[str, str]) -> list[str]:
+    """The sections a row belongs in: an art pack whose music is used too goes in Art and Music."""
     path, used_by = plain(row["Path"]), plain(row["Used by"])
     if "SFX" in used_by.split() or used_by.endswith("SFX"):
-        return "Sound effects"
-    return "Music" if path.startswith("Audio/") else "Art"
+        return ["Sound effects"]
+    if path.startswith("Audio/"):
+        return ["Music"]
+    return ["Art", "Music"] if MUSIC_USE.search(used_by) else ["Art"]
 
 
 def build(markdown: str) -> dict:
@@ -100,7 +116,8 @@ def build(markdown: str) -> dict:
     for row in table(markdown, "Third-party"):
         if plain(row["Used by"]).lower() == "not referenced":
             continue
-        grouped[section(row)].append(credit(row))
+        for name in sections(row):
+            grouped[name].append(credit(row))
     return {
         "generated_by": "tools/credits/build_credits.py from ASSETS_LICENSES.md; do not edit by hand",
         "sections": [{"title": name, "credits": grouped[name]} for name in SECTIONS if grouped[name]],

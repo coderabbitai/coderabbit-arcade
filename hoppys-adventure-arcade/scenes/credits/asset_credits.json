@@ -5,6 +5,15 @@
    "title": "Music",
    "credits": [
     {
+     "asset": "Cyberpunk Street (layers + BGM)",
+     "credit": "\"Cyberpunk Street (layers + BGM)\" by Luis Zuno (ansimuz.com); music composer not credited",
+     "creator": "Luis Zuno (ansimuz.com); music composer not credited",
+     "license": "CC0",
+     "license_url": "",
+     "source_url": "https://ansimuz.itch.io/cyberpunk-street-environment",
+     "used_by": "Main menu preview, runner BGM"
+    },
+    {
      "asset": "MERGE SUCCESSFUL jingle and victory loop",
      "credit": "\"MERGE SUCCESSFUL jingle and victory loop\" by Original project compositions and square-wave synthesis; no third-party samples",
      "creator": "Original project compositions and square-wave synthesis; no third-party samples",
