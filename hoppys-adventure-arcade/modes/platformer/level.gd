@@ -12,6 +12,8 @@ const SFX := {
 	"hurt": preload("res://Assets/Backgrounds/Sunny-land-forest-files/demo/assets/sound/wavs/hurt.wav"),
 	"boss_down": preload("res://Assets/Audio/The Essential Retro Video Game Sound Effects Collection [512 sounds] By Juhani Junkala/General Sounds/Fanfares/sfx_sounds_fanfare3.wav")
 }
+## Plays once over the MERGE SUCCESSFUL results, while the paused level music is silent.
+const STAGE_CLEAR := preload("res://Assets/Audio/Platformer/stinger_stage_clear.ogg")
 const EXIT_TOP := 540.0
 const PAUSE_SHADE := Color(0.025, 0.06, 0.1, 0.96)
 # Lighter than the pause shade so the frozen final moment stays readable behind the results.
@@ -53,6 +55,7 @@ var overlay_card: Control
 var results_reveal: Tween
 var exit_sprite: AnimatedSprite2D
 var music: AudioStreamPlayer
+var stage_clear: AudioStreamPlayer
 var sfx_players := {}
 var encounter := "approach"
 var intro_remaining := 0.0
@@ -222,6 +225,8 @@ func _hud() -> void:
 		var button := Style.button(entry[0])
 		col.add_child(button)
 		button.pressed.connect(func():
+			# Leaving the results unpauses the level music; end the stinger before they overlap.
+			stage_clear.stop()
 			get_tree().paused = false
 			AppRouter.go(entry[1]))
 	overlay.hide()
@@ -266,6 +271,7 @@ func _finish(won: bool) -> void:
 	overlay_detail.text = "%06d POINTS   /   %02d:%02d\n%s" % [score, int(elapsed) / 60, int(elapsed) % 60, level_title + " complete." if won else "Fresh branch. Another try."]
 	resume_button.hide()
 	if won:
+		stage_clear.play()
 		_reveal_results(0.35)
 	else:
 		_start_knockout()
@@ -507,5 +513,12 @@ func _setup_session() -> void:
 		sfx_players[clip] = sound
 	for child in get_children():
 		if not child is CanvasLayer: child.process_mode = Node.PROCESS_MODE_PAUSABLE
+	# The results pause the tree, so the stage-clear stinger has to keep processing.
+	stage_clear = AudioStreamPlayer.new()
+	stage_clear.bus = "Music"
+	stage_clear.stream = STAGE_CLEAR
+	stage_clear.volume_db = -13
+	stage_clear.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(stage_clear)
 	# Everything above was placed, not moved: start interpolation from those positions.
 	reset_physics_interpolation()

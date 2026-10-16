@@ -11,7 +11,7 @@ Run the project normally: **Platformer Game → Level Select → Play Bay Area B
 - Swipe: J/X, controller X/Square. Landing on an enemy also deals damage and bounces Hoppy.
 - Pause/resume: Escape or controller Start. Focus loss pauses the game.
 - Defeat the Merge Conflict Monster, then swipe or land on the MERGE button to finish.
-- Pause and results provide fresh retry, platformer menu, and arcade return.
+- Pause and results provide fresh retry, platformer menu, and arcade return. Finishing a level (any of the three) plays a short stage-clear stinger (`Assets/Audio/Platformer/stinger_stage_clear.ogg`) over the MERGE SUCCESSFUL results while the paused level music stays silent; a knockout keeps its ducked level music instead.
 
 ## Implemented
 

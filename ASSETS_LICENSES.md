@@ -47,6 +47,7 @@ These assets were made for this project, either by hand, by procedure, or with i
 | Bay Area Blitz music | `Audio/Platformer/Bay Area Blitz/` | Music by Erik Thorelli, made with Suno v6 for this game. Erik holds the rights and grants their use in the game and in this repository. Prompts, Suno song IDs, loop points and delivery steps in `PROMPTS.md`. | ✅ |
 | Orbital Ops music | `Audio/Platformer/Obital Ops/` | Music by Erik Thorelli, made with Suno v6 for this game. Erik holds the rights and grants their use in the game and in this repository. Prompts, Suno song IDs, loop points and delivery steps in `PROMPTS.md`. | ✅ |
 | Hoppy 3D mascot | `runner/hoppy/` | Built by `tools/blender/build_hoppy.py` | ⚠️ brand sign-off |
+| Platformer stage-clear stinger | `Audio/Platformer/stinger_stage_clear.ogg` | Music by Erik Thorelli, made with Suno v6 for this game. Erik holds the rights and grants their use in the game and in this repository. Prompt, Suno song ID and edit in `Audio/Platformer/PROMPTS.md`. | ✅ |
 | Runner props, previews and procedural assets | `runner/` | See [`runner/LICENSES.md`](hoppys-adventure-arcade/Assets/runner/LICENSES.md) | ✅ |
 | Bay Area Blitz pack | `bay-area-blitz-assets-only/` | Image generation | ⚠️ confirm the generator's terms allow redistribution |
 | Orbital Ops pack | `orbital-ops-assets-only/` | Image generation | ⚠️ same |
