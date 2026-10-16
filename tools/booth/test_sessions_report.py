@@ -25,8 +25,9 @@ def start(session: int, game: str, time: str) -> str:
     return event("start", session=session, game=game, time=time)
 
 
-def end(session: int, game: str, time: str, duration: float, ended_by: str, retries: int = 0) -> str:
-    return event("end", session=session, game=game, time=time, duration_s=duration, ended_by=ended_by, retries=retries)
+def end(session: int, game: str, time: str, duration: float, ended_by: str, retries: int = 0, game_overs: int = 0) -> str:
+    return event("end", session=session, game=game, time=time, duration_s=duration, ended_by=ended_by, retries=retries,
+                 game_overs=game_overs)
 
 
 class SessionsReportTest(unittest.TestCase):
@@ -45,7 +46,7 @@ class SessionsReportTest(unittest.TestCase):
             start(1, "heroes_vs_villains", "2026-11-30T10:02:03"),
             end(1, "heroes_vs_villains", "2026-11-30T10:04:26", 143.2, "idle"),
             start(2, "heroes_vs_villains", "2026-11-30T10:05:00"),
-            end(2, "heroes_vs_villains", "2026-11-30T10:08:00", 180.0, "menu", retries=2),
+            end(2, "heroes_vs_villains", "2026-11-30T10:08:00", 180.0, "menu", retries=2, game_overs=3),
             start(3, "runner_game", "2026-11-30T11:00:00"),
             end(3, "runner_game", "2026-11-30T11:01:00", 60.0, "quit"),
             start(4, "code_city_brawl", "2026-11-30T11:30:00"),
@@ -68,16 +69,16 @@ class SessionsReportTest(unittest.TestCase):
         self.assertIn("Sessions: 5 (4 finished, 1 unfinished)", text)
         rows = {line.split()[0]: line.split() for line in text.splitlines() if line.split() and "_" in line.split()[0]}
         # Two sessions: 143.2 s and 180 s. Median and mean 161.6 s; P90 interpolates to 176.3 s.
-        self.assertEqual(rows["heroes_vs_villains"], ["heroes_vs_villains", "2", "0", "2:42", "2:42", "2:56", "2"])
+        self.assertEqual(rows["heroes_vs_villains"], ["heroes_vs_villains", "2", "0", "2:42", "2:42", "2:56", "2", "3"])
         # One finished (90 s) and one unfinished visit: both count, the lengths come from the finished one.
-        self.assertEqual(rows["code_city_brawl"], ["code_city_brawl", "2", "1", "1:30", "1:30", "1:30", "0"])
+        self.assertEqual(rows["code_city_brawl"], ["code_city_brawl", "2", "1", "1:30", "1:30", "1:30", "0", "0"])
         self.assertIn("Ended by: idle 1, menu 2, quit 1", text)
         self.assertIn("Starts by hour: 10:00 2, 11:00 3", text)
 
     def test_a_game_with_only_unfinished_sessions_is_listed(self) -> None:
         path = self.write("crash.jsonl", [start(1, "orbital_ops", "2026-11-30T10:00:00")])
         rows = [line.split() for line in sessions_report.summary(sessions_report.read([path])).splitlines()]
-        self.assertIn(["orbital_ops", "1", "1", "-", "-", "-", "0"], rows)
+        self.assertIn(["orbital_ops", "1", "1", "-", "-", "-", "0", "0"], rows)
 
     def test_same_launch_in_two_files_stays_separate(self) -> None:
         first = self.write("a.jsonl", [start(1, "runner_game", "2026-11-30T10:00:00"), end(1, "runner_game", "2026-11-30T10:01:00", 60, "menu")])
@@ -162,6 +163,7 @@ class SessionsReportTest(unittest.TestCase):
         self.assertEqual(rows[0]["duration_s"], "143.2")
         self.assertEqual(rows[3]["ended_by"], "unfinished")
         self.assertEqual(rows[3]["duration_s"], "")
+        self.assertEqual(rows[1]["game_overs"], "3")
 
     def test_missing_log_is_an_error(self) -> None:
         with redirect_stderr(io.StringIO()) as err:

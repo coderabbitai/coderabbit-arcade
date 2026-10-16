@@ -1,6 +1,7 @@
 extends CanvasLayer
 const BoothLog := preload("res://app/booth_log.gd")
 const BoothHeartbeat := preload("res://app/booth_heartbeat.gd")
+const NextPlayerCard := preload("res://app/next_player_card.gd")
 const ROUTES := {
 	"heroes_vs_villains": "res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn",
 	"code_city_brawl": "res://scenes/beatem_up/code_city_brawl.tscn",
@@ -18,9 +19,9 @@ const ROUTES := {
 const SMOKE_FLAG := "--smoke-routes"
 const SMOKE_FRAMES := 30
 ## Booth mode (`<game> -- --booth`) is for unattended kiosks: the game runs fullscreen, the menu's
-## Quit does nothing, and after IDLE_SECONDS without input any route returns to the hub, whose
-## rotating previews are the attract screen. `--route=<name>` opens a route at launch, with or
-## without --booth. Both are off unless passed.
+## Quit does nothing, and after IDLE_SECONDS without input any route returns to the attract route
+## (the hub, whose rotating previews are the attract screen, unless --attract names another).
+## `--route=<name>` opens a route at launch, with or without --booth. Both are off unless passed.
 const BOOTH_FLAG := "--booth"
 const ROUTE_PREFIX := "--route="
 const IDLE_SECONDS := 90.0
@@ -35,6 +36,18 @@ const SESSION_LOG_DEFAULT := "user://booth"
 ## time every two seconds, so tools/booth/watchdog.sh can restart a game that hangs. Off unless
 ## passed; the watchdog passes it.
 const HEARTBEAT_PREFIX := "--heartbeat="
+## Booth game over: games call booth_game_over() when the player loses. A booth player gets
+## `--retries=<n>` retries (default 0); after that the router lays NextPlayerCard over the game
+## and, NEXT_PLAYER_SECONDS later, opens the attract route for the next player. `--attract=<name>`
+## picks the attract route for this and the idle return, from ATTRACT_ROUTES. Outside booth mode
+## games are unchanged.
+const ATTRACT_PREFIX := "--attract="
+## Menus that can wait for the next player: each starts its own music (the hub through
+## AudioService). Game routes would start playing by themselves, and the platformer menu would be
+## silent after a beat 'em up stops the shared music.
+const ATTRACT_ROUTES: Array[String] = ["hub", "beatem_up", "runner"]
+const RETRIES_PREFIX := "--retries="
+const NEXT_PLAYER_SECONDS := 6.0
 var busy := false
 var veil: ColorRect
 var booth := false
@@ -42,6 +55,12 @@ var idle_limit := IDLE_SECONDS
 var idle_seconds := 0.0
 var session_log: BoothLog
 var heartbeat: BoothHeartbeat
+var attract := "hub"
+var retry_limit := 0
+## Game overs since the attract route last opened: one player's, as far as a booth can tell.
+var game_overs := 0
+var next_player: NextPlayerCard
+var next_player_left := 0.0
 func _ready() -> void:
 	# The veil tween must keep running while a microgame has the tree paused.
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -57,7 +76,11 @@ func _ready() -> void:
 	if SMOKE_FLAG in args:
 		smoke_routes.call_deferred()
 		return
+	attract = attract_route(args)
+	retry_limit = retry_count(args)
 	set_booth(BOOTH_FLAG in args)
+	if booth:
+		print("AppRouter: booth attract route %s, %d retries per player" % [attract, retry_limit])
 	var log_path := session_log_path(args, booth)
 	if log_path != "":
 		start_session_log(log_path)
@@ -86,6 +109,10 @@ func go(route: String, reason := "menu") -> void:
 		get_tree().paused = false
 		if session_log:
 			session_log.route_changed(route, reason)
+		if route == attract:
+			game_overs = 0
+		if next_player:
+			next_player.hide()
 		if route == "hub":
 			AudioService.play_default_music()
 	await create_tween().tween_property(veil, "modulate:a", 0.0, 0.25).finished
@@ -143,6 +170,50 @@ static func heartbeat_path(args: PackedStringArray) -> String:
 			return arg.trim_prefix(HEARTBEAT_PREFIX)
 	return ""
 
+## The booth's attract route from `--attract=<name>`: "hub" when absent or not one of
+## ATTRACT_ROUTES (with a warning).
+static func attract_route(args: PackedStringArray) -> String:
+	for arg in args:
+		if arg.begins_with(ATTRACT_PREFIX):
+			var route := arg.trim_prefix(ATTRACT_PREFIX)
+			if route in ATTRACT_ROUTES:
+				return route
+			push_warning("--attract %s is not one of %s; the booth returns to the hub"
+				% [route, ", ".join(ATTRACT_ROUTES)])
+	return "hub"
+
+## Retries a booth player gets, from `--retries=<n>`: 0 when absent or not a whole number.
+static func retry_count(args: PackedStringArray) -> int:
+	for arg in args:
+		if arg.begins_with(RETRIES_PREFIX):
+			var value := arg.trim_prefix(RETRIES_PREFIX)
+			if value.is_valid_int() and value.to_int() >= 0:
+				return value.to_int()
+			push_warning("--retries needs a whole number, not %s; using 0" % value)
+	return 0
+
+## Games call this when the player loses, before showing their own retry screen. Returns true when
+## the booth takes over: the player has used their retries, so the game shows nothing and the
+## router thanks them and sends the booth to the attract route. Always false outside booth mode,
+## and while a route change is already under way (it takes the player elsewhere anyway). The
+## session log counts every game over, booth or not.
+## `score_line` is shown on the card, in the game's own style ("SCORE 01234").
+func booth_game_over(score_line := "") -> bool:
+	if session_log:
+		session_log.count_game_over()
+	if not booth or busy:
+		return false
+	game_overs += 1
+	if game_overs <= retry_limit:
+		return false
+	if next_player == null:
+		next_player = NextPlayerCard.new()
+		add_child(next_player)
+		move_child(next_player, 0) # Under the veil, so the route fade covers it.
+	next_player_left = NEXT_PLAYER_SECONDS
+	next_player.present(score_line, next_player_left)
+	return true
+
 func _launch(route: String) -> void:
 	await go(route)
 	var scene := get_tree().current_scene
@@ -150,9 +221,16 @@ func _launch(route: String) -> void:
 	print("AppRouter: launched route %s (%s)" % [route, path])
 
 func set_booth(enabled: bool) -> void:
+	# A card counting down over a paused, finished game would strand it: hand off right away.
+	var finishing := not enabled and next_player != null and next_player.visible
 	booth = enabled
 	idle_seconds = 0.0
 	AudioService.set_attract(enabled)
+	game_overs = 0
+	if finishing:
+		go(attract, "game_over") # The route change hides the card.
+	elif next_player:
+		next_player.hide()
 	set_process(enabled)
 	set_process_input(enabled)
 	if enabled:
@@ -166,13 +244,23 @@ func _input(event: InputEvent) -> void:
 		idle_seconds = 0.0
 
 func _process(delta: float) -> void:
+	# The game-over card owns the screen until its countdown sends the booth to the attract route.
+	if next_player and next_player.visible:
+		next_player_left -= delta
+		next_player.set_seconds(next_player_left)
+		if next_player_left <= 0.0 and not busy:
+			# The route change hides the card; if the attract scene fails to load, try again after
+			# another countdown rather than every frame.
+			next_player_left = NEXT_PLAYER_SECONDS
+			go(attract, "game_over")
+		return
 	idle_seconds += delta
 	if idle_seconds < idle_limit or busy:
 		return
 	idle_seconds = 0.0
 	var scene := get_tree().current_scene
-	if scene == null or scene.scene_file_path != ROUTES["hub"]:
-		go("hub", "idle")
+	if scene == null or scene.scene_file_path != ROUTES[attract]:
+		go(attract, "idle")
 
 func smoke_routes() -> void:
 	# Let the launch scene finish its opening frames, as a player would, before switching.

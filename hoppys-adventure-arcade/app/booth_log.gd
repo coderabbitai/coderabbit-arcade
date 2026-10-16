@@ -9,10 +9,13 @@ extends RefCounted
 ##   {"event":"start","launch":"2026-11-30T09:58:12.345","session":1,"game":"heroes_vs_villains",
 ##    "time":"2026-11-30T10:02:03"}
 ##   {"event":"end","launch":"2026-11-30T09:58:12.345","session":1,"game":"heroes_vs_villains",
-##    "time":"2026-11-30T10:04:26","duration_s":143.2,"ended_by":"idle","retries":0}
+##    "time":"2026-11-30T10:04:26","duration_s":143.2,"ended_by":"idle","retries":0,
+##    "game_overs":1}
 ## A session is one visit to a game route. Re-entering the same game (the runner's or a platformer
-## level's Retry) counts as a retry within it. `ended_by` is "menu" (the player left through the
-## game's own menu), "idle" (booth mode's idle return) or "quit". A start with no end means the game
+## level's Retry) counts as a retry within it. `game_overs` counts the session's losses, stage
+## retries that stay in the game included. `ended_by` is "menu" (the player left through the
+## game's own menu), "idle" (booth mode's idle return), "game_over" (booth mode sent a player who
+## had used their retries back to the attract route) or "quit". A start with no end means the game
 ## stopped without quitting: a crash, a power cut or a forced kill.
 ## tools/booth/sessions_report.py summarizes a folder of these files.
 
@@ -28,6 +31,7 @@ var launch := ""
 var game := ""
 var session := 0
 var retries := 0
+var game_overs := 0
 var started_msec := 0
 ## Set after the first failed write: the game keeps running, unlogged, rather than retrying.
 var failed := false
@@ -57,6 +61,7 @@ func route_changed(route: String, reason: String) -> void:
 		game = route
 		session += 1
 		retries = 0
+		game_overs = 0
 		started_msec = Time.get_ticks_msec()
 		_write({"event": "start", "session": session, "game": game,
 			"time": Time.get_datetime_string_from_system()})
@@ -69,8 +74,13 @@ func end(reason: String) -> void:
 	var seconds := (Time.get_ticks_msec() - started_msec) / 1000.0
 	_write({"event": "end", "session": session, "game": game,
 		"time": Time.get_datetime_string_from_system(), "duration_s": snappedf(seconds, 0.1),
-		"ended_by": reason, "retries": retries})
+		"ended_by": reason, "retries": retries, "game_overs": game_overs})
 	game = ""
+
+## AppRouter.booth_game_over() calls this for every loss in the session in progress.
+func count_game_over() -> void:
+	if game != "":
+		game_overs += 1
 
 ## Open, append and close per event, so a crash loses at most the line being written.
 func _write(fields: Dictionary) -> void:

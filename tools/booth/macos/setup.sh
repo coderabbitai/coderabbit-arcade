@@ -12,6 +12,9 @@
 #       before setup are restored exactly. Without that record it changes no system setting and
 #       lists what to restore by hand.
 #
+# Anything after "--" goes to the game after --booth, for example
+#   ... --route heroes_vs_villains -- --retries=1 --attract=beatem_up
+#
 # --apply does this:
 #   - copies tools/booth/watchdog.sh to ~/Library/Application Support/HoppyBooth/, and records the
 #     settings below as they were, for --undo (only the first time)
@@ -66,6 +69,7 @@ while [ $# -gt 0 ]; do
       ;;
     --apply) apply=1; shift ;;
     --undo) undo=1; shift ;;
+    --) shift; break ;;
     -h | --help) usage; exit 0 ;;
     *) die "unknown option '$1'" ;;
   esac
@@ -242,6 +246,8 @@ fi
 
 game_args=(-- --booth)
 [ -z "$route" ] || game_args+=("--route=$route")
+# What's left after "--" goes to the game.
+[ $# -eq 0 ] || game_args+=("$@")
 watchdog=("/bin/bash" "$support/watchdog.sh" --log "$logs/watchdog.log" --heartbeat "$support/heartbeat"
   --stop-file "$support/stop" -- "$binary" "${game_args[@]}")
 plist_arguments=""
