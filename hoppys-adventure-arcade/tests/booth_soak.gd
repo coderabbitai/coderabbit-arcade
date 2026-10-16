@@ -10,10 +10,12 @@ const ChildGame := preload("res://tests/support/child_game.gd")
 const FOLDER := "user://test_soak"
 const SHORT_FOLDER := "user://test_soak_short"
 const LEAK_FOLDER := "user://test_soak_leak"
-## One pass over every route, however slowly a CI runner loads them (the minutes are a backstop).
-const FULL := ["--soak=4", "--soak-cycles=1", "--soak-dwell=0.6"]
+## One pass over every route, however slowly a CI runner loads them. The pass count ends these
+## runs: the in-game deadline is far beyond CHILD_SECONDS, which is the hard bound.
+const FULL := ["--soak=60", "--soak-cycles=1", "--soak-dwell=0.6"]
 ## Three passes over two light routes: exactly three settled hub visits.
-const SHORT := ["--soak=4", "--soak-cycles=3", "--soak-dwell=0.6", "--soak-routes=hub,platformer"]
+const SHORT := ["--soak=60", "--soak-cycles=3", "--soak-dwell=0.6", "--soak-routes=hub,platformer"]
+const CHILD_SECONDS := 300.0
 var failures := 0
 
 func _initialize() -> void:
@@ -93,7 +95,7 @@ func run() -> void:
 	var args: Array[String] = ["--"]
 	args.append_array(FULL)
 	args.append("--soak-log=" + ProjectSettings.globalize_path(FOLDER))
-	var clean_run: Dictionary = await ChildGame.run(self, args, 300.0)
+	var clean_run: Dictionary = await ChildGame.run(self, args, CHILD_SECONDS)
 	check(clean_run.code == 0, "A soak over every route exits 0 (exit %d)" % clean_run.code)
 	var missing := []
 	for route: String in root.get_node("AppRouter").ROUTES.keys():
@@ -112,7 +114,7 @@ func run() -> void:
 	var short_args: Array[String] = ["--"]
 	short_args.append_array(SHORT)
 	short_args.append("--soak-log=" + ProjectSettings.globalize_path(SHORT_FOLDER))
-	var short_run: Dictionary = await ChildGame.run(self, short_args, 300.0)
+	var short_run: Dictionary = await ChildGame.run(self, short_args, CHILD_SECONDS)
 	check(short_run.code == 0 and short_run.log.contains("SOAK hub 3 at")
 		and not short_run.log.contains("SOAK hub 4 at") and short_run.log.contains("SOAK verdict: steady")
 		and not RegEx.create_from_string("(?m)^SOAK runner_game +\\d+").search(short_run.log),
@@ -121,7 +123,7 @@ func run() -> void:
 	var leak_args: Array[String] = ["--script", "res://tests/support/soak_leak.gd", "--"]
 	leak_args.append_array(SHORT)
 	leak_args.append("--soak-log=" + ProjectSettings.globalize_path(LEAK_FOLDER))
-	var leaky: Dictionary = await ChildGame.run(self, leak_args, 300.0)
+	var leaky: Dictionary = await ChildGame.run(self, leak_args, CHILD_SECONDS)
 	check(leaky.code == 1 and leaky.log.contains("SOAK verdict: GROWING: ")
 		and leaky.log.contains("orphan_nodes"),
 		"A soak next to a node leak judges it growing and exits 1 (exit %d)" % leaky.code)
