@@ -31,6 +31,8 @@ Every track shares two threads:
 
 After the theme take is chosen, write its measured key and tempo here and use them in every derivative prompt.
 
+**Chosen take** (October 15, 2026, Suno song `a524c188-de47-4bd1-b870-e8ad7a2e5323`): **F major at 118.3 BPM** measured (prompted at 116), with the last chorus a semitone up in F♯ major. A bar is 2.028 s. It ships as the hub's title loop and the booth attract playlist; see `hoppys-adventure-arcade/Assets/Audio/Main Menu/PROMPTS.md`.
+
 ## Track list
 
 ### A. Core theme: "Send in the Rabbit" (vocal, high fidelity)
@@ -113,7 +115,7 @@ Shared settings: Instrumental on, Variety Off. The lyrics field holds section ta
 
 | Cue | Use in game | Length / loop | Styles (add the measured key) |
 |---|---|---|---|
-| **Main menu attract loop** | `AudioService` default track (replaces `happy_adveture.mp3`) | 8–16 bars, seamless | `chiptune and FM synthesis arrangement of an upbeat theme, 116 BPM, NES square-wave lead plays the chorus melody, triangle-wave hopping bassline, noise-channel drums, three-note rising chime motif, arcade attract mode, inviting, loopable steady groove, no intro, no outro` |
+| **Main menu attract loop** | Delivered as the theme's own instrumental title loop, with the vocal theme in booth mode (see the chosen take above); a chiptune arrangement remains optional | 8–16 bars, seamless | `chiptune and FM synthesis arrangement of an upbeat theme, 116 BPM, NES square-wave lead plays the chorus melody, triangle-wave hopping bassline, noise-channel drums, three-note rising chime motif, arcade attract mode, inviting, loopable steady groove, no intro, no outro` |
 | **Heroes vs. Villains: The Generation Floor** | Stage 1 | 1:30+ loop | `hyperactive 16-bit chiptune variation of the theme, 116 BPM, comically busy bouncy arpeggios, square lead quoting the chorus, triangle bass, noise drums, toy-commercial energy, loopable` |
 | **Heroes vs. Villains: The Review Gauntlet** | Stage 2 | 1:30+ loop | `grinding heavy 16-bit chiptune, 116 BPM half-time march, motif in minor, stacking tension, FM brass, noise-channel snare rolls, loopable` |
 | **Heroes vs. Villains: The Agentic Core** | Stage 3 | 1:30+ loop | `tense techno-chiptune, 116 BPM, pulsing square-wave bass, cold FM leads, scanning arpeggios, inverted three-note motif, loopable` |

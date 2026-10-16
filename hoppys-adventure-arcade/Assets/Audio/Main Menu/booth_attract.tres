@@ -1,0 +1,9 @@
+[gd_resource type="AudioStreamPlaylist" format=3]
+
+[ext_resource type="AudioStream" path="res://Assets/Audio/Main Menu/send_in_the_rabbit.ogg" id="1_hr7yi"]
+[ext_resource type="AudioStream" path="res://Assets/Audio/Main Menu/send_in_the_rabbit_title_loop.ogg" id="2_uxewc"]
+
+[resource]
+stream_count = 2
+stream_0 = ExtResource("1_hr7yi")
+stream_1 = ExtResource("2_uxewc")
