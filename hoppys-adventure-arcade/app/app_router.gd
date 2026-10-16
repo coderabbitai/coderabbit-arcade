@@ -1,5 +1,6 @@
 extends CanvasLayer
 const BoothLog := preload("res://app/booth_log.gd")
+const BoothHeartbeat := preload("res://app/booth_heartbeat.gd")
 const ROUTES := {
 	"heroes_vs_villains": "res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn",
 	"code_city_brawl": "res://scenes/beatem_up/code_city_brawl.tscn",
@@ -30,12 +31,17 @@ const STICK_DEADZONE := 0.4
 ## of them is passed.
 const SESSION_LOG_PREFIX := "--session-log="
 const SESSION_LOG_DEFAULT := "user://booth"
+## Watchdog support (app/booth_heartbeat.gd): `--heartbeat=<path>` keeps that file updated with the
+## time every two seconds, so tools/booth/watchdog.sh can restart a game that hangs. Off unless
+## passed; the watchdog passes it.
+const HEARTBEAT_PREFIX := "--heartbeat="
 var busy := false
 var veil: ColorRect
 var booth := false
 var idle_limit := IDLE_SECONDS
 var idle_seconds := 0.0
 var session_log: BoothLog
+var heartbeat: BoothHeartbeat
 func _ready() -> void:
 	# The veil tween must keep running while a microgame has the tree paused.
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -55,6 +61,11 @@ func _ready() -> void:
 	var log_path := session_log_path(args, booth)
 	if log_path != "":
 		start_session_log(log_path)
+	var beat_path := heartbeat_path(args)
+	if beat_path != "":
+		heartbeat = BoothHeartbeat.new(beat_path)
+		add_child(heartbeat)
+		print("AppRouter: heartbeat at %s" % ProjectSettings.globalize_path(beat_path))
 	var start := launch_route(args)
 	if start != "":
 		_launch.call_deferred(start)
@@ -124,6 +135,13 @@ static func session_log_path(args: PackedStringArray, booth_mode: bool) -> Strin
 func start_session_log(folder: String) -> void:
 	session_log = BoothLog.new(folder)
 	print("AppRouter: session log at %s" % ProjectSettings.globalize_path(session_log.path))
+
+## The heartbeat file named by `--heartbeat=<path>`, or "" when absent.
+static func heartbeat_path(args: PackedStringArray) -> String:
+	for arg in args:
+		if arg.begins_with(HEARTBEAT_PREFIX) and arg.length() > HEARTBEAT_PREFIX.length():
+			return arg.trim_prefix(HEARTBEAT_PREFIX)
+	return ""
 
 func _launch(route: String) -> void:
 	await go(route)

@@ -42,6 +42,8 @@ HoppysAdventureArcade.exe -- --booth --route=heroes_vs_villains                 
 
 Booth mode runs fullscreen and ignores the menu's **Quit Game**, so staff close the window instead. After 90 seconds without input, any game returns to the hub's attract screen. [Run it at a booth](docs/builds.md#run-it-at-a-booth) lists every route and flag.
 
+For a machine that runs unattended all day, follow the [booth runbook](docs/booth-runbook.md). It sets up a watchdog that restarts the game if it closes or freezes, along with the Mac's kiosk settings, and covers the staff checklist.
+
 ## Docs
 
 - Platformer: [Bay Area Blitz](docs/bay-area-blitz.md), [Orbital Ops](docs/orbital-ops.md), [The Enchanted Repo](docs/enchanted-repo.md)
