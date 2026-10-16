@@ -33,7 +33,7 @@ func run() -> void:
 	await process_frame
 	level._resume()
 	check(player.hp==3 and player.is_on_floor(),"Spawn settles on visible station floor")
-	check(level.music.stream==level.ORBITAL_LEVEL_MUSIC,"tipa16 starts traversal")
+	check(level.music.stream==level.ORBITAL_LEVEL_MUSIC,"Zero-G Deploy starts traversal")
 	check(level.projectiles.get_child_count()==0 and not level.boss.active,"Fresh run starts with inactive boss and no shots")
 	await capture("/tmp/orbital-spawn.png")
 	# Same physical jump used in Bay Area, onto a 120px rise.
@@ -183,7 +183,7 @@ func run() -> void:
 	await process_frame
 	level._resume()
 	await frames(120)
-	check(level.encounter=="fight" and level.music.stream==level.ORBITAL_BOSS_MUSIC,"Intro starts fight and Valor of Heroes")
+	check(level.encounter=="fight" and level.music.stream==level.ORBITAL_BOSS_MUSIC,"Intro starts fight and The Deprecated API theme")
 	var camera_center: Vector2=level.camera.get_screen_center_position()
 	Input.action_press("move_left")
 	await frames(50)
@@ -246,7 +246,7 @@ func run() -> void:
 	check(level.score==score_before_boss+1000,"Boss score is awarded only once")
 	check(not level.arena_gates.visible and level.camera.get_parent()==player,"Defeat opens arena and restores following camera")
 	await frames(65)
-	check(level.music.stream==level.ORBITAL_LEVEL_MUSIC,"tipa16 resumes after boss defeat")
+	check(level.music.stream==level.ORBITAL_LEVEL_MUSIC,"Zero-G Deploy resumes after boss defeat")
 	place(Vector2(5090,600))
 	await frames(5)
 	check(not level.finished,"Standing beside MERGE does not complete level")

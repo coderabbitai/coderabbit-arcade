@@ -41,12 +41,12 @@ Ordinary swipes/stomps deal one damage throughout the active fight; the exposed 
 
 ## Music
 
-The user-supplied files are referenced in their existing folder, whose spelling is `Assets/Audio/Platformer/Obital Ops/`:
+Original music by Erik Thorelli lives in the existing folder, whose spelling is `Assets/Audio/Platformer/Obital Ops/` (prompts and loop points in its `PROMPTS.md`):
 
-- `tipa16.mp3`: traversal, fresh retries, and post-boss cleanup.
-- `Valor of Heroes.mp3`: begins during the boss intro and continues through the fight.
+- `orbital_ops_level.ogg` ("Zero-G Deploy"): traversal, fresh retries, and post-boss cleanup.
+- `orbital_ops_boss.ogg` ("The Deprecated API"): begins during the boss intro and continues through the fight.
 
-Scene-local Music-bus playback loops using the finished signal; imported shared streams are not mutated. A pause-aware fade switches tracks. The arcade music is suspended while playing and restored when leaving. Existing jump/hurt/UI sounds are reused.
+Each `.import` loops its track after an intro, so scene-local Music-bus playback never reaches the finished signal; imported shared streams are not mutated. A pause-aware fade switches tracks. The arcade music is suspended while playing and restored when leaving. Existing jump/hurt/UI sounds are reused.
 
 ## Implementation
 

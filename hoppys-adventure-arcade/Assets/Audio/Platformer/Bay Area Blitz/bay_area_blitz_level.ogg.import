@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://c7q4cuqp1pixx"
+path="res://.godot/imported/bay_area_blitz_level.ogg-ce957e15a9eaebb635ae6953e89df5b3.oggvorbisstr"
+
+[deps]
+
+source_file="res://Assets/Audio/Platformer/Bay Area Blitz/bay_area_blitz_level.ogg"
+dest_files=["res://.godot/imported/bay_area_blitz_level.ogg-ce957e15a9eaebb635ae6953e89df5b3.oggvorbisstr"]
+
+[params]
+
+loop=true
+loop_offset=16.532608
+bpm=132.174
+beat_count=0
+bar_beats=4

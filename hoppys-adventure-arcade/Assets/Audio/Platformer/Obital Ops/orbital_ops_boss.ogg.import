@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://dj08dg844n86c"
+path="res://.godot/imported/orbital_ops_boss.ogg-bbd60c6a6fa0840dac30ad63e85f8e0b.oggvorbisstr"
+
+[deps]
+
+source_file="res://Assets/Audio/Platformer/Obital Ops/orbital_ops_boss.ogg"
+dest_files=["res://.godot/imported/orbital_ops_boss.ogg-bbd60c6a6fa0840dac30ad63e85f8e0b.oggvorbisstr"]
+
+[params]
+
+loop=true
+loop_offset=8.022494
+bpm=149.995
+beat_count=0
+bar_beats=4
