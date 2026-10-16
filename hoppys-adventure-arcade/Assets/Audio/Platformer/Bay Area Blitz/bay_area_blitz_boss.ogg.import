@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://bhyomkundh7aq"
+path="res://.godot/imported/bay_area_blitz_boss.ogg-59f8af96b76f1e60f229d5eafb8d5f92.oggvorbisstr"
+
+[deps]
+
+source_file="res://Assets/Audio/Platformer/Bay Area Blitz/bay_area_blitz_boss.ogg"
+dest_files=["res://.godot/imported/bay_area_blitz_boss.ogg-59f8af96b76f1e60f229d5eafb8d5f92.oggvorbisstr"]
+
+[params]
+
+loop=true
+loop_offset=10.669569
+bpm=160.941
+beat_count=0
+bar_beats=4

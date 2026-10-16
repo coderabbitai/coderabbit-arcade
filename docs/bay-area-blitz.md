@@ -65,7 +65,7 @@ Crossing x=4300 on the ground triggers a 1.8-second intro: movement is held, the
 
 The monster tracks Hoppy at 100 px/s within x=4360–4840, committing to its attacks in place. The slam retains its ground warning and jumpable range. A second warning shows the direction of a three-shot branch volley, aimed at Hoppy at release and traveling at 320 px/s; projectiles do not home afterward. Existing conflict-zone art supplies the projectile sprites. Hits respect shields and invulnerability. Projectiles expire after four seconds or on terrain/contact, and are cleared on defeat, death, retry or scene exit.
 
-Summer Sunday plays during normal traversal. The intro fades to c64_uptempo_chiptune, and defeating the boss restores Summer Sunday, opens the gates, and returns camera following. Music streams loop through the player's finished signal without altering shared imported resources.
+"Cable Car Hop" (`bay_area_blitz_level.ogg`) plays during normal traversal. The intro fades to "Merge Conflict Monster" (`bay_area_blitz_boss.ogg`), and defeating the boss restores the level theme, opens the gates, and returns camera following. Both are original music by Erik Thorelli; each `.import` loops it after its intro, so shared imported resources are never altered. Prompts and loop points are in `Assets/Audio/Platformer/Bay Area Blitz/PROMPTS.md`.
 
 The MERGE button has a one-way top aligned to its green cap. After boss defeat, either a nearby swipe or a descending landing completes the level. Standing nearby, rising through it, and landing before the boss is defeated do not complete the level.
 

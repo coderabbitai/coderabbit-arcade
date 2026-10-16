@@ -1,8 +1,8 @@
 extends "res://modes/platformer/level.gd"
 const Boss = preload("res://modes/platformer/merge_monster.gd")
 const Projectile = preload("res://modes/platformer/branch_projectile.gd")
-const LEVEL_MUSIC = preload("res://Assets/Audio/Platformer/Bay Area Blitz/Summer Sunday.wav")
-const MUSIC = preload("res://Assets/Audio/Platformer/Bay Area Blitz/c64_uptempo_chiptune.ogg")
+const LEVEL_MUSIC = preload("res://Assets/Audio/Platformer/Bay Area Blitz/bay_area_blitz_level.ogg")
+const MUSIC = preload("res://Assets/Audio/Platformer/Bay Area Blitz/bay_area_blitz_boss.ogg")
 var terrain_crops := {}
 
 func _init() -> void:

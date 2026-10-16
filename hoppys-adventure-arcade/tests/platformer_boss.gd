@@ -24,7 +24,7 @@ func run() -> void:
 	player = level.player
 	await process_frame
 	level._resume()
-	check(level.music.stream == level.LEVEL_MUSIC, "Summer Sunday starts the level")
+	check(level.music.stream == level.LEVEL_MUSIC, "Cable Car Hop starts the level")
 	level.boss.take_hit()
 	check(level.boss.hp == 8, "Boss inactive before encounter")
 	player.position = Vector2(4310, 600)
@@ -91,7 +91,7 @@ func run() -> void:
 	check(level.boss_down and level.encounter == "cleared", "Defeat clears encounter")
 	check(level.projectiles.get_child_count() == 0 and not level.arena_gates.visible, "Defeat clears bullets and gates")
 	await frames(65)
-	check(level.music.stream == level.LEVEL_MUSIC, "Summer Sunday returns after boss")
+	check(level.music.stream == level.LEVEL_MUSIC, "Cable Car Hop returns after boss")
 	# A jump from beneath the one-way button must finish only on descent.
 	player.position = Vector2(5090, 600)
 	player.velocity = Vector2.ZERO

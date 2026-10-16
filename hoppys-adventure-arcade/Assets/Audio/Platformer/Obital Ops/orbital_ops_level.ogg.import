@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://b7w22enecd4qp"
+path="res://.godot/imported/orbital_ops_level.ogg-6812d5bd4b222843cab9b2f456c78918.oggvorbisstr"
+
+[deps]
+
+source_file="res://Assets/Audio/Platformer/Obital Ops/orbital_ops_level.ogg"
+dest_files=["res://.godot/imported/orbital_ops_level.ogg-6812d5bd4b222843cab9b2f456c78918.oggvorbisstr"]
+
+[params]
+
+loop=true
+loop_offset=59.617234
+bpm=145.1
+beat_count=0
+bar_beats=4
