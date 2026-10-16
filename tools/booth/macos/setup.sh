@@ -48,7 +48,6 @@ PMSET_KEYS="sleep displaysleep disksleep powernap autorestart"
 here="$(cd "$(dirname "$0")" && pwd)"
 app=""
 route=""
-extra=()
 apply=0
 undo=0
 
@@ -70,7 +69,7 @@ while [ $# -gt 0 ]; do
       ;;
     --apply) apply=1; shift ;;
     --undo) undo=1; shift ;;
-    --) shift; extra=("$@"); break ;;
+    --) shift; break ;;
     -h | --help) usage; exit 0 ;;
     *) die "unknown option '$1'" ;;
   esac
@@ -247,7 +246,8 @@ fi
 
 game_args=(-- --booth)
 [ -z "$route" ] || game_args+=("--route=$route")
-[ "${#extra[@]}" -eq 0 ] || game_args+=("${extra[@]}")
+# What's left after "--" goes to the game.
+[ $# -eq 0 ] || game_args+=("$@")
 watchdog=("/bin/bash" "$support/watchdog.sh" --log "$logs/watchdog.log" --heartbeat "$support/heartbeat"
   --stop-file "$support/stop" -- "$binary" "${game_args[@]}")
 plist_arguments=""

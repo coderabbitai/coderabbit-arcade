@@ -39,8 +39,13 @@ const HEARTBEAT_PREFIX := "--heartbeat="
 ## Booth game over: games call booth_game_over() when the player loses. A booth player gets
 ## `--retries=<n>` retries (default 0); after that the router lays NextPlayerCard over the game
 ## and, NEXT_PLAYER_SECONDS later, opens the attract route for the next player. `--attract=<name>`
-## picks the attract route for this and the idle return. Outside booth mode games are unchanged.
+## picks the attract route for this and the idle return, from ATTRACT_ROUTES. Outside booth mode
+## games are unchanged.
 const ATTRACT_PREFIX := "--attract="
+## Menus that can wait for the next player: each starts its own music (the hub through
+## AudioService). Game routes would start playing by themselves, and the platformer menu would be
+## silent after a beat 'em up stops the shared music.
+const ATTRACT_ROUTES: Array[String] = ["hub", "beatem_up", "runner"]
 const RETRIES_PREFIX := "--retries="
 const NEXT_PLAYER_SECONDS := 6.0
 var busy := false
@@ -165,14 +170,16 @@ static func heartbeat_path(args: PackedStringArray) -> String:
 			return arg.trim_prefix(HEARTBEAT_PREFIX)
 	return ""
 
-## The booth's attract route from `--attract=<name>`: "hub" when absent or unknown (with a warning).
+## The booth's attract route from `--attract=<name>`: "hub" when absent or not one of
+## ATTRACT_ROUTES (with a warning).
 static func attract_route(args: PackedStringArray) -> String:
 	for arg in args:
 		if arg.begins_with(ATTRACT_PREFIX):
 			var route := arg.trim_prefix(ATTRACT_PREFIX)
-			if ROUTES.has(route):
+			if route in ATTRACT_ROUTES:
 				return route
-			push_warning("Unknown --attract %s; the booth returns to the hub" % route)
+			push_warning("--attract %s is not one of %s; the booth returns to the hub"
+				% [route, ", ".join(ATTRACT_ROUTES)])
 	return "hub"
 
 ## Retries a booth player gets, from `--retries=<n>`: 0 when absent or not a whole number.
@@ -187,10 +194,14 @@ static func retry_count(args: PackedStringArray) -> int:
 
 ## Games call this when the player loses, before showing their own retry screen. Returns true when
 ## the booth takes over: the player has used their retries, so the game shows nothing and the
-## router thanks them and sends the booth to the attract route. Always false outside booth mode.
+## router thanks them and sends the booth to the attract route. Always false outside booth mode,
+## and while a route change is already under way (it takes the player elsewhere anyway). The
+## session log counts every game over, booth or not.
 ## `score_line` is shown on the card, in the game's own style ("SCORE 01234").
 func booth_game_over(score_line := "") -> bool:
-	if not booth:
+	if session_log:
+		session_log.count_game_over()
+	if not booth or busy:
 		return false
 	game_overs += 1
 	if game_overs <= retry_limit:
@@ -210,11 +221,15 @@ func _launch(route: String) -> void:
 	print("AppRouter: launched route %s (%s)" % [route, path])
 
 func set_booth(enabled: bool) -> void:
+	# A card counting down over a paused, finished game would strand it: hand off right away.
+	var finishing := not enabled and next_player != null and next_player.visible
 	booth = enabled
 	idle_seconds = 0.0
 	AudioService.set_attract(enabled)
 	game_overs = 0
-	if next_player:
+	if finishing:
+		go(attract, "game_over") # The route change hides the card.
+	elif next_player:
 		next_player.hide()
 	set_process(enabled)
 	set_process_input(enabled)

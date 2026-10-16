@@ -35,6 +35,7 @@ class Session:
     duration_s: float | None = None
     ended_by: str = ""
     retries: int = 0
+    game_overs: int = 0
 
 
 @dataclass
@@ -76,9 +77,11 @@ def read(paths: list[Path]) -> Log:
                         if not (isinstance(end, str) and end and isinstance(ended_by, str) and ended_by):
                             raise ValueError("time and ended_by must be non-empty strings")
                         duration_s, retries = float(event["duration_s"]), int(event.get("retries", 0))
+                        game_overs = int(event.get("game_overs", 0))
                         if not math.isfinite(duration_s) or duration_s < 0:
                             raise ValueError(f"duration_s must be a finite, non-negative number, not {duration_s}")
-                        session.end, session.duration_s, session.ended_by, session.retries = end, duration_s, ended_by, retries
+                        session.end, session.duration_s, session.ended_by = end, duration_s, ended_by
+                        session.retries, session.game_overs = retries, game_overs
                     else:
                         skipped.append(f"{where}: unknown event {kind!r}")
                 except (json.JSONDecodeError, KeyError, TypeError, ValueError, OverflowError) as error:
@@ -108,16 +111,19 @@ def summary(log: Log) -> str:
         f"Sessions: {len(log.sessions)} ({len(finished)} finished, {unfinished} unfinished)",
     ]
     if log.sessions:
-        # Sessions and Unfinished count every visit; lengths and retries come from finished ones.
-        lines += ["", f"{'Game':<20} {'Sessions':>8} {'Unfinished':>10} {'Median':>7} {'Mean':>7} {'P90':>7} {'Retries':>8}"]
+        # Sessions and Unfinished count every visit; lengths, retries and losses come from finished ones.
+        lines += ["", f"{'Game':<20} {'Sessions':>8} {'Unfinished':>10} {'Median':>7} {'Mean':>7} {'P90':>7}"
+                      f" {'Retries':>8} {'Game overs':>10}"]
         for game in sorted({s.game for s in log.sessions}):
             visits = [s for s in log.sessions if s.game == game]
             durations = [s.duration_s for s in visits if s.duration_s is not None]
             lengths = (clock(statistics.median(durations)), clock(statistics.fmean(durations)), clock(p90(durations))) \
                 if durations else ("-", "-", "-")
+            finished_visits = [s for s in visits if s.duration_s is not None]
             lines.append(
                 f"{game:<20} {len(visits):>8} {len(visits) - len(durations):>10} {lengths[0]:>7} {lengths[1]:>7}"
-                f" {lengths[2]:>7} {sum(s.retries for s in visits if s.duration_s is not None):>8}"
+                f" {lengths[2]:>7} {sum(s.retries for s in finished_visits):>8}"
+                f" {sum(s.game_overs for s in finished_visits):>10}"
             )
     if finished:
         ended = Counter(s.ended_by for s in finished)
@@ -134,10 +140,12 @@ def write_csv(log: Log, target: Path) -> None:
     """One row per session, for spreadsheets and the post-event report."""
     with target.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["source", "launch", "session", "game", "start", "end", "duration_s", "ended_by", "retries"])
+        writer.writerow(["source", "launch", "session", "game", "start", "end", "duration_s", "ended_by", "retries",
+                         "game_overs"])
         for s in log.sessions:
             duration = "" if s.duration_s is None else f"{s.duration_s:.1f}"
-            writer.writerow([s.source, s.launch, s.number, s.game, s.start, s.end, duration, s.ended_by or "unfinished", s.retries])
+            writer.writerow([s.source, s.launch, s.number, s.game, s.start, s.end, duration, s.ended_by or "unfinished",
+                             s.retries, s.game_overs])
 
 
 def expand(paths: list[Path]) -> list[Path]:

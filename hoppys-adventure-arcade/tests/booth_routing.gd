@@ -1,12 +1,13 @@
 extends SceneTree
-## Booth routing: --attract picks where idle and finished players go; a game over in booth mode
-## sends the player on once their --retries are used, with a next-player card, and ends their
+## Booth routing: --attract picks the menu where idle and finished players go; a game over in booth
+## mode sends the player on once their --retries are used, with a next-player card, and ends their
 ## session as game_over; outside booth mode every game's own retry screen is unchanged. Each game
 ## (Heroes vs. Villains, Code City Brawl, a platformer level, the runner) is driven through its
 ## real game-over path. Run headless with --script res://tests/booth_routing.gd.
 const ChildGame := preload("res://tests/support/child_game.gd")
 const LOG_DIR := "user://test_booth_routing_sessions"
-const RUNNER_GAME_OVER := "res://scenes/runner/ui/game_over.tscn"
+const CHILD_LOG_DIR := "user://test_booth_routing_child_sessions"
+const RUNNER_SCORES := "user://test_booth_routing_leaderboard.cfg"
 var failures := 0
 var router: Node
 
@@ -48,15 +49,24 @@ func finish_card() -> void:
 			break
 	await settle_route()
 
-## Launch the game headless with user args for one simulated second; return its output.
-func launch(user_args: Array[String]) -> String:
-	var args: Array[String] = ["--fixed-fps", "60", "--quit-after", "60", "--"]
-	args.append_array(user_args)
-	var child: Dictionary = await ChildGame.run(self, args)
-	return child.log
+## Wait, at most `seconds`, until the next-player card is up.
+func card_within(seconds: float) -> bool:
+	for i in int(seconds * 10):
+		if card_up():
+			return true
+		await wait(0.1)
+	return card_up()
 
-func ended_by() -> Array:
-	var reasons := []
+## Launch the game headless with user args for one simulated second, its session log kept in a
+## folder this suite removes. Returns the child's exit code and output.
+func launch(user_args: Array[String]) -> Dictionary:
+	var args: Array[String] = ["--fixed-fps", "60", "--quit-after", "60", "--",
+		"--session-log=" + ProjectSettings.globalize_path(CHILD_LOG_DIR)]
+	args.append_array(user_args)
+	return await ChildGame.run(self, args)
+
+func ends() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
 	var file := FileAccess.open(router.session_log.path, FileAccess.READ)
 	while file != null and not file.eof_reached():
 		var line := file.get_line()
@@ -64,34 +74,42 @@ func ended_by() -> Array:
 			continue
 		var record: Variant = JSON.parse_string(line)
 		if record is Dictionary and record.event == "end":
-			reasons.append(record.ended_by)
-	return reasons
+			result.append(record)
+	return result
 
 func clean() -> void:
-	var dir := DirAccess.open(LOG_DIR)
-	if dir == null:
-		return
-	for file_name in dir.get_files():
-		dir.remove(file_name)
-	DirAccess.remove_absolute(LOG_DIR)
+	for folder in [LOG_DIR, CHILD_LOG_DIR]:
+		var dir := DirAccess.open(folder)
+		if dir == null:
+			continue
+		for file_name in dir.get_files():
+			dir.remove(file_name)
+		DirAccess.remove_absolute(folder)
+	for suffix in ["", ".tmp", ".bak"]:
+		if FileAccess.file_exists(RUNNER_SCORES + suffix):
+			DirAccess.remove_absolute(RUNNER_SCORES + suffix)
 
 func run() -> void:
 	router = root.get_node("AppRouter")
 	clean()
 	await wait(0.3)
 	check(router.attract_route(PackedStringArray()) == "hub", "The hub is the default attract route")
-	check(router.attract_route(PackedStringArray(["--attract=beatem_up"])) == "beatem_up",
-		"--attract names the attract route")
-	check(router.attract_route(PackedStringArray(["--attract=nowhere"])) == "hub",
-		"An unknown --attract falls back to the hub")
+	check(router.attract_route(PackedStringArray(["--attract=beatem_up"])) == "beatem_up"
+		and router.attract_route(PackedStringArray(["--attract=runner"])) == "runner",
+		"--attract picks one of the attract menus")
+	check(router.attract_route(PackedStringArray(["--attract=heroes_vs_villains"])) == "hub"
+		and router.attract_route(PackedStringArray(["--attract=platformer"])) == "hub"
+		and router.attract_route(PackedStringArray(["--attract=nowhere"])) == "hub",
+		"A game, a menu without its own music, or an unknown name falls back to the hub")
 	check(router.retry_count(PackedStringArray()) == 0, "Booth players get no retries by default")
 	check(router.retry_count(PackedStringArray(["--retries=2"])) == 2, "--retries sets the retries")
 	check(router.retry_count(PackedStringArray(["--retries=-1"])) == 0
 		and router.retry_count(PackedStringArray(["--retries=lots"])) == 0,
 		"A bad --retries means none")
-	var kiosk: String = await launch(["--booth", "--attract=beatem_up", "--retries=1"])
-	check(kiosk.contains("AppRouter: booth attract route beatem_up, 1 retries per player"),
-		"The launch flags reach the router")
+	var kiosk: Dictionary = await launch(["--booth", "--attract=beatem_up", "--retries=1"])
+	check(kiosk.code == 0
+		and kiosk.log.contains("AppRouter: booth attract route beatem_up, 1 retries per player"),
+		"The launch flags reach the router (exit %d)" % kiosk.code)
 
 	# Outside booth mode nothing changes: the game shows its own retry screen.
 	await visit("heroes_vs_villains")
@@ -117,6 +135,8 @@ func run() -> void:
 		"With the retries used, the game shows no retry screen and the next-player card appears")
 	check(router.next_player.summary.text == "SCORE %05d" % current_scene.score,
 		"The card shows the game's score")
+	check(router.next_player_left > router.NEXT_PLAYER_SECONDS - 1.0,
+		"The card starts its countdown from six seconds")
 	await finish_card()
 	check(on("beatem_up") and not card_up() and router.game_overs == 0,
 		"After the countdown the attract route opens for the next player")
@@ -133,41 +153,61 @@ func run() -> void:
 	await visit("bay_area_blitz")
 	var level := current_scene
 	level._finish(false)
-	for i in 100:
-		await wait(0.1)
-		if card_up():
-			break
-	check(card_up() and not level.overlay.visible,
+	check(await card_within(10.0) and not level.overlay.visible,
 		"A platformer level hands its game over to the booth after the knockout")
 	await finish_card()
 	check(on("beatem_up") and not paused, "The platformer's next player starts unpaused")
 
-	var runner_screen: CanvasLayer = load(RUNNER_GAME_OVER).instantiate()
-	root.add_child(runner_screen)
-	runner_screen._finished({"score": 4242})
-	check(not runner_screen.visible and card_up()
-		and router.next_player.summary.text == "SCORE 00004242",
-		"The runner's game over hands off to the booth with its score")
-	runner_screen.queue_free()
+	# The real runner: its game-over screen hears run_finished and hands off.
+	await visit("runner_game")
+	var runner := current_scene
+	runner.leaderboard_path = RUNNER_SCORES
+	runner._finish_run(&"caught")
+	var screen: CanvasLayer = null
+	for child in runner.find_children("*", "CanvasLayer", true, false):
+		if child.has_method("show_result"):
+			screen = child
+	check(await card_within(5.0) and screen != null and not screen.visible
+		and router.next_player.summary.text.begins_with("SCORE "),
+		"The runner's game-over screen hands off to the booth with its score")
 	await finish_card()
+	check(on("beatem_up"), "The runner's next player starts at the attract route")
 
-	router.attract = "platformer"
+	# A game over while a route change is already under way leaves it to that change.
+	await visit("code_city_brawl")
+	router.go("beatem_up")
+	check(not router.booth_game_over(), "No takeover while a route change is under way")
+	await settle_route()
+
+	# Turning booth mode off mid-countdown hands off at once instead of stranding the game.
+	await visit("bay_area_blitz")
+	current_scene._finish(false)
+	check(await card_within(10.0), "The card is up before booth mode is turned off")
+	router.set_booth(false)
+	await settle_route()
+	check(not card_up() and on("beatem_up") and not paused,
+		"Leaving booth mode mid-countdown clears the card and opens the attract route")
+	router.set_booth(true)
+	router.retry_limit = 0
+
+	router.attract = "runner"
 	await visit("orbital_ops")
 	router.idle_limit = 0.4
 	await wait(0.8)
 	await settle_route()
-	check(on("platformer"), "An idle game returns to the attract route")
+	check(on("runner"), "An idle game returns to the attract route")
 	router.idle_limit = router.IDLE_SECONDS
 
-	router.session_log.end("quit")
-	var reasons := ended_by()
-	check(reasons.slice(0, 3) == ["game_over", "game_over", "game_over"] and "idle" in reasons,
-		"Booth game overs end their sessions as game_over (got %s)" % [reasons])
+	var records := ends()
+	var reasons := records.map(func(record: Dictionary) -> String: return record.ended_by)
+	check(reasons.slice(0, 4) == ["game_over", "game_over", "game_over", "game_over"]
+		and "idle" in reasons, "Booth game overs end their sessions as game_over (got %s)" % [reasons])
+	check(not records.is_empty() and int(records[0].game_overs) == 2,
+		"The session counts both of the player's losses, the retried one included")
 
 	router.set_booth(false)
 	router.attract = "hub"
 	router.retry_limit = 0
-	check(not card_up(), "Leaving booth mode clears the card")
 	clean()
 	await root.get_node("AudioService").settle()
 	print("Booth routing failures: ", failures)

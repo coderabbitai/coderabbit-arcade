@@ -16,7 +16,7 @@ const ISOLATED := ["HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "APPDATA", "LOCAL
 	"USERPROFILE"]
 ## Every field the log may contain. Anything else would be new data about players: review it first.
 const FIELDS := ["event", "launch", "time", "version", "session", "game", "duration_s", "ended_by",
-	"retries"]
+	"retries", "game_overs"]
 var failures := 0
 var router: Node
 

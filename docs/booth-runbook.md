@@ -40,7 +40,7 @@ Booth mode itself runs fullscreen and ignores the menu's **Quit Game**. A game n
 | What happens | What you'll see |
 |---|---|
 | A player walks away mid-game | After 90 seconds the game returns to the hub. |
-| A player loses | A **GAME OVER** card thanks them and shows their score, and after six seconds the hub opens for the next player. |
+| A player loses | Once they have used any retries you set (none by default), a **GAME OVER** card thanks them and shows their score. After six seconds the attract screen (the hub unless you set another) opens for the next player. |
 | The game crashes or closes | The watchdog opens it again within a few seconds. |
 | The game freezes | The watchdog restarts it within about a minute. |
 | Someone presses Cmd+Q | The game closes, and the watchdog opens it again. |
