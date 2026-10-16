@@ -110,6 +110,11 @@ jobs:
         run: |
           command -v shellcheck >/dev/null || sudo apt-get install -y shellcheck
           shellcheck tools/booth/watchdog.sh tools/booth/macos/setup.sh
+      # The credits screen shows tools/credits/build_credits.py's output; it must match the table.
+      - name: Credits match ASSETS_LICENSES.md
+        run: python tools/credits/build_credits.py --check
+      - name: Credits unit tests
+        run: python -m unittest discover -s tools/credits -v
 
   gitleaks:
     name: gitleaks

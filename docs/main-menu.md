@@ -25,6 +25,13 @@ Arrow keys, Tab, D-pad, or left stick navigate; Enter / gamepad A activates; Esc
 - Quit asks for confirmation and fades to black for 1 second.
 - At exit, however the app quits, AudioService stops every audio player, the current scene's included, and waits up to 0.5 s for two audio mixes (about 25 ms with a sound card). Godot frees a stopped voice only after the mixer has run, and reports any voice it still holds at shutdown as "ObjectDB instances were leaked" / "resources still in use". `tools/checks/exit_leak.py` covers this in CI.
 
+## Credits
+
+The **Credits** button, after Settings and Quit Game, opens `scenes/credits/credits.tscn` (route `credits`). It shows the hand-written sections in `scenes/credits/credits.json` first. Then come the asset credits from the Third-party table of `ASSETS_LICENSES.md`, grouped into Music, Sound effects and Art, each with its license and, where the table gives them, its source and license links. An art pack whose music the game also uses appears under Art and Music; assets marked "Not referenced" are left out. The list scrolls by itself. Up and Down (held, for continuous scrolling) or the mouse wheel scroll it by hand, and Esc, B or **Return to Main Menu** go back to the hub.
+
+- **Asset credits** are generated. `tools/credits/build_credits.py` writes `scenes/credits/asset_credits.json` from `ASSETS_LICENSES.md`. After changing that table, run `python3 tools/credits/build_credits.py`; CI fails if the two differ.
+- **Hand-written credits** live in `credits.json`: a list of sections, each with a `title`, optional `lines` and optional `tracks` (`{"title": …, "used_by": …}`). Original music goes in the "Original music" section. To credit something else, add a track there or add a section.
+
 ## Art and replacement points
 
 As of 2026-09-30, `hoppy.gd` uses the supplied `Assets/Character/Hoppy/2D/hoppy-sprite-pack/hoppy` SpriteFrames: idle by default, one jump on Platformer selection, and one jab then the default idle on Beat’em Up selection. Endless Runner hover or keyboard/gamepad focus crossfades to the existing `hoppy_runner_visual.tscn` rig running in place, rendered through a transparent, isolated 512×512 SubViewport. Leaving that selection restores 2D immediately through a 0.22-second fade; idle background cycling does not switch the character. Hidden 3D rendering and rig processing are disabled. Both versions face toward the buttons and share a ground anchor. `sprite_scale` and `transition_seconds` are exposed on the Hoppy node for iteration. The title uses a system monospace fallback; no final pixel font or logo was supplied.

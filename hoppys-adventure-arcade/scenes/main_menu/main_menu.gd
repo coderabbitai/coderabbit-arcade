@@ -78,15 +78,24 @@ func _ready() -> void:
 		button.pressed.connect(_launch.bind(routes[i]))
 	var utilities := HBoxContainer.new()
 	utilities.position = Vector2(76, 568)
-	utilities.add_theme_constant_override("separation", 16)
+	# Wider than the focus arrow's 25 px reach, so it never sits on the neighbouring button.
+	utilities.add_theme_constant_override("separation", 28)
 	ui.add_child(utilities)
 	for i in 2:
 		var button := Style.button("Settings" if i == 0 else "Quit Game", 46)
-		button.custom_minimum_size.x = 202
+		button.custom_minimum_size.x = 160
 		utilities.add_child(button)
 		buttons.append(button)
 		_connect_button(button, -1)
 		button.pressed.connect(_open_settings.bind(button) if i == 0 else _open_quit.bind(button))
+	# Last in `buttons`, so buttons[3] and buttons[4] stay Settings and Quit Game.
+	var credits := Style.button("Credits", 46)
+	credits.name = "CreditsButton"
+	credits.custom_minimum_size.x = 160
+	utilities.add_child(credits)
+	buttons.append(credits)
+	_connect_button(credits, -1)
+	credits.pressed.connect(_launch.bind("credits"))
 	for i in buttons.size():
 		buttons[i].focus_neighbor_top = buttons[i].get_path_to(buttons[(i - 1 + buttons.size()) % buttons.size()])
 		buttons[i].focus_neighbor_bottom = buttons[i].get_path_to(buttons[(i + 1) % buttons.size()])

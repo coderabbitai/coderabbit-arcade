@@ -1,0 +1,92 @@
+{
+ "generated_by": "tools/credits/build_credits.py from ASSETS_LICENSES.md; do not edit by hand",
+ "sections": [
+  {
+   "title": "Music",
+   "credits": [
+    {
+     "asset": "Cyberpunk Street (layers + BGM)",
+     "credit": "\"Cyberpunk Street (layers + BGM)\" by Luis Zuno (ansimuz.com); music composer not credited",
+     "creator": "Luis Zuno (ansimuz.com); music composer not credited",
+     "license": "CC0",
+     "license_url": "",
+     "source_url": "https://ansimuz.itch.io/cyberpunk-street-environment",
+     "used_by": "Main menu preview, runner BGM"
+    },
+    {
+     "asset": "MERGE SUCCESSFUL jingle and victory loop",
+     "credit": "\"MERGE SUCCESSFUL jingle and victory loop\" by Original project compositions and square-wave synthesis; no third-party samples",
+     "creator": "Original project compositions and square-wave synthesis; no third-party samples",
+     "license": "CC0 1.0",
+     "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+     "source_url": "",
+     "used_by": "Code City Brawl: celebration, ending pages and results"
+    }
+   ]
+  },
+  {
+   "title": "Sound effects",
+   "credits": [
+    {
+     "asset": "The Essential Retro Video Game Sound Effects Collection",
+     "credit": "\"The Essential Retro Video Game Sound Effects Collection\" by Juhani Junkala",
+     "creator": "Juhani Junkala",
+     "license": "CC0",
+     "license_url": "",
+     "source_url": "",
+     "used_by": "SFX"
+    },
+    {
+     "asset": "Sunny Land forest (art, demo SFX)",
+     "credit": "\"Sunny Land forest (art, demo SFX)\" by Luis Zuno (@ansimuz); music by Pascal Belisle",
+     "creator": "Luis Zuno (@ansimuz); music by Pascal Belisle",
+     "license": "Art: public domain. Music: free with credit",
+     "license_url": "",
+     "source_url": "",
+     "used_by": "Platformer jump/hurt SFX"
+    }
+   ]
+  },
+  {
+   "title": "Art",
+   "credits": [
+    {
+     "asset": "Parallax forest",
+     "credit": "\"Parallax forest\" by Luis Zuno (@ansimuz)",
+     "creator": "Luis Zuno (@ansimuz)",
+     "license": "CC0",
+     "license_url": "",
+     "source_url": "",
+     "used_by": "Main menu preview"
+    },
+    {
+     "asset": "Space background",
+     "credit": "\"Space background\" by Luis Zuno (@ansimuz)",
+     "creator": "Luis Zuno (@ansimuz)",
+     "license": "CC0",
+     "license_url": "",
+     "source_url": "",
+     "used_by": "Main menu preview"
+    },
+    {
+     "asset": "Cyberpunk Street (layers + BGM)",
+     "credit": "\"Cyberpunk Street (layers + BGM)\" by Luis Zuno (ansimuz.com); music composer not credited",
+     "creator": "Luis Zuno (ansimuz.com); music composer not credited",
+     "license": "CC0",
+     "license_url": "",
+     "source_url": "https://ansimuz.itch.io/cyberpunk-street-environment",
+     "used_by": "Main menu preview, runner BGM"
+    },
+    {
+     "asset": "Parallax City Night",
+     "credit": "\"Parallax City Night\" by FisherG (@TheFish523); \"Ghost (Vibrant)\" palette by PixelCod",
+     "creator": "FisherG (@TheFish523); \"Ghost (Vibrant)\" palette by PixelCod",
+     "license": "CC0",
+     "license_url": "",
+     "source_url": "https://opengameart.org/content/parallax-city-night-4-colors",
+     "used_by": "Main menu preview"
+    }
+   ]
+  }
+ ]
+}

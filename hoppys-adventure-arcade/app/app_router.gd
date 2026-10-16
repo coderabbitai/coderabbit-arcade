@@ -13,7 +13,8 @@ const ROUTES := {
 	"platformer": "res://scenes/platformer/platformer_menu.tscn",
 	"runner": "res://scenes/runner/runner_menu.tscn",
 	"runner_game": "res://scenes/runner/runner_game.tscn",
-	"beatem_up": "res://scenes/beatem_up/beatem_menu.tscn"
+	"beatem_up": "res://scenes/beatem_up/beatem_menu.tscn",
+	"credits": "res://scenes/credits/credits.tscn"
 }
 ## Packaged-build check (`<game> --headless -- --smoke-routes`): load every route, then quit
 ## nonzero on the first failure. tools/build/export_game.py runs it against each export.
