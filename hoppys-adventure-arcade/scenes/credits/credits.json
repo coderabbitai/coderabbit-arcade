@@ -6,7 +6,88 @@
    "lines": [
     "Music by Erik Thorelli"
    ],
-   "tracks": []
+   "tracks": [
+    {
+     "title": "Send in the Rabbit",
+     "used_by": "Booth attract mode"
+    },
+    {
+     "title": "Send in the Rabbit (Instrumental)",
+     "used_by": "Title screen"
+    },
+    {
+     "title": "Cable Car Hop",
+     "used_by": "Bay Area Blitz"
+    },
+    {
+     "title": "Merge Conflict Monster",
+     "used_by": "Bay Area Blitz boss"
+    },
+    {
+     "title": "Zero-G Deploy",
+     "used_by": "Orbital Ops"
+    },
+    {
+     "title": "The Deprecated API",
+     "used_by": "Orbital Ops boss"
+    },
+    {
+     "title": "The Enchanted Repo",
+     "used_by": "The Enchanted Repo"
+    },
+    {
+     "title": "The Legacy Monolith",
+     "used_by": "The Enchanted Repo boss"
+    },
+    {
+     "title": "Stage Clear",
+     "used_by": "Platformer results"
+    },
+    {
+     "title": "CLI / IDE District",
+     "used_by": "Code City Brawl"
+    },
+    {
+     "title": "Security Sector",
+     "used_by": "Code City Brawl"
+    },
+    {
+     "title": "Git Repository HQ",
+     "used_by": "Code City Brawl"
+    },
+    {
+     "title": "District Boss",
+     "used_by": "Code City Brawl: Stack Overflow and Zero-Day"
+    },
+    {
+     "title": "The Grand Merge Conflict",
+     "used_by": "Code City Brawl final boss"
+    },
+    {
+     "title": "The Generation Floor",
+     "used_by": "Heroes vs. Villains"
+    },
+    {
+     "title": "AI SLOP",
+     "used_by": "Heroes vs. Villains boss"
+    },
+    {
+     "title": "The Review Gauntlet",
+     "used_by": "Heroes vs. Villains"
+    },
+    {
+     "title": "Agent Army and the 10,000-Line PR",
+     "used_by": "Heroes vs. Villains bosses"
+    },
+    {
+     "title": "The Agentic Core",
+     "used_by": "Heroes vs. Villains"
+    },
+    {
+     "title": "Machine-Speed Hacker",
+     "used_by": "Heroes vs. Villains final boss"
+    }
+   ]
   }
  ]
 }
