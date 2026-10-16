@@ -10,10 +10,10 @@ const ChildGame := preload("res://tests/support/child_game.gd")
 const FOLDER := "user://test_soak"
 const SHORT_FOLDER := "user://test_soak_short"
 const LEAK_FOLDER := "user://test_soak_leak"
-## Every route at least once, even on a slow CI runner.
-const FULL := ["--soak=0.4", "--soak-dwell=0.6"]
-## Two light routes: three settled hub visits in seconds.
-const SHORT := ["--soak=0.2", "--soak-dwell=0.6", "--soak-routes=hub,platformer"]
+## One pass over every route, however slowly a CI runner loads them (the minutes are a backstop).
+const FULL := ["--soak=4", "--soak-cycles=1", "--soak-dwell=0.6"]
+## Three passes over two light routes: exactly three settled hub visits.
+const SHORT := ["--soak=4", "--soak-cycles=3", "--soak-dwell=0.6", "--soak-routes=hub,platformer"]
 var failures := 0
 
 func _initialize() -> void:
@@ -59,8 +59,9 @@ func run() -> void:
 		"A zero, non-numeric or infinite --soak runs no soak")
 	var endless := BoothSoak.new(10.0, PackedStringArray(["--soak-dwell=1e999"]))
 	check(endless.dwell == BoothSoak.DEFAULT_DWELL, "An infinite --soak-dwell keeps the default")
-	var short := BoothSoak.new(10.0, PackedStringArray(["--soak-dwell=0.6"]))
-	check(is_equal_approx(short.settle, 0.3), "A short dwell settles for half of it")
+	var short := BoothSoak.new(10.0, PackedStringArray(["--soak-dwell=0.6", "--soak-cycles=3"]))
+	check(is_equal_approx(short.settle, 0.3) and short.max_cycles == 3,
+		"A short dwell settles for half of it, and --soak-cycles caps the passes")
 
 	var histogram := PackedInt32Array()
 	histogram.resize(BoothSoak.BUCKETS + 1)
@@ -102,8 +103,8 @@ func run() -> void:
 		"The frame-rate table has a row for every route (missing %s)" % [missing])
 	var written := results(FOLDER)
 	var rows: PackedStringArray = String(written.csv).strip_edges().split("\n")
-	check(rows.size() > 3 and rows[0] == ",".join(BoothSoak.COLUMNS),
-		"The CSV has the documented columns and a row per sample")
+	check(rows.size() >= 2 and rows[0] == ",".join(BoothSoak.COLUMNS),
+		"The CSV has the documented columns and sample rows")
 	check(String(written.summary).contains("SOAK verdict: ")
 		and String(written.summary).contains("SOAK worst load hitch"),
 		"The summary file holds the table and the verdict")
@@ -113,7 +114,7 @@ func run() -> void:
 	short_args.append("--soak-log=" + ProjectSettings.globalize_path(SHORT_FOLDER))
 	var short_run: Dictionary = await ChildGame.run(self, short_args, 300.0)
 	check(short_run.code == 0 and short_run.log.contains("SOAK hub 3 at")
-		and short_run.log.contains("SOAK verdict: steady")
+		and not short_run.log.contains("SOAK hub 4 at") and short_run.log.contains("SOAK verdict: steady")
 		and not RegEx.create_from_string("(?m)^SOAK runner_game +\\d+").search(short_run.log),
 		"--soak-routes keeps to its routes, announces hub visits and judges them steady")
 

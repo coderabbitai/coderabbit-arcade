@@ -6,7 +6,8 @@ extends Node
 ## the end it prints a frame-rate table per route and a leak check, writes both next to the CSV in
 ## `--soak-log=<folder>` (default user://soak), and quits: 0 when the counts held steady, 1 when
 ## they kept growing, 2 when a route failed to open or the results couldn't be written.
-## `--soak-routes=hub,heroes_vs_villains` limits the soak to those routes (the hub is always one).
+## `--soak-routes=hub,heroes_vs_villains` limits the soak to those routes (the hub is always one),
+## and `--soak-cycles=<n>` ends it after n full passes if that comes before the minutes run out.
 ## Run it rendered and fullscreen on the booth machine for frame rates at the booth resolution;
 ## headless runs measure only the leak check. tools/booth/soak.py wraps a run and adds the
 ## process's resident memory, which release builds can't report from inside; it reads the
@@ -15,6 +16,7 @@ const MINUTES_PREFIX := "--soak="
 const DWELL_PREFIX := "--soak-dwell="
 const FOLDER_PREFIX := "--soak-log="
 const ROUTES_PREFIX := "--soak-routes="
+const CYCLES_PREFIX := "--soak-cycles="
 const DEFAULT_DWELL := 30.0
 const MIN_DWELL := 0.2
 const DEFAULT_FOLDER := "user://soak"
@@ -41,6 +43,8 @@ var settle := SETTLE_SECONDS
 var folder := DEFAULT_FOLDER
 ## The routes named by --soak-routes, or empty for all of them.
 var only: PackedStringArray = []
+## Full passes after which the soak ends (--soak-cycles), or 0 for no limit.
+var max_cycles := 0
 var csv_path := ""
 var summary_path := ""
 var router: Node
@@ -61,6 +65,8 @@ var stats := {}
 var load_hitch := {"ms": 0.0, "route": ""}
 ## Engine counts at the end of each settled hub visit, for the leak check.
 var hub_snapshots: Array[Dictionary] = []
+## Whether this visit to the hub has been counted already.
+var hub_counted := false
 ## Why the soak can't be trusted, if anything went wrong: a route that didn't open, or results
 ## that couldn't be written. Either makes the exit status 2.
 var failure := ""
@@ -94,6 +100,12 @@ func _init(soak_minutes: float, args: PackedStringArray) -> void:
 			folder = arg.trim_prefix(FOLDER_PREFIX)
 		elif arg.begins_with(ROUTES_PREFIX):
 			only = arg.trim_prefix(ROUTES_PREFIX).split(",", false)
+		elif arg.begins_with(CYCLES_PREFIX):
+			var value := arg.trim_prefix(CYCLES_PREFIX)
+			if value.is_valid_int() and value.to_int() > 0:
+				max_cycles = value.to_int()
+			else:
+				push_warning("--soak-cycles needs a whole number above 0, not %s; no limit" % value)
 	settle = minf(SETTLE_SECONDS, dwell * 0.5)
 
 func _ready() -> void:
@@ -150,21 +162,26 @@ func _route() -> String:
 ## Open the next route and wait for it. The dwell starts once the scene is there; a route that
 ## doesn't open ends the soak, since its samples would carry the wrong label.
 func _next_route() -> void:
+	if index == routes.size() - 1 and max_cycles > 0 and cycle >= max_cycles:
+		_finish()
+		return
 	index = (index + 1) % routes.size()
 	if index == 0:
 		cycle += 1
 		print("SOAK cycle %d at %.1f s" % [cycle, elapsed])
 	var route := routes[index]
 	on_route = 0.0
+	hub_counted = false
 	window.clear()
 	changing = true
 	var opened: bool = await router.go(route)
 	changing = false
 	var scene := get_tree().current_scene
-	if finished:
-		return
-	if not opened or scene == null or scene.scene_file_path != router.ROUTES[route]:
+	# Record a failed route before anything else: _finish() may already be waiting on this change.
+	var failed: bool = not opened or scene == null or scene.scene_file_path != router.ROUTES[route]
+	if failed and failure == "":
 		failure = "route %s did not open" % route
+	if failed and not finished:
 		_finish()
 
 func _hitch(span: float) -> void:
@@ -188,6 +205,9 @@ func _count(span: float) -> void:
 			entry.slow[i] += 1
 
 func _snapshot_hub() -> void:
+	if hub_counted:
+		return
+	hub_counted = true
 	hub_snapshots.append(_counts())
 	# tools/booth/soak.py samples resident memory when it reads this line.
 	print("SOAK hub %d at %.1f s" % [hub_snapshots.size(), elapsed])
@@ -296,6 +316,9 @@ func _finish() -> void:
 	if finished:
 		return
 	finished = true
+	# A route change under way decides whether the soak failed; let it land first.
+	while changing or router.busy:
+		await get_tree().process_frame
 	if not window.is_empty():
 		_sample()
 	if _route() == "hub" and not changing and not router.busy and on_route >= dwell:
@@ -310,8 +333,6 @@ func _finish() -> void:
 		file.close()
 	print(text)
 	print("SOAK summary at %s" % ProjectSettings.globalize_path(summary_path))
-	if router.busy:
-		await get_tree().create_timer(1.0, true).timeout
 	router.go("hub")
 	await get_tree().create_timer(1.0, true).timeout
 	get_tree().unload_current_scene()
