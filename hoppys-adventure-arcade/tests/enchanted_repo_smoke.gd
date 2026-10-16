@@ -38,7 +38,7 @@ func run() -> void:
 	await process_frame
 	level._resume()
 	check(player.hp==3 and player.is_on_floor(),"Fresh run spawns on visible ground")
-	check(level.music.stream==level.FOREST_MUSIC,"Silent Forest starts traversal")
+	check(level.music.stream==level.FOREST_MUSIC,"The Enchanted Repo theme starts traversal")
 	check(not level.boss.active and level.boss.hp==12,"Monolith waits with intact armor")
 	await capture("/tmp/enchanted-spawn.png")
 	# Board a raised platform using the real controller.
@@ -155,7 +155,7 @@ func run() -> void:
 	await process_frame
 	level._resume()
 	await frames(120)
-	check(level.encounter=="fight" and level.music.stream==level.BOSS_MUSIC,"Battle 1 starts for the boss fight")
+	check(level.encounter=="fight" and level.music.stream==level.BOSS_MUSIC,"The Legacy Monolith theme starts for the boss fight")
 	await capture("/tmp/enchanted-boss.png")
 	var center: Vector2=level.camera.get_screen_center_position()
 	Input.action_press("move_left")
@@ -242,7 +242,7 @@ func run() -> void:
 	check(level.score==score_before+1000,"Boss score awards exactly once")
 	check(not level.arena_gates.visible and level.camera.get_parent()==player,"Defeat opens gates and restores follow camera")
 	await frames(65)
-	check(level.music.stream==level.FOREST_MUSIC,"Silent Forest resumes after victory")
+	check(level.music.stream==level.FOREST_MUSIC,"The Enchanted Repo theme resumes after victory")
 	place(Vector2(5090,600))
 	await frames(5)
 	check(not level.finished,"Standing beside MERGE cannot finish")
@@ -261,7 +261,7 @@ func run() -> void:
 	level._resume()
 	check(not level.finished and player.hp==3 and level.score==0 and level.boss.armor_stage==0 and level.boss.hp==12,"Retry resets player, score and both armor layers")
 	check(level.branches[2].state=="intact" and level.projectiles.get_child_count()==0 and level.encounter=="approach","Retry resets branches, waves and encounter")
-	check(level.music.stream==level.FOREST_MUSIC,"Retry starts Silent Forest")
+	check(level.music.stream==level.FOREST_MUSIC,"Retry starts the Enchanted Repo theme")
 	level.encounter="test_locked_exit"
 	place(Vector2(5090,500))
 	player.velocity.y=150

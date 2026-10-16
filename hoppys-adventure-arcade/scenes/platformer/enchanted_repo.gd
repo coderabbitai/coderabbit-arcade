@@ -5,8 +5,8 @@ const Monolith = preload("res://modes/platformer/legacy_monolith.gd")
 const Hazard = preload("res://modes/platformer/enchanted_hazard.gd")
 const Branch = preload("res://modes/platformer/crumbling_branch.gd")
 const Wave = preload("res://modes/platformer/enchanted_shockwave.gd")
-const FOREST_MUSIC = preload("res://Assets/Audio/Platformer/The Enchanted Repo/04 - Silent Forest.mp3")
-const BOSS_MUSIC = preload("res://Assets/Audio/Platformer/The Enchanted Repo/05 - Battle 1.mp3")
+const FOREST_MUSIC = preload("res://Assets/Audio/Platformer/The Enchanted Repo/enchanted_repo_level.ogg")
+const BOSS_MUSIC = preload("res://Assets/Audio/Platformer/The Enchanted Repo/enchanted_repo_boss.ogg")
 var forest_hazards: Array[Node2D] = []
 var branches: Array[StaticBody2D] = []
 

@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://dq0g77tmbu3rk"
+path="res://.godot/imported/enchanted_repo_boss.ogg-de8ba4b0cef131da0f857c38b2d01a84.oggvorbisstr"
+
+[deps]
+
+source_file="res://Assets/Audio/Platformer/The Enchanted Repo/enchanted_repo_boss.ogg"
+dest_files=["res://.godot/imported/enchanted_repo_boss.ogg-de8ba4b0cef131da0f857c38b2d01a84.oggvorbisstr"]
+
+[params]
+
+loop=true
+loop_offset=6.640907
+bpm=176.014
+beat_count=0
+bar_beats=4
