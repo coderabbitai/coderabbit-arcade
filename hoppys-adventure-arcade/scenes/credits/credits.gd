@@ -159,8 +159,9 @@ func _process(delta: float) -> void:
 	scroll.scroll_vertical = int(offset)
 
 func _input(event: InputEvent) -> void:
+	# One step per press; keyboard echo is ignored, since holding is handled in _process().
 	for action in [&"ui_up", &"ui_down"]:
-		if event.is_action_pressed(action, true):
+		if event.is_action_pressed(action):
 			_scroll_by(STEP if action == &"ui_down" else -STEP)
 			get_viewport().set_input_as_handled()
 			return
