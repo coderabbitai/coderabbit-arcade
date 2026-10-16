@@ -12,7 +12,8 @@
 #     "/Applications/Hoppy’s Adventure Arcade.app/Contents/MacOS/<executable>" -- --booth
 #
 # Options:
-#   --heartbeat <file>   heartbeat file for the game (default: $TMPDIR/hoppy-booth-heartbeat)
+#   --heartbeat <file>   heartbeat file for the game (default: in a new private folder under
+#                        $TMPDIR, removed when the watchdog stops)
 #   --hang <seconds>     restart the game when its heartbeat is older than this; 0 turns hang
 #                        checks off, for builds without --heartbeat (default: 45)
 #   --grace <seconds>    how long a fresh launch has to write its first heartbeat (default: 60)
@@ -25,11 +26,12 @@
 #   --term-wait <s>      how long the game gets to exit after SIGTERM before SIGKILL (default: 10)
 #   --poll <seconds>     how often to check the game; may be fractional (default: 1)
 #
-# The game gets --heartbeat=<file> after its other user arguments (a "--" is added if missing).
-# SIGTERM, SIGINT or SIGHUP stops the game, then the watchdog, with exit status 0.
+# The game gets --heartbeat=<file> after its other user arguments (a "--" is added if missing); the
+# game command must not set its own. SIGTERM, SIGINT or SIGHUP stops the game, then the watchdog,
+# with exit status 0.
 
-heartbeat="${TMPDIR:-/tmp}"
-heartbeat="${heartbeat%/}/hoppy-booth-heartbeat"
+heartbeat=""
+private_dir=""
 hang=45
 grace=60
 stop_file=""
@@ -49,10 +51,12 @@ die() {
   exit 2
 }
 
+# Validate a whole number of seconds and print it in base 10 ("08" is 8, not bad octal).
 whole_number() {
   case "$2" in
     '' | *[!0-9]*) die "$1 needs a whole number of seconds, not '$2'" ;;
   esac
+  echo $((10#$2))
 }
 
 while [ $# -gt 0 ]; do
@@ -61,18 +65,17 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || die "$1 needs a value"
       case "$1" in
         --heartbeat) heartbeat="$2" ;;
-        --hang) whole_number "$1" "$2"; hang="$2" ;;
-        --grace) whole_number "$1" "$2"; grace="$2" ;;
+        --hang) hang=$(whole_number "$1" "$2") || exit 2 ;;
+        --grace) grace=$(whole_number "$1" "$2") || exit 2 ;;
         --stop-file) stop_file="$2" ;;
         --log) log_file="$2" ;;
         --backoff)
-          whole_number "$1" "$2"
-          [ "$2" -ge 1 ] || die "--backoff must be at least 1 second"
-          backoff="$2"
+          backoff=$(whole_number "$1" "$2") || exit 2
+          [ "$backoff" -ge 1 ] || die "--backoff must be at least 1 second"
           ;;
-        --max-backoff) whole_number "$1" "$2"; max_backoff="$2" ;;
-        --stable) whole_number "$1" "$2"; stable="$2" ;;
-        --term-wait) whole_number "$1" "$2"; term_wait="$2" ;;
+        --max-backoff) max_backoff=$(whole_number "$1" "$2") || exit 2 ;;
+        --stable) stable=$(whole_number "$1" "$2") || exit 2 ;;
+        --term-wait) term_wait=$(whole_number "$1" "$2") || exit 2 ;;
         --poll)
           case "$2" in
             '' | *[!0-9.]* | *.*.* | .) die "--poll needs a number of seconds, not '$2'" ;;
@@ -96,7 +99,16 @@ if [ "$hang" -gt 0 ]; then
   separator=0
   for arg in "$@"; do
     [ "$arg" = "--" ] && separator=1
+    case "$arg" in
+      --heartbeat=?*) die "the game command sets $arg; the watchdog passes its own --heartbeat" ;;
+    esac
   done
+  if [ -z "$heartbeat" ]; then
+    # A folder only this user can write, new for each watchdog: nobody can plant a symlink in it,
+    # and two watchdogs never read each other's heartbeat.
+    private_dir=$(mktemp -d "${TMPDIR:-/tmp}/hoppy-booth.XXXXXX") || die "cannot create a heartbeat folder"
+    heartbeat="$private_dir/heartbeat"
+  fi
   [ "$separator" -eq 1 ] || game+=("--")
   game+=("--heartbeat=$heartbeat")
 fi
@@ -112,6 +124,7 @@ say() {
 }
 
 child=""
+stop_requested=0
 
 # SIGTERM, then SIGKILL if the game is still there after --term-wait seconds. The caller reaps it.
 terminate() {
@@ -128,7 +141,7 @@ terminate() {
 }
 
 stop() {
-  trap - TERM INT HUP
+  trap '' TERM INT HUP
   if [ -n "$child" ] && kill -0 "$child" 2>/dev/null; then
     say "stopping the game (pid $child)"
     terminate "$child"
@@ -137,7 +150,14 @@ stop() {
   say "stopped"
   exit 0
 }
-trap stop TERM INT HUP
+
+# The signal handler only records the request; the loop acts on it at these checks. That way a
+# signal that lands between starting the game and recording its pid still stops the game.
+check_stop() {
+  [ "$stop_requested" -eq 0 ] || stop
+}
+trap 'stop_requested=1' TERM INT HUP
+trap '[ -z "$private_dir" ] || rm -rf "$private_dir"' EXIT
 
 # Sleep in one-second steps, so a stop signal is handled within a second.
 pause() {
@@ -145,6 +165,7 @@ pause() {
   while [ "$slept" -lt "$1" ]; do
     sleep 1
     slept=$((slept + 1))
+    check_stop
   done
 }
 
@@ -153,7 +174,8 @@ if [ "$hang" -gt 0 ]; then
   mkdir -p "$(dirname "$heartbeat")" || die "cannot create the folder for $heartbeat"
 fi
 if [ -n "$stop_file" ] && [ -e "$stop_file" ]; then
-  rm -f "$stop_file"
+  rm -f "$stop_file" || die "cannot remove the stop file left from before ($stop_file)"
+  [ ! -e "$stop_file" ] || die "the stop file left from before is still there ($stop_file)"
   say "removed the stop file left from before ($stop_file)"
 fi
 if [ "$hang" -gt 0 ]; then
@@ -164,13 +186,16 @@ fi
 
 wait_before_relaunch="$backoff"
 while :; do
-  rm -f "$heartbeat"
+  check_stop
+  [ -z "$heartbeat" ] || rm -f "$heartbeat"
   "${game[@]}" &
   child=$!
   launched=$(date +%s)
   say "launched the game (pid $child)"
+  check_stop
   while kill -0 "$child" 2>/dev/null; do
     sleep "$poll"
+    check_stop
     [ "$hang" -gt 0 ] || continue
     now=$(date +%s)
     [ $((now - launched)) -ge "$grace" ] || continue
@@ -187,7 +212,9 @@ while :; do
   done
   wait "$child" 2>/dev/null
   status=$?
+  check_stop
   child=""
+stop_requested=0
   ran=$(($(date +%s) - launched))
   if [ "$status" -gt 128 ]; then
     say "the game exited after $ran s (signal $((status - 128)))"

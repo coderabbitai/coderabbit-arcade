@@ -8,10 +8,13 @@
 #   tools/booth/macos/setup.sh --app "/Applications/Hoppy’s Adventure Arcade.app" [--route <name>] --apply
 #       Make the changes. Asks for an administrator password for the system settings.
 #   tools/booth/macos/setup.sh --undo [--apply]
-#       Print (or, with --apply, make) the changes that put the Mac back.
+#       Print (or, with --apply, make) the changes that put the Mac back: the settings recorded
+#       before setup are restored exactly. Without that record it changes no system setting and
+#       lists what to restore by hand.
 #
 # --apply does this:
-#   - copies tools/booth/watchdog.sh to ~/Library/Application Support/HoppyBooth/
+#   - copies tools/booth/watchdog.sh to ~/Library/Application Support/HoppyBooth/, and records the
+#     settings below as they were, for --undo (only the first time)
 #   - installs a LaunchAgent that starts the watchdog, and through it the game in booth mode, at
 #     login, and restarts the watchdog if it dies; it starts the game right away
 #   - removes the download quarantine from the app, so Gatekeeper doesn't block it
@@ -24,6 +27,21 @@ label="ai.coderabbit.arcade.booth"
 support="$HOME/Library/Application Support/HoppyBooth"
 logs="$HOME/Library/Logs/HoppyBooth"
 agent="$HOME/Library/LaunchAgents/$label.plist"
+snapshot="$support/settings-before.tsv"
+# The preferences the setup changes: scope, domain, key, type, booth value. "host" is the
+# -currentHost domain; "system" is machine-wide and needs sudo to write.
+SETTINGS=(
+  "host com.apple.screensaver idleTime int 0"
+  "system /Library/Preferences/com.apple.SoftwareUpdate AutomaticCheckEnabled bool false"
+  "system /Library/Preferences/com.apple.SoftwareUpdate AutomaticDownload bool false"
+  "system /Library/Preferences/com.apple.SoftwareUpdate AutomaticallyInstallMacOSUpdates bool false"
+  "system /Library/Preferences/com.apple.SoftwareUpdate CriticalUpdateInstall bool false"
+  "system /Library/Preferences/com.apple.SoftwareUpdate ConfigDataInstall bool false"
+  "system /Library/Preferences/com.apple.commerce AutoUpdate bool false"
+  "user com.apple.CrashReporter DialogType string none"
+)
+# The power settings the setup changes.
+PMSET_KEYS="sleep displaysleep disksleep powernap autorestart"
 here="$(cd "$(dirname "$0")" && pwd)"
 app=""
 route=""
@@ -56,6 +74,11 @@ done
 if [ "$apply" -eq 1 ] && [ "$(uname -s)" != "Darwin" ]; then
   die "--apply only runs on macOS"
 fi
+# launchd doesn't run from this folder, so the agent needs an absolute path to the app.
+case "$app" in
+  "" | /*) ;;
+  *) app="$PWD/$app" ;;
+esac
 
 # Print each command; run it only with --apply. A failed command is reported and the rest go on.
 failures=0
@@ -84,6 +107,52 @@ xml() {
   printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
 }
 
+# The `defaults` command line that reads (r) or writes (w) a setting in this scope.
+reader() {
+  if [ "$1" = host ]; then r=(defaults -currentHost); else r=(defaults); fi
+}
+writer() {
+  case "$1" in
+    host) w=(defaults -currentHost) ;;
+    system) w=(sudo defaults) ;;
+    *) w=(defaults) ;;
+  esac
+}
+
+# Write each setting as it is now to the record, once: re-running the setup keeps the first one.
+record_settings() {
+  local entry scope domain key type value read_type
+  if [ -e "$snapshot" ]; then
+    echo "  kept the record from the first setup"
+    return 0
+  fi
+  {
+    for entry in "${SETTINGS[@]}"; do
+      read -r scope domain key type value <<<"$entry"
+      reader "$scope"
+      if value=$("${r[@]}" read "$domain" "$key" 2>/dev/null); then
+        read_type=$("${r[@]}" read-type "$domain" "$key" 2>/dev/null)
+        case "$read_type" in
+          *boolean) type=bool ;;
+          *integer) type=int ;;
+          *float) type=float ;;
+          *string) type=string ;;
+          *) type=unsupported ;;
+        esac
+      else
+        type=absent
+        value=""
+      fi
+      printf 'defaults\t%s\t%s\t%s\t%s\t%s\n' "$scope" "$domain" "$key" "$type" "$value"
+    done
+    for key in $PMSET_KEYS; do
+      value=$(pmset -g | awk -v k="$key" '$1 == k { print $2; exit }')
+      [ -z "$value" ] || printf 'pmset\t%s\t%s\n' "$key" "$value"
+    done
+  } > "$snapshot" || die "cannot write the settings record $snapshot"
+  echo "  recorded in $snapshot"
+}
+
 # The app's executable, from its Info.plist.
 executable() {
   local plist="$1/Contents/Info.plist" name=""
@@ -103,22 +172,61 @@ else
 fi
 
 if [ "$undo" -eq 1 ]; then
+  if [ "$apply" -eq 1 ] && [ -f "$snapshot" ]; then
+    sudo -v || die "the system settings need an administrator password"
+  fi
   step "Stop the booth game and remove its login item:"
   run launchctl bootout "gui/$(id -u)/$label"
   run rm -f "$agent"
-  step "Restore power, screen saver, update and crash dialog settings:"
-  run sudo pmset restoredefaults
-  run defaults -currentHost delete com.apple.screensaver idleTime
-  for key in AutomaticCheckEnabled AutomaticDownload AutomaticallyInstallMacOSUpdates CriticalUpdateInstall ConfigDataInstall; do
-    run sudo defaults delete /Library/Preferences/com.apple.SoftwareUpdate "$key"
-  done
-  run sudo defaults delete /Library/Preferences/com.apple.commerce AutoUpdate
-  run defaults delete com.apple.CrashReporter DialogType
+  unrecorded=0
+  if [ -f "$snapshot" ]; then
+    step "Put back the settings recorded before setup ($snapshot):"
+    while IFS=$'\t' read -r kind a b c d e <&3; do
+      case "$kind" in
+        defaults)
+          writer "$a"
+          reader "$a"
+          case "$d" in
+            absent)
+              # Only delete what setup added; a key already gone needs nothing.
+              if [ "$apply" -eq 0 ] || "${r[@]}" read "$b" "$c" >/dev/null 2>&1; then
+                run "${w[@]}" delete "$b" "$c"
+              fi
+              ;;
+            bool)
+              case "$e" in 1 | [Tt]rue | YES | [Yy]es) e=true ;; *) e=false ;; esac
+              run "${w[@]}" write "$b" "$c" -bool "$e"
+              ;;
+            int | float | string) run "${w[@]}" write "$b" "$c" "-$d" "$e" ;;
+            *)
+              echo "  restore $b $c by hand: it held a value this script can't rewrite"
+              unrecorded=1
+              ;;
+          esac
+          ;;
+        pmset) run sudo pmset -a "$a" "$b" ;;
+      esac
+    done 3< "$snapshot"
+    [ "$failures" -gt 0 ] || run rm -f "$snapshot"
+  else
+    unrecorded=1
+    step "No record of this Mac's settings before setup ($snapshot), so none are changed."
+    cat <<'BY_HAND'
+  Restore them by hand if the setup changed them:
+  - System Settings > Lock Screen: the display and sleep times you want.
+  - System Settings > Energy (or Battery): Power Nap and starting up after a power failure.
+  - System Settings > Screen Saver: the screen saver and when it starts.
+  - System Settings > General > Software Update > Automatic Updates: switch each one back on.
+  - In Terminal, to get crash dialogs back: defaults delete com.apple.CrashReporter DialogType
+BY_HAND
+  fi
   step "Left in place: the logs in $logs and the session logs under the game's user data."
   echo "Turn automatic login and Do Not Disturb back off by hand if you turned them on."
-  if [ "$failures" -gt 0 ]; then
+  if [ "$apply" -eq 1 ] && { [ "$failures" -gt 0 ] || [ "$unrecorded" -eq 1 ]; }; then
     echo
-    echo "$failures step(s) failed (a setting that was never changed fails to delete, which is fine)."
+    [ "$failures" -eq 0 ] || echo "$failures step(s) failed; see the messages above."
+    [ "$unrecorded" -eq 0 ] || echo "Some settings need restoring by hand; see above."
+    exit 1
   fi
   exit 0
 fi
@@ -177,6 +285,13 @@ run mkdir -p "$support" "$logs"
 run cp "$here/../watchdog.sh" "$support/watchdog.sh"
 run chmod 755 "$support/watchdog.sh"
 
+step "Record the current settings, so --undo can put them back ($snapshot):"
+if [ "$apply" -eq 1 ]; then
+  record_settings
+else
+  echo "  would record the preferences and power settings changed below, unless a record exists"
+fi
+
 step "Let Gatekeeper open the app (it is ad-hoc signed, not notarized):"
 run xattr -dr com.apple.quarantine "$app"
 
@@ -185,12 +300,11 @@ run sudo pmset -a sleep 0 displaysleep 0 disksleep 0 powernap 0
 run sudo pmset -a autorestart 1
 
 step "No screen saver, no automatic updates, no crash dialogs over the game:"
-run defaults -currentHost write com.apple.screensaver idleTime -int 0
-for key in AutomaticCheckEnabled AutomaticDownload AutomaticallyInstallMacOSUpdates CriticalUpdateInstall ConfigDataInstall; do
-  run sudo defaults write /Library/Preferences/com.apple.SoftwareUpdate "$key" -bool false
+for entry in "${SETTINGS[@]}"; do
+  read -r scope domain key type value <<<"$entry"
+  writer "$scope"
+  run "${w[@]}" write "$domain" "$key" "-$type" "$value"
 done
-run sudo defaults write /Library/Preferences/com.apple.commerce AutoUpdate -bool false
-run defaults write com.apple.CrashReporter DialogType -string none
 
 step "Start the game at login and keep it running ($agent):"
 if [ "$apply" -eq 1 ]; then

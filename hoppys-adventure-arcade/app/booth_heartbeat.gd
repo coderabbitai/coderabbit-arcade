@@ -29,9 +29,14 @@ func _process(delta: float) -> void:
 		beat()
 
 ## Write to a temporary file and rename it over the heartbeat, so the watchdog never reads a
-## half-written number.
+## half-written number. A leftover temporary file is removed first, so a link planted in its place
+## is replaced rather than written through. The watchdog keeps the heartbeat in a private folder.
 func beat() -> void:
 	var temporary := path + ".tmp"
+	var folder := DirAccess.open(path.get_base_dir())
+	var leftover := temporary.get_file()
+	if folder != null and (folder.file_exists(leftover) or folder.is_link(leftover)):
+		folder.remove(leftover)
 	var file := FileAccess.open(temporary, FileAccess.WRITE)
 	if file == null:
 		_fail(error_string(FileAccess.get_open_error()))

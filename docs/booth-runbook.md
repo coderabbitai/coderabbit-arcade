@@ -94,4 +94,4 @@ tools/booth/macos/setup.sh --undo           # see what it will change
 tools/booth/macos/setup.sh --undo --apply
 ```
 
-Then turn off automatic login and Do Not Disturb, and copy the session logs.
+`--undo` puts back the settings the first setup recorded on that Mac. Then turn off automatic login and Do Not Disturb, and copy the session logs.
