@@ -48,7 +48,7 @@ func _ready() -> void:
 	content.add_child(code)
 
 	var attribution := Label.new()
-	attribution.text = "CODERABBIT.AI"
+	attribution.text = "CODERABBIT.LINK"
 	attribution.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	attribution.add_theme_font_size_override("font_size", 10)
 	attribution.add_theme_color_override("font_color", Color("536271"))
