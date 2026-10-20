@@ -3,6 +3,7 @@ const BoothLog := preload("res://app/booth_log.gd")
 const BoothHeartbeat := preload("res://app/booth_heartbeat.gd")
 const NextPlayerCard := preload("res://app/next_player_card.gd")
 const BoothSoak := preload("res://app/booth_soak.gd")
+const BoothQrOverlay := preload("res://app/booth_qr_overlay.gd")
 const ROUTES := {
 	"heroes_vs_villains": "res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn",
 	"code_city_brawl": "res://scenes/beatem_up/code_city_brawl.tscn",
@@ -65,6 +66,7 @@ var next_player: NextPlayerCard
 var next_player_left := 0.0
 ## The soak test (app/booth_soak.gd), when the game was launched with `--soak=<minutes>`.
 var soak: BoothSoak
+var booth_qr: Control
 func _ready() -> void:
 	# The veil tween must keep running while a microgame has the tree paused.
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -75,6 +77,9 @@ func _ready() -> void:
 	veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	veil.modulate.a = 0
+	booth_qr = BoothQrOverlay.new()
+	booth_qr.visible = false
+	add_child(booth_qr)
 	add_child(veil)
 	var args := OS.get_cmdline_user_args()
 	if SMOKE_FLAG in args:
@@ -239,6 +244,8 @@ func set_booth(enabled: bool) -> void:
 	# A card counting down over a paused, finished game would strand it: hand off right away.
 	var finishing := not enabled and next_player != null and next_player.visible
 	booth = enabled
+	if booth_qr:
+		booth_qr.visible = enabled
 	idle_seconds = 0.0
 	AudioService.set_attract(enabled)
 	game_overs = 0
