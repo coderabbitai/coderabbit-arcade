@@ -10,10 +10,11 @@ const RECIPES := {
 	&"boss_resolved": [1.15, 440.0, 880.0, "arpeggio", 0.68],
 	&"boss_skip": [0.25, 1800.0, 180.0, "noise", 0.5],
 	# Contract 2.7 §11.15 run intro: the fly-through, the title sting, the countdown tick and GO.
-	&"intro_whoosh": [2.2, 220.0, 1800.0, "sweep", 0.5],
-	&"intro_title": [0.9, 110.0, 220.0, "detuned", 0.6],
-	&"intro_count": [0.14, 880.0, 880.0, "square", 0.42],
-	&"intro_go": [0.7, 659.25, 1318.5, "chord", 0.62],
+	# Keep the opening cues about 6 dB softer for a gentler start.
+	&"intro_whoosh": [2.2, 220.0, 1800.0, "sweep", 0.25],
+	&"intro_title": [0.9, 110.0, 220.0, "detuned", 0.3],
+	&"intro_count": [0.14, 880.0, 880.0, "square", 0.21],
+	&"intro_go": [0.7, 659.25, 1318.5, "chord", 0.31],
 	&"stage_clear": [1.0, 440.0, 880.0, "arpeggio", 0.65],
 	&"telegraph_tick": [0.06, 1600.0, 1600.0, "square", 0.35],
 	&"projectile_whoosh": [0.30, 900.0, 180.0, "noise", 0.45],
