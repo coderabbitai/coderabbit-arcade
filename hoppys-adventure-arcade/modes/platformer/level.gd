@@ -508,7 +508,7 @@ func _setup_session() -> void:
 		var sound := AudioStreamPlayer.new()
 		sound.stream = SFX[clip]
 		sound.bus = "SFX"
-		sound.volume_db = -12
+		sound.volume_db = -20 if clip == "jump" else -12
 		add_child(sound)
 		sfx_players[clip] = sound
 	for child in get_children():
