@@ -10,7 +10,7 @@ const RECIPES := {
 	&"boss_resolved": [1.15, 440.0, 880.0, "arpeggio", 0.68],
 	&"boss_skip": [0.25, 1800.0, 180.0, "noise", 0.5],
 	# Contract 2.7 §11.15 run intro: the fly-through, the title sting, the countdown tick and GO.
-	&"intro_whoosh": [2.2, 220.0, 1800.0, "sweep", 0.5],
+	&"intro_whoosh": [0.7, 0.0, 0.0, "air", 0.32],
 	&"intro_title": [0.9, 110.0, 220.0, "detuned", 0.6],
 	&"intro_count": [0.14, 880.0, 880.0, "square", 0.42],
 	&"intro_go": [0.7, 659.25, 1318.5, "chord", 0.62],
@@ -100,6 +100,7 @@ static func render(kind: StringName) -> Dictionary:
 	var samples := PackedFloat64Array()
 	samples.resize(count * channels)
 	var waveform := String(recipe[3])
+	var air := waveform == "air"
 	var family := family_for(kind)
 	# Typed, so the mixing line below compiles to validated float operators. Prewarm runs every
 	# recipe here at once on workers. An untyped `a * b` caches its evaluator in the shared bytecode
@@ -127,11 +128,9 @@ static func render(kind: StringName) -> Dictionary:
 					var impact_envelope := exp(-(progress - 0.8) * 35.0)
 					sample = sample * 0.4 + rng.randf_range(-1.0, 1.0) * 0.6
 					envelope = impact_envelope
-			"sweep":
-				# Rises to the top and falls back, under a noise bed: the camera flying down the corridor.
-				frequency = lerpf(float(recipe[1]), float(recipe[2]), sin(progress * PI))
-				sample = sample * 0.4 + rng.randf_range(-1, 1) * 0.6
-				envelope = sin(progress * PI)
+			"air":
+				# Soft fly-through rush, gone before the title at one second.
+				envelope = smoothstep(0.0, 0.18, progress) * (1.0 - smoothstep(0.25, 1.0, progress))
 			"arpeggio":
 				frequency = 440.0 * float(ARPEGGIO[mini(3, int(progress * 4))])
 			"alert":
@@ -157,7 +156,7 @@ static func render(kind: StringName) -> Dictionary:
 				envelope = sin(PI * beat / 0.16) * exp(-beat * 18.0) if beat < 0.16 else 0.0
 				sample = sin(TAU * 65.0 * beat)
 		# Band-limited harmonic body, detuned air, FM transient and swept noise.
-		var cutoff := lerpf(6200.0, 350.0, progress)
+		var cutoff := lerpf(2400.0, 650.0, progress) if air else lerpf(6200.0, 350.0, progress)
 		low_noise += (rng.randf_range(-1.0, 1.0) - low_noise) * (1.0 - exp(-TAU * cutoff / RATE))
 		var body := sin(phase) * 0.56 + sin(phase * 1.003) * 0.24
 		var transient := sin(phase + sin(phase * 2.01) * 2.0 * exp(-t * 35.0)) * exp(-t * 28.0)
@@ -165,12 +164,15 @@ static func render(kind: StringName) -> Dictionary:
 		var click := click_transient(t) * 0.16 if percussive else 0.0
 		if looping and kind != &"pursuit_drone":
 			sample = sample * 0.78 + sin(phase * 2.0 + 0.3 * sin(phase * 3.0)) * 0.16
-		if not looping:
+		if air:
+			# Noise only: bypass the pitched body, transient and sub layers.
+			sample = low_noise
+		elif not looping:
 			sample = sample * weights[0] + body * weights[1] + transient * weights[2] + low_noise * weights[3] + sub * weights[4]
 		# Keep authored radar gaps and heartbeat handover precise.
 		var edge := 1.0 if looping else minf(t / 0.002, 1.0) * minf((seconds - t - 1.0 / RATE) / 0.006, 1.0)
 		for channel in channels:
-			var side := sin(phase * 1.007) * width * (1.0 if channel == 0 else -1.0) if stereo else 0.0
+			var side := sin(phase * 1.007) * width * (1.0 if channel == 0 else -1.0) if stereo and not air else 0.0
 			var pan := 1.0
 			if directional:
 				pan = 1.0 if (channel == 0) == left_pan else 0.2
