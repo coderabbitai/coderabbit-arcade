@@ -2,16 +2,17 @@ extends Node
 ## Longest the exit waits for the mixer to release stopped voices (see _exit_tree). Two mixes take
 ## about 25 ms with a sound card and about 140 ms headless.
 const RELEASE_MSEC := 500
-## The hub's title music: the instrumental "Send in the Rabbit" loop. Its .import sets the loop,
-## so the shared stream is never changed at runtime.
-const TITLE_THEME := preload("res://Assets/Audio/Main Menu/send_in_the_rabbit_title_loop.ogg")
-## Booth attract mode (see AppRouter.set_booth): the vocal theme, then the title loop, repeating.
-const ATTRACT_THEME := preload("res://Assets/Audio/Main Menu/booth_attract.tres")
+## The hub's music, in normal and booth mode: a calm lo-fi 8-bit loop built by
+## tools/build_hub_chiptune.py. Its .import sets the loop, so the shared stream is never changed
+## at runtime.
+const TITLE_THEME := preload("res://Assets/Audio/Main Menu/hub_chiptune_loop.wav")
+## The hub plays well under the games' -10 dB so a booth screen can run it all day.
+const HUB_MUSIC_DB := -15.0
 var music := AudioStreamPlayer.new()
 var sfx := AudioStreamPlayer.new()
 var tones: Array[AudioStreamWAV] = []
 var default_track: AudioStream
-var music_volume_db := -10.0
+var music_volume_db := HUB_MUSIC_DB
 var duck: Tween
 func _ready() -> void:
 	for bus in ["Music", "SFX"]:
@@ -44,14 +45,11 @@ func play_music(stream: AudioStream, volume_db := -10.0) -> void:
 	music.pitch_scale = 1.0
 	music.play()
 func play_default_music() -> void:
-	play_music(default_track, -10.0)
-## Booth mode makes the hub, its attract screen, sing the theme; otherwise the hub plays the
-## instrumental title loop. If the old default is playing, the new one takes over at once.
-func set_attract(enabled: bool) -> void:
-	var playing_default := music.playing and music.stream == default_track
-	default_track = ATTRACT_THEME if enabled else TITLE_THEME
-	if playing_default:
-		play_default_music()
+	play_music(default_track, HUB_MUSIC_DB)
+## Booth mode (see AppRouter.set_booth) keeps the same quiet hub loop: a booth screen runs for
+## hours, so its attract screen plays nothing louder than the normal hub.
+func set_attract(_enabled: bool) -> void:
+	default_track = TITLE_THEME
 func set_music_pitch(scale: float) -> void:
 	music.pitch_scale = maxf(0.01, scale)
 func duck_music(db: float, seconds: float) -> void:
