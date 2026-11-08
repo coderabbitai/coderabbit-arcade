@@ -59,6 +59,15 @@ func key(code: Key, pressed := true) -> void:
 	Input.parse_input_event(event)
 	Input.flush_buffered_events()
 
+## Sends a pointer press and then its release, so no button or touch stays held into later checks.
+func press_and_release(event: InputEvent) -> void:
+	event.pressed = true
+	Input.parse_input_event(event)
+	var release: InputEvent = event.duplicate()
+	release.pressed = false
+	Input.parse_input_event(release)
+	Input.flush_buffered_events()
+
 func tap(code: Key) -> void:
 	key(code)
 	key(code, false)
@@ -351,8 +360,7 @@ func closes_on_purpose_only() -> void:
 	click.button_index = MOUSE_BUTTON_LEFT
 	click.pressed = true
 	click.position = Vector2(640, 360)
-	Input.parse_input_event(click)
-	Input.flush_buffered_events()
+	press_and_release(click)
 	await handed_back()
 	check(card() == null and not paused, "A click on the last page starts the game")
 	await visit("hub")
@@ -365,14 +373,12 @@ func closes_on_purpose_only() -> void:
 		other.device = spec[1]
 		other.pressed = true
 		other.position = Vector2(640, 360)
-		Input.parse_input_event(other)
-		Input.flush_buffered_events()
+		press_and_release(other)
 	check(card() == shown and shown.page == 0, "The wheel, right-click and touch-emulated clicks don't turn pages")
 	var touch := InputEventScreenTouch.new()
 	touch.pressed = true
 	touch.position = Vector2(640, 360)
-	Input.parse_input_event(touch)
-	Input.flush_buffered_events()
+	press_and_release(touch)
 	check(shown.page == 1, "One tap turns one page")
 	await close_with(KEY_ESCAPE)
 
