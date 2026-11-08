@@ -1,95 +1,120 @@
 extends SceneTree
-## The hub plays the instrumental "Send in the Rabbit" title loop, and booth mode switches it to
-## the attract playlist (vocal theme, then the title loop) and back, without changing the shared
-## imported streams. Run headless with --script res://tests/theme_music.gd.
-const TITLE_PATH := "res://Assets/Audio/Main Menu/send_in_the_rabbit_title_loop.ogg"
-const VOCAL_PATH := "res://Assets/Audio/Main Menu/send_in_the_rabbit.ogg"
-## Verse 2's downbeat in the title loop, as recorded in Assets/Audio/Main Menu/PROMPTS.md.
-const TITLE_LOOP_START := 54.021224
+## The hub plays the calm 8-bit loop from tools/build_hub_chiptune.py at AudioService.HUB_MUSIC_DB,
+## in normal and booth mode alike, without changing the shared imported stream. Run headless with
+## --script res://tests/theme_music.gd.
+const TITLE_PATH := "res://Assets/Audio/Main Menu/hub_chiptune_loop.wav"
+## 32 bars at 84 BPM, as recorded in Assets/Audio/Main Menu/PROMPTS.md.
+const LOOP_SECONDS := 32 * 4 * 60.0 / 84.0
+## Quiet enough to sit under conversation: peak and RMS of the decoded loop, before bus volumes.
+const MAX_PEAK := 0.55
+const RMS_RANGE := Vector2(0.04, 0.2)
+## A click at the loop point would step many times the music's typical step around it.
+const SEAM_STEP_RATIO := 4.0
 var failures := 0
 
+## Defers the run until the autoloads are in the tree.
 func _initialize() -> void:
 	call_deferred("run")
 
+## Prints a PASS or FAIL line for one expectation and counts failures.
 func check(ok: bool, message: String) -> void:
 	print("PASS: " if ok else "FAIL: ", message)
 	if not ok:
 		failures += 1
 
+## Checks the hub loop, its volume and booth behaviour, then quits with the result.
 func run() -> void:
 	var audio: Node = root.get_node("AudioService")
 	var router: Node = root.get_node("AppRouter")
 	await create_timer(0.2, true).timeout
 
-	var title := audio.TITLE_THEME as AudioStreamOggVorbis
-	check(title != null and title.resource_path == TITLE_PATH, "The title theme is the instrumental loop")
-	check(title.loop and absf(title.loop_offset - TITLE_LOOP_START) < 0.001,
-		"The title loop's .import loops it after its intro, from verse 2 at %.3f s" % TITLE_LOOP_START)
-	check(is_equal_approx(title.bpm, 118.338) and title.bar_beats == 4 and title.beat_count == 0,
-		"The title loop carries its tempo and bar for bar-synced switching, and loops at the file end")
+	var title := audio.TITLE_THEME as AudioStreamWAV
+	check(title != null and title.resource_path == TITLE_PATH, "The hub theme is the chiptune loop")
+	check(title.loop_mode == AudioStreamWAV.LOOP_FORWARD and title.loop_begin == 0,
+		"The loop's .import loops it forward from the start")
+	check(absf(title.get_length() - LOOP_SECONDS) < 0.01,
+		"The loop is 32 bars at 84 BPM (%.3f s)" % title.get_length())
+	check(not "ATTRACT_THEME" in audio, "There is no separate booth attract track")
 	check(audio.default_track == title and audio.music.stream == title and audio.music.playing,
-		"The hub starts on the title loop")
-
-	var attract := audio.ATTRACT_THEME as AudioStreamPlaylist
-	check(attract != null and attract.stream_count == 2 and attract.loop and not attract.shuffle,
-		"The attract playlist holds two streams and repeats in order")
-	var vocal := attract.get_list_stream(0) as AudioStreamOggVorbis
-	check(vocal != null and vocal.resource_path == VOCAL_PATH and not vocal.loop,
-		"The attract playlist opens with the vocal theme, played through once")
-	check(attract.get_list_stream(1) == title, "The attract playlist follows the vocal theme with the title loop")
-	await check_playlist_order(attract, vocal.get_length(), title.get_length())
+		"The hub starts on the chiptune loop")
+	check(is_equal_approx(audio.music.volume_db, audio.HUB_MUSIC_DB) and audio.HUB_MUSIC_DB < -10.0,
+		"The hub plays it at HUB_MUSIC_DB, below the games' -10 dB (%.1f dB)" % audio.music.volume_db)
+	await check_mix(title)
 
 	router.set_booth(true)
-	check(audio.default_track == attract and audio.music.stream == attract and audio.music.playing,
-		"Booth mode switches the playing hub music to the attract playlist")
-	check(title.loop and not vocal.loop, "Switching leaves the shared imported streams unchanged")
+	check(audio.default_track == title and audio.music.stream == title and audio.music.playing,
+		"Booth mode keeps the same hub loop playing")
+	check(title.loop_mode == AudioStreamWAV.LOOP_FORWARD, "Booth mode leaves the shared stream unchanged")
 	router.set_booth(false)
 	check(audio.default_track == title and audio.music.stream == title and audio.music.playing,
-		"Leaving booth mode returns the hub to the title loop")
+		"Leaving booth mode keeps the hub loop playing")
 
-	audio.play_music(vocal)
+	var other := AudioStreamWAV.new()
+	audio.play_music(other)
 	router.set_booth(true)
-	check(audio.music.stream == vocal and audio.music.playing and audio.default_track == attract,
-		"Booth mode leaves a playing non-default stream alone and only changes the default")
+	check(audio.music.stream == other and audio.default_track == title,
+		"Booth mode leaves a playing non-default stream alone")
 	router.set_booth(false)
-	check(audio.music.stream == vocal and audio.default_track == title,
-		"Leaving booth mode also leaves a playing non-default stream alone")
-
 	audio.music.stop()
-	router.set_booth(true)
-	check(audio.default_track == attract and not audio.music.playing,
-		"Booth mode only changes the default when hub music is not playing")
 	audio.play_default_music()
-	check(audio.music.stream == attract and audio.music.playing, "The hub then starts the attract playlist")
-	router.set_booth(false)
+	check(audio.music.stream == title and audio.music.playing
+			and is_equal_approx(audio.music.volume_db, audio.HUB_MUSIC_DB),
+		"Returning to the hub restarts the loop at HUB_MUSIC_DB")
 
 	print("THEME MUSIC: %s (%d failures)" % ["PASS" if failures == 0 else "FAIL", failures])
 	await audio.settle()
 	quit(1 if failures else 0)
 
-## Mixes the playlist offline, faster than real time: the vocal theme plays through, the title
-## loop follows and plays its full length, then the playlist wraps to the vocal theme.
-func check_playlist_order(attract: AudioStreamPlaylist, vocal_len: float, title_len: float) -> void:
-	var playback := attract.instantiate_playback()
+## Mixes the loop offline, faster than real time, through one full pass and two seconds past the
+## seam: it stays quiet and keeps playing after the seam. The wrap itself (the frames either side of
+## the loop point) must step no more than SEAM_STEP_RATIO times the typical step around it, so a
+## click can't hide behind a louder note attack elsewhere in the loop.
+func check_mix(title: AudioStreamWAV) -> void:
+	var playback := title.instantiate_playback()
 	playback.start(0.0)
 	var rate := AudioServer.get_mix_rate()
+	var length := title.get_length()
 	var chunk := int(rate * 0.5)
-	var mixed := 0.0
-	var title_peak := 0.0
-	var wrapped_at := -1.0
-	while mixed < vocal_len + title_len + 2.0:
+	var mixed := 0
+	var peak := 0.0
+	var squares := 0.0
+	var counted := 0
+	var wrap_step := 0.0
+	var nearby_steps := 0.0
+	var nearby_count := 0
+	var after_seam := 0.0
+	var last := 0.0
+	var seam := int(length * rate)
+	var window := int(rate * 0.02)
+	while mixed < int((length + 2.0) * rate):
 		var frames: PackedVector2Array = playback.mix_audio(1.0, chunk)
-		mixed += float(frames.size()) / rate
-		if mixed > vocal_len + 1.0 and mixed < vocal_len + title_len - 1.0:
-			for frame in frames:
-				title_peak = maxf(title_peak, absf(frame.x))
-		if wrapped_at < 0.0 and playback.get_loop_count() == 1:
-			wrapped_at = mixed
+		for frame in frames:
+			var value := frame.x
+			var step := absf(value - last)
+			last = value
+			if mixed < seam:
+				peak = maxf(peak, absf(value))
+				squares += value * value
+				counted += 1
+			# Resampling can land the wrap a frame either side of the computed seam.
+			if absi(mixed - seam) <= 1:
+				wrap_step = maxf(wrap_step, step)
+			elif absi(mixed - seam) < window:
+				nearby_steps += step
+				nearby_count += 1
+			if mixed > seam + window:
+				after_seam = maxf(after_seam, absf(value))
+			mixed += 1
 		if frames.size() < chunk:
 			break
-	check(title_peak > 0.05, "After the vocal theme the playlist plays the title loop")
-	check(absf(wrapped_at - (vocal_len + title_len)) < 0.6,
-		"The playlist wraps back to the vocal theme after the title loop's full length (at %.1f s)" % wrapped_at)
-	check(playback.is_playing(), "The attract playlist keeps going after it wraps")
+	var rms := sqrt(squares / maxi(1, counted))
+	check(peak > 0.1 and peak <= MAX_PEAK, "The loop peaks at %.3f, at most %.2f" % [peak, MAX_PEAK])
+	check(rms >= RMS_RANGE.x and rms <= RMS_RANGE.y,
+		"The loop's RMS %.3f sits in the quiet range %.2f-%.2f" % [rms, RMS_RANGE.x, RMS_RANGE.y])
+	check(after_seam > 0.05 and playback.is_playing(), "The loop keeps playing past its seam")
+	var typical := nearby_steps / maxi(1, nearby_count)
+	check(nearby_count > 0 and wrap_step <= SEAM_STEP_RATIO * typical,
+		"The wrap steps %.4f, within %.0fx the %.4f mean step in the 20 ms around it"
+			% [wrap_step, SEAM_STEP_RATIO, typical])
 	playback.stop()
 	await process_frame
