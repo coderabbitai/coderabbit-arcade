@@ -318,6 +318,21 @@ func pages_turn() -> void:
 	check(card() == null and not paused, "Space on the last page starts the game")
 	await wait(0.3)
 	check(level.player.global_position.y >= start_y - 2.0, "Hoppy didn't jump on the Space that started the game")
+	# The same, with Space still held down after the game is handed back.
+	await visit("hub")
+	await visit("orbital_ops")
+	shown = card()
+	shown.age = HowToPlay.ARM_SECONDS
+	shown.show_page(shown.page_count() - 1)
+	level = current_scene
+	start_y = level.player.global_position.y
+	key(KEY_SPACE)
+	await handed_back()
+	check(card() == null and not paused, "A held Space on the last page starts the game")
+	await wait(0.3)
+	check(level.player.global_position.y >= start_y - 2.0, "Holding the Space that started the game doesn't make Hoppy jump")
+	key(KEY_SPACE, false)
+	await wait(0.2)
 
 func closes_on_purpose_only() -> void:
 	await visit("hub")
