@@ -8,6 +8,8 @@ const LOOP_SECONDS := 32 * 4 * 60.0 / 84.0
 ## Quiet enough to sit under conversation: peak and RMS of the decoded loop, before bus volumes.
 const MAX_PEAK := 0.55
 const RMS_RANGE := Vector2(0.04, 0.2)
+## A click at the loop point would step many times the music's typical step around it.
+const SEAM_STEP_RATIO := 4.0
 var failures := 0
 
 func _initialize() -> void:
@@ -61,8 +63,9 @@ func run() -> void:
 	quit(1 if failures else 0)
 
 ## Mixes the loop offline, faster than real time, through one full pass and two seconds past the
-## seam: it stays quiet, keeps playing after the seam, and the seam is no louder a step than the
-## music's own.
+## seam: it stays quiet and keeps playing after the seam. The wrap itself (the frames either side of
+## the loop point) must step no more than SEAM_STEP_RATIO times the typical step around it, so a
+## click can't hide behind a louder note attack elsewhere in the loop.
 func check_mix(title: AudioStreamWAV) -> void:
 	var playback := title.instantiate_playback()
 	playback.start(0.0)
@@ -73,8 +76,9 @@ func check_mix(title: AudioStreamWAV) -> void:
 	var peak := 0.0
 	var squares := 0.0
 	var counted := 0
-	var music_step := 0.0
-	var seam_step := 0.0
+	var wrap_step := 0.0
+	var nearby_steps := 0.0
+	var nearby_count := 0
 	var after_seam := 0.0
 	var last := 0.0
 	var seam := int(length * rate)
@@ -89,10 +93,12 @@ func check_mix(title: AudioStreamWAV) -> void:
 				peak = maxf(peak, absf(value))
 				squares += value * value
 				counted += 1
-			if absf(mixed - seam) < window:
-				seam_step = maxf(seam_step, step)
-			elif mixed > window and mixed < seam - window:
-				music_step = maxf(music_step, step)
+			# Resampling can land the wrap a frame either side of the computed seam.
+			if absi(mixed - seam) <= 1:
+				wrap_step = maxf(wrap_step, step)
+			elif absi(mixed - seam) < window:
+				nearby_steps += step
+				nearby_count += 1
 			if mixed > seam + window:
 				after_seam = maxf(after_seam, absf(value))
 			mixed += 1
@@ -103,6 +109,9 @@ func check_mix(title: AudioStreamWAV) -> void:
 	check(rms >= RMS_RANGE.x and rms <= RMS_RANGE.y,
 		"The loop's RMS %.3f sits in the quiet range %.2f-%.2f" % [rms, RMS_RANGE.x, RMS_RANGE.y])
 	check(after_seam > 0.05 and playback.is_playing(), "The loop keeps playing past its seam")
-	check(seam_step <= music_step, "The seam steps %.4f, no more than the music's %.4f" % [seam_step, music_step])
+	var typical := nearby_steps / maxi(1, nearby_count)
+	check(nearby_count > 0 and wrap_step <= SEAM_STEP_RATIO * typical,
+		"The wrap steps %.4f, within %.0fx the %.4f mean step in the 20 ms around it"
+			% [wrap_step, SEAM_STEP_RATIO, typical])
 	playback.stop()
 	await process_frame
