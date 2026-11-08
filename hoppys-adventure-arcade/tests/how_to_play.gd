@@ -355,6 +355,26 @@ func closes_on_purpose_only() -> void:
 	Input.flush_buffered_events()
 	await handed_back()
 	check(card() == null and not paused, "A click on the last page starts the game")
+	await visit("hub")
+	await visit("enchanted_repo")
+	shown = card()
+	shown.age = HowToPlay.ARM_SECONDS
+	for spec in [[MOUSE_BUTTON_WHEEL_DOWN, 0], [MOUSE_BUTTON_RIGHT, 0], [MOUSE_BUTTON_LEFT, InputEvent.DEVICE_ID_EMULATION]]:
+		var other := InputEventMouseButton.new()
+		other.button_index = spec[0]
+		other.device = spec[1]
+		other.pressed = true
+		other.position = Vector2(640, 360)
+		Input.parse_input_event(other)
+		Input.flush_buffered_events()
+	check(card() == shown and shown.page == 0, "The wheel, right-click and touch-emulated clicks don't turn pages")
+	var touch := InputEventScreenTouch.new()
+	touch.pressed = true
+	touch.position = Vector2(640, 360)
+	Input.parse_input_event(touch)
+	Input.flush_buffered_events()
+	check(shown.page == 1, "One tap turns one page")
+	await close_with(KEY_ESCAPE)
 
 func closes_by_itself() -> void:
 	await visit("hub")
@@ -398,6 +418,9 @@ func focus_loss_keeps_the_pause_menu() -> void:
 	var before: float = shown.countdown
 	await wait(0.3)
 	check(is_equal_approx(shown.countdown, before), "The countdown waits while the window is in the background")
+	root.propagate_notification(NOTIFICATION_APPLICATION_FOCUS_IN)
+	await wait(0.3)
+	check(shown.countdown < before - 0.1, "The countdown resumes once the window has focus again")
 	await close_with(KEY_ESCAPE)
 	check(card() == null and paused and level.is_player_paused(), "Closing the card leaves the game in its pause menu")
 	level._resume()

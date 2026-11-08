@@ -172,7 +172,16 @@ func run() -> void:
 	for child in game.ground.get_children():
 		if child is AnimatedSprite2D and child.animation=="review_burst": burst=child
 	check(burst!=null and burst.self_modulate==p.REVIEW_TINT,"The REVIEW burst is mint and drawn under the actors")
-	p.review_guard=0
+	# Firing REVIEW inside a post-hit window: the glow shows and the blink doesn't.
+	p.review_guard=0;p.review_cooldown=0;p.review_charge=0
+	p.invulnerable=1.0
+	check(p.activate_review(),"REVIEW fires during the post-hit window")
+	var blinked:=false
+	for i in 20:
+		p.tick(0.016)
+		if p.body.modulate.a<1.0: blinked=true
+	check(not blinked and p.body.modulate.g>1.0,"REVIEW's glow hides a leftover post-hit blink")
+	p.review_guard=0;p.invulnerable=0
 	p.review_cooldown=0;p.review_charge=0
 	clear_enemies()
 	p.position=Vector2(400,550);p.facing=1

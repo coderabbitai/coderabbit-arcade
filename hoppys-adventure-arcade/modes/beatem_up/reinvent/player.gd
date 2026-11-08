@@ -127,7 +127,8 @@ func tick(dt: float) -> void:
 		if height <= 0: rise = 0
 	body.position.y = -height
 	body.modulate = REVIEW_GLOW if review_guard > 0 else Color.WHITE
-	body.modulate.a = .4 if invulnerable > 0 and int(invulnerable*14)%2==0 else 1.0
+	# REVIEW's glow wins over a leftover post-hit blink: the blink means "you were hit".
+	body.modulate.a = .4 if invulnerable > 0 and review_guard <= 0 and int(invulnerable*14)%2==0 else 1.0
 	var pose := "idle"
 	var base := false
 	if stagger > 0: pose = "hurt"

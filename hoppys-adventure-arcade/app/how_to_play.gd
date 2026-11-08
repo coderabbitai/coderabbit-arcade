@@ -142,6 +142,8 @@ func _input(event: InputEvent) -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		_focus_lost = true
+	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
+		_focus_lost = false
 
 
 ## True for a press that closes the card from any page: pause, or Back on a reopened card.
@@ -155,8 +157,13 @@ func is_dismiss(event: InputEvent) -> bool:
 func is_next(event: InputEvent) -> bool:
 	if event.is_echo():
 		return false
-	if (event is InputEventMouseButton or event is InputEventScreenTouch) and event.pressed:
-		return true
+	# Only a left click or a real touch: no wheel or right button, and no mouse click Godot emulates
+	# from a touch (on by default), so one tap turns one page.
+	if event is InputEventMouseButton:
+		return event.pressed and event.button_index == MOUSE_BUTTON_LEFT \
+			and event.device != InputEvent.DEVICE_ID_EMULATION
+	if event is InputEventScreenTouch:
+		return event.pressed and event.device != InputEvent.DEVICE_ID_EMULATION
 	return _pressed(event, NEXT_ACTIONS)
 
 
