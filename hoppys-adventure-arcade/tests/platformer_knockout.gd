@@ -87,7 +87,7 @@ func run() -> void:
 			check(completions[0] == 1 and not game.knockout.active, label + ": exactly one completion")
 			await create_timer(0.75).timeout
 			check(game.overlay.visible and is_equal_approx(game.overlay.modulate.a, 1.0), label + ": results fade completes")
-			var retry: Button = game.resume_button.get_parent().get_child(3)
+			var retry: Button = game.retry_button
 			check(retry.has_focus(), label + ": Retry focused")
 			if not fell: await capture(route + "-results")
 			var old_cutaway: WeakRef = weakref(game.knockout)

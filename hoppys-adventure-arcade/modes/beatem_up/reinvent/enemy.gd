@@ -1,6 +1,8 @@
 extends CharacterBody2D
 const Art = preload("res://modes/beatem_up/reinvent/art.gd")
 const Catalog = preload("res://modes/beatem_up/reinvent/catalog.gd")
+## Enemies stunned by REVIEW: a cool blue, so the burst visibly lands on them.
+const STUNNED_TINT := Color(0.6, 0.8, 1.3)
 var arena: Node2D
 var kind := "slop_sprite"
 var hp := 1.0
@@ -122,6 +124,7 @@ func update_visual() -> void:
 	# Hidden threats retain faint silhouettes and bright committed attack warnings.
 	body.modulate = Color(1,1,1,.16 if hidden_enemy and not revealed and state not in ["tell","attack","hurt","stunned"] else 1.0)
 	if state=="tell": body.modulate=Color(1.4,1.05,.65,1)
+	if state=="stunned": body.modulate=STUNNED_TINT
 	queue_redraw()
 
 func take_hit(damage: float, force: float, from: Vector2, finisher := false) -> bool:

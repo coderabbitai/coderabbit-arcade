@@ -5,6 +5,7 @@ const Knockout = preload("res://modes/platformer/knockout.gd")
 const Player = preload("res://modes/platformer/player.gd")
 const Enemy = preload("res://modes/platformer/enemy.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
+const HowToPlay = preload("res://app/how_to_play.gd")
 # Preloaded so nothing is read from disk mid-run (a freed one-shot player used to drop its stream,
 # so every jump reloaded the WAV).
 const SFX := {
@@ -51,6 +52,9 @@ var overlay: ColorRect
 var overlay_title: Label
 var overlay_detail: Label
 var resume_button: Button
+## Pause-only: reopens the level's how-to-play card over the pause menu.
+var how_to_play_button: Button
+var retry_button: Button
 var overlay_card: Control
 var results_reveal: Tween
 var exit_sprite: AnimatedSprite2D
@@ -221,9 +225,13 @@ func _hud() -> void:
 	resume_button = Style.button("Resume")
 	col.add_child(resume_button)
 	resume_button.pressed.connect(_resume)
+	how_to_play_button = Style.button("How to Play")
+	col.add_child(how_to_play_button)
+	how_to_play_button.pressed.connect(_show_how_to_play)
 	for entry in [["Retry " + level_title, level_route], ["Return to Platformer Menu", "platformer"], ["Return to Arcade", "hub"]]:
 		var button := Style.button(entry[0])
 		col.add_child(button)
+		if entry[1] == level_route: retry_button = button
 		button.pressed.connect(func():
 			# Leaving the results unpauses the level music; end the stinger before they overlap.
 			stage_clear.stop()
@@ -243,11 +251,19 @@ func _pause() -> void:
 	overlay_title.text = "TAKE A BREATHER"
 	overlay_detail.text = "Your commits can wait."
 	resume_button.show()
+	how_to_play_button.show()
 	overlay.color = PAUSE_SHADE
 	overlay.modulate.a = 1.0
 	overlay_card.position.y = 0
 	overlay.show()
 	resume_button.grab_focus()
+func _show_how_to_play() -> void:
+	if get_tree().paused and not finished:
+		HowToPlay.open(get_tree(), level_route, HowToPlay.Mode.PAUSE, how_to_play_button)
+## True while the player has the level paused (its pause menu is up). The how-to-play card checks
+## this before unpausing, so focus loss under the card leaves the pause menu working.
+func is_player_paused() -> bool:
+	return get_tree().paused and overlay.visible and resume_button.visible and not finished
 func _resume() -> void:
 	player.input_lock = 0.15
 	player.buffer = 0
@@ -270,6 +286,7 @@ func _finish(won: bool) -> void:
 	overlay_title.text = "MERGE SUCCESSFUL!" if won else "BUILD FAILED"
 	overlay_detail.text = "%06d POINTS   /   %02d:%02d\n%s" % [score, int(elapsed) / 60, int(elapsed) % 60, level_title + " complete." if won else "Fresh branch. Another try."]
 	resume_button.hide()
+	how_to_play_button.hide()
 	if won:
 		stage_clear.play()
 		_reveal_results(0.35)
@@ -313,7 +330,7 @@ func _reveal_results(delay: float) -> void:
 	results_reveal.tween_callback(overlay.show)
 	results_reveal.tween_property(overlay, "modulate:a", 1.0, RESULTS_FADE).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	results_reveal.parallel().tween_property(overlay_card, "position:y", 0.0, RESULTS_FADE).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	results_reveal.tween_callback(resume_button.get_parent().get_child(3).grab_focus)
+	results_reveal.tween_callback(retry_button.grab_focus)
 func _input(event: InputEvent) -> void:
 	# Once a route change has started, the level is leaving: never re-pause it under the veil.
 	if AppRouter.busy:

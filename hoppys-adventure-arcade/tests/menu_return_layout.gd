@@ -25,8 +25,12 @@ func open_level() -> Node:
 	level._resume()
 	await wait(0.2)
 	return level
+## The pause/results column's children by their old positions (title, detail, Resume, Retry,
+## Platformer Menu, Arcade), skipping the pause-only How to Play button.
 func overlay_button(level: Node, index: int) -> Button:
-	return level.resume_button.get_parent().get_child(index)
+	var children: Array = level.resume_button.get_parent().get_children().filter(
+		func(child: Node) -> bool: return child != level.how_to_play_button)
+	return children[index]
 func check_menu(label: String) -> void:
 	var menu = current_scene
 	check(menu.name == "MainMenu", label + ": back on the main menu")

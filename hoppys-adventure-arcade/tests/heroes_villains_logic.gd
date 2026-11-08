@@ -160,7 +160,19 @@ func run() -> void:
 	game.capabilities.review=true
 	var stunned=enemy("review_blocker",p.position+Vector2(80,0))
 	check(p.activate_review() and stunned.state=="stunned" and not p.activate_review(),"REVIEW burst stuns and cannot bypass cooldown")
-	check(p.invulnerable>=.8,"REVIEW burst grants brief invulnerability")
+	var hp_before:int=p.hp
+	check(p.review_guard>=.8 and p.invulnerable==0.0,"REVIEW protects Hoppy without the post-hit blink")
+	check(p.hp==hp_before and p.stagger<=0,"Firing REVIEW never costs Hoppy HP or staggers him")
+	check(not p.take_hit(p.position+Vector2(40,0)) and p.hp==hp_before,"Hits can't land while REVIEW protects Hoppy")
+	p.tick(0.016)
+	stunned.update_visual()
+	check(p.body.modulate.r<1.0 and p.body.modulate.g>1.0 and is_equal_approx(p.body.modulate.a,1.0),"Hoppy glows REVIEW mint, never blinks, while protected")
+	check(stunned.body.modulate.b>1.0,"Stunned enemies turn blue")
+	var burst:AnimatedSprite2D=null
+	for child in game.ground.get_children():
+		if child is AnimatedSprite2D and child.animation=="review_burst": burst=child
+	check(burst!=null and burst.self_modulate==p.REVIEW_TINT,"The REVIEW burst is mint and drawn under the actors")
+	p.review_guard=0
 	p.review_cooldown=0;p.review_charge=0
 	clear_enemies()
 	p.position=Vector2(400,550);p.facing=1

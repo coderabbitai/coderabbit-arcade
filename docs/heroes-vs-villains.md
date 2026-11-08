@@ -13,10 +13,12 @@ This mode uses the armored Hoppy and the [Mode 2 asset pack](heroes-vs-villains-
 | Move along the ground plane | WASD / arrows | Left stick / D-pad |
 | Jump | Space | A |
 | Three-hit combo / weapon | J or X | X |
-| Pick up weapon | E | Y |
+| Pick up weapon | E or K | Y |
 | Charge REVIEW after unlock | Hold Q | Hold LB |
-| Pause | Escape | Start |
+| Pause | Escape or P | Start |
 | Skip presentation card | Enter / keypad Enter | View / Select |
+
+The first entry from the menus opens the game's [how-to-play card](main-menu.md#how-to-play-cards) before the opening cards; the pause menu's **How to Play** shows it again.
 
 The armored Hoppy uses eight-frame side, away and toward-camera locomotion cycles at 14 fps, with cadence scaled to analog movement and speed effects. Base travel speed is 264 pixels/second (10% above Code City Brawl).
 
@@ -25,6 +27,8 @@ Hoppy has three health points, jump avoidance, hit recovery and one shield on st
 - He is thrown back away from the hit, and a carried weapon is stowed while he flies.
 - He lands flat on his front with a burst and a bounce, and lies there with dizzy stars and a "K.O." callout while the music ducks.
 - About 2.2 seconds after the hit, the game-over menu offers a retry of the current stage with its entry score and capabilities, fresh health and cleared temporary effects. Pause and focus loss stop the run, including during cards and stage transitions; return-to-menu is available through pause and results.
+
+REVIEW never hurts Hoppy. Holding Q / LB for under half a second fires a mint burst on the floor around him that stuns nearby threats; stunned enemies turn blue. For 0.85 seconds after it fires, hits can't land and Hoppy glows mint, without the blink that means he was hit. It recharges in 8 seconds.
 
 Capabilities persist within the run, not across application launches. REVIEW unlocks after AI SLOP; TRIAGE and CHANGE STACK unlock after defeating both the fused army commander and the PR; SECURITY completes the final victory.
 

@@ -80,6 +80,12 @@ func is_paused_for_controller() -> bool:
 
 
 func _input(event: InputEvent) -> void:
+	observe(event)
+
+
+## Lets a pad's press make it player one. _input calls this; so does the how-to-play card, which
+## swallows input before this autoload would see it.
+func observe(event: InputEvent) -> void:
 	var device := _gameplay_device(event)
 	if device < 0 or roster.role_of(device) == PLAYER:
 		return

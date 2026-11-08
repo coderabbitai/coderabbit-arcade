@@ -389,6 +389,10 @@ func resume() -> void:
 		player.sync_input_state()
 	paused_changed.emit(false)
 
+## True while the player has the run paused. The how-to-play card checks this before unpausing.
+func is_player_paused() -> bool:
+	return paused
+
 func toggle_pause() -> void:
 	if paused:
 		resume()

@@ -8,8 +8,8 @@ Run the project normally: **Platformer Game → Level Select → Play Bay Area B
 
 - Move: A/D, left/right arrows, controller left stick or D-pad.
 - Jump: Space/W/up arrow, controller A/Cross. Release early for a shorter jump.
-- Swipe: J/X, controller X/Square. Landing on an enemy also deals damage and bounces Hoppy.
-- Pause/resume: Escape or controller Start. Focus loss pauses the game.
+- Swipe: J/X, controller X/Square. Swiping is the only way to hurt a bug; there is no stomping, and touching an enemy from any side, including landing on it, costs a heart.
+- Pause/resume: Escape, P or controller Start. Focus loss pauses the game. Entering the level from the menus opens its [how-to-play card](main-menu.md#how-to-play-cards); the pause menu's **How to Play** shows it again.
 - Defeat the Merge Conflict Monster, then swipe or land on the MERGE button to finish.
 - Pause and results provide fresh retry, platformer menu, and arcade return. Finishing a level (any of the three) plays a short stage-clear stinger (`Assets/Audio/Platformer/stinger_stage_clear.ogg`) over the MERGE SUCCESSFUL results while the paused level music stays silent; a knockout keeps its ducked level music instead.
 
@@ -17,7 +17,7 @@ Run the project normally: **Platformer Game → Level Select → Play Bay Area B
 
 A 5,300-pixel authored city route with two jumpable gaps, optional raised token routes, two moving cable-car platforms, parallax buildings/fog, supplied Golden Gate scenery, animated Hoppy, glitch critters, Request Changes Reviewers, broken pipelines, a moving conflict zone, and a three-headed boss. The safe lower route does not require waiting for a cable car.
 
-Three-heart health, damage knockback, post-hit protection, variable jump height, coyote time, jump buffering, swipe hit deduplication, stomping, per-run score, boss-gated completion, pause/focus handling, death/retry, level selection, and the Bay Area music track are connected. The existing menu audio/background paths were repaired to match the reorganized Assets folder. Other levels remain explicitly unavailable.
+Three-heart health, damage knockback, post-hit protection, variable jump height, coyote time, jump buffering, swipe hit deduplication, per-run score, boss-gated completion, pause/focus handling, death/retry, level selection, and the Bay Area music track are connected. The existing menu audio/background paths were repaired to match the reorganized Assets folder. Other levels remain explicitly unavailable.
 
 All art comes from `Assets/bay-area-blitz-assets-only`; Hoppy uses that pack's existing platformer SpriteFrames. Sound uses existing project assets. No assets were generated or downloaded.
 

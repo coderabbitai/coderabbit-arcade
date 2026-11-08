@@ -43,12 +43,9 @@ func _physics_process(dt: float) -> void:
 			for angle in [-0.24, 0.0, 0.24]:
 				fired.emit(position + Vector2(0, -90), aim.rotated(angle))
 	queue_redraw()
+	# Bay Area Blitz has no stomping: only a swipe hurts a bug; touching one, from any side, hurts Hoppy.
 	if hurtbox.overlaps_body(player):
-		if player.velocity.y > 120 and player.position.y < position.y - 90:
-			take_hit()
-			player.velocity.y = -440
-		else:
-			player.damage(position.x)
+		player.damage(position.x)
 func take_hit() -> void:
 	if active:
 		super.take_hit()
