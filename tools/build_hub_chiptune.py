@@ -51,6 +51,8 @@ GM7 = (43, (58, 62, 65))
 
 @dataclass
 class Song:
+    """One arrangement: tempo, feel, sections, form and the voices that play it."""
+
     bpm: float
     meter: int  # beats per bar
     swing: float  # where the offbeat eighth falls in the beat: 0.5 is straight
@@ -231,6 +233,7 @@ DEFAULT_SONG = "lofi"
 
 
 def mtof(midi: float) -> float:
+    """Frequency in Hz of a MIDI note number (A4 = 69 = 440 Hz)."""
     return 440 * 2 ** ((midi - 69) / 12)
 
 
@@ -249,6 +252,7 @@ class Track:
     """A loop-length buffer; every write wraps past the end back to the start."""
 
     def __init__(self, song: Song, bars: int) -> None:
+        """Allocate a silent buffer exactly `bars` bars of `song` long."""
         self.song = song
         self.beat = 60 / song.bpm
         self.samples = [0.0] * round(bars * song.meter * self.beat * RATE)
@@ -276,6 +280,12 @@ class Track:
         decay: float = 0.6,
         sustain: float = 0.55,
     ) -> None:
+        """Add one pulse or triangle ("tri") note, starting on `beat` for `beats` beats.
+
+        The envelope rises over `attack` seconds, decays toward `sustain` with time
+        constant `decay` and releases over the last `release` seconds. `vibrato` is the
+        relative pitch depth, faded in after 0.2 s.
+        """
         start = self.at(beat)
         length = self.at(beat + beats) - start
         first, count, size = round(start * RATE), round(length * RATE), len(buf)
@@ -305,6 +315,10 @@ class Track:
     def drum(
         self, buf: list[float], kind: str, beat: float, gain: float, lfsr: list[int]
     ) -> None:
+        """Add a soft "kick" (pitch-swept sine), "snare" or "hat" (LFSR noise) on `beat`.
+
+        `lfsr` holds the shared noise register, so the noise sequence is deterministic.
+        """
         if gain <= 0:
             return
         first, size = round(self.at(beat) * RATE), len(buf)
@@ -329,10 +343,12 @@ class Track:
 
 
 def harmony_below(midi: int) -> int:
+    """The F major scale note a diatonic third below `midi`."""
     return SCALE[SCALE.index(midi) - 2]
 
 
 def compose(song: Song) -> list[float]:
+    """Render `song` through its whole form and return the loudness-matched float mix."""
     bars = 8 * len(song.form)
     track = Track(song, bars)
     size = len(track.samples)
@@ -496,8 +512,11 @@ def compose(song: Song) -> list[float]:
 
 
 def pcm(samples: list[float], coefficient: float) -> bytes:
-    # A one-pole low-pass rounds the pulse edges. A first pass settles the filter so the
-    # second starts in the state the loop ends in: no step at the seam.
+    """Low-pass the mix and pack it as little-endian 16-bit PCM.
+
+    A one-pole low-pass rounds the pulse edges. A first pass settles the filter so the
+    second starts in the state the loop ends in: no step at the seam.
+    """
     previous = 0.0
     for sample in samples:
         previous += coefficient * (sample - previous)
@@ -509,6 +528,7 @@ def pcm(samples: list[float], coefficient: float) -> bytes:
 
 
 def build(out: Path, name: str, filename: str) -> None:
+    """Write song `name` to `out`/`filename` as mono WAV and print its length and SHA-256."""
     out.mkdir(parents=True, exist_ok=True)
     song = SONGS[name]
     samples = compose(song)

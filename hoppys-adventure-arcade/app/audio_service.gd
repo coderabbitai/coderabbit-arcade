@@ -44,6 +44,7 @@ func play_music(stream: AudioStream, volume_db := -10.0) -> void:
 	music.volume_db = volume_db
 	music.pitch_scale = 1.0
 	music.play()
+## Plays the hub's loop at HUB_MUSIC_DB; AppRouter calls this whenever the hub opens.
 func play_default_music() -> void:
 	play_music(default_track, HUB_MUSIC_DB)
 ## Booth mode (see AppRouter.set_booth) keeps the same quiet hub loop: a booth screen runs for

@@ -12,14 +12,17 @@ const RMS_RANGE := Vector2(0.04, 0.2)
 const SEAM_STEP_RATIO := 4.0
 var failures := 0
 
+## Defers the run until the autoloads are in the tree.
 func _initialize() -> void:
 	call_deferred("run")
 
+## Prints a PASS or FAIL line for one expectation and counts failures.
 func check(ok: bool, message: String) -> void:
 	print("PASS: " if ok else "FAIL: ", message)
 	if not ok:
 		failures += 1
 
+## Checks the hub loop, its volume and booth behaviour, then quits with the result.
 func run() -> void:
 	var audio: Node = root.get_node("AudioService")
 	var router: Node = root.get_node("AppRouter")
