@@ -46,12 +46,9 @@ func _physics_process(dt: float) -> void:
 		position.x = origin.x + sin(phase * (0.8 if kind == "request_reviewer" else 1.3)) * radius
 		sprite.flip_h = cos(phase * (0.8 if kind == "request_reviewer" else 1.3)) > 0
 		sprite.play("hurt" if hit_flash > 0 else ("patrol" if kind == "request_reviewer" else "scuttle"))
+	# Bay Area Blitz has no stomping: only a swipe hurts a bug; touching one, from any side, hurts Hoppy.
 	if hurtbox.overlaps_body(player):
-		if player.velocity.y > 120 and player.position.y < position.y - (90 if kind == "merge_monster" else 40):
-			take_hit()
-			player.velocity.y = -440
-		else:
-			player.damage(position.x)
+		player.damage(position.x)
 func take_hit() -> void:
 	if dead or hit_flash > 0:
 		return

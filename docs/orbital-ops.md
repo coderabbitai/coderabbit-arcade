@@ -10,7 +10,7 @@ Launch the project, choose **Platformer Game → Level Select → Play Orbital O
 - Jump: Space/W/up, gamepad A/Cross. Release early for a shorter normal-gravity jump.
 - Swipe: J/X, gamepad X/Square. Descending onto an enemy also damages it and bounces Hoppy.
 - Zero-gravity bay: hold Jump/Up to rise, Down/S or stick/D-pad down to descend, release vertical input to brake. Normal gravity resumes outside the cyan boundaries.
-- Pause: Escape/Start or the Pause button. Focus loss also pauses.
+- Pause: Escape/P/Start or the Pause button. Focus loss also pauses. Entering the level from the menus opens its [how-to-play card](main-menu.md#how-to-play-cards); the pause menu's **How to Play** shows it again. Its card adds the zero-G rise and sink rows and a Zero gravity page showing Hoppy rise, brake and sink.
 - Defeat the Deprecated API, then land on or swipe the green MERGE button. Retry always starts a fresh Orbital Ops run; return buttons lead to the platformer menu or arcade.
 
 ## Level and combat

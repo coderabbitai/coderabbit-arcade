@@ -86,6 +86,10 @@ func run() -> void:
 	Input.parse_input_event(esc)
 	await frames(2)
 	check(not paused, "Pause input resumes while tree paused")
+	check(root.get_node("AudioService").music.stream_paused, "The hub music stays silent after a pause and resume")
+	for strip in level.find_children("*", "Parallax2D", true, false):
+		# A 21:9 screen at 720 high is 1680 wide; every copy has to reach past it, or art pops in.
+		check(strip.repeat_size.x * strip.repeat_times >= 1680 + strip.repeat_size.x, "Background strip covers a wide screen (%s)" % strip.repeat_times)
 	player.boost = 0
 	player.position = Vector2(1650, 500)
 	player.velocity = Vector2.ZERO
@@ -115,6 +119,24 @@ func run() -> void:
 	Input.action_release("attack")
 	check(reviewer.dead, "Second swipe defeats reviewer")
 	check(level.score >= 100, "Enemy defeat awards score")
+	# Bay Area Blitz has no stomping: dropping onto a bug costs a heart and leaves the bug standing.
+	var critter = level._enemy(1900, "glitch_critter")
+	critter.radius = 0
+	await frames(2)
+	player.invulnerable = 0
+	player.boost = 0
+	player.shield = false
+	var hearts: int = player.hp
+	# Hold Hoppy falling through the top of the bug's hurtbox, where a stomp used to land.
+	for i in 6:
+		player.position = Vector2(critter.position.x, critter.position.y - 48)
+		player.velocity = Vector2(0, 450)
+		await frames(1)
+	await frames(10)
+	check(not critter.dead and critter.hp == 1, "Landing on a bug doesn't hurt it")
+	check(player.hp == hearts - 1, "Landing on a bug costs a heart (%d -> %d)" % [hearts, player.hp])
+	critter.queue_free()
+	player.invulnerable = 3
 	player.position = Vector2(4400, 600)
 	player.velocity = Vector2.ZERO
 	level.camera.reset_smoothing()
@@ -169,7 +191,7 @@ func run() -> void:
 	await create_timer(3.0).timeout
 	await capture("/tmp/hoppy-death-results-fading.png")
 	await create_timer(0.6).timeout
-	var retry: Button = level.resume_button.get_parent().get_child(3)
+	var retry: Button = level.retry_button
 	check(level.overlay.visible and is_equal_approx(level.overlay.modulate.a, 1.0), "Results menu fades fully in")
 	check(level.overlay_card.position.y == 0 and retry.has_focus(), "Results menu settles with Retry focused")
 	await capture("/tmp/hoppy-death-results.png")
@@ -180,6 +202,7 @@ func run() -> void:
 	await frames(3)
 	await capture("/tmp/hoppy-level-select.png")
 	check(not root.get_node("AudioService").music.stream_paused, "Menu music restored")
+	check(root.get_node("AudioService").music.process_mode == Node.PROCESS_MODE_INHERIT, "The hub music pauses with the tree again outside the level")
 	print("PLATFORMER SMOKE: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
 	await frames(35)
 	await root.get_node("AudioService").settle()

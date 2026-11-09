@@ -115,7 +115,7 @@ func run() -> void:
 	await process_frame
 	await process_frame
 	check(level.overlay.visible and is_equal_approx(level.overlay.modulate.a, 1.0), "Jump skips the results fade")
-	check(level.resume_button.get_parent().get_child(3).has_focus() and not level.results_reveal.is_running(), "Skipped results still focus Retry")
+	check(level.retry_button.has_focus() and not level.results_reveal.is_running(), "Skipped results still focus Retry")
 	check(current_scene == level, "Skip press does not also trigger Retry")
 	await capture("/tmp/hoppy-boss-merge-result.png")
 	paused = false

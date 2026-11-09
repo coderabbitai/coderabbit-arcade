@@ -4,6 +4,8 @@ const BoothHeartbeat := preload("res://app/booth_heartbeat.gd")
 const NextPlayerCard := preload("res://app/next_player_card.gd")
 const BoothSoak := preload("res://app/booth_soak.gd")
 const BoothQrOverlay := preload("res://app/booth_qr_overlay.gd")
+const HowToPlay := preload("res://app/how_to_play.gd")
+const HowToPlayData := preload("res://app/how_to_play_data.gd")
 const ROUTES := {
 	"heroes_vs_villains": "res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn",
 	"code_city_brawl": "res://scenes/beatem_up/code_city_brawl.tscn",
@@ -67,6 +69,15 @@ var next_player_left := 0.0
 ## The soak test (app/booth_soak.gd), when the game was launched with `--soak=<minutes>`.
 var soak: BoothSoak
 var booth_qr: Control
+## How-to-play cards (app/how_to_play.gd): the first time a visitor enters a game, its card opens
+## over it. A visitor starts when the hub or the booth's attract route opens, so retries and
+## returns from a game's own menu skip the card. Test suites run with --script and get no cards
+## unless they set this; soaks get none either.
+var how_to_play_enabled := not ("--script" in OS.get_cmdline_args())
+## Game routes whose card this visitor has seen.
+var how_to_play_seen := {}
+## The card on screen, if any.
+var how_to_play: Node
 func _ready() -> void:
 	# The veil tween must keep running while a microgame has the tree paused.
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -119,6 +130,9 @@ func go(route: String, reason := "menu") -> bool:
 	busy = true
 	veil.mouse_filter = Control.MOUSE_FILTER_STOP
 	AudioService.play_ui(2)
+	if is_instance_valid(how_to_play):
+		how_to_play.discard()
+	how_to_play = null
 	await create_tween().tween_property(veil, "modulate:a", 1.0, 0.25).finished
 	var error := get_tree().change_scene_to_file(ROUTES[route])
 	if error != OK:
@@ -130,6 +144,11 @@ func go(route: String, reason := "menu") -> bool:
 			session_log.route_changed(route, reason)
 		if route == attract:
 			game_overs = 0
+		if route == attract or route == "hub":
+			how_to_play_seen.clear()
+		if wants_how_to_play(route):
+			how_to_play_seen[route] = true
+			_open_how_to_play(route)
 		if next_player:
 			next_player.hide()
 		if route == "hub":
@@ -259,7 +278,28 @@ func set_booth(enabled: bool) -> void:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 		print("AppRouter: booth mode on (idle return after %d s)" % int(idle_limit))
 
+## True when entering `route` now should open its how-to-play card.
+func wants_how_to_play(route: String) -> bool:
+	return how_to_play_enabled and soak == null and HowToPlayData.has_game(route) \
+		and not how_to_play_seen.has(route)
+
+## Opens the card once the new scene is in the tree (the change lands later this frame), so the card
+## is the root's last child and sees input first.
+func _open_how_to_play(route: String) -> void:
+	await get_tree().scene_changed
+	var scene := get_tree().current_scene
+	if scene == null or scene.scene_file_path != ROUTES[route]:
+		return
+	how_to_play = HowToPlay.open(get_tree(), route, HowToPlay.Mode.START)
+
 func _input(event: InputEvent) -> void:
+	note_input(event)
+
+## Resets the booth idle timer for a player's press or stick push. The how-to-play card swallows
+## input, so it calls this itself.
+func note_input(event: InputEvent) -> void:
+	if not booth:
+		return
 	if event is InputEventKey or event is InputEventMouseButton or event is InputEventJoypadButton \
 			or event is InputEventScreenTouch \
 			or (event is InputEventJoypadMotion and absf(event.axis_value) > STICK_DEADZONE):

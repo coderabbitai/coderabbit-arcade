@@ -12,7 +12,9 @@ Launch Godot 4.7.1 and choose **Beat'em Up → Play Code City Brawl** from the a
 | Jump | Space | A / Cross |
 | Attack; chain jab → swing → spinning kick | J or X | X / Square |
 | Pick up nearby weapon | E or K | Y / Triangle |
-| Pause / resume | Escape | Start |
+| Pause / resume | Escape or P | Start |
+
+The first entry from the menus opens the game's [how-to-play card](main-menu.md#how-to-play-cards) before the opening story scenes; the pause menu's **How to Play** shows it again.
 
 W/Up changes the ground lane. Jump is a separate height above that lane. Attacks have a forward reach and depth tolerance, so standing in another lane avoids melee. Jump above ground attacks and projectiles, or sidestep their telegraphs. Late attack input buffers one next combo step; a gap of more than 0.48 seconds after recovery resets the chain. Hoppy keeps his facing through a swing, so its hit area never flips mid-attack. Pressing the other way during or right after a swing turns him for the next one, buffered combo steps included. A quick tap mid-swing is remembered until the swing ends.
 

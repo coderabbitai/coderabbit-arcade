@@ -13,6 +13,10 @@ var body: AnimatedSprite2D
 var held: Node2D
 var visual_weapon := ""
 var block_time := 0.0
+## REVIEW's colour: the burst (reinvent/game.gd review_burst) and the card's REVIEW scene use it.
+const REVIEW_TINT := Color("79e0c4")
+## Hoppy while REVIEW protects him.
+const REVIEW_GLOW := Color(0.8, 1.25, 1.1)
 var hp := 3
 var facing := 1.0
 ## The way the stick last pointed past the deadzone. A swing keeps its facing, so a turn asked
@@ -40,6 +44,9 @@ var knock := Vector2.ZERO
 var controlled := true
 var review_charge := 0.0
 var review_cooldown := 0.0
+## REVIEW's own protection after it fires: hits can't land, and unlike the post-hit `invulnerable`
+## window Hoppy doesn't blink (the blink means "you were hit"); he glows REVIEW_GLOW instead.
+var review_guard := 0.0
 var pose_dt := 0.0
 var pose_move := Vector2.ZERO
 ## Drawn unarmed with no carry (knockout.gd sets it while he is airborne); the weapon is kept.
@@ -71,6 +78,7 @@ func tick(dt: float) -> void:
 	else: review_charge = 0.0
 	block_time = maxf(0,block_time-dt)
 	invulnerable = maxf(0,invulnerable-dt)
+	review_guard = maxf(0,review_guard-dt)
 	stagger = maxf(0,stagger-dt)
 	input_lock = maxf(0,input_lock-dt)
 	pickup_time = maxf(0,pickup_time-dt)
@@ -118,7 +126,9 @@ func tick(dt: float) -> void:
 		rise -= 1150*dt
 		if height <= 0: rise = 0
 	body.position.y = -height
-	body.modulate.a = .4 if invulnerable > 0 and int(invulnerable*14)%2==0 else 1.0
+	body.modulate = REVIEW_GLOW if review_guard > 0 else Color.WHITE
+	# REVIEW's glow wins over a leftover post-hit blink: the blink means "you were hit".
+	body.modulate.a = .4 if invulnerable > 0 and review_guard <= 0 and int(invulnerable*14)%2==0 else 1.0
 	var pose := "idle"
 	var base := false
 	if stagger > 0: pose = "hurt"
@@ -215,7 +225,7 @@ func activate_review() -> bool:
 	if not arena.capabilities.review or review_cooldown>0 or hp<=0: return false
 	review_cooldown = 8.0
 	review_charge = 0.0
-	invulnerable = maxf(invulnerable,.85)
+	review_guard = .85
 	block_time = .85
 	arena.review_burst(position)
 	return true
@@ -280,7 +290,7 @@ func apply_effect(kind: String) -> void:
 		effects[kind] = {"speed_surge":8.0,"confused":3.0,"strength_down":5.0,"overwhelmed":5.0}.get(kind,4.0)
 
 func take_hit(source: Vector2, status := "", force := 180.0) -> bool:
-	if hp <= 0 or invulnerable > 0 or height > 38: return false
+	if hp <= 0 or invulnerable > 0 or review_guard > 0 or height > 38: return false
 	invulnerable = 1.25
 	if shield:
 		shield = false
