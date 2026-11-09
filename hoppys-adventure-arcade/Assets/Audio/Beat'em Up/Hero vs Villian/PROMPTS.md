@@ -18,7 +18,7 @@ Issue #98: Erik's Suno takes for these two stages fit them less well than the Re
 - **The Generation Floor** (stage 1, a bright white and orange expo hall with the easiest enemies), 124 BPM: a heroic brawler groove, not a toy commercial. Syncopated FM slap bass popping the octave, brass stabs (on the one and the anticipation in A, on the offbeats in B), a high 25% square sparkle arpeggio sweeping left to right, and a breakbeat with ghost snares and claps. The brassy FM lead is doubled an octave up on a square and opens every A section on the rising F-A-C motif, with a dotted-eighth ping-pong echo. In the intro, brass hits ring the motif twice, the break kicks in, and a snare roll leads into bar 1. Form: A, A with a harmony, B, B with harmony (F–F–Dm–B♭–F–C–B♭–C; B♭–C–Am–Dm–B♭–C–Gm–C).
 - **The Agentic Core** (stage 3, a dark red and green machine core and the fastest stage, with 0.32 s drone tells), 134 BPM: a dark, driving brawler that gets going at once. The old take's 27.9 s intro is now 7.2 s. It has a relentless, gritty 16th-note FM bass with a triangle sub, a heavy break with metallic hits on the "and" of four, brass hits, and a scanning arpeggio that pans across the stereo field. The cold FM lead plays the villains' falling C-A♭-F motif. Short 6-bit data-glitch stutters close the phrases of the last section. Form: A sparse (motif only), A, B with harmony, B with glitches (Fm–Fm–D♭–D♭–B♭m–B♭m–C–C; D♭–E♭–Fm–Fm–D♭–E♭–C–C).
 
-Both are 44.1 kHz stereo. Every voice, echo and stutter that runs past the file end wraps to the loop start, and the output low-pass starts the body in its settled loop state, so the seam has no gap, fade or click: after encoding, the wrap step is 396 and 306 against a 99th-percentile step of about 4,000. A soft limiter above 0.6 holds the peaks.
+Both are 44.1 kHz stereo. Every voice, echo and stutter that runs past the file end wraps to the loop start, and the output low-pass starts the body in its settled loop state, with the difference ramped into the intro's last 5 ms. Neither the seam nor the first pass from the intro into the loop has a gap, fade or click: after encoding, the wrap step is 352 and 282, and the intro-to-loop step is 430 and 348, against a 99th-percentile step of about 4,000. A soft limiter above 0.6 holds the peaks.
 
 Rebuild from the repository root, then encode with reference libvorbis (`brew install vorbis-tools`):
 
@@ -29,7 +29,7 @@ oggenc -q 6 -o "hoppys-adventure-arcade/Assets/Audio/Beat'em Up/Hero vs Villian/
 oggenc -q 6 -o "hoppys-adventure-arcade/Assets/Audio/Beat'em Up/Hero vs Villian/heroes_villains_agentic_core.ogg" /tmp/hvv/heroes_villains_agentic_core.wav
 ```
 
-The WAVs are byte-for-byte reproducible (SHA-256 `91a2c18b…ebe5` and `23bb2a71…6961`). The OGGs measure −14.0 and −13.9 LUFS integrated and −1.3 and −1.5 dBTP, and decode to exactly 3,072,774 and 2,843,463 frames.
+The WAVs are byte-for-byte reproducible (SHA-256 `0164b029…f83c` and `d25faa8d…3973`). The OGGs measure −14.0 and −13.9 LUFS integrated and −1.3 and −1.5 dBTP, and decode to exactly 3,072,774 and 2,843,463 frames.
 
 ## heroes_villains_review_gauntlet: "The Review Gauntlet"
 

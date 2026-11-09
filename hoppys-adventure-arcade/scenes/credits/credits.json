@@ -65,7 +65,7 @@
     },
     {
      "title": "The Generation Floor",
-     "used_by": "Original Heroes vs. Villains stage 1 music"
+     "used_by": "Heroes vs. Villains stage 1 (retired)"
     },
     {
      "title": "AI SLOP",
@@ -81,11 +81,27 @@
     },
     {
      "title": "The Agentic Core",
-     "used_by": "Original Heroes vs. Villains stage 3 music"
+     "used_by": "Heroes vs. Villains stage 3 (retired)"
     },
     {
      "title": "Machine-Speed Hacker",
      "used_by": "Heroes vs. Villains final boss"
+    }
+   ]
+  },
+  {
+   "title": "Procedural music",
+   "lines": [
+    "Original chiptunes generated in code for this game, CC0 1.0"
+   ],
+   "tracks": [
+    {
+     "title": "The Generation Floor",
+     "used_by": "Heroes vs. Villains stage 1"
+    },
+    {
+     "title": "The Agentic Core",
+     "used_by": "Heroes vs. Villains stage 3"
     }
    ]
   }

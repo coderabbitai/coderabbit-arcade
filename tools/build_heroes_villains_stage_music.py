@@ -523,6 +523,13 @@ def render(stage: Stage) -> tuple[list[int], int]:
         previous = 0.0
         for i, sample in enumerate(channel):
             if i == score.loop_start:
+                # The body starts in its settled loop state so the seam is continuous.
+                # Ramp the difference into the intro's last 5 ms so the first pass
+                # into the body has no step either.
+                step = (1 - stage.lowpass) * (previous_body - previous)
+                ramp = round(0.005 * RATE)
+                for k in range(ramp):
+                    out[i - ramp + k] += step * (k + 1) / (ramp + 1)
                 previous = previous_body
             previous += stage.lowpass * (sample - previous)
             out[i] = previous
