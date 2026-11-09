@@ -12,6 +12,7 @@ const StoryScene = preload("res://modes/beatem_up/story_scene.gd")
 const VictoryScreen = preload("res://modes/beatem_up/victory_screen.gd")
 const Minimap = preload("res://modes/beatem_up/minimap.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
+const HowToPlay = preload("res://app/how_to_play.gd")
 const PAUSABLE := ["combat","intro","ending","stage_enter","stage_exit","knockout","boss_victory","celebration"]
 ## The minimap is up while Hoppy is in a room, and hidden under the story scenes and end screens.
 const MINIMAP_STATES := ["stage_enter","combat","stage_exit","boss_victory","finisher","knockout"]
@@ -903,6 +904,11 @@ func show_overlay(title: String, detail: String, action: String, callback: Calla
 	primary = Style.button(action,58)
 	panel.add_child(primary)
 	primary.pressed.connect(callback)
+	if state == "paused":
+		var how_to := Style.button("How to Play",54)
+		panel.add_child(how_to)
+		how_to.pressed.connect(func() -> void:
+			if state == "paused": HowToPlay.open(get_tree(), "code_city_brawl", HowToPlay.Mode.PAUSE, how_to))
 	if state != "won":
 		var back := Style.button("Return to Beat'em Up menu",54)
 		panel.add_child(back)
@@ -983,6 +989,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		if state in PAUSABLE: pause("Chain three attacks for a knockback finisher. Jump or change lanes to dodge.\nApproach a weapon and press %s to equip it." % Prompts.either("E", &"brawl_pickup"))
 		elif state=="paused": resume()
 		get_viewport().set_input_as_handled()
+
+## True while the player has the game paused. The how-to-play card checks this before unpausing,
+## so focus loss under the card leaves the pause menu working.
+func is_player_paused() -> bool:
+	return state == "paused"
 
 func resume() -> void:
 	if state!="paused": return

@@ -13,7 +13,7 @@ dest_files=["res://.godot/imported/heroes_villains_generation_floor.ogg-a50c90dd
 [params]
 
 loop=false
-loop_offset=9.404082
-bpm=116.851
+loop_offset=7.741927
+bpm=124
 beat_count=0
 bar_beats=4

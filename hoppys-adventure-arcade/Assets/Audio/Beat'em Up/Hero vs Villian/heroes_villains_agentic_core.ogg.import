@@ -13,7 +13,7 @@ dest_files=["res://.godot/imported/heroes_villains_agentic_core.ogg-8b8a60baa568
 [params]
 
 loop=false
-loop_offset=27.898776
-bpm=119.488
+loop_offset=7.164172
+bpm=134
 beat_count=0
 bar_beats=4

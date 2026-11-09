@@ -22,7 +22,9 @@ A Godot 4 arcade collection starring Hoppy, the CodeRabbit mascot. It has a reac
 | Move | A/D or arrow keys | Left stick / D-pad |
 | Jump | Space | A / Cross |
 | Attack | J / X | X / Square |
-| Pause | Escape | Start |
+| Pause | Escape or P | Start |
+
+Each game opens with a short **How to Play** card: a few animated pages showing the goal, these controls for keyboard and controller, and tips. Jump, attack or confirm turns the page, ←/→ flip back and forth, and pause skips straight to play. Pages turn by themselves every 7 seconds, and the pause menu's **How to Play** button shows the card again. See [main-menu.md](docs/main-menu.md#how-to-play-cards).
 
 In Orbital Ops' zero-gravity bay, hold Jump or Up to rise, hold Down to descend, and release to brake.
 

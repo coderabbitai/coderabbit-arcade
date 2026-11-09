@@ -4,9 +4,11 @@ extends CanvasLayer
 
 const Style = preload("res://scenes/runner/ui/hud_style.gd")
 const Prompts := preload("res://app/controller_prompts.gd")
+const HowToPlay := preload("res://app/how_to_play.gd")
 
 var game: Node
 var resume_button: Button
+var how_to_play_button: Button
 
 func _ready() -> void:
 	var ui := Control.new()
@@ -38,6 +40,10 @@ func _ready() -> void:
 	column.add_child(resume_button)
 	buttons.append(resume_button)
 	resume_button.pressed.connect(func() -> void: _call_game(&"resume"))
+	how_to_play_button = Style.button("How to Play", 52)
+	column.add_child(how_to_play_button)
+	buttons.append(how_to_play_button)
+	how_to_play_button.pressed.connect(_show_how_to_play)
 	var restart := Style.button("Restart", 52)
 	column.add_child(restart)
 	buttons.append(restart)
@@ -65,6 +71,11 @@ func _on_paused_changed(is_paused: bool) -> void:
 	visible = is_paused
 	if is_paused:
 		resume_button.grab_focus()
+
+## Opens the runner's how-to-play card over this menu; the run stays paused under it.
+func _show_how_to_play() -> void:
+	if visible:
+		HowToPlay.open(get_tree(), "runner_game", HowToPlay.Mode.PAUSE, how_to_play_button)
 
 func _call_game(method: StringName) -> void:
 	if game != null and game.has_method(method):

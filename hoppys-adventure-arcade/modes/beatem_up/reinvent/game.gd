@@ -7,6 +7,7 @@ const Boss = preload("res://modes/beatem_up/reinvent/boss.gd")
 const StageFlow = preload("res://modes/beatem_up/stage_flow.gd")
 const Knockout = preload("res://modes/beatem_up/knockout.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
+const HowToPlay = preload("res://app/how_to_play.gd")
 const VictoryScreen = preload("res://modes/beatem_up/victory_screen.gd")
 const Minimap = preload("res://modes/beatem_up/minimap.gd")
 ## The minimap is up while the CodeRabbit is in a room, and hidden under cards and end screens.
@@ -822,6 +823,11 @@ func show_overlay(title: String, detail: String, action: String, callback: Calla
 	primary = Style.button(action,58)
 	panel.add_child(primary)
 	primary.pressed.connect(callback)
+	if state == "paused":
+		var how_to := Style.button("How to Play",54)
+		panel.add_child(how_to)
+		how_to.pressed.connect(func() -> void:
+			if state == "paused": HowToPlay.open(get_tree(), "heroes_vs_villains", HowToPlay.Mode.PAUSE, how_to))
 	if state != "won":
 		var back := Style.button("Return to Beat'em Up menu",54)
 		panel.add_child(back)
@@ -855,6 +861,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif state=="cards" and event.is_action_pressed("heroes_popup_advance") and not event.is_echo():
 		if card_clock>.25: next_card()
 		get_viewport().set_input_as_handled()
+
+## True while the player has the game paused. The how-to-play card checks this before unpausing,
+## so focus loss under the card leaves the pause menu working.
+func is_player_paused() -> bool:
+	return state == "paused"
 
 func resume() -> void:
 	if state!="paused": return
@@ -942,7 +953,17 @@ func clear_owned_threats(owner_node: Node) -> void:
 			warnings[i].node.queue_free();warnings.remove_at(i)
 
 func review_burst(pos: Vector2) -> void:
-	fx("capabilities_fx","review_burst",pos,2.0,.65)
+	# Mint (REVIEW_TINT) and under every actor, so it reads as Hoppy's power reaching out, not a hit
+	# on him; stunned enemies turn blue (enemy.gd STUNNED_TINT).
+	var burst := Art.sprite("capabilities_fx","review_burst",.8,false)
+	burst.position = pos
+	burst.self_modulate = Player.REVIEW_TINT
+	# On the floor layer: over the room panorama, under every actor.
+	ground.add_child(burst)
+	var grow := burst.create_tween()
+	grow.tween_property(burst,"scale",Vector2.ONE*2.2,.3).set_ease(Tween.EASE_OUT)
+	grow.parallel().tween_property(burst,"modulate:a",0.0,.65)
+	grow.tween_callback(burst.queue_free)
 	sound("unlock",pos)
 	for enemy in enemies+bosses:
 		if is_instance_valid(enemy) and not enemy.dead and enemy.position.distance_to(pos)<245: enemy.stun(1.5 if not enemy.is_boss else .7)

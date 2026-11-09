@@ -6,7 +6,7 @@ Implemented in Godot 4.7.1 from the current shared GDD's Platformer section, the
 
 Choose **Platformer Game → Play Enchanted Repo**. Direct scene: `res://scenes/platformer/enchanted_repo.tscn`.
 
-Move with A/D or arrows, jump with Space/W/up, swipe with J/X, pause with Escape. Existing gamepad mappings remain stick/D-pad movement, A/Cross jump, X/Square attack, and Start pause. Release Jump early for a short hop. Descending onto an enemy bounces Hoppy; the Monolith takes damage only in its recovery windows.
+Move with A/D or arrows, jump with Space/W/up, swipe with J/X, pause with Escape or P. Existing gamepad mappings remain stick/D-pad movement, A/Cross jump, X/Square attack, and Start pause. Release Jump early for a short hop. Descending onto an enemy bounces Hoppy; the Monolith takes damage only in its recovery windows. Entering the level from the menus opens its [how-to-play card](main-menu.md#how-to-play-cards); the pause menu's **How to Play** shows it again.
 
 Cross the forest and ruined castle, defeat the Legacy Monolith, then land on or swipe the unlocked MERGE button. Standing beside it or rising through it does not finish the level. Retry starts a completely fresh Enchanted Repo run.
 
