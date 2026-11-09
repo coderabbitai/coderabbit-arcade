@@ -200,7 +200,11 @@ func run() -> void:
 	var cancel := InputEventAction.new()
 	cancel.action = "ui_cancel"
 	cancel.pressed = true
-	current_scene._unhandled_input(cancel)
+	# Real input dispatch, so a focused control that swallowed ui_cancel would fail this check.
+	Input.parse_input_event(cancel)
+	var release := cancel.duplicate() as InputEventAction
+	release.pressed = false
+	Input.parse_input_event(release)
 	check(await settles_on("res://scenes/main_menu/main_menu.tscn"), "ui_cancel on Level Select returns to the hub")
 	print("PLATFORMER SMOKE: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
 	await frames(35)
