@@ -15,11 +15,13 @@ func capture(path: String) -> void:
 ## Waits up to 3 s for the router to open `path` and finish its fade (it refuses routes while busy).
 func settles_on(path: String) -> bool:
 	var router := root.get_node("AppRouter")
-	for i in 180:
+	# A wall-clock deadline: headless frames can run far faster than the router's 0.5 s of fades.
+	var deadline := Time.get_ticks_msec() + 3000
+	while Time.get_ticks_msec() < deadline:
 		if current_scene != null and current_scene.scene_file_path == path and not router.busy:
 			return true
 		await process_frame
-	return false
+	return current_scene != null and current_scene.scene_file_path == path and not router.busy
 func run() -> void:
 	for binding in [["move_left", KEY_LEFT], ["move_right", KEY_RIGHT], ["jump", KEY_UP]]:
 		var key := InputEventKey.new()
