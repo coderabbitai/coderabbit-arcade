@@ -59,6 +59,8 @@ var overlay_card: Control
 var results_reveal: Tween
 var exit_sprite: AnimatedSprite2D
 var music: AudioStreamPlayer
+## The hub track's process mode, restored when the level exits.
+var hub_music_mode := Node.PROCESS_MODE_INHERIT
 var stage_clear: AudioStreamPlayer
 var sfx_players := {}
 var encounter := "approach"
@@ -353,6 +355,7 @@ func _exit_tree() -> void:
 	_cancel_knockout()
 	if results_reveal: results_reveal.kill()
 	get_tree().paused = false
+	AudioService.music.process_mode = hub_music_mode
 	AudioService.music.stream_paused = false
 
 func _sound(clip: String) -> void:
@@ -513,6 +516,10 @@ func _setup_session() -> void:
 	player.hurt.connect(func(): _sound("hurt"))
 	player.swiped.connect(func(): AudioService.play_ui(2))
 	_update_hud()
+	# Hold the hub track paused under the level. Pausing the tree (pause menu, how-to-play card) and
+	# unpausing it un-pauses a pausable player, so the hub music came back on top of the level's.
+	hub_music_mode = AudioService.music.process_mode
+	AudioService.music.process_mode = Node.PROCESS_MODE_ALWAYS
 	AudioService.music.stream_paused = true
 	music = AudioStreamPlayer.new()
 	music.bus = "Music"

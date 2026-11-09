@@ -3,6 +3,8 @@ const Boss = preload("res://modes/platformer/merge_monster.gd")
 const Projectile = preload("res://modes/platformer/branch_projectile.gd")
 const LEVEL_MUSIC = preload("res://Assets/Audio/Platformer/Bay Area Blitz/bay_area_blitz_level.ogg")
 const MUSIC = preload("res://Assets/Audio/Platformer/Bay Area Blitz/bay_area_blitz_boss.ogg")
+## Copies drawn on each side of a repeating background strip.
+const REPEATS := 4
 var terrain_crops := {}
 
 func _init() -> void:
@@ -82,6 +84,9 @@ func _background() -> void:
 	var near := Parallax2D.new()
 	near.scroll_scale = Vector2(0.65, 0)
 	near.repeat_size = Vector2(900, 0)
+	# One copy per side leaves the screen's right edge bare for a moment, so a house popped in from
+	# nowhere. Four copies per side cover the widest screen the expand aspect allows.
+	near.repeat_times = REPEATS
 	near.z_index = -1
 	add_child(near)
 	for x in [100, 480, 780]:
@@ -93,6 +98,7 @@ func _background() -> void:
 	fog.scroll_scale = Vector2(0.85, 0)
 	fog.autoscroll = Vector2(15, 0)
 	fog.repeat_size = Vector2(800, 0)
+	fog.repeat_times = REPEATS
 	fog.z_index = 3
 	add_child(fog)
 	var curl := Art.sprite("street_kit", "fog", Vector2(400, 615))

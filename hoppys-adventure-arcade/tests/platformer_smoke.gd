@@ -86,6 +86,10 @@ func run() -> void:
 	Input.parse_input_event(esc)
 	await frames(2)
 	check(not paused, "Pause input resumes while tree paused")
+	check(root.get_node("AudioService").music.stream_paused, "The hub music stays silent after a pause and resume")
+	for strip in level.find_children("*", "Parallax2D", true, false):
+		# A 21:9 screen at 720 high is 1680 wide; every copy has to reach past it, or art pops in.
+		check(strip.repeat_size.x * strip.repeat_times >= 1680 + strip.repeat_size.x, "Background strip covers a wide screen (%s)" % strip.repeat_times)
 	player.boost = 0
 	player.position = Vector2(1650, 500)
 	player.velocity = Vector2.ZERO
@@ -198,6 +202,7 @@ func run() -> void:
 	await frames(3)
 	await capture("/tmp/hoppy-level-select.png")
 	check(not root.get_node("AudioService").music.stream_paused, "Menu music restored")
+	check(root.get_node("AudioService").music.process_mode == Node.PROCESS_MODE_INHERIT, "The hub music pauses with the tree again outside the level")
 	print("PLATFORMER SMOKE: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
 	await frames(35)
 	await root.get_node("AudioService").settle()
