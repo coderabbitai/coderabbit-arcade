@@ -1,6 +1,5 @@
 extends Control
 const Style = preload("res://scenes/main_menu/menu_style.gd")
-var selecting := false
 var column: VBoxContainer
 func _ready() -> void:
 	theme = Style.theme()
@@ -22,32 +21,14 @@ func _ready() -> void:
 	column = VBoxContainer.new()
 	column.add_theme_constant_override("separation", 20)
 	margin.add_child(column)
-	_main()
+	_select()
 func _clear() -> void:
 	for child in column.get_children():
 		column.remove_child(child)
 		child.queue_free()
-func _main() -> void:
-	selecting = false
-	_clear()
-	column.add_child(Style.label("HOPPY'S ADVENTURE ARCADE / 01", 16, Style.MINT))
-	column.add_child(Style.label("PLATFORMER", 52))
-	column.add_child(Style.label("Small rabbit. Big commits.", 22))
-	column.add_child(Style.label("Cross the city, explore orbit, or brave the enchanted forest. Clear the blockers and ship the build.", 17))
-	var select := Style.button("Level Select  →")
-	column.add_child(select)
-	select.pressed.connect(_select)
-	var back := Style.button("Return to Main Menu")
-	column.add_child(back)
-	back.pressed.connect(func(): AppRouter.go("hub"))
-	var quit := Style.button("Quit Game")
-	column.add_child(quit)
-	quit.pressed.connect(func(): AppRouter.quit_game())
-	select.grab_focus()
 func _select() -> void:
-	selecting = true
 	_clear()
-	column.add_child(Style.label("CHOOSE YOUR NEXT COMMIT", 16, Style.MINT))
+	column.add_child(Style.label("HOPPY'S ADVENTURE ARCADE / 01  ·  PLATFORMER", 16, Style.MINT))
 	column.add_child(Style.label("LEVEL SELECT", 42))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 22)
@@ -86,10 +67,9 @@ func _select() -> void:
 			play.pressed.connect(func(): AppRouter.go("orbital_ops"))
 		else:
 			play.pressed.connect(func(): AppRouter.go("enchanted_repo"))
-	var back := Style.button("← Back")
+	var back := Style.button("← Main Menu")
 	column.add_child(back)
-	back.pressed.connect(_main)
+	back.pressed.connect(func(): AppRouter.go("hub"))
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
-		if selecting: _main()
-		else: AppRouter.go("hub")
+		AppRouter.go("hub")

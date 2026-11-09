@@ -4,7 +4,7 @@ Implemented October 1, 2026 in Godot 4.7.1. Source references: the current share
 
 ## Play
 
-Launch the project, choose **Platformer Game → Level Select → Play Orbital Ops**. Direct scene: `res://scenes/platformer/orbital_ops.tscn`.
+Launch the project, choose **Platformer Game → Play Orbital Ops**. Direct scene: `res://scenes/platformer/orbital_ops.tscn`.
 
 - Move: A/D, left/right arrows, gamepad stick or D-pad.
 - Jump: Space/W/up, gamepad A/Cross. Release early for a shorter normal-gravity jump.

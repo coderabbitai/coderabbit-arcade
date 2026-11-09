@@ -12,6 +12,16 @@ func capture(path: String) -> void:
 	if DisplayServer.get_name() != "headless":
 		await RenderingServer.frame_post_draw
 		root.get_texture().get_image().save_png(path)
+## Waits up to 3 s for the router to open `path` and finish its fade (it refuses routes while busy).
+func settles_on(path: String) -> bool:
+	var router := root.get_node("AppRouter")
+	# A wall-clock deadline: headless frames can run far faster than the router's 0.5 s of fades.
+	var deadline := Time.get_ticks_msec() + 3000
+	while Time.get_ticks_msec() < deadline:
+		if current_scene != null and current_scene.scene_file_path == path and not router.busy:
+			return true
+		await process_frame
+	return current_scene != null and current_scene.scene_file_path == path and not router.busy
 func run() -> void:
 	for binding in [["move_left", KEY_LEFT], ["move_right", KEY_RIGHT], ["jump", KEY_UP]]:
 		var key := InputEventKey.new()
@@ -198,11 +208,29 @@ func run() -> void:
 	paused = false
 	root.get_node("AppRouter").go("platformer")
 	await create_timer(0.7).timeout
-	current_scene._select()
+	check(current_scene.column.get_child(1).text == "LEVEL SELECT", "Platformer opens straight on Level Select")
 	await frames(3)
 	await capture("/tmp/hoppy-level-select.png")
 	check(not root.get_node("AudioService").music.stream_paused, "Menu music restored")
 	check(root.get_node("AudioService").music.process_mode == Node.PROCESS_MODE_INHERIT, "The hub music pauses with the tree again outside the level")
+	# Both ways back from Level Select land on the hub.
+	var back: Button = current_scene.column.get_child(current_scene.column.get_child_count() - 1)
+	check(back.text == "← Main Menu", "Level Select offers the way back to the hub")
+	back.pressed.emit()
+	check(await settles_on("res://scenes/main_menu/main_menu.tscn"), "← Main Menu returns to the hub")
+	check(await root.get_node("AppRouter").go("platformer") and await settles_on("res://scenes/platformer/platformer_menu.tscn"), "Platformer reopens on Level Select")
+	if current_scene.scene_file_path != "res://scenes/platformer/platformer_menu.tscn":
+		quit(failures)
+		return
+	var cancel := InputEventAction.new()
+	cancel.action = "ui_cancel"
+	cancel.pressed = true
+	# Real input dispatch, so a focused control that swallowed ui_cancel would fail this check.
+	Input.parse_input_event(cancel)
+	var release := cancel.duplicate() as InputEventAction
+	release.pressed = false
+	Input.parse_input_event(release)
+	check(await settles_on("res://scenes/main_menu/main_menu.tscn"), "ui_cancel on Level Select returns to the hub")
 	print("PLATFORMER SMOKE: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
 	await frames(35)
 	await root.get_node("AudioService").settle()
