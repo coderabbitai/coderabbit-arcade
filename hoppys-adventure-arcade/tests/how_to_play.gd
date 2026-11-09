@@ -95,6 +95,7 @@ func run() -> void:
 	await booth_idle_still_counts()
 	await focus_loss_keeps_the_pause_menu()
 	await every_route_opens_its_card()
+	await runner_card_is_quiet()
 	await pause_menus_reopen_it()
 	router.how_to_play_enabled = false
 	await visit("hub")
@@ -458,6 +459,18 @@ func every_route_opens_its_card() -> void:
 		tap(KEY_ESCAPE)
 		await handed_back()
 		check(card() == null and not paused, "%s plays once its card closes" % route)
+
+## The runner's audio processes through the card's pause; Hoppy isn't moving, so no footsteps.
+func runner_card_is_quiet() -> void:
+	await visit("hub")
+	await visit("runner_game")
+	var audio := current_scene.find_child("RunnerAudio", true, false)
+	check(card() != null and audio != null, "runner_game shows its card")
+	if audio == null:
+		return
+	var steps: int = audio._tread
+	await wait(1.5)
+	check(card() != null and audio._tread == steps, "No footsteps play under the runner's card (%d)" % (audio._tread - steps))
 
 func reopen(button: Button, route: String) -> void:
 	check(button != null and button.visible, "%s's pause menu has a How to Play button" % route)

@@ -172,7 +172,9 @@ func _process(delta: float) -> void:
 		_pitch = 1.0 if _clear_remaining > 0.0 else lerpf(_pitch, target, 1.0 - exp(-5.0 * delta))
 	if _audio_service != null and _audio_service.has_method("set_music_pitch"):
 		_audio_service.set_music_pitch(_pitch)
-	if _running and _grounded and not _rolling:
+	# This node processes while the tree is paused (the how-to-play card pauses it), but Hoppy isn't
+	# running then, so no footsteps.
+	if _running and _grounded and not _rolling and not get_tree().paused:
 		_step_time += delta
 		if _step_time >= lerpf(0.42, 0.20, clampf(_normalized, 0.0, 1.0)):
 			_step_time = 0.0
