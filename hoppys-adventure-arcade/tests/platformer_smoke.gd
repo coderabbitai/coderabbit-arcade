@@ -176,7 +176,7 @@ func run() -> void:
 	paused = false
 	root.get_node("AppRouter").go("platformer")
 	await create_timer(0.7).timeout
-	current_scene._select()
+	check(current_scene.column.get_child(1).text == "LEVEL SELECT", "Platformer opens straight on Level Select")
 	await frames(3)
 	await capture("/tmp/hoppy-level-select.png")
 	check(not root.get_node("AudioService").music.stream_paused, "Menu music restored")

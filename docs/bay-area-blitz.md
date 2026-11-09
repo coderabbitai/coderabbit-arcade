@@ -4,7 +4,7 @@ Implemented September 20, 2026 against Godot 4.7.1. Design references: the share
 
 ## Play
 
-Run the project normally: **Platformer Game → Level Select → Play Bay Area Blitz**. For direct iteration, run `res://scenes/platformer/bay_area_blitz.tscn`.
+Run the project normally: **Platformer Game → Play Bay Area Blitz**. For direct iteration, run `res://scenes/platformer/bay_area_blitz.tscn`.
 
 - Move: A/D, left/right arrows, controller left stick or D-pad.
 - Jump: Space/W/up arrow, controller A/Cross. Release early for a shorter jump.

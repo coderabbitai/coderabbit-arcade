@@ -4,7 +4,7 @@ Implemented in Godot 4.7.1 from the current shared GDD's Platformer section, the
 
 ## Play
 
-Choose **Platformer Game → Level Select → Play Enchanted Repo**. Direct scene: `res://scenes/platformer/enchanted_repo.tscn`.
+Choose **Platformer Game → Play Enchanted Repo**. Direct scene: `res://scenes/platformer/enchanted_repo.tscn`.
 
 Move with A/D or arrows, jump with Space/W/up, swipe with J/X, pause with Escape. Existing gamepad mappings remain stick/D-pad movement, A/Cross jump, X/Square attack, and Start pause. Release Jump early for a short hop. Descending onto an enemy bounces Hoppy; the Monolith takes damage only in its recovery windows.
 
