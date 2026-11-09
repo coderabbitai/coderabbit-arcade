@@ -10,6 +10,10 @@ uniform float bend = 0.0;
 uniform mat4 bend_frame = mat4(1.0);
 uniform bool floor_mode = false;
 uniform bool window_mode = false;
+// The corridor wraps `scroll` every 96 m, so every floor pattern along z must repeat in 96 m:
+// 2 m texture tiles at 1.75x (84 cycles), 3 m panels (32), and chevrons every 1.2 m (80).
+const float WRAP = 96.0;
+const float DETAIL = 1.75;
 varying vec3 surface;
 void vertex() {
  surface = (inverse(bend_frame) * MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -19,7 +23,7 @@ void vertex() {
 void fragment() {
  vec2 uv = UV;
  if (floor_mode) { uv = vec2(surface.x, surface.z-scroll)*0.5; }
- float grain = texture(detail_map, uv*1.8).r;
+ float grain = texture(detail_map, uv*DETAIL).r;
  vec3 base = tint.rgb * COLOR.rgb;
  float edge = 1.0;
  if (floor_mode) {
@@ -31,7 +35,9 @@ void fragment() {
   float seam = smoothstep(0.016-aa,0.016+aa,distance);
   float bevel = 1.0-smoothstep(0.022,0.065,distance);
   edge = mix(0.20,1.0,seam)+bevel*seam*0.24;
-  float panel_variation = fract(sin(dot(floor(p/vec2(2.0,3.0)),vec2(12.989,78.233)))*43758.5453);
+  vec2 panel = floor(p/vec2(2.0,3.0));
+  panel.y = mod(panel.y, WRAP/3.0);
+  float panel_variation = fract(sin(dot(panel,vec2(12.989,78.233)))*43758.5453);
   base *= mix(0.88,1.07,panel_variation);
  }
  float brush = texture(detail_map,uv*vec2(1.0,55.0)).r;
@@ -39,7 +45,7 @@ void fragment() {
  if(floor_mode) {
   float lane = 1.0-smoothstep(0.01,0.025,abs(abs(surface.x)-1.0));
   float edge_strip = smoothstep(3.36,3.40,abs(surface.x))*(1.0-smoothstep(3.7,3.74,abs(surface.x)));
-  float chevron = step(0.5,fract((surface.z-scroll)*0.8+abs(surface.x)*1.4));
+  float chevron = step(0.5,fract((surface.z-scroll)*(80.0/WRAP)+abs(surface.x)*1.4));
   ALBEDO = mix(ALBEDO,vec3(0.15,0.23,0.27),lane*0.7);
   vec2 tile = fract(vec2(surface.x,surface.z-scroll)/vec2(2.0,3.0))*vec2(2.0,3.0);
   vec2 fastener = min(tile,vec2(2.0,3.0)-tile)-vec2(0.13);
@@ -50,7 +56,7 @@ void fragment() {
  }
  ROUGHNESS = mix(0.72,0.36,metallic);
  METALLIC = metallic;
- NORMAL_MAP = normalize(vec3((texture(detail_map,uv*1.8+vec2(0.008,0.0)).r-grain)*0.8,(texture(detail_map,uv*1.8+vec2(0.0,0.008)).r-grain)*0.8,1.0))*0.5+0.5;
+ NORMAL_MAP = normalize(vec3((texture(detail_map,uv*DETAIL+vec2(0.008,0.0)).r-grain)*0.8,(texture(detail_map,uv*DETAIL+vec2(0.0,0.008)).r-grain)*0.8,1.0))*0.5+0.5;
  NORMAL_MAP_DEPTH = 0.18;
  EMISSION = ALBEDO * (0.20 + glow*(0.88+0.12*sin(clock*4.0+surface.z)));
  if (window_mode) {
