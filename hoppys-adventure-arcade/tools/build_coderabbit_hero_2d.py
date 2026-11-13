@@ -60,33 +60,34 @@ def lerp(a: np.ndarray, b: np.ndarray, t: np.ndarray) -> np.ndarray:
     return a + (b - a) * t
 
 
-def below_head(alpha: np.ndarray, cols: int, rows: int) -> np.ndarray:
+def figure_rows(solid: np.ndarray, cell: tuple[int, int]):
+    """(y0, x0, top, bottom) of the figure in each cell, cell-local; None for an empty cell."""
+    cw, ch = cell
+    for y0 in range(0, solid.shape[0], ch):
+        for x0 in range(0, solid.shape[1], cw):
+            ys = np.nonzero(solid[y0:y0 + ch, x0:x0 + cw].any(1))[0]
+            yield y0, x0, (ys[0], ys[-1]) if ys.size else None
+
+
+def below_head(solid: np.ndarray, cell: tuple[int, int]) -> np.ndarray:
     """Everything under the top 42% of each standing cell's figure (lying cells: nothing)."""
-    mask = np.zeros(alpha.shape, bool)
-    for cy in range(rows):
-        for cx in range(cols):
-            y0, x0 = cy * CELL, cx * CELL
-            ys = np.nonzero((alpha[y0:y0 + CELL, x0:x0 + CELL] > 40).any(1))[0]
-            if ys.size == 0 or ys[-1] - ys[0] < 60:
-                continue
-            mask[y0 + ys[0] + int(0.42 * (ys[-1] - ys[0])):y0 + CELL, x0:x0 + CELL] = True
+    cw, ch = cell
+    mask = np.zeros(solid.shape, bool)
+    for y0, x0, span in figure_rows(solid, cell):
+        if span is None or span[1] - span[0] < 60:
+            continue
+        mask[y0 + span[0] + int(0.42 * (span[1] - span[0])):y0 + ch, x0:x0 + cw] = True
     return mask
 
 
-def boots_mask(alpha: np.ndarray, cols: int, rows: int) -> np.ndarray:
+def boots_mask(solid: np.ndarray, cell: tuple[int, int]) -> np.ndarray:
     """The bottom band of each standing cell, where Hoppy's boots are."""
-    mask = np.zeros(alpha.shape, bool)
-    for cy in range(rows):
-        for cx in range(cols):
-            y0, x0 = cy * CELL, cx * CELL
-            cell = alpha[y0:y0 + CELL, x0:x0 + CELL] > 40
-            ys = np.nonzero(cell.any(1))[0]
-            if ys.size == 0:
-                continue
-            top, bottom = ys[0], ys[-1]
-            if bottom - top < 60:  # lying down (defeat): no boots band
-                continue
-            mask[y0 + bottom - 13:y0 + bottom + 1, x0:x0 + CELL] = True
+    cw = cell[0]
+    mask = np.zeros(solid.shape, bool)
+    for y0, x0, span in figure_rows(solid, cell):
+        if span is None or span[1] - span[0] < 60:  # lying down (defeat): no boots band
+            continue
+        mask[y0 + span[1] - 13:y0 + span[1] + 1, x0:x0 + cw] = True
     return mask
 
 
@@ -103,15 +104,63 @@ FX_BOXES = {
 }
 
 
-def effect_marks(warm: np.ndarray, ink: np.ndarray, boxes: dict) -> np.ndarray:
+def box_region(shape, boxes: dict, cell: tuple[int, int]) -> np.ndarray:
+    """Cell-local (x0, y0, x1, y1) boxes, keyed by cell index (one box or a list of boxes)."""
+    cw, ch = cell
+    cols = shape[1] // cw
+    region = np.zeros(shape, bool)
+    for index, entry in boxes.items():
+        ox, oy = (index % cols) * cw, (index // cols) * ch
+        for x0, y0, x1, y1 in entry if isinstance(entry, list) else [entry]:
+            region[oy + y0:oy + y1, ox + x0:ox + x1] = True
+    return region
+
+
+def effect_marks(warm: np.ndarray, ink: np.ndarray, boxes: dict, cell: tuple[int, int]) -> np.ndarray:
     """Warm pixels in an effect box and outside every ink-outlined shape (fur sits inside one)."""
     inside = ndimage.binary_fill_holes(ndimage.binary_dilation(ink, iterations=2))
-    region = np.zeros(warm.shape, bool)
-    cols = warm.shape[1] // CELL
-    for index, (x0, y0, x1, y1) in boxes.items():
-        ox, oy = (index % cols) * CELL, (index // cols) * CELL
-        region[oy + y0:oy + y1, ox + x0:ox + x1] = True
-    return warm & ~inside & region
+    return warm & ~inside & box_region(warm.shape, boxes, cell)
+
+
+def held_items(cls: np.ndarray, alpha: np.ndarray, boxes: dict, cell: tuple[int, int],
+               hard: dict | None = None, skin: dict | None = None) -> np.ndarray:
+    """A held weapon painted into the sheet: inside its box, every patch of one colour region
+    (orange, dark, ...) that lies (almost) wholly in the box. Patches split at ink and at region
+    changes, so the paw holding the weapon and the sleeve behind it reach out of the box and are
+    still repainted; the ink bordering the kept patches is kept with them."""
+    region = box_region(alpha.shape, boxes, cell)
+    keep = np.zeros(alpha.shape, bool)
+    for group in ((FUR, EAR_IN), (SUIT, BELT_C)):
+        paint = (alpha > 40) & np.isin(cls, group)
+        labels, count = ndimage.label(paint)  # 4-connected: one-pixel ink lines separate patches
+        if count == 0:
+            continue
+        index = range(1, count + 1)
+        total = ndimage.sum(np.ones_like(labels), labels, index)
+        inside = ndimage.sum(region, labels, index)
+        held = np.zeros(count + 1, bool)
+        held[1:] = inside >= 0.8 * total
+        keep |= held[labels]
+    # Where the weapon touches the paw with no ink between them, a tight hard box around the weapon
+    # part keeps everything in it.
+    if hard:
+        tight = box_region(alpha.shape, hard, cell)
+        grab = tight & (alpha > 0)
+        # The suit behind the weapon: a dark patch that mostly lies outside the tight box is body.
+        suit = (alpha > 40) & np.isin(cls, (SUIT, BELT_C))
+        labels, count = ndimage.label(suit)
+        if count:
+            index = range(1, count + 1)
+            inside = ndimage.sum(tight, labels, index) / ndimage.sum(np.ones_like(labels), labels, index)
+            body = np.zeros(count + 1, bool)
+            body[1:] = inside < 0.6
+            grab &= ~body[labels]
+        keep |= grab
+    keep |= region & (cls == INK) & ndimage.binary_dilation(keep, np.ones((3, 3)), iterations=2)
+    # Paws gripping a weapon sit wholly inside its box; skin boxes hand them back to the rabbit.
+    if skin:
+        keep &= ~box_region(alpha.shape, skin, cell)
+    return keep
 
 
 NONE, INK, FUR, SUIT, EAR_IN, BELT_C, BOOT, FX_C = range(8)
@@ -153,17 +202,20 @@ def classify(h, s, v, lum, alpha) -> np.ndarray:
     return cls
 
 
-def reskin(src: Path, cols: int, rows: int, fx_boxes: dict) -> Image.Image:
+def reskin(src: Path, cell: tuple[int, int], fx_boxes: dict, item_boxes: dict | None = None,
+           item_hard: dict | None = None, item_skin: dict | None = None) -> Image.Image:
     a = np.array(Image.open(src).convert("RGBA")).astype(float)
     rgb, alpha = a[..., :3], a[..., 3]
     h, s, v = hsv(rgb)
     lum = rgb @ np.array([0.299, 0.587, 0.114])
     out = rgb.copy()
     cls = classify(h, s, v, lum, alpha)
+    item = held_items(cls, alpha, item_boxes, cell, item_hard, item_skin) if item_boxes else np.zeros(alpha.shape, bool)
+    figure = (alpha > 40) & ~item  # head and boots are found on the rabbit, not on a raised weapon
 
     warm = np.isin(cls, (FUR, EAR_IN)) & (v > 0.42)
-    cls[effect_marks(warm, (lum < 40) & (alpha > 128), fx_boxes)] = FX_C
-    cls[(cls == FUR) & (s >= 0.5) & boots_mask(alpha, cols, rows)] = BOOT
+    cls[effect_marks(warm, (lum < 40) & (alpha > 128), fx_boxes, cell)] = FX_C
+    cls[(cls == FUR) & (s >= 0.5) & boots_mask(figure, cell)] = BOOT
 
     fur = cls == FUR
     # Orange fur keeps its light and shade as white-to-grey; cream and blends follow luminance,
@@ -191,7 +243,7 @@ def reskin(src: Path, cols: int, rows: int, fx_boxes: dict) -> Image.Image:
     near_fur = ndimage.uniform_filter(fur.astype(float), 9)
     # Blots by the suit, or below the head on a standing figure, are shadows. The eyes are blots
     # too, but they sit in the head, away from the suit.
-    blot = core & far & ((near_suit > 0.12) | below_head(alpha, cols, rows))
+    blot = core & far & ((near_suit > 0.12) | below_head(figure, cell))
     lining = blot & (near_fur > near_suit)
     out[blot & ~lining] = CAPE_DARK * 0.62
     out[lining] = FUR_DARK * 0.72
@@ -203,6 +255,7 @@ def reskin(src: Path, cols: int, rows: int, fx_boxes: dict) -> Image.Image:
     out[crease & ~blot] = CAPE_DARK * 0.5
     belt = cls == BELT_C
     out[belt] = lerp(BELT, BELT + 60, (v - 0.45) / 0.55)[belt]
+    out[item] = rgb[item]
     result = np.dstack([np.clip(out, 0, 255), alpha]).astype(np.uint8)
     return Image.fromarray(result, "RGBA")
 
@@ -250,6 +303,69 @@ def remove_stub_ear(img: Image.Image, cols: int) -> Image.Image:
     return Image.fromarray(a, "RGBA")
 
 
+# Armed sheets (Assets/hoppy-armed/heroes/<weapon>.png, 4x4 cells of 256x160): the weapon is painted
+# in Hoppy's own orange and black, so colour cannot tell it apart. Each frame's box (cell-local
+# x0, y0, x1, y1, traced from the sheet) bounds the weapon; held_items keeps what lies inside it.
+ARMED = ROOT / "Assets/hoppy-armed/heroes"
+ARMED_CELL = (256, 160)
+WEAPON_BOXES = {
+    "review_stamp": {
+        0: (98, 92, 134, 139), 1: (100, 92, 140, 138), 2: (103, 92, 144, 138), 3: (108, 93, 144, 138),
+        4: (112, 94, 144, 130), 5: (85, 52, 135, 98), 6: (103, 114, 136, 156), 7: (121, 102, 151, 150),
+        8: (44, 78, 79, 108), 9: (126, 95, 160, 137), 10: (133, 95, 165, 138), 11: (70, 42, 104, 76),
+        12: (105, 110, 141, 153), 13: (127, 110, 162, 153), 14: (111, 71, 145, 118), 15: (106, 81, 143, 122),
+    },
+    "triage_hammer": {
+        0: (104, 92, 154, 134), 1: (96, 92, 142, 134), 2: (100, 90, 145, 133), 3: (100, 88, 140, 130),
+        4: (98, 78, 146, 118), 5: [(78, 40, 116, 80), (110, 58, 134, 80)], 6: (140, 110, 186, 152),
+        7: (152, 100, 194, 144), 8: (56, 76, 106, 112), 9: (156, 94, 206, 138), 10: (156, 90, 200, 134),
+        11: [(74, 38, 116, 76), (112, 62, 130, 80)], 12: (152, 110, 196, 152), 13: (134, 70, 178, 116),
+        14: [(52, 48, 88, 88), (84, 64, 94, 80)], 15: [(116, 66, 154, 106), (104, 96, 122, 114)],
+    },
+    "change_stack_baton": {
+        0: (58, 108, 154, 130), 1: (54, 100, 140, 124), 2: (54, 100, 141, 124), 3: (54, 104, 138, 126),
+        4: [(48, 90, 82, 104), (80, 96, 114, 112), (112, 104, 146, 126)], 5: (130, 108, 180, 126),
+        6: (150, 98, 202, 118), 7: (144, 102, 184, 120), 8: [(74, 74, 100, 92), (98, 86, 130, 112)],
+        9: (146, 122, 196, 138), 10: (146, 98, 194, 118), 11: (76, 96, 118, 112), 12: (150, 98, 216, 118),
+        13: (136, 102, 174, 118), 14: (120, 104, 154, 120),
+        15: [(54, 104, 82, 122), (80, 94, 108, 112), (106, 82, 132, 100)],
+    },
+    "security_scanner": {
+        0: (112, 92, 139, 116), 1: (121, 80, 148, 107), 2: (121, 82, 150, 110), 3: (116, 88, 143, 112),
+        4: (126, 82, 152, 108), 5: (77, 96, 106, 121), 6: (154, 84, 184, 108), 7: (161, 102, 189, 126),
+        8: (146, 78, 176, 104), 9: (148, 70, 178, 97), 10: (142, 86, 171, 112), 11: (163, 97, 193, 123),
+        12: (180, 88, 209, 116), 13: (146, 68, 173, 95), 14: (63, 42, 99, 75), 15: (108, 68, 131, 90),
+    },
+    "pr_merger": {
+        0: (112, 100, 140, 134), 1: (75, 102, 102, 130), 2: (106, 98, 144, 129), 3: (100, 96, 139, 125),
+        4: (116, 102, 146, 131), 5: (86, 96, 117, 128), 6: (144, 96, 181, 123), 7: (144, 98, 176, 126),
+        8: (103, 96, 130, 126), 9: (146, 92, 178, 122), 10: (139, 92, 161, 122), 11: (103, 110, 133, 139),
+        12: (125, 55, 156, 90), 13: (133, 106, 162, 136), 14: (96, 66, 130, 101), 15: (111, 106, 140, 136),
+    },
+}
+# Tight boxes around weapon parts that touch the paw without ink between them (see held_items).
+WEAPON_HARD = {
+    "review_stamp": {
+        0: (112, 97, 132, 115), 2: (116, 93, 137, 112), 5: (86, 51, 108, 72), 7: (126, 102, 146, 121),
+        8: [(58, 78, 78, 96), (44, 84, 66, 110)], 10: (140, 97, 161, 117), 13: (134, 109, 156, 129),
+    },
+    "change_stack_baton": {4: (48, 90, 78, 104), 8: (74, 74, 100, 96)},
+}
+# The scanner's boxes hug the device, and its orange grip runs straight into the paw: keep it all.
+WEAPON_HARD["security_scanner"] = WEAPON_BOXES["security_scanner"]
+# The PR merger is a gauntlet worn over the fist: the whole box is the weapon.
+WEAPON_HARD["pr_merger"] = WEAPON_BOXES["pr_merger"]
+# Paws inside a weapon box (see held_items).
+WEAPON_SKIN = {
+    "change_stack_baton": {
+        0: [(82, 108, 97, 123), (100, 108, 114, 122)], 1: [(79, 104, 93, 119), (99, 104, 112, 119)],
+        2: [(78, 104, 92, 118), (97, 104, 110, 118)], 3: [(78, 108, 92, 122), (97, 108, 110, 122)],
+        4: [(77, 98, 91, 112), (98, 106, 110, 119)], 5: [(125, 105, 139, 119), (142, 108, 155, 123)], 6: (147, 103, 162, 117),
+        8: (97, 91, 111, 106),
+    },
+}
+
+
 def retarget(source: Path, png: str, dest: Path) -> None:
     text = source.read_text()
     text, n = re.subn(r'(\[ext_resource type="Texture2D" path=")[^"]+(")', rf"\g<1>{RES}{png}\g<2>", text)
@@ -259,12 +375,18 @@ def retarget(source: Path, png: str, dest: Path) -> None:
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    reskin(HOPPY / "hoppy.png", 4, 4, FX_BOXES).save(OUT / "coderabbit_hero.png", optimize=True)
-    loco = remove_stub_ear(reskin(HOPPY / "hoppy_locomotion.png", 4, 6, {}), 4)
+    reskin(HOPPY / "hoppy.png", (CELL, CELL), FX_BOXES).save(OUT / "coderabbit_hero.png", optimize=True)
+    loco = remove_stub_ear(reskin(HOPPY / "hoppy_locomotion.png", (CELL, CELL), {}), 4)
     loco.save(OUT / "coderabbit_hero_locomotion.png", optimize=True)
     retarget(HOPPY / "hoppy.tres", "coderabbit_hero.png", OUT / "coderabbit_hero.tres")
     retarget(HOPPY / "hoppy_locomotion.tres", "coderabbit_hero_locomotion.png",
              OUT / "coderabbit_hero_locomotion.tres")
+    (OUT / "armed").mkdir(exist_ok=True)
+    for weapon, boxes in WEAPON_BOXES.items():
+        sheet = reskin(ARMED / f"{weapon}.png", ARMED_CELL, {}, boxes, WEAPON_HARD.get(weapon),
+                       WEAPON_SKIN.get(weapon))
+        sheet.save(OUT / "armed" / f"{weapon}.png", optimize=True)
+        retarget(ARMED / f"{weapon}.tres", f"armed/{weapon}.png", OUT / "armed" / f"{weapon}.tres")
     print("wrote", OUT)
 
 
