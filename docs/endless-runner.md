@@ -1080,7 +1080,7 @@ Backend hand-off (contract §11.15 is authoritative):
   until a skip. The skip window closes at GO, so a jump pressed on GO is a jump. The HUD hides its widgets and GET READY for the intro and opens GET READY with the run.
 - **Camera.** `camera_rig.set_run_intro(progress, mode, focus)` places the lens off Hoppy's feet from the frontend
   `SHOTS` table (fallback shots built in). The rest pose is `[8.0, 4.0, 0.0, 60.0, 2.5]`.
-- **Hoppy.** The `title` beat plays Hoppy's `victory` clip through the player visual's `celebrate()`.
+- **Hoppy.** Hoppy keeps his normal pose through the intro. The `title` beat no longer plays his `victory` clip (the raised-arms cheer); that clip is kept for stage clears and boss defeats.
 - **Audio.** `intro_whoosh` under the full intro's fly-through, `intro_title` on the title beat, `intro_count` on
   each count (and READY), `intro_go` on GO; the music is ducked 12 dB until GO.
 - **Capture.** `Godot --path hoppys-adventure-arcade --always-on-top --script

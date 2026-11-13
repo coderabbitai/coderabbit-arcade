@@ -231,7 +231,7 @@ func _test_full_intro() -> void:
 	_assert_no_accrual(log, "full")
 	_assert_clear_road(game)
 	_assert_beats(log, FULL_BEATS, FULL_TIMES, "full")
-	check(bool(log["victory"]), "the title beat plays Hoppy's victory pose")
+	check(not bool(log["victory"]), "the title beat leaves Hoppy in his run pose: no raised-arms cheer in the intro")
 	var stages: Array = log["stages"]
 	check(stages.size() == 1 and int(stages[0]) == 1, "stage_started fired once for stage 1, got %s" % [stages])
 	check(int(log["ended"]) == 1, "run_intro_ended fired %d times on a natural end" % int(log["ended"]))
@@ -270,7 +270,7 @@ func _test_short_retry() -> void:
 	_assert_no_accrual(log, "short")
 	_assert_accrual_resumes(game, "short")
 	_assert_beats(log, SHORT_BEATS, SHORT_TIMES, "short")
-	check(not bool(log["victory"]), "the short intro has no title beat, so it does not celebrate")
+	check(not bool(log["victory"]), "the short intro does not celebrate either")
 	var stages: Array = log["stages"]
 	check(stages.size() == 1 and int(stages[0]) == 1, "the short intro still announces stage 1 once, got %s" % [stages])
 	check(int(log["ended"]) == 1, "the short intro ended once, got %d" % int(log["ended"]))
