@@ -26,7 +26,7 @@ const LINKS := [
 const CAPE_LINKS := 2
 ## Fixed integration step; a frame is split into as many as MAX_STEPS of them.
 const STEP := 1.0 / 120.0
-const MAX_STEPS := 8
+const MAX_STEPS := 30
 ## A longer gap than this (a hitch, a fixture jumping the clock) snaps instead of simulating.
 const SNAP_AFTER := 0.25
 ## A clip tail that moves further than this fraction of its link in one pass has teleported.

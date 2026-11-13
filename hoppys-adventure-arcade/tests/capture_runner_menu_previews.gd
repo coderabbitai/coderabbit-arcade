@@ -71,6 +71,10 @@ func run() -> void:
 					if game.paused:
 						game.resume()
 					await process_frame
+				if game.boss_cinematic_mode != &"":
+					push_error("RUNNER MENU CAPTURE: boss cinematic timed out")
+					failures += 1
+					continue
 				await create_timer(1.5).timeout
 			_hide_hud_panels()
 			failures += await _capture(shot)

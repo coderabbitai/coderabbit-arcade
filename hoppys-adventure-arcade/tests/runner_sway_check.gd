@@ -132,6 +132,16 @@ func run() -> void:
 			check(forward <= sway.CAPE_FORWARD * 0.36 + 0.001, "cape link %d held off the body: %.3f m forward" % [link, forward])
 	mover.position = Vector3.ZERO
 
+	# Slow frames below the snap deadline still settle stiff ears instead of hitting swing limits.
+	for delta in [0.1, 0.2, 0.25]:
+		settle(hoppy)
+		mover.position.x += 0.02
+		step(hoppy, delta)
+		for frame in 30:
+			step(hoppy, delta)
+		for link in [EAR_L, EAR_TIP_L, EAR_R, EAR_TIP_R]:
+			check(sway.offset(link).length() < 0.001, "ear %d settles with %.2f s frames" % [link, delta])
+
 	# A long gap snaps instead of simulating; the slide damps the applied swing.
 	step(hoppy, 1.0)
 	check(sway.swing(CAPE) == 0.0 and sway.offset(CAPE_TIP).length() < 0.0001, "a long gap snaps the cloth to the clip pose")

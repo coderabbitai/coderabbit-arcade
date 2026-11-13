@@ -26,7 +26,10 @@ func capture() -> void:
 	for argument in OS.get_cmdline_user_args():
 		if argument.begins_with("--output="):
 			output = argument.trim_prefix("--output=")
-	DirAccess.make_dir_recursive_absolute(output)
+	var failed := false
+	if DirAccess.make_dir_recursive_absolute(output) != OK:
+		printerr("SWAY CAPTURE: failed to create output directory " + output)
+		failed = true
 	root.size = CELL
 	var stage := Node3D.new()
 	root.add_child(stage)
@@ -82,8 +85,9 @@ func capture() -> void:
 			var path := output.path_join("sway-%s-%s.png" % [view[0], beat[0]])
 			if strip.save_png(path) != OK:
 				printerr("SWAY CAPTURE: failed to save " + path)
+				failed = true
 			print("SWAY CAPTURE %s %s: %d cells, cape swing %.2f rad, ear swing %.2f rad" % [view[0], beat[0], cells.size(), hoppy._sway.swing(0), hoppy._sway.swing(2)])
 	root.get_node("AudioService").shutdown()
 	stage.free()
 	await process_frame
-	quit(0)
+	quit(1 if failed else 0)
