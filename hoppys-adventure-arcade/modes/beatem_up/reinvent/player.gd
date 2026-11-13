@@ -1,9 +1,11 @@
 extends CharacterBody2D
 const Art = preload("res://modes/beatem_up/reinvent/art.gd")
 const Catalog = preload("res://modes/beatem_up/reinvent/catalog.gd")
-const BASE_FRAMES = preload("res://Assets/heroes-vs-villains-assets-only/heroes_villains/hoppy.tres")
+## The CodeRabbit hero rabbit from the artist handover, posed in 2D on Hoppy's clip layout
+## (tools/build_coderabbit_hero_2d.py). Weapon sheets (Art.armed_frames) still draw the old Hoppy.
+const BASE_FRAMES = preload("res://Assets/Character/CodeRabbit/2D/heroes_villains/coderabbit_hero.tres")
 const COMBAT_FRAMES = BASE_FRAMES
-const MOTION_FRAMES = preload("res://Assets/heroes-vs-villains-assets-only/heroes_villains/hoppy_locomotion.tres")
+const MOTION_FRAMES = preload("res://Assets/Character/CodeRabbit/2D/heroes_villains/coderabbit_hero_locomotion.tres")
 const MOVE_SPEED := 264.0
 const UNARMED_OFFSET := Vector2(0, -51)
 const SHEET_POSES := ["idle", "run", "jab", "swing", "kick", "pickup", "hurt"]
