@@ -104,6 +104,34 @@ FX_BOXES = {
 }
 
 
+def boots(cls: np.ndarray, s: np.ndarray, figure: np.ndarray, cell: tuple[int, int]) -> np.ndarray:
+    """Hoppy's orange boots, kept orange as whole shapes: an ink-bounded orange patch that sits
+    mostly in a standing figure's lower 30% (a foot raised mid-run is above the bottom band), plus
+    the lower-30% part of any patch touching the band. Paws are higher, and stay fur."""
+    orange = (cls == FUR) & (s >= 0.5)
+    band = boots_mask(figure, cell)
+    low = np.zeros(figure.shape, bool)
+    cw, ch = cell
+    for y0, x0, span in figure_rows(figure, cell):
+        if span is None or span[1] - span[0] < 60:
+            continue
+        low[y0 + span[0] + int(0.7 * (span[1] - span[0])):y0 + ch, x0:x0 + cw] = True
+    labels, count = ndimage.label(orange)
+    if count == 0:
+        return orange
+    index = range(1, count + 1)
+    total = ndimage.sum(np.ones_like(labels), labels, index)
+    in_low = ndimage.sum(low, labels, index)
+    touches = ndimage.maximum(band, labels, index)
+    mostly_low = np.zeros(count + 1, bool)
+    mostly_low[1:] = np.asarray(in_low) >= 0.6 * np.asarray(total)
+    touching = np.zeros(count + 1, bool)
+    touching[1:] = np.asarray(touches) > 0
+    # A planted boot can run into the cape lining or a trailing arm with no ink between them: of a
+    # patch that only touches the band, just its lower part is boot.
+    return mostly_low[labels] | (touching[labels] & low)
+
+
 def box_region(shape, boxes: dict, cell: tuple[int, int]) -> np.ndarray:
     """Cell-local (x0, y0, x1, y1) boxes, keyed by cell index (one box or a list of boxes)."""
     cw, ch = cell
@@ -183,7 +211,8 @@ def classify(h, s, v, lum, alpha) -> np.ndarray:
     hue = np.where(h > 330, h - 360, h)
     cls[body & (hue >= 12) & (hue < 32) & (s >= 0.7) & (v >= 0.5)] = FUR
     cls[body & (hue >= 18) & (hue < 60) & (s < 0.42) & (v >= 0.72)] = FUR  # cream, eye shine
-    cls[body & (hue >= -6) & (hue < 14) & (s >= 0.3) & (s < 0.68) & (v >= 0.6)] = EAR_IN
+    # Inner ear pink; the armed sheets paint it a lighter salmon (hue up to ~17).
+    cls[body & (hue >= -6) & (hue < 18) & (s >= 0.3) & (s < 0.68) & (v >= 0.6)] = EAR_IN
     cls[body & (hue >= 36) & (hue < 55) & (s >= 0.5) & (v >= 0.5)] = BELT_C
     cls[body & (s < 0.3) & (lum < 95)] = SUIT
     # Blends (fur fading into ink, the suit's brown sheen) take their neighbours' region.
@@ -202,6 +231,30 @@ def classify(h, s, v, lum, alpha) -> np.ndarray:
     return cls
 
 
+def clean_ears(cls: np.ndarray, alpha: np.ndarray) -> np.ndarray:
+    """Hoppy's pink inner ear is painted as streaks with light fur between them, so mapped one
+    pixel at a time it comes out as broken orange with white specks. Close each streak into one
+    solid inner-ear shape (inside the ear's fur only) and drop specks too small to be an ear."""
+    ear = cls == EAR_IN
+    soft = np.isin(cls, (FUR, EAR_IN)) & (alpha > 40)
+    solid = ndimage.binary_closing(ear, np.ones((3, 3)), iterations=2) & soft
+    solid = ndimage.binary_fill_holes(solid) & soft
+    labels, count = ndimage.label(solid, structure=np.ones((3, 3)))
+    if count:
+        sizes = ndimage.sum(np.ones_like(labels), labels, range(1, count + 1))
+        big = np.zeros(count + 1, bool)
+        big[1:] = sizes >= 8
+        solid &= big[labels]
+    # One-pixel nicks along the inner ear's edge: fur with inner ear on both sides joins it.
+    for axis in (0, 1):
+        before, after = np.roll(solid, 1, axis), np.roll(solid, -1, axis)
+        solid |= soft & before & after
+    out = cls.copy()
+    out[ear & ~solid] = FUR
+    out[solid] = EAR_IN
+    return out
+
+
 def reskin(src: Path, cell: tuple[int, int], fx_boxes: dict, item_boxes: dict | None = None,
            item_hard: dict | None = None, item_skin: dict | None = None) -> Image.Image:
     a = np.array(Image.open(src).convert("RGBA")).astype(float)
@@ -213,9 +266,10 @@ def reskin(src: Path, cell: tuple[int, int], fx_boxes: dict, item_boxes: dict | 
     item = held_items(cls, alpha, item_boxes, cell, item_hard, item_skin) if item_boxes else np.zeros(alpha.shape, bool)
     figure = (alpha > 40) & ~item  # head and boots are found on the rabbit, not on a raised weapon
 
+    cls = clean_ears(cls, alpha)
     warm = np.isin(cls, (FUR, EAR_IN)) & (v > 0.42)
     cls[effect_marks(warm, (lum < 40) & (alpha > 128), fx_boxes, cell)] = FX_C
-    cls[(cls == FUR) & (s >= 0.5) & boots_mask(figure, cell)] = BOOT
+    cls[boots(cls, s, figure, cell)] = BOOT
 
     fur = cls == FUR
     # Orange fur keeps its light and shade as white-to-grey; cream and blends follow luminance,
@@ -346,7 +400,11 @@ WEAPON_BOXES = {
 # Tight boxes around weapon parts that touch the paw without ink between them (see held_items).
 WEAPON_HARD = {
     "review_stamp": {
-        0: (112, 97, 132, 115), 2: (116, 93, 137, 112), 5: (86, 51, 108, 72), 7: (126, 102, 146, 121),
+        # Idle and run: knob, then the stamp body, which touches the paw.
+        0: [(112, 97, 132, 115), (104, 114, 125, 133)], 1: [(110, 111, 131, 131)],
+        2: [(116, 93, 137, 112), (106, 108, 134, 131)], 3: [(113, 110, 134, 133)],
+        4: [(117, 106, 136, 129)],
+        5: (86, 51, 108, 72), 7: (126, 102, 146, 121),
         8: [(58, 78, 78, 96), (44, 84, 66, 110)], 10: (140, 97, 161, 117), 13: (134, 109, 156, 129),
     },
     "change_stack_baton": {4: (48, 90, 78, 104), 8: (74, 74, 100, 96)},
@@ -357,6 +415,10 @@ WEAPON_HARD["security_scanner"] = WEAPON_BOXES["security_scanner"]
 WEAPON_HARD["pr_merger"] = WEAPON_BOXES["pr_merger"]
 # Paws inside a weapon box (see held_items).
 WEAPON_SKIN = {
+    "review_stamp": {
+        0: (88, 112, 104, 127), 1: (96, 110, 110, 126), 2: (90, 108, 106, 125), 3: (98, 108, 113, 126),
+        4: (102, 102, 117, 120), 14: (108, 100, 126, 118), 15: (100, 104, 118, 122),
+    },
     "change_stack_baton": {
         0: [(82, 108, 97, 123), (100, 108, 114, 122)], 1: [(79, 104, 93, 119), (99, 104, 112, 119)],
         2: [(78, 104, 92, 118), (97, 104, 110, 118)], 3: [(78, 108, 92, 122), (97, 108, 110, 122)],
