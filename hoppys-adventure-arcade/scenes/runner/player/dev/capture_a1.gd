@@ -395,6 +395,9 @@ static func pose_for_view(hoppy: Node3D, state: StringName, time: float) -> bool
 	player.advance(0.0)
 	player.seek(time, true)
 	player.advance(0.0)
+	# A posed view is a still: the cape and ears rest on the clip pose (hifi/sway_rig.gd).
+	if hoppy.get("_sway") != null:
+		hoppy._sway.settle()
 	return player.assigned_animation == state
 
 func finish(stage: Node3D, code: int) -> void:

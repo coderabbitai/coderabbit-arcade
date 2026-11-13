@@ -250,6 +250,52 @@ for key, obj in parts.items():
 for bone in data.bones:
     bone.use_deform = True
 
+# Hand-tuned cloth and ear weights. Bone heat pins too much of the cape to the chest and bends the
+# ears at a hard crease; these gradients let the runtime spring rig (hifi/sway_rig.gd) swing the
+# cape from the collar down and whip the ear tips. Heights and distances are handover centimetres.
+stage('hand-tune cape and ear weights')
+
+
+def smooth(edge0, edge1, value):
+    t = max(0.0, min(1.0, (value - edge0) / (edge1 - edge0)))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def set_weights(obj, vertex, weights):
+    for group in obj.vertex_groups:
+        group.remove([vertex.index])
+    for name, weight in weights.items():
+        if weight > 1e-4:
+            (obj.vertex_groups.get(name) or obj.vertex_groups.new(name=name)).add([vertex.index], weight, 'REPLACE')
+
+
+CAPE_COLLAR = (41.0, 34.0)   # chest above, cape below
+CAPE_FOLD = (30.0, 18.0)     # cape above, cape_tip below (wide, so the cloth curves)
+cape_part = parts['Rabbit_Cape']
+for vertex in cape_part.data.vertices:
+    height = vertex.co.z / cm_to_m
+    hang = smooth(CAPE_COLLAR[0], CAPE_COLLAR[1], height)
+    tip = smooth(CAPE_FOLD[0], CAPE_FOLD[1], height)
+    set_weights(cape_part, vertex, {'chest': 1.0 - hang, 'cape': hang * (1.0 - tip), 'cape_tip': hang * tip})
+
+EAR_FLOOR = 60.0             # head-part vertices above this height belong to an ear
+EAR_ROOT = (-1.5, 2.5)       # distance along the ear from its joint: head before, ear after
+EAR_FOLD = (6.0, 13.0)       # ear before, ear_tip after (the joint sits at 9.6)
+head_part = parts['Rabbit_head']
+ear_vertices = 0
+for vertex in head_part.data.vertices:
+    if vertex.co.z / cm_to_m < EAR_FLOOR:
+        continue
+    side = '_L' if vertex.co.x < 0 else '_R'
+    root, joint_end = (joint(p) for p in JOINTS['ear' + side])
+    along = (vertex.co - root).dot((joint_end - root).normalized()) / cm_to_m
+    lift = smooth(EAR_ROOT[0], EAR_ROOT[1], along)
+    tip = smooth(EAR_FOLD[0], EAR_FOLD[1], along)
+    set_weights(head_part, vertex, {'head': 1.0 - lift, 'ear' + side: lift * (1.0 - tip),
+                                    'ear_tip' + side: lift * tip})
+    ear_vertices += 1
+require(ear_vertices > 40, 'ear vertices not found')
+
 stage('join parts')
 bpy.ops.object.select_all(action='DESELECT')
 for obj in parts.values():
@@ -514,6 +560,19 @@ if args.preview:
             bpy.ops.render.render(write_still=True)
     rig.animation_data.action = None
     scene.frame_set(0)
+    # Weight check: the bends the spring rig applies (cape swung back and sideways, ears whipped).
+    bends = {'cape': (-0.5, 0, 0.3), 'cape_tip': (-0.45, 0, 0.25), 'ear_L': (0.3, 0, 0.2), 'ear_tip_L': (0.4, 0, 0.2),
+             'ear_R': (0.3, 0, 0.2), 'ear_tip_R': (0.4, 0, 0.2)}
+    for name, angles in bends.items():
+        rig.pose.bones[name].rotation_mode = 'XYZ'
+        rig.pose.bones[name].rotation_euler = angles
+    for view in ('front', 'side', 'back34'):
+        camera.location, camera.rotation_euler = views[view]
+        scene.render.filepath = str(args.preview / ('%s_sway.png' % view))
+        bpy.ops.render.render(write_still=True)
+    for name in bends:
+        rig.pose.bones[name].rotation_euler = (0, 0, 0)
+        rig.pose.bones[name].rotation_mode = 'QUATERNION'
     for obj in (sun, camera):
         bpy.data.objects.remove(obj)
 

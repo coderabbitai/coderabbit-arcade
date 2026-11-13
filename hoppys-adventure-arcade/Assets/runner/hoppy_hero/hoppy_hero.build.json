@@ -1,6 +1,6 @@
 {
   "generator": "tools/blender/build_hoppy_hero.py",
-  "script_sha256": "eaff0b9d7bae5c13aaa2dd5e6024fd781ff0ed8791c1051271830ac6237c40d2",
+  "script_sha256": "3e69655f2529155e14ca39e3d248b640c6c8a0276b122de6589c81241e9983cd",
   "blender": "5.2.2 LTS",
   "source_mesh": "rabbit_mesh.obj",
   "clip_source": "Assets/runner/hoppy/hoppy.glb",
@@ -78,7 +78,7 @@
     ],
     "roll": [
       -0.0,
-      0.7318
+      0.7358
     ],
     "run": [
       -0.0,
@@ -103,7 +103,7 @@
     "lane_dash_left": 0.0276,
     "lane_dash_right": 0.0276,
     "powerup_react": 0.0183,
-    "roll": 0.1304,
+    "roll": 0.1341,
     "run": 0.0183,
     "shield_brace": 0.0242,
     "victory": 0.0183
