@@ -17,6 +17,11 @@ func _initialize() -> void:
 	call_deferred("run")
 
 func run() -> void:
+	# The saved fullscreen setting is applied while the autoloads are still being added, and on macOS
+	# that mode switch pumps frames and deferred calls: wait until the root has finished setting up.
+	await process_frame
+	while not root.is_node_ready():
+		await process_frame
 	if DisplayServer.get_name() == "headless":
 		print("RUNNER MENU CAPTURE: requires a graphical display; no images written")
 		quit(1)
@@ -39,6 +44,9 @@ func run() -> void:
 	failures += await _capture("gameplay")
 	var deadline := Time.get_ticks_msec() + int(DEADLINE_SECONDS * 1000)
 	while wanted.values().has(false) and Time.get_ticks_msec() < deadline:
+		# The runner pauses when the app loses focus (another window in front); keep the bot running.
+		if game.paused:
+			game.resume()
 		if game.state != &"running":
 			game.pending_intro_mode = &""
 			game.start_run(RUN_SEED + Time.get_ticks_msec() % 997)
@@ -54,9 +62,16 @@ func run() -> void:
 			stages.stage_distance = maxf(stages.stage_distance, stages.stage_distance_target - 40.0)
 		if not pending.is_empty():
 			var shot: String = pending.pop_front()
-			# Let the moment develop: Hoppy is at the top of the jump and the boss has closed in after
-			# its intro.
-			await create_timer({"powerup": 0.0, "dodge": 0.15, "boss": 4.5}[shot]).timeout
+			# Let the moment develop: Hoppy is at the top of the jump, and the boss fight is under way
+			# (the intro cinematic takes the camera off Hoppy, so wait it out first).
+			await create_timer({"powerup": 0.0, "dodge": 0.15, "boss": 0.5}[shot]).timeout
+			if shot == "boss":
+				var intro_deadline := Time.get_ticks_msec() + 20000
+				while game.boss_cinematic_mode != &"" and Time.get_ticks_msec() < intro_deadline:
+					if game.paused:
+						game.resume()
+					await process_frame
+				await create_timer(1.5).timeout
 			_hide_hud_panels()
 			failures += await _capture(shot)
 			wanted[shot] = true
@@ -101,6 +116,16 @@ func _hide_hud_panels() -> void:
 func _capture(shot: String) -> int:
 	await RenderingServer.frame_post_draw
 	var path := ProjectSettings.globalize_path(OUT_DIR + "runner_%s.png" % shot)
-	var error := root.get_texture().get_image().save_png(path)
+	var image := root.get_texture().get_image()
+	# A maximized or HiDPI window renders larger than the 1280x720 the menu stills are stored at:
+	# crop to 16:9 around the centre, then scale down.
+	var crop := Vector2i(image.get_width(), image.get_width() * 9 / 16)
+	if crop.y > image.get_height():
+		crop = Vector2i(image.get_height() * 16 / 9, image.get_height())
+	if crop != image.get_size():
+		image = image.get_region(Rect2i((image.get_size() - crop) / 2, crop))
+	if image.get_size() != Vector2i(1280, 720):
+		image.resize(1280, 720, Image.INTERPOLATE_LANCZOS)
+	var error := image.save_png(path)
 	print("CAPTURE: ", shot, " -> ", path, " error=", error)
 	return 0 if error == OK else 1

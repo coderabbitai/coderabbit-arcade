@@ -24,6 +24,11 @@ func _initialize() -> void:
 	call_deferred("start")
 
 func start() -> void:
+	# The saved fullscreen setting is applied while the autoloads are still being added, and on macOS
+	# that mode switch pumps frames and deferred calls: wait until the root has finished setting up.
+	await process_frame
+	while not root.is_node_ready():
+		await process_frame
 	root.get_node("AudioService").music.stop()
 	if DisplayServer.get_name() == "headless":
 		printerr("ASSET A1 CAPTURE: graphical renderer required")
