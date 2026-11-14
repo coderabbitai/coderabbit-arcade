@@ -14,6 +14,7 @@ var selected_mode := 0
 var started := false
 var local_music: AudioStreamPlayer
 var fade: Tween
+const TILE_SIZE := 240.0
 
 func _ready() -> void:
 	Heroes.install_input()
@@ -40,24 +41,36 @@ func _ready() -> void:
 	column.add_child(Style.label("BEAT'EM UP / MODE SELECT",38))
 	description=Style.label("",17)
 	column.add_child(description)
-	var play := Style.button("Play Code City Brawl  →",54)
+	var tiles := HBoxContainer.new()
+	tiles.add_theme_constant_override("separation",24)
+	column.add_child(tiles)
+	var play := game_tile("Code City Brawl","res://Assets/beatemup-story/code_city/hoppy_clocks_in.png")
 	play.name="CodeCityButton"
-	column.add_child(play)
+	tiles.add_child(play)
 	play.pressed.connect(func(): launch("code_city_brawl"))
 	play.mouse_entered.connect(func(): focus_mode(0))
 	play.focus_entered.connect(func(): focus_mode(0))
-	var heroes := Style.button("Play Heroes vs. Villains  →",54)
+	var heroes := game_tile("Heroes vs. Villains","res://Assets/beatemup-story/heroes/send_in_the_rabbit.png")
 	heroes.name="HeroesButton"
-	column.add_child(heroes)
+	tiles.add_child(heroes)
 	heroes.pressed.connect(func(): launch("heroes_vs_villains"))
 	heroes.mouse_entered.connect(func(): focus_mode(1))
 	heroes.focus_entered.connect(func(): focus_mode(1))
-	var back := Style.button("Return to Main Menu",48)
-	column.add_child(back)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation",16)
+	column.add_child(row)
+	var back := Style.button("Return to Main Menu",44)
+	back.custom_minimum_size.x=0
+	row.add_child(back)
 	back.pressed.connect(func(): AppRouter.go("hub"))
-	var quit := Style.button("Quit Game",48)
-	column.add_child(quit)
+	var quit := Style.button("Quit Game",44)
+	quit.custom_minimum_size.x=0
+	row.add_child(quit)
 	quit.pressed.connect(func(): AppRouter.quit_game())
+	play.focus_neighbor_bottom=play.get_path_to(back)
+	heroes.focus_neighbor_bottom=heroes.get_path_to(back)
+	back.focus_neighbor_top=back.get_path_to(play)
+	quit.focus_neighbor_top=quit.get_path_to(heroes)
 	var controls := Style.label("",14)
 	Prompts.track(controls, func() -> String:
 		return "%s: move · %s: jump · %s: combo\n%s: pick up weapon · %s: pause\nHeroes: hold %s to charge REVIEW after unlocking it" % [
@@ -72,6 +85,31 @@ func _ready() -> void:
 	AudioService.music.stop()
 	focus_mode(0,true)
 	play.grab_focus()
+
+## A square game card: the mode's painting on top, its title underneath.
+func game_tile(title: String, image: String) -> Button:
+	var tile := Style.button("",TILE_SIZE+44)
+	tile.custom_minimum_size=Vector2(TILE_SIZE,TILE_SIZE+44)
+	var card := VBoxContainer.new()
+	card.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for side in ["left","top","right"]: card.set("offset_"+side,6 if side!="right" else -6)
+	card.offset_bottom=-4
+	card.add_theme_constant_override("separation",6)
+	card.mouse_filter=Control.MOUSE_FILTER_IGNORE
+	tile.add_child(card)
+	var picture := TextureRect.new()
+	picture.texture=load(image)
+	picture.expand_mode=TextureRect.EXPAND_IGNORE_SIZE
+	picture.stretch_mode=TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	picture.size_flags_vertical=Control.SIZE_EXPAND_FILL
+	picture.clip_contents=true
+	picture.mouse_filter=Control.MOUSE_FILTER_IGNORE
+	card.add_child(picture)
+	var name_label := Style.label(title,18)
+	name_label.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER
+	name_label.mouse_filter=Control.MOUSE_FILTER_IGNORE
+	card.add_child(name_label)
+	return tile
 
 func launch(route: String) -> void:
 	if started: return
