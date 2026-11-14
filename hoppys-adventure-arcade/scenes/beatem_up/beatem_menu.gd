@@ -14,7 +14,7 @@ var selected_mode := 0
 var started := false
 var local_music: AudioStreamPlayer
 var fade: Tween
-const TILE_SIZE := 240.0
+const TILE_MIN_HEIGHT := 240.0
 
 func _ready() -> void:
 	Heroes.install_input()
@@ -43,6 +43,7 @@ func _ready() -> void:
 	column.add_child(description)
 	var tiles := HBoxContainer.new()
 	tiles.add_theme_constant_override("separation",24)
+	tiles.size_flags_vertical=Control.SIZE_EXPAND_FILL
 	column.add_child(tiles)
 	var play := game_tile("Code City Brawl","res://Assets/beatemup-story/code_city/hoppy_clocks_in.png")
 	play.name="CodeCityButton"
@@ -88,8 +89,11 @@ func _ready() -> void:
 
 ## A square game card: the mode's painting on top, its title underneath.
 func game_tile(title: String, image: String) -> Button:
-	var tile := Style.button("",TILE_SIZE+44)
-	tile.custom_minimum_size=Vector2(TILE_SIZE,TILE_SIZE+44)
+	# Each card takes half the row and all the height the column leaves it.
+	var tile := Style.button("",TILE_MIN_HEIGHT)
+	tile.custom_minimum_size=Vector2(0,TILE_MIN_HEIGHT)
+	tile.size_flags_horizontal=Control.SIZE_EXPAND_FILL
+	tile.size_flags_vertical=Control.SIZE_EXPAND_FILL
 	var card := VBoxContainer.new()
 	card.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for side in ["left","top","right"]: card.set("offset_"+side,6 if side!="right" else -6)
@@ -105,7 +109,7 @@ func game_tile(title: String, image: String) -> Button:
 	picture.clip_contents=true
 	picture.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	card.add_child(picture)
-	var name_label := Style.label(title,18)
+	var name_label := Style.label(title,26)
 	name_label.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER
 	name_label.mouse_filter=Control.MOUSE_FILTER_IGNORE
 	card.add_child(name_label)
