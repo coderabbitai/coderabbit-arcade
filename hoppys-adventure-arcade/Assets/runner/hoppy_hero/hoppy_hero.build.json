@@ -1,0 +1,133 @@
+{
+  "generator": "tools/blender/build_hoppy_hero.py",
+  "script_sha256": "3e69655f2529155e14ca39e3d248b640c6c8a0276b122de6589c81241e9983cd",
+  "blender": "5.2.2 LTS",
+  "source_mesh": "rabbit_mesh.obj",
+  "clip_source": "Assets/runner/hoppy/hoppy.glb",
+  "height_m": 1.8,
+  "cm_to_m": 0.022799,
+  "travel_scale": 0.7125,
+  "triangles": 12126,
+  "triangle_cap": 48000,
+  "animations": [
+    "dead",
+    "fall",
+    "hurt",
+    "idle",
+    "jump",
+    "land",
+    "lane_dash_left",
+    "lane_dash_right",
+    "powerup_react",
+    "roll",
+    "run",
+    "shield_brace",
+    "victory"
+  ],
+  "clip_seconds": {
+    "dead": 1.2,
+    "fall": 0.8,
+    "hurt": 0.6,
+    "idle": 1.6,
+    "jump": 0.5,
+    "land": 0.2,
+    "lane_dash_left": 0.2667,
+    "lane_dash_right": 0.2667,
+    "powerup_react": 0.5,
+    "roll": 0.8,
+    "run": 0.6,
+    "shield_brace": 0.4,
+    "victory": 1.2
+  },
+  "clip_bounds_z": {
+    "dead": [
+      -0.0,
+      1.8798
+    ],
+    "fall": [
+      0.0,
+      1.8456
+    ],
+    "hurt": [
+      -0.0,
+      1.8808
+    ],
+    "idle": [
+      0.0017,
+      1.8104
+    ],
+    "jump": [
+      0.0679,
+      1.8822
+    ],
+    "land": [
+      -0.0,
+      1.6852
+    ],
+    "lane_dash_left": [
+      -0.0,
+      1.7973
+    ],
+    "lane_dash_right": [
+      -0.0,
+      1.7973
+    ],
+    "powerup_react": [
+      -0.0,
+      1.805
+    ],
+    "roll": [
+      -0.0,
+      0.7358
+    ],
+    "run": [
+      -0.0,
+      1.8339
+    ],
+    "shield_brace": [
+      -0.0,
+      1.7634
+    ],
+    "victory": [
+      -0.0,
+      1.7239
+    ]
+  },
+  "ground_lift_m": {
+    "dead": 0.1618,
+    "fall": 0.0495,
+    "hurt": 0.0852,
+    "idle": 0.0,
+    "jump": 0.0,
+    "land": 0.0146,
+    "lane_dash_left": 0.0276,
+    "lane_dash_right": 0.0276,
+    "powerup_react": 0.0183,
+    "roll": 0.1341,
+    "run": 0.0183,
+    "shield_brace": 0.0242,
+    "victory": 0.0183
+  },
+  "arm_swing_deg": {
+    "land": 2.5,
+    "lane_dash_left": 5.0,
+    "lane_dash_right": 5.0,
+    "powerup_react": 45.0,
+    "roll": 5.0,
+    "run": 2.5,
+    "shield_brace": 2.5,
+    "victory": 62.5
+  },
+  "ear_damp": 0.45,
+  "materials": [
+    "hero body",
+    "hero eyes",
+    "hero head",
+    "hero cape"
+  ],
+  "led_band": [
+    0.16,
+    0.3
+  ],
+  "led_segments": 4
+}

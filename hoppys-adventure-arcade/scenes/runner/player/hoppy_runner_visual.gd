@@ -8,6 +8,7 @@ const Hologram = preload("res://scenes/runner/player/hifi/energy.gdshader")
 const LaneLook = preload("res://scenes/runner/player/hifi/lane_look.gd")
 const FaceRig = preload("res://scenes/runner/player/hifi/face_rig.gd")
 const KnockoutRig = preload("res://scenes/runner/player/hifi/knockout_rig.gd")
+const SwayRig = preload("res://scenes/runner/player/hifi/sway_rig.gd")
 const STATES: Array[StringName] = [&"idle", &"run", &"jump", &"fall", &"roll", &"hurt", &"dead",
 	&"lane_dash_left", &"lane_dash_right", &"land", &"shield_brace", &"powerup_react", &"victory"]
 ## Backend-owned locomotion; one-shots return to the last of these.
@@ -59,6 +60,12 @@ const ROLL_BLEND_OUT := 0.1
 const SLIDE_SHELL_CENTER := Vector3(0, 0.455, 0)
 const SLIDE_SHELL_SCALE := Vector3(0.8, 0.49, 1.1)
 const SLIDE_ORBIT := Vector2(0.66, 0.9)
+## Cape and ear physics (hifi/sway_rig.gd). Running air streams the cape back and makes it flutter:
+## SWAY_WIND is the push at full run speed (m/s^2 per unit drag), steady plus gusts.
+const SWAY_WIND := 1.0
+## The slide keeps the cloth low, inside the 0.9 m roll envelope.
+const SWAY_ROLL_AMOUNT := 0.35
+const SWAY_AMOUNT_RATE := 10.0
 ## The bake tool reads the imported clip, so it switches the baked one off.
 var use_baked_roll := true
 var animation_player: AnimationPlayer
@@ -90,6 +97,8 @@ var _knockout: SkeletonModifier3D
 var _knockout_time := -1.0
 ## The knockout opened with a trip on the run stride (the dead clip waits for TRIP).
 var _knockout_trips := false
+## Spring physics on the cape and ears; runs last, over the clips and the other modifiers.
+var _sway: SkeletonModifier3D
 ## Smoothed face weights (focused, wide, wince, grin).
 var _expression := Vector4.ZERO
 ## A victory requested mid-air or mid-roll plays on the next grounded return.
@@ -157,6 +166,10 @@ func _ready() -> void:
 	_knockout.name = "KnockoutRig"
 	skeleton.add_child(_knockout)
 	_knockout.bind(skeleton)
+	_sway = SwayRig.new()
+	_sway.name = "SwayRig"
+	skeleton.add_child(_sway)
+	_sway.bind(skeleton)
 	_led_colors = [Palette.ORANGE, Palette.MINT, Palette.MATRIX, Palette.CREAM, Palette.MATRIX, Palette.MINT]
 	_led_remaining.resize(LED_KINDS.size())
 	_led_duration.resize(LED_KINDS.size())
@@ -458,6 +471,7 @@ func _process(delta: float) -> void:
 					material.set_shader_parameter("flash", 0.0)
 	_update_knockout(delta)
 	_update_face(delta)
+	_update_sway(delta)
 	_update_leds(delta)
 
 ## Advances the knockout clock and starts the dead clip once the trip has played.
@@ -471,6 +485,20 @@ func _update_knockout(delta: float) -> void:
 			animation_player.play(&"dead", 0.12)
 	_knockout.set("time", _knockout_time if anim_state == &"dead" else -1.0)
 	_knockout.set("trips", _knockout_trips)
+
+## Feeds the spring rig its frame time, the running air and the slide damping.
+func _update_sway(delta: float) -> void:
+	if _sway == null or not _sway.bound():
+		return
+	_sway.pending += delta
+	var gust := 0.6 * sin(_clock * 7.3) + 0.4 * sin(_clock * 12.1 + 1.3)
+	_sway.wind = Vector3(0.5 * sin(_clock * 3.1), 0.2 * gust, 0.6 + 0.4 * gust) * (_speed * SWAY_WIND)
+	var amount := SWAY_ROLL_AMOUNT if anim_state == &"roll" else 1.0
+	_sway.amount = move_toward(_sway.amount, amount, SWAY_AMOUNT_RATE * delta)
+	if delta > 0.0:
+		# A held pose (dead, a finished jump) leaves the skeleton clean, and modifiers only run on a
+		# dirty skeleton: re-setting one pose keeps the cloth settling.
+		skeleton.set_bone_pose_position(0, skeleton.get_bone_pose_position(0))
 
 ## Seconds since the knockout began, or -1 when Hoppy is not knocked out.
 func knockout_time() -> float:

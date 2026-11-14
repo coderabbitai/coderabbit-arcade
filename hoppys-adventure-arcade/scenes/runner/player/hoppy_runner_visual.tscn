@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scenes/runner/player/hoppy_runner_visual.gd" id="1"]
-[ext_resource type="PackedScene" path="res://Assets/runner/hoppy/hoppy.glb" id="2"]
+[ext_resource type="PackedScene" path="res://Assets/runner/hoppy_hero/hoppy_hero.glb" id="2"]
 
 [node name="HoppyRunnerVisual" type="Node3D"]
 process_mode = 1

@@ -1,6 +1,6 @@
 extends RefCounted
 ## Camera keys use the boss shot schema: [p, distance, height, orbit, fov, look_bias].
-## Focus is Hoppy's world position. The front approach reveals their victory pose before
+## Focus is Hoppy's world position. The front approach shows Hoppy from the front before
 ## a tight orbit through the corridor hands back to the normal follow camera.
 const SHOTS := {
 	&"full": {

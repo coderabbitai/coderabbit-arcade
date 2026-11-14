@@ -829,8 +829,8 @@ the beats and the skip; the frontend draws the title card and countdown from tha
   HUD clock reads 00:00 and the score 0 at GO.
 - **Beats.** `run_intro_beat(index, label)` goes out as the intro's clock reaches each time in
   `run_intro_*_beat_times` (full `title` 1.0, `3` 3.0, `2` 3.8, `1` 4.6, `GO!` 5.4; short `READY` 1.0, `GO!` 1.6),
-  always in index order. The `title` beat is the title card's cue and plays Hoppy's `victory` clip through
-  `runner_player.gd` → `visual.celebrate()`.
+  always in index order. The `title` beat is the title card's cue. Hoppy does not react to it: the `victory` clip
+  it used to play (through `runner_player.gd` → `visual.celebrate()`) was removed from the intro.
 - **Hold.** From `run_intro` until the **last beat (GO)** the StageManager holds `cinematic_hold`: manual controls
   are off (autopilot included, through `refresh_player_controls()`) and the corridor eases to
   `boss_cinematic_speed_scale`. GO hands both back before it is sent. The camera and the mirrors keep following

@@ -24,6 +24,11 @@ func _initialize() -> void:
 	call_deferred("start")
 
 func start() -> void:
+	# The saved fullscreen setting is applied while the autoloads are still being added, and on macOS
+	# that mode switch pumps frames and deferred calls: wait until the root has finished setting up.
+	await process_frame
+	while not root.is_node_ready():
+		await process_frame
 	root.get_node("AudioService").music.stop()
 	if DisplayServer.get_name() == "headless":
 		printerr("ASSET A1 CAPTURE: graphical renderer required")
@@ -256,8 +261,9 @@ func capture_chase(hoppy: Node3D, camera: Camera3D, stage: Node3D, directory: St
 		if clip[2] != 0.0 and (signf(metrics.head_lateral_px) != clip[2] or absf(metrics.head_lateral_px) < DASH_HEAD_PX):
 			printerr("ASSET A1 CAPTURE: dash head displacement below %.0f px" % DASH_HEAD_PX)
 			ok = false
-		if state == &"victory" and metrics.paws_above_ears_px < VICTORY_PAWS_PX:
-			printerr("ASSET A1 CAPTURE: victory paws below the ear tips")
+		# The hero rabbit's ears outreach its arms: its cheer reads by paws flung past the head.
+		if state == &"victory" and metrics.paws_beside_head_px < VICTORY_PAWS_PX:
+			printerr("ASSET A1 CAPTURE: victory paws inside the head silhouette")
 			ok = false
 		# Rear chase camera: the cape hides the cream tail, so only the orange class is gated here.
 		var result := Guard.measure(image, await capture_mask(hoppy, camera, stage), false)
@@ -394,6 +400,9 @@ static func pose_for_view(hoppy: Node3D, state: StringName, time: float) -> bool
 	player.advance(0.0)
 	player.seek(time, true)
 	player.advance(0.0)
+	# A posed view is a still: the cape and ears rest on the clip pose (hifi/sway_rig.gd).
+	if hoppy.get("_sway") != null:
+		hoppy._sway.settle()
 	return player.assigned_animation == state
 
 func finish(stage: Node3D, code: int) -> void:
@@ -508,10 +517,24 @@ static func chase_metrics(hoppy: Node3D, fov: float) -> Dictionary:
 		for point in skinned_points(hoppy, [side]):
 			top = minf(top, chase_screen(point, fov).y)
 		paw_tops.append(top)
+	# How far each paw reaches past the head's silhouette edge on its own side (screen x; the
+	# rabbit's left, -X, is screen left from the rear chase camera). The smaller side is reported.
+	var head_left := INF
+	var head_right := -INF
+	for point in skinned_points(hoppy, ["head"]):
+		var x := chase_screen(point, fov).x
+		head_left = minf(head_left, x)
+		head_right = maxf(head_right, x)
+	var paw_left := INF
+	for point in skinned_points(hoppy, ["hand_L"]):
+		paw_left = minf(paw_left, chase_screen(point, fov).x)
+	var paw_right := -INF
+	for point in skinned_points(hoppy, ["hand_R"]):
+		paw_right = maxf(paw_right, chase_screen(point, fov).x)
 	var feet := limb_bounds(hoppy, ["foot_L", "foot_R"])
 	var height_px := chase_screen(Vector3(0.0, feet.position.y, feet.get_center().z), fov).y - ear_top
 	return {"head_lateral_px": head_px, "paws_above_ears_px": ear_top - maxf(paw_tops[0], paw_tops[1]),
-		"height_px": height_px}
+		"paws_beside_head_px": minf(head_left - paw_left, paw_right - head_right), "height_px": height_px}
 
 static func jump_tuck_metrics(hoppy: Node3D) -> Dictionary:
 	var skeleton: Skeleton3D = hoppy.skeleton
