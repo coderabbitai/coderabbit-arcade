@@ -633,7 +633,7 @@ func _brawl_tips() -> void:
 ## Hoppy runs in and combos two AI Slop sprites while the boss watches.
 func _heroes_goal() -> void:
 	var start := Vector2(150, FLOOR_Y)
-	var hoppy := actor(Data.HEROES + "hoppy_locomotion.tres", "run", start, 1.65)
+	var hoppy := actor(Data.HERO_MOTION, "run", start, 1.65)
 	# reinvent/game.gd: AI Slop stands at room x 945, y 565, at 1.6x; its minions at 1.7x.
 	var boss := actor(Data.HEROES + "ai_slop.tres", "idle", Vector2(1080, 565), 1.6)
 	var slops: Array[AnimatedSprite2D] = [
@@ -642,7 +642,7 @@ func _heroes_goal() -> void:
 	reset(func() -> void:
 		hoppy.position = start
 		hoppy.modulate = Color.WHITE
-		_wear(hoppy, Data.HEROES + "hoppy_locomotion.tres", "run")
+		_wear(hoppy, Data.HERO_MOTION, "run")
 		boss.play("idle")
 		for slop in slops:
 			slop.modulate = Color.WHITE
@@ -651,17 +651,17 @@ func _heroes_goal() -> void:
 	var at := start
 	for index in slops.size():
 		var stop := slops[index].position - Vector2(130, 0)
-		pose(hoppy, Data.HEROES + "hoppy_locomotion.tres", "run")
+		pose(hoppy, Data.HERO_MOTION, "run")
 		move(hoppy, stop, 0.4 + (stop.x - at.x) / 1100.0)
 		at = stop
 		for clip in ["jab_action", "kick_action"]:
-			pose(hoppy, Data.HEROES + "hoppy.tres", clip)
+			pose(hoppy, Data.HERO, clip)
 			flash(slops[index])
 			pause_for(0.35)
 		play(slops[index], "defeat")
 		fade(slops[index], 0.0, 0.3)
 	say("Then take on the villain")
-	pose(hoppy, Data.HEROES + "hoppy.tres", "victory")
+	pose(hoppy, Data.HERO, "victory")
 	play(boss, "hurt")
 	flash(boss)
 	pause_for(1.5)
@@ -671,7 +671,7 @@ func _heroes_goal() -> void:
 ## Bugs close in; Hoppy holds REVIEW and the burst stuns them all.
 func _heroes_review() -> void:
 	var center := Vector2(640, FLOOR_Y)
-	var hoppy := actor(Data.HEROES + "hoppy.tres", "idle", center, 1.65)
+	var hoppy := actor(Data.HERO, "idle", center, 1.65)
 	var outer := [140.0, 310.0, 970.0, 1140.0]
 	var inner := [400.0, 480.0, 800.0, 880.0]
 	var slops: Array[AnimatedSprite2D] = []

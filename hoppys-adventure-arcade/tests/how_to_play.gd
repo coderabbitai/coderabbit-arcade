@@ -223,7 +223,7 @@ func enemies_face_hoppy(demo: Node, where: String) -> void:
 		if not child is AnimatedSprite2D:
 			continue
 		var file: String = child.sprite_frames.resource_path.get_file()
-		if file in ["platformer.tres", "combat.tres", "hoppy.tres", "hoppy_locomotion.tres"]:
+		if file in ["platformer.tres", "combat.tres", "hoppy.tres", "hoppy_locomotion.tres", "coderabbit_hero.tres", "coderabbit_hero_locomotion.tres"]:
 			hoppy = child
 		elif not file in ["pickups.tres", "interactives.tres", "hazards.tres", "items_allies.tres", "weapons.tres", "capabilities_fx.tres"]:
 			others.append(child)

@@ -30,6 +30,9 @@ const ARMED_CELL := Vector2(256, 160)
 const ARMED_PIVOT := Vector2(96, 147)
 
 const ARMED_ROOT := "res://Assets/hoppy-armed/heroes/"
+## The CodeRabbit hero's armed sheets (tools/build_coderabbit_hero_2d.py): the armed-Hoppy sheets
+## recoloured, same cells and clips. The manifest and the weapon-only carry icons stay in ARMED_ROOT.
+const HERO_ARMED_ROOT := "res://Assets/Character/CodeRabbit/2D/heroes_villains/armed/"
 static var armed_manifest: Dictionary = {}
 static var armed_manifest_loaded := false
 static var armed_sheets: Dictionary = {}
@@ -60,7 +63,7 @@ static func armed_frames(weapon_id: String) -> SpriteFrames:
 		return armed_sheets[weapon_id]
 	var spec := armed_spec(weapon_id)
 	var file_name := str(spec.get("resource", weapon_id + ".tres"))
-	var path := ARMED_ROOT + file_name
+	var path := HERO_ARMED_ROOT + file_name
 	var frames: SpriteFrames = null
 	if ResourceLoader.exists(path):
 		frames = load(path) as SpriteFrames
