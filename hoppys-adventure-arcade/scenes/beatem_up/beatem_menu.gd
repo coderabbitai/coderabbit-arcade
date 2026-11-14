@@ -42,7 +42,7 @@ func _ready() -> void:
 	description=Style.label("",17)
 	column.add_child(description)
 	var tiles := HBoxContainer.new()
-	tiles.add_theme_constant_override("separation",24)
+	tiles.add_theme_constant_override("separation",36)
 	tiles.size_flags_vertical=Control.SIZE_EXPAND_FILL
 	column.add_child(tiles)
 	var play := game_tile("Code City Brawl","res://Assets/beatemup-story/code_city/hoppy_clocks_in.png")
@@ -57,6 +57,10 @@ func _ready() -> void:
 	heroes.pressed.connect(func(): launch("heroes_vs_villains"))
 	heroes.mouse_entered.connect(func(): focus_mode(1))
 	heroes.focus_entered.connect(func(): focus_mode(1))
+	# Room for the selected card's grow, so it never covers the buttons below.
+	var gap := Control.new()
+	gap.custom_minimum_size.y=12
+	column.add_child(gap)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation",16)
 	column.add_child(row)
@@ -94,6 +98,7 @@ func game_tile(title: String, image: String) -> Button:
 	tile.custom_minimum_size=Vector2(0,TILE_MIN_HEIGHT)
 	tile.size_flags_horizontal=Control.SIZE_EXPAND_FILL
 	tile.size_flags_vertical=Control.SIZE_EXPAND_FILL
+	tile.active_scale=1.025
 	var card := VBoxContainer.new()
 	card.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for side in ["left","top","right"]: card.set("offset_"+side,6 if side!="right" else -6)
