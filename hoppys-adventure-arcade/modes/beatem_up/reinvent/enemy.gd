@@ -1,8 +1,9 @@
 extends CharacterBody2D
 const Art = preload("res://modes/beatem_up/reinvent/art.gd")
 const Catalog = preload("res://modes/beatem_up/reinvent/catalog.gd")
+const Palette = preload("res://modes/beatem_up/reinvent/palette.gd")
 ## Enemies stunned by REVIEW: a cool blue, so the burst visibly lands on them.
-const STUNNED_TINT := Color(0.6, 0.8, 1.3)
+const STUNNED_TINT := Palette.STUNNED_TINT
 var arena: Node2D
 var kind := "slop_sprite"
 var hp := 1.0

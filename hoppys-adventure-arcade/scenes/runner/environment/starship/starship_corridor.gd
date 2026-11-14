@@ -13,6 +13,7 @@ func _ready() -> void:
 			child.visible = false
 		if child is GPUParticles3D:
 			child.emitting = false
+	legacy_visible = false
 	starship = Node3D.new()
 	starship.set_script(Starship)
 	add_child(starship)

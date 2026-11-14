@@ -651,6 +651,9 @@ func _build_ui() -> void:
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://modes/beatem_up/conflict.gdshader")
 	screen_fx.material = material
+	# This mode never raises `phase`, so the shader would only copy the screen to itself: keep the
+	# node for the overlays that order themselves after it, but never draw it.
+	screen_fx.visible = false
 	layer.add_child(screen_fx)
 	var ui := Control.new()
 	ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

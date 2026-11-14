@@ -429,8 +429,14 @@ func flash() -> void:
 			var material := mesh.get_surface_override_material(i) as ShaderMaterial
 			material.set_shader_parameter("flash", 1.0)
 
+## Bone indices by name: find_bone() walks the skeleton's names on every call.
+var _bone_ids := {}
+
 func _bone_point(bone_name: String, rest_point: Vector3) -> Vector3:
-	var bone := skeleton.find_bone(bone_name)
+	var bone: int = _bone_ids.get(bone_name, -1)
+	if bone < 0:
+		bone = skeleton.find_bone(bone_name)
+		_bone_ids[bone_name] = bone
 	var pose := skeleton.get_bone_global_pose(bone) * skeleton.get_bone_global_rest(bone).affine_inverse()
 	return to_local(skeleton.to_global(pose * rest_point))
 
@@ -454,14 +460,20 @@ func _process(delta: float) -> void:
 	_glyph_trail_material.set_shader_parameter("clock", _clock)
 	_glyphs.visible = _aura.visible
 	_trail.visible = _speed > 0.4 and anim_state == &"run"
-	for i in 12:
-		var a := _clock * 1.5 + i * TAU / 12.0
-		var r := SLIDE_ORBIT if rolling else Vector2(0.65, 0.65)
-		_instance(_glyphs, i, Transform3D(_billboard_basis(_glyphs), center + Vector3(cos(a) * r.x, sin(a * 2.0) * 0.08, sin(a) * r.y)))
-	var emitter := _bone_point("chest", Vector3(0, 1.09, 0.26))
-	for i in 16:
-		var t := fmod(_clock * 0.8 + float(i) / 16.0, 1.0)
-		_instance(_trail, i, Transform3D(_billboard_basis(_trail).scaled(Vector3.ONE * (1.0 - t)), emitter + Vector3(sin(i * 8.0) * 0.10 * t, t * 0.12, t * 0.9)))
+	# Hidden instances are not drawn, so their poses can wait until the meshes show again (one
+	# billboard basis per mesh: the camera is the same for every instance of a frame).
+	if _glyphs.visible:
+		var glyph_basis := _billboard_basis(_glyphs)
+		for i in 12:
+			var a := _clock * 1.5 + i * TAU / 12.0
+			var r := SLIDE_ORBIT if rolling else Vector2(0.65, 0.65)
+			_instance(_glyphs, i, Transform3D(glyph_basis, center + Vector3(cos(a) * r.x, sin(a * 2.0) * 0.08, sin(a) * r.y)))
+	if _trail.visible:
+		var trail_basis := _billboard_basis(_trail)
+		var emitter := _bone_point("chest", Vector3(0, 1.09, 0.26))
+		for i in 16:
+			var t := fmod(_clock * 0.8 + float(i) / 16.0, 1.0)
+			_instance(_trail, i, Transform3D(trail_basis.scaled(Vector3.ONE * (1.0 - t)), emitter + Vector3(sin(i * 8.0) * 0.10 * t, t * 0.12, t * 0.9)))
 	if _flash_remaining > 0.0:
 		_flash_remaining -= delta
 		if _flash_remaining <= 0.0:

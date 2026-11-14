@@ -27,7 +27,7 @@ The setup does the following:
 - It keeps the Mac awake and turns it back on after a power cut.
 - It turns off the screen saver, automatic updates and crash dialogs.
 
-Booth mode itself runs fullscreen and ignores the menu's **Quit Game**. A game nobody has touched for 90 seconds goes back to the hub's attract screen, and so does a lost game, after a thank-you card for the player ([details](builds.md#run-it-at-a-booth)).
+Booth mode itself runs fullscreen and ignores the menu's **Quit Game**. A game nobody has touched for 90 seconds goes back to the hub's attract screen (an idle hub drops whatever the last visitor had selected), and so does a lost game, after a thank-you card for the player ([details](builds.md#run-it-at-a-booth)).
 
 ## Every morning
 

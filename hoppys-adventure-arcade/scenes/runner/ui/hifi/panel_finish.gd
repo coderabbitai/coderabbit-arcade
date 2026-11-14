@@ -9,6 +9,8 @@ var _cached_bracket := Rect2()
 var _bracket_dirty := true
 var occupancy_scans := 0
 var invalidations := 0
+## The ancestor that owns `game` (the HUD), found once; null until one is in the tree.
+var _game_host: Node
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -22,12 +24,11 @@ func corner_cut() -> float:
 	return float((get_parent().get_theme_stylebox("panel") as StyleBoxFlat).corner_radius_top_left)
 
 func _process(_delta: float) -> void:
-	var ancestor := get_parent()
-	while ancestor != null:
-		if "game" in ancestor and is_instance_valid(ancestor.get("game")):
-			if ancestor.get("game").get("paused") == true: return
-			break
-		ancestor = ancestor.get_parent()
+	if not is_instance_valid(_game_host):
+		_game_host = _find_game_host()
+	if _game_host != null:
+		var game: Variant = _game_host.get("game")
+		if is_instance_valid(game) and game.get("paused") == true: return
 	if not is_visible_in_tree(): return
 	var box := get_parent().get_theme_stylebox("panel") as StyleBoxFlat
 	accent = box.border_color
@@ -39,6 +40,14 @@ func _process(_delta: float) -> void:
 func _invalidate() -> void:
 	invalidations += 1
 	queue_redraw()
+
+## The nearest ancestor with a live `game` (the runner HUD), or null.
+func _find_game_host() -> Node:
+	var ancestor := get_parent()
+	while ancestor != null:
+		if "game" in ancestor and is_instance_valid(ancestor.get("game")): return ancestor
+		ancestor = ancestor.get_parent()
+	return null
 
 func _layout_changed(_child: Node = null) -> void:
 	_bracket_dirty = true

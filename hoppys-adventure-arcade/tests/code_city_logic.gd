@@ -212,7 +212,7 @@ func run() -> void:
 	await frames(2);freeze()
 	check(game.stage_index==2 and game.room==0 and game.player.hp==3 and game.player.weapon=="" and game.score==200,"Retry restores current-stage checkpoint and fresh player state")
 	check(game.bullets.is_empty() and game.warnings.is_empty() and game.player.effects.is_empty(),"Retry clears threats and temporary effects")
-	check(game.screen_fx.material.get_shader_parameter("phase")==0.0 and game.camera.offset==Vector2.ZERO,"Retry clears boss screen effects and camera shake")
+	check(game.screen_fx.material.get_shader_parameter("phase")==0.0 and not game.screen_fx.visible and game.camera.offset==Vector2.ZERO,"Retry clears boss screen effects and camera shake")
 	check(Catalog.MUSIC[0].resource_path.ends_with("code_city_cli_ide_district.ogg") and Catalog.MUSIC[1].resource_path.ends_with("code_city_security_sector.ogg") and Catalog.MUSIC[2].resource_path.ends_with("code_city_git_hq.ogg") and Catalog.BOSS_MUSIC.resource_path.ends_with("code_city_grand_merge_conflict.ogg") and Catalog.MINI_BOSS_MUSIC.resource_path.ends_with("code_city_district_boss.ogg"),"All five music mappings match")
 	for track in Catalog.MUSIC+[Catalog.BOSS_MUSIC, Catalog.MINI_BOSS_MUSIC]:
 		var copy: AudioStreamOggVorbis = Catalog.looped(track)

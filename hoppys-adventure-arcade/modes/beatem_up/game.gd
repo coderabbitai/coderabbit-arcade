@@ -152,6 +152,7 @@ func start_stage(index: int, cinematic := false) -> void:
 	shake = 0
 	camera.offset = Vector2.ZERO
 	screen_fx.material.set_shader_parameter("phase",0.0)
+	screen_fx.visible = false
 	ground = Node2D.new()
 	world.add_child(ground)
 	actors = Node2D.new()
@@ -466,7 +467,11 @@ func _physics_process(dt: float) -> void:
 		if hazard_clock <= 0:
 			hazard_clock = 5.2
 			stage_hazard()
-	if is_instance_valid(boss):
+	# conflict.gdshader copies the whole screen every frame it is drawn and passes it through
+	# unchanged below phase 2, so the ColorRect only shows once the split-screen effect begins.
+	var splitting := is_instance_valid(boss) and float(boss.phase) >= 2.0
+	screen_fx.visible = splitting
+	if splitting:
 		screen_fx.material.set_shader_parameter("phase",float(boss.phase))
 		screen_fx.material.set_shader_parameter("clock",elapsed)
 	_update_hud()
@@ -695,6 +700,7 @@ func _tick_finisher(dt: float) -> void:
 		score += 1000
 		_update_hud()
 		screen_fx.material.set_shader_parameter("phase",0.0)
+	screen_fx.visible = false
 	if finish_clock >= 4.0: celebrate()
 
 ## The celebration (confetti, the victory cheer, the jingle into the victory loop), then the
@@ -757,6 +763,7 @@ func _build_ui() -> void:
 	var material := ShaderMaterial.new()
 	material.shader = preload("res://modes/beatem_up/conflict.gdshader")
 	screen_fx.material = material
+	screen_fx.visible = false
 	layer.add_child(screen_fx)
 	var ui := Control.new()
 	ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

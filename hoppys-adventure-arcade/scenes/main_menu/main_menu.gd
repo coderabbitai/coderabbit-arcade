@@ -196,6 +196,16 @@ func _select(group: int) -> void:
 	showcase.select_group(group)
 	hoppy.reaction = group
 
+## Booth idle on the hub (AppRouter): back to the state the hub opens in, with nothing selected, so
+## a focus left on Endless Runner doesn't keep Hoppy's 3D portrait rendering until the next visitor.
+func reset_attract() -> void:
+	if modal:
+		return
+	keyboard_input = false
+	hovered = -1
+	_select(-1)
+	buttons[0].grab_focus()
+
 func _preview_changed(index: int) -> void:
 	caption.text = Preview.TITLES[index]
 	preview_note.text = Preview.collection(index)

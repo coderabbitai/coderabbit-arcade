@@ -1,4 +1,6 @@
 """Regression checks for release packaging and template cache upgrades."""
+
+import re
 import tempfile
 import unittest
 import zipfile
@@ -16,7 +18,13 @@ class Packaging(unittest.TestCase):
             root = Path(tmp)
             stage = root / "stage"
             stage.mkdir()
-            names = ["index.html", "index.js", "index.wasm", "index.pck", "index.audio.worklet.js"]
+            names = [
+                "index.html",
+                "index.js",
+                "index.wasm",
+                "index.pck",
+                "index.audio.worklet.js",
+            ]
             for name in names:
                 (stage / name).write_text(name)
             artifact = root / "web.zip"
@@ -39,8 +47,13 @@ class Packaging(unittest.TestCase):
             artifact = root / "linux.zip"
             export_game.package(target, stage / target.export_name, artifact)
             with zipfile.ZipFile(artifact) as bundle:
-                self.assertEqual(set(bundle.namelist()), {target.export_name, "game.pck"})
-                self.assertEqual((bundle.getinfo(target.export_name).external_attr >> 16) & 0o777, 0o755)
+                self.assertEqual(
+                    set(bundle.namelist()), {target.export_name, "game.pck"}
+                )
+                self.assertEqual(
+                    (bundle.getinfo(target.export_name).external_attr >> 16) & 0o777,
+                    0o755,
+                )
 
 
 class TemplateCache(unittest.TestCase):
@@ -50,8 +63,11 @@ class TemplateCache(unittest.TestCase):
             destination = root / "installed"
             destination.mkdir()
             name = "Godot_vtest_export_templates.tpz"
-            lock = {"version": "test", "sha512": {name: "verified"},
-                    "templates": ["web_nothreads_release.zip"]}
+            lock = {
+                "version": "test",
+                "sha512": {name: "verified"},
+                "templates": ["web_nothreads_release.zip"],
+            }
             (destination / ".verified").write_text("verified")
             archive = root / name
             with zipfile.ZipFile(archive, "w") as bundle:
@@ -59,7 +75,9 @@ class TemplateCache(unittest.TestCase):
             with patch.object(fetch_godot, "fetch", return_value=archive) as fetch:
                 fetch_godot.install_templates(lock, root, destination)
                 fetch.assert_called_once()
-            self.assertEqual((destination / "web_nothreads_release.zip").read_bytes(), b"template")
+            self.assertEqual(
+                (destination / "web_nothreads_release.zip").read_bytes(), b"template"
+            )
             with patch.object(fetch_godot, "fetch") as fetch:
                 fetch_godot.install_templates(lock, root, destination)
                 fetch.assert_not_called()
@@ -67,3 +85,33 @@ class TemplateCache(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExcludeFilters(unittest.TestCase):
+    """Every preset leaves the same repo-only files out of the build, and never a file the game loads."""
+
+    def filters(self):
+        presets = (export_game.PROJECT / "export_presets.cfg").read_text()
+        return re.findall(r'^exclude_filter="(.*)"$', presets, re.MULTILINE)
+
+    def test_every_preset_shares_one_exclude_filter(self):
+        filters = self.filters()
+        self.assertEqual(len(filters), len(export_game.TARGETS))
+        self.assertEqual(len(set(filters)), 1, filters)
+
+    def test_exclude_filter_keeps_what_the_game_loads(self):
+        patterns = [item.strip() for item in self.filters()[0].split(",")]
+        self.assertIn("*/sources/*", patterns)
+        self.assertIn("*/frames/*", patterns)
+        # The platformer menu loads this preview; the Sunny-land jump and hurt WAVs are the platformer's.
+        loaded = [
+            "Assets/bay-area-blitz-assets-only/bay-area-preview.png",
+            "Assets/Backgrounds/Sunny-land-forest-files/demo/assets/sound/wavs/jump.wav",
+            "Assets/Backgrounds/cyberpunk-street-files/Assets/music/cyberpunk-street.ogg",
+        ]
+        for path in loaded:
+            for pattern in patterns:
+                self.assertFalse(
+                    Path(path).match(pattern) or Path("res://" + path).match(pattern),
+                    f"{pattern} would exclude {path}",
+                )

@@ -33,9 +33,11 @@ const SCENES := ["platformer_goal", "blitz_tips", "zero_g", "orbital_tips", "enc
 	"slideshow", "brawl_goal", "brawl_tips", "heroes_goal", "heroes_review"]
 const ICON_SIZE := Vector2(52, 40)
 const CAPTION := Color("fff4d6")
-const REVIEW_TINT := preload("res://modes/beatem_up/reinvent/player.gd").REVIEW_TINT
-const STUNNED := preload("res://modes/beatem_up/reinvent/enemy.gd").STUNNED_TINT
-const HOPPY_GLOW := preload("res://modes/beatem_up/reinvent/player.gd").REVIEW_GLOW
+## The brawler's colours come from its palette script, not player.gd/enemy.gd: those preload both
+## beat 'em ups' catalogs, music included, which would otherwise load with the hub at startup.
+const REVIEW_TINT := preload("res://modes/beatem_up/reinvent/palette.gd").REVIEW_TINT
+const STUNNED := preload("res://modes/beatem_up/reinvent/palette.gd").STUNNED_TINT
+const HOPPY_GLOW := preload("res://modes/beatem_up/reinvent/palette.gd").REVIEW_GLOW
 ## Each game's backdrop, as its level script draws it (scenes/platformer/*.gd, the beat 'em ups'
 ## room setup). `zoom` is stage pixels per game pixel.
 const WORLDS := {

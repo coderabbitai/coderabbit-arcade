@@ -75,6 +75,9 @@ var _cleared := false
 var _state: StringName = &"ground"
 var _batches: Array[Dictionary] = []
 var _moving: Array[Dictionary] = []
+## True when a pivot was shown or hidden outside telegraph()/laser_state(), which push their own
+## batch update; advance() then rewrites the instance poses once instead of every frame.
+var _batches_dirty := false
 var _materials: Dictionary = {}
 var _labels: Array[Label3D] = []
 var _plates: Array[Node3D] = []
@@ -500,6 +503,7 @@ func react(cleared: bool) -> void:
 			tag.text = "AUTO-FIXED"
 			tag.modulate = Palette.MINT
 	if scanner != null: scanner.hide()
+	_batches_dirty = true
 
 func telegraph(t: float) -> void:
 	if scanner == null or _variant != &"timed": return
@@ -570,7 +574,11 @@ func advance(delta: float) -> void:
 		body.scale = _rest_scale * maxf(0.001,1.0-_reaction*3)
 	elif _hit:
 		body.scale = _rest_scale * (1.0-0.04*sin(minf(_reaction*10,PI)))
-	_update_batches()
+	# Poses are body-local, so the hit and clear scaling above cancels out of them: a static prop's
+	# poses never change after _flush(), and the per-frame rewrite is only for animated pieces.
+	if _batches_dirty or not _moving.is_empty():
+		_batches_dirty = false
+		_update_batches()
 
 func _sparks() -> void:
 	var sparks := GPUParticles3D.new()
