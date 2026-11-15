@@ -145,7 +145,7 @@ def box_region(shape, boxes: dict, cell: tuple[int, int]) -> np.ndarray:
 
 
 def effect_marks(warm: np.ndarray, ink: np.ndarray, boxes: dict, cell: tuple[int, int]) -> np.ndarray:
-    """Warm pixels in an effect box and outside every ink-outlined shape (fur sits inside one)."""
+    """Painted pixels in an effect box and outside every ink-outlined shape (fur sits inside one)."""
     inside = ndimage.binary_fill_holes(ndimage.binary_dilation(ink, iterations=2))
     return warm & ~inside & box_region(warm.shape, boxes, cell)
 
@@ -267,8 +267,15 @@ def reskin(src: Path, cell: tuple[int, int], fx_boxes: dict, item_boxes: dict | 
     figure = (alpha > 40) & ~item  # head and boots are found on the rabbit, not on a raised weapon
 
     cls = clean_ears(cls, alpha)
-    warm = np.isin(cls, (FUR, EAR_IN)) & (v > 0.42)
-    cls[effect_marks(warm, (lum < 40) & (alpha > 128), fx_boxes, cell)] = FX_C
+    # Every painted colour can be part of an effect (gold sparks, dark shading on the swing arc,
+    # the scanner card), so the marks are exempt whatever region they classified into.
+    painted = (np.isin(cls, (FUR, EAR_IN)) & (v > 0.42)) | (np.isin(cls, (SUIT, BELT_C)) & (alpha > 40))
+    marks = effect_marks(painted, (lum < 40) & (alpha > 128), fx_boxes, cell)
+    # The marks' dark-orange shading reads as shadowed fur; it joins where it touches a mark. (Not
+    # all dark fur in the box: the rear boot's shading sits there too.)
+    shade = effect_marks(np.isin(cls, (FUR, EAR_IN)) & (alpha > 40), (lum < 40) & (alpha > 128), fx_boxes, cell)
+    marks |= shade & ndimage.binary_dilation(marks, np.ones((3, 3)))
+    cls[marks] = FX_C
     cls[boots(cls, s, figure, cell)] = BOOT
 
     fur = cls == FUR
