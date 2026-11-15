@@ -193,7 +193,7 @@ def find_problems(log: str, exit_code: int | None, expected: list[re.Pattern[str
     # A suite can report an assertion early and continue running. Keep that failure in the
     # summary and CI annotation even when later output pushes it out of the 25-line tail.
     if exit_code is not None and exit_code != 0:
-        problems += [line.strip() for line in lines if line.startswith("FAIL:")]
+        problems = [line.strip() for line in lines if line.startswith("FAIL:")] + problems
     problems += [f"expected error no longer occurs; remove it from {CONFIG.name}: {pattern.pattern}"
                  for pattern in expected if not any(pattern.search(line) for line in lines)]
     return problems
