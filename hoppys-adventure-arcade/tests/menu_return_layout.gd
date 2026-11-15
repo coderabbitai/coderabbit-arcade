@@ -50,10 +50,10 @@ func check_menu(label: String) -> void:
 	if DisplayServer.get_name() != "headless":
 		await RenderingServer.frame_post_draw
 		root.get_texture().get_image().save_png("/tmp/hoppy-return-%s.png" % label)
-func park_mouse_on(menu_index: int) -> void:
-	# Leave the pointer where the menu button will appear, as a player's mouse would be.
+func park_mouse_on(tile_index: int) -> void:
+	# Leave the pointer where a game tile will appear, as a player's mouse would be.
 	var motion := InputEventMouseMotion.new()
-	motion.position = Vector2(200, 360 + menu_index * 74)
+	motion.position = Vector2(258 + (tile_index % 3) * 382, 254 + (tile_index / 3) * 208)
 	motion.relative = Vector2(1, 1)
 	Input.parse_input_event(motion)
 func run() -> void:
