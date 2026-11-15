@@ -12,7 +12,7 @@ Cross the forest and ruined castle, defeat the Legacy Monolith, then land on or 
 
 ## Route and hazards
 
-The 5,300-pixel route has three gaps (160–170 px), six solid raised root platforms, five crumbling branches, six ordinary enemies, five timed hazards, 25 Commit Tokens, and the existing shield, healing, boost and Auto-Fix pickups. Upper routes offer rewards; gaps are also jumpable without waiting for branch regrowth. A full-heal pickup precedes the boss arena.
+The 5,300-pixel route has three gaps (160–170 px), six solid raised root platforms, five crumbling branches, six ordinary enemies, five timed hazards, 25 Commit Tokens, and the existing shield, healing, boost and Auto-Fix pickups. Raised root platforms preserve the artwork's transparent underside; only ground and boundary walls receive a solid backing. Upper routes offer rewards; gaps are also jumpable without waiting for branch regrowth. A full-heal pickup precedes the boss arena.
 
 Branches support Hoppy until 0.7 seconds after landing, then remove collision, show breaking/falling art, and regrow after a 0.25-second break plus 3.5-second absence. Regrowth waits if Hoppy occupies the future platform shape. Pause freezes all timers. Branches over gaps provide stepping stones; falling into a pit still kills Hoppy through the normal retry flow.
 
@@ -47,7 +47,7 @@ The level plays original music by Erik Thorelli from `Assets/Audio/Platformer/Th
 
 Both loop from their `.import` settings (`loop`, `loop_offset`), so the player never reaches its finished signal. The shared scene-local Music-bus player changes tracks with pause-aware fades, suspends arcade music while playing and restores it on leaving. Shared imported streams are not changed. Existing Platformer jump/hurt/UI sounds are reused.
 
-`scenes/platformer/enchanted_repo.gd` extends the existing `modes/platformer/level.gd`. New local scripts provide art crops, enemies, branch lifecycle, timed hazards, Monolith combat, and a ground-wave subclass of Orbital's projectile. The shared player and level lifecycle are unchanged. The router and Level Select now expose the new level with its own layered artwork. Background plates are finite scenery overlapped for coverage, not seamless textures. Terrain combines cropped kit sprites with separate collision solids, as in Orbital Ops; no editor-painted TileSet is claimed.
+`scenes/platformer/enchanted_repo.gd` extends the existing `modes/platformer/level.gd`. New local scripts provide art crops, enemies, branch lifecycle, timed hazards, Monolith combat, and a ground-wave subclass of Orbital's projectile. The shared player and level lifecycle are unchanged. The router and Level Select now expose the new level with its own layered artwork. The treeline uses one continuous parallax strip: `enchanted_treeline.gdshader` crossfades the painted edges in premultiplied color before applying opacity once. This avoids the darker rectangular bands caused by overlapping translucent panels. Its lower edge fades into the sky where floor gaps expose it. Terrain combines cropped kit sprites with separate collision solids, as in Orbital Ops; no editor-painted TileSet is claimed.
 
 ## Validation and limits
 
@@ -57,4 +57,6 @@ The smoke suite passes headless and rendered: spawn, real platform/branch boardi
 
 `tests/enchanted_boundaries.gd` checks occupied branch regrowth, safe quill warning/recovery, committed jab side, Auto-Fix boss exclusion, retained bare attack art, and fresh-instance armor. Orbital's complete smoke suite and Bay Area's smoke suite pass as regressions. Rendered spawn, boss, core, results and Level Select captures were reviewed.
 
-The macOS sandbox aborts graphical launches before engine output; the rendered suite ran with approved graphical access. Headless import reports existing global-editor-settings/certificate sandbox warnings. No packaged exports or physical-controller session were tested. Fine animation registration, background joins, enemy death effects and longer hands-on balance testing remain polish work. No checkpoint saving or new audio assets were added.
+The original macOS sandbox aborted graphical launches before engine output; the rendered suite ran with approved graphical access. Headless import reported existing global-editor-settings/certificate sandbox warnings. No packaged exports or physical-controller session were tested. Fine animation registration, enemy death effects and longer hands-on balance testing remain polish work. No checkpoint saving or new audio assets were added.
+
+The 2026-11-14 background correction adds `tests/enchanted_background.gd`. Its headless checks cover viewport coverage at eight positions from spawn through the arena and exit. Its rendered checks use a constant-color fixture to verify uniform opacity across every repeat and a transparent lower edge. The complete route captures are in `docs/previews/enchanted-repo/background-*.png`, with a visual overview in `background-route-review.jpg`. Run this suite without `--headless` to regenerate them.
