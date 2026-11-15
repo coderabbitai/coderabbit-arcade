@@ -15,6 +15,10 @@ func _initialize() -> void:
 	call_deferred("run")
 
 func compare_clips(actual: SpriteFrames, original: SpriteFrames, label: String) -> void:
+	check(actual != null, label+" hero SpriteFrames exists")
+	check(original != null, label+" reference SpriteFrames exists")
+	if actual == null or original == null:
+		return
 	check(actual.get_animation_names() == original.get_animation_names(), label+" retains animation names")
 	for clip in original.get_animation_names():
 		check(actual.get_frame_count(clip)==original.get_frame_count(clip), label+"/"+clip+" frame count")

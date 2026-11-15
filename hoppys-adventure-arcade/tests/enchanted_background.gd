@@ -56,21 +56,22 @@ func run() -> void:
 	level.camera.position_smoothing_enabled = false
 	var strip: Sprite2D = level.find_child("ContinuousTreeline", true, false)
 	check(strip != null, "Level uses the continuous treeline")
-	check(strip.get_parent().get_child_count()==1, "No overlapping background sprites remain")
-	for x in [150, 900, 1600, 2300, 3000, 3700, 4400, 5150]:
-		level.player.position = Vector2(x, 600)
-		level.player.reset_physics_interpolation()
-		level.camera.reset_smoothing()
-		level.camera.force_update_scroll()
-		level._resume()
-		await process_frame
-		await process_frame
-		var rect: Rect2 = strip.get_global_transform_with_canvas() * strip.get_rect()
-		check(rect.position.x<=0 and rect.end.x>=root.get_visible_rect().size.x, "Background covers viewport at route x=%d"%x)
-		if rendered:
+	if strip != null:
+		check(strip.get_parent().get_child_count()==1, "No overlapping background sprites remain")
+		for x in [150, 900, 1600, 2300, 3000, 3700, 4400, 5150]:
+			level.player.position = Vector2(x, 600)
+			level.player.reset_physics_interpolation()
+			level.camera.reset_smoothing()
+			level.camera.force_update_scroll()
 			level._resume()
-			await RenderingServer.frame_post_draw
-			root.get_texture().get_image().save_png(PREVIEWS+"background-%04d.png"%x)
+			await process_frame
+			await process_frame
+			var rect: Rect2 = strip.get_global_transform_with_canvas() * strip.get_rect()
+			check(rect.position.x<=0 and rect.end.x>=root.get_visible_rect().size.x, "Background covers viewport at route x=%d"%x)
+			if rendered:
+				level._resume()
+				await RenderingServer.frame_post_draw
+				root.get_texture().get_image().save_png(PREVIEWS+"background-%04d.png"%x)
 	level.queue_free()
 	await process_frame
 	await root.get_node("AudioService").settle()
