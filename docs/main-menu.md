@@ -1,6 +1,6 @@
 # Main menu — implementation notes
 
-Implemented 2026-09-17 from the Main Menu section of the GDD and §6 of the technical baseline. Engine verified: Godot 4.7.1.stable.official.a13da4feb. Scope is the central menu only.
+Implemented 2026-09-17 from the Main Menu section of the GDD and §6 of the technical baseline; redesigned 2026-11-13 as a grid of game tiles. Engine verified: Godot 4.7.1.stable.official.a13da4feb. Scope is the central menu only.
 
 ## Run
 
@@ -10,16 +10,31 @@ Open `hoppys-adventure-arcade/project.godot` in Godot 4.7.1 and press F6 from th
 /Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade
 ```
 
-Arrow keys, Tab, D-pad, or left stick navigate; Enter / gamepad A activates; Escape / B closes overlays. Mouse hover takes preview control from keyboard/gamepad until the next intentional keyboard/gamepad input.
+Arrow keys, Tab, D-pad, or left stick navigate; Enter / gamepad A activates; Escape / B closes overlays, and on the hub itself asks before quitting. Mouse hover takes preview control from keyboard/gamepad until the next intentional keyboard/gamepad input.
+
+## The grid
+
+The hub shows every game as a tile, three columns by two rows, so a visitor starts a game with one press:
+
+| | | |
+| --- | --- | --- |
+| Bay Area Blitz (`bay_area_blitz`) | Orbital Ops (`orbital_ops`) | The Enchanted Repo (`enchanted_repo`) |
+| Endless Runner (`runner_game`) | Code City Brawl (`code_city_brawl`) | Heroes vs. Villains (`heroes_vs_villains`) |
+
+- **Catalog.** `scenes/main_menu/game_catalog.gd` lists the tiles in grid order: route, family eyebrow (Platformer, Endless Runner, Beat'em Up), one-line tagline, the `preview.gd` indices the tile and the showcase use (the first is the tile's art), and the Hoppy reaction. Adding a game means adding an entry there; the grid, the showcase groups and the focus map follow.
+- **Tile.** `game_tile.gd` is a Button (it extends `menu_button.gd`, so it grows 5% on focus or hover) with its stage art cover-cropped inside the border, a lower scrim, the family, title and tagline, and an "ENTER / A  PLAY" prompt while focused or hovered. The art is the same stage plates and runner stills the background previews use, loaded once through `preview.gd`; no separate tile art exists.
+- **Navigation.** Left and right wrap within a row. Up and down step between the rows and, past them, to the utility button in the same column (Settings, Quit Game, Credits), which lead back onto the grid. Tab follows the order tiles, Settings, Quit Game, Credits (`main_menu.gd` `buttons`). Mouse hover focuses nothing but drives the preview and Hoppy; a click launches.
+- **Launch.** A tile calls `AppRouter.go()` with its gameplay route, so the first entry opens the game's how-to-play card as before. The per-mode menus (`platformer_menu`, `runner_menu`, `beatem_menu`) are no longer on the hub's path: the games still return to them from their pause and results screens ("Return to Platformer Menu", the brawlers' and the runner's menu), and `--route=` / `--attract=` still name them. The runner's leaderboard lives in `runner_menu`, reached from a run's pause or game-over **Runner Menu** button or with `--route=runner`.
+- **Hoppy.** The menu mascot stands top right, beside the title, at two thirds of its old size. The hovered tile's family picks the reaction: platformer jump, 3D runner, brawler jab.
 
 ## Behavior and ownership
 
-- Scene-local showcase: idle previews 0–12 every 9 seconds; 1.2-second fades. Focusing a mode cycles its previews every 3 seconds with 0.6-second fades: Platformer cycles three themes; Beat’em Up cycles all three Code City Brawl stages followed by all three Heroes vs. Villains stages, and the Endless Runner cycles four in-game stills (corridor, power-ups, a jump over a hazard, boss).
+- Scene-local showcase, behind the grid: idle previews 0–12 every 9 seconds; 1.2-second fades. Focusing or hovering a tile shows that game's previews, cycling every 3 seconds with 0.6-second fades where it has more than one: each platformer level holds its own plate, the Endless Runner cycles four in-game stills (corridor, power-ups, a jump over a hazard, boss), Code City Brawl its three districts and Heroes vs. Villains its three stages. The groups come from the catalog (`showcase_controller.GROUPS`).
 - Focus exit waits 2 seconds, then restores the idle index and remaining dwell. Modals pause showcase timing. Parallax continues behind overlays.
 - At most two preview nodes exist. During a fade, requests coalesce to the latest selection; the outgoing node is freed before another fade begins. A preview with two plates (Orbital Ops, Enchanted Repo) is a `CanvasGroup`, so a fade blends the flattened scene instead of letting its parallax layers show through each other; a single opaque plate cannot ghost, so the other previews are plain `Node2D`s and skip the group's full-screen offscreen pass. A preview's slow drift ends after 9 s and its `_process` stops with it. Preview textures are loaded once and kept, so transitions never read from disk.
-- Layout recenters on viewport resize (not every frame). Menu buttons grow 5% around their centre on hover/focus and keep that scale when their container re-sorts.
+- Layout recenters on viewport resize (not every frame). Tiles and menu buttons grow 5% around their centre on hover/focus and keep that scale when their container re-sorts; the grid's 20 px gaps are wider than that growth, so grown tiles never cover their neighbours. Modals draw above a grown tile.
 - The UI uses a 1280×720 reference with expanding viewport coverage and centered composition. Backgrounds fill taller and wider windows. Pixel scenery uses nearest filtering.
-- AppRouter validates known routes and prevents duplicate transitions. Mode buttons open their existing game menus. This graphics pass does not modify gameplay.
+- AppRouter validates known routes and prevents duplicate transitions. Tiles open their games directly. The menu does not modify gameplay.
 - AudioService owns a single looping music player and one UI sound player. Music and SFX independently feed Master. The hub plays a calm lo-fi 8-bit loop (`Assets/Audio/Main Menu/hub_chiptune_loop.wav`, built by `tools/build_hub_chiptune.py`), whose `.import` loops the whole file. It plays at `AudioService.HUB_MUSIC_DB` (−15 dB), below the games' −10 dB, so a booth screen can run it all day. Booth mode (`AppRouter.set_booth` → `AudioService.set_attract`) keeps the same track. Synthesized UI blips are generated in code. Design and loop notes are in that folder's `PROMPTS.md`.
 - SaveService stores validated volume and fullscreen values in `user://settings.cfg`. Sliders apply immediately; closing settings persists them. Save failures appear in the UI.
 - Quit asks for confirmation and fades to black for 1 second.
@@ -27,7 +42,7 @@ Arrow keys, Tab, D-pad, or left stick navigate; Enter / gamepad A activates; Esc
 
 ## Credits
 
-The **Credits** button, after Settings and Quit Game, opens `scenes/credits/credits.tscn` (route `credits`). It shows the hand-written sections in `scenes/credits/credits.json` first. Then come the asset credits from the Third-party table of `ASSETS_LICENSES.md`, grouped into Music, Sound effects and Art, each with its license and, where the table gives them, its source and license links. An art pack whose music the game also uses appears under Art and Music; assets marked "Not referenced" are left out. The list scrolls by itself. Up and Down (held, for continuous scrolling) or the mouse wheel scroll it by hand, and Esc, B or **Return to Main Menu** go back to the hub.
+The **Credits** button, after Settings and Quit Game under the grid, opens `scenes/credits/credits.tscn` (route `credits`). It shows the hand-written sections in `scenes/credits/credits.json` first. Then come the asset credits from the Third-party table of `ASSETS_LICENSES.md`, grouped into Music, Sound effects and Art, each with its license and, where the table gives them, its source and license links. An art pack whose music the game also uses appears under Art and Music; assets marked "Not referenced" are left out. The list scrolls by itself. Up and Down (held, for continuous scrolling) or the mouse wheel scroll it by hand, and Esc, B or **Return to Main Menu** go back to the hub.
 
 - **Asset credits** are generated. `tools/credits/build_credits.py` writes `scenes/credits/asset_credits.json` from `ASSETS_LICENSES.md`. After changing that table, run `python3 tools/credits/build_credits.py`; CI fails if the two differ.
 - **Hand-written credits** live in `credits.json`: a list of sections, each with a `title`, optional `lines` and optional `tracks` (`{"title": …, "used_by": …}`). Original music goes in the "Original music" section. To credit something else, add a track there or add a section.
@@ -47,7 +62,9 @@ The first time a visitor enters a game, `AppRouter.go()` opens that game's how-t
 
 ## Art and replacement points
 
-As of 2026-09-30, `hoppy.gd` uses the supplied `Assets/Character/Hoppy/2D/hoppy-sprite-pack/hoppy` SpriteFrames: idle by default, one jump on Platformer selection, and one jab then the default idle on Beat’em Up selection. Endless Runner hover or keyboard/gamepad focus crossfades to the existing `hoppy_runner_visual.tscn` rig running in place, rendered through a transparent, isolated 512×512 SubViewport. Leaving that selection restores 2D immediately through a 0.22-second fade; idle background cycling does not switch the character. Hidden 3D rendering and rig processing are disabled. Both versions face toward the buttons and share a ground anchor. `sprite_scale` and `transition_seconds` are exposed on the Hoppy node for iteration. The title uses a system monospace fallback; no final pixel font or logo was supplied.
+As of 2026-09-30, `hoppy.gd` uses the supplied `Assets/Character/Hoppy/2D/hoppy-sprite-pack/hoppy` SpriteFrames: idle by default, one jump on a platformer tile, and one jab then the default idle on a beat 'em up tile. Hovering or focusing the Endless Runner tile crossfades to the existing `hoppy_runner_visual.tscn` rig running in place, rendered through a transparent, isolated 512×512 SubViewport. Leaving that selection restores 2D immediately through a 0.22-second fade; idle background cycling does not switch the character. Hidden 3D rendering and rig processing are disabled. Both versions face toward the grid and share a ground anchor. `sprite_scale` and `transition_seconds` are exposed on the Hoppy node for iteration. The title uses a system monospace fallback; no final pixel font or logo was supplied.
+
+The tiles and the background previews share the artwork below; the first row of each game's previews is its tile.
 
 | Preview | Source |
 | --- | --- |
@@ -68,8 +85,8 @@ Updated 2026-10-08: all menu previews now use current stage artwork or captured 
 /Applications/Godot.app/Contents/MacOS/Godot --path hoppys-adventure-arcade --script res://tests/menu_smoke.gd
 ```
 
-The behavioral smoke test covers preview timing and preservation, rapid input coalescing, bounded preview count, all thirteen previews, modal focus restoration, invalid routes, duplicate navigation, all three mode round trips, and audio player counts. It also dispatches keyboard, simulated gamepad, and mouse events. Mouse hover goes through `tests/support/pointer.gd`, so it and the character check below run headless in CI. A rendered run writes menu/settings screenshots to `/tmp` for layout inspection. It uses the normal settings path, so run against a disposable user profile if preserving settings during tests matters.
+The behavioral smoke test covers preview timing and preservation, rapid input coalescing, bounded preview count, all thirteen previews, modal focus restoration and stacking, the Esc quit prompt, invalid routes, duplicate navigation, every tile's catalog entry (a real gameplay route with a how-to-play card, art, family, title and tagline), a launch-and-return round trip through every tile, and audio player counts. It also dispatches keyboard, simulated gamepad (across rows, into the utility buttons and wrapping), and mouse events. Mouse hover goes through `tests/support/pointer.gd`, so it and the character check below run headless in CI. A rendered run writes menu/settings screenshots to `/tmp` for layout inspection. It uses the normal settings path, so run against a disposable user profile if preserving settings during tests matters.
 
 Physical controller feel, audio loop quality, and Windows/Linux exports require later hands-on checks; no export presets or platform builds were added.
 
-Character-specific check: run `--script res://tests/menu_hoppy_smoke.gd` to verify default idle, mouse-triggered 3D, keyboard-triggered brawler reaction, one-shot completion, rapid switching, and hidden-rig suspension. Graphical runs save both character states and modal coverage to `/tmp/menu-hoppy-*.png`.
+Character-specific check: run `--script res://tests/menu_hoppy_smoke.gd` to verify default idle, mouse-triggered 3D on the runner tile, keyboard-triggered brawler reaction, one-shot completion, rapid switching, and hidden-rig suspension. Graphical runs save both character states and modal coverage to `/tmp/menu-hoppy-*.png`.

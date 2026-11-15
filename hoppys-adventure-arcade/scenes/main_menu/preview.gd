@@ -47,6 +47,15 @@ static func warm() -> void:
 	for path in STILLS.values():
 		_texture(path)
 
+## The plates (or still) preview `index` draws, back to front, for a hub tile's art.
+static func textures(index: int) -> Array[Texture2D]:
+	var result: Array[Texture2D] = []
+	for path in LAYERS.get(index, [STILLS.get(index, "")]):
+		var tex := _texture(path)
+		if tex != null:
+			result.append(tex)
+	return result
+
 static func _texture(path: String) -> Texture2D:
 	if not _textures.has(path):
 		_textures[path] = load(path) if ResourceLoader.exists(path) else null

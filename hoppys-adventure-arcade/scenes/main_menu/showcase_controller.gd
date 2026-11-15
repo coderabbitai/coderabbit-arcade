@@ -1,7 +1,9 @@
 extends Node2D
 signal preview_changed(index: int)
 const Preview = preload("res://scenes/main_menu/preview.gd")
-const GROUPS = [[0, 1, 2], [3, 4, 5, 6], [7, 8, 9, 10, 11, 12]]
+const GameCatalog = preload("res://scenes/main_menu/game_catalog.gd")
+## One group per hub tile, in grid order: the previews a focused tile cycles through.
+static var GROUPS: Array = GameCatalog.preview_groups()
 const COUNT := 13
 var idle_index := 0
 var idle_remaining := 9.0

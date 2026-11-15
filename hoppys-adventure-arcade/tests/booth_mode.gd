@@ -82,7 +82,8 @@ func run() -> void:
 	# A selection the last visitor left (the Endless Runner button keeps Hoppy's 3D portrait
 	# rendering) is dropped when the hub itself sits idle.
 	var menu = root.get_tree().current_scene
-	menu._select(1)
+	var runner_tile: int = menu.GameCatalog.GAMES.find(menu.GameCatalog.GAMES.filter(func(g): return g.route == "runner_game")[0])
+	menu._select(runner_tile)
 	check(menu.hoppy.reaction == 1 and menu.hoppy.runner_view.render_target_update_mode == SubViewport.UPDATE_ALWAYS,
 		"Selecting Endless Runner shows the 3D portrait")
 	await wait(1.2)
