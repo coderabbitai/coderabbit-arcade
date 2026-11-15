@@ -14,5 +14,6 @@ script = ExtResource("2")
 layer = 1
 
 [node name="Hoppy" type="Node2D" parent="Interface"]
-position = Vector2(964, 562)
+position = Vector2(1160, 150)
+scale = Vector2(0.66, 0.66)
 script = ExtResource("3")

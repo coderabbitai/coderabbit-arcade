@@ -83,8 +83,8 @@ func run() -> void:
 	await wait(0.4)
 	var menu := current_scene
 	var credits_button: Button = menu.buttons[menu.buttons.size() - 1]
-	check(menu.buttons.size() == 6 and credits_button.text == "Credits"
-		and menu.buttons[3].text == "Settings" and menu.buttons[4].text == "Quit Game",
+	check(menu.buttons.size() == 9 and credits_button.text == "Credits"
+		and menu.buttons[6].text == "Settings" and menu.buttons[7].text == "Quit Game",
 		"The hub's Credits button follows Settings and Quit Game")
 	credits_button.pressed.emit()
 	await settle_route()
