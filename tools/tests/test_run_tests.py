@@ -13,6 +13,11 @@ import run_tests
 
 
 class FindProblems(unittest.TestCase):
+    def test_early_assertion_survives_output_tail(self):
+        log = "FAIL: jump boards shuttle\n" + "PASS: later check\n" * 30
+        self.assertEqual(run_tests.find_problems(log, 1, []), ["FAIL: jump boards shuttle"])
+        self.assertEqual(run_tests.find_problems(log, 0, []), [])
+
     def test_clean_log_has_no_problems(self):
         self.assertEqual(run_tests.find_problems("PASS: thing\nAll good\n", 0, []), [])
 
