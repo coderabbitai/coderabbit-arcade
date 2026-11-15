@@ -2,7 +2,7 @@
 
 [ext_resource type="Texture2D" path="res://Assets/heroes-vs-villains-assets-only/heroes_villains/generation_floor.png" id="1"]
 
-[ext_resource type="SpriteFrames" path="res://Assets/heroes-vs-villains-assets-only/heroes_villains/hoppy.tres" id="2"]
+[ext_resource type="SpriteFrames" path="res://Assets/Character/CodeRabbit/2D/heroes_villains/coderabbit_hero.tres" id="2"]
 
 [ext_resource type="SpriteFrames" path="res://Assets/heroes-vs-villains-assets-only/heroes_villains/capabilities_fx.tres" id="3"]
 

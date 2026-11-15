@@ -2,6 +2,7 @@
 import contextlib
 import io
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -13,6 +14,22 @@ import run_tests
 
 
 class FindProblems(unittest.TestCase):
+    def test_early_assertion_survives_output_tail(self):
+        log = "FAIL: jump boards shuttle\n" + "PASS: later check\n" * 30
+        self.assertEqual(run_tests.find_problems(log, 1, []), ["FAIL: jump boards shuttle"])
+        self.assertEqual(run_tests.find_problems(log, 0, []), [])
+
+    def test_assertion_precedes_noisy_engine_errors_in_annotation(self):
+        log = "ERROR: " + "x" * 5000 + "\nFAIL: jump boards shuttle\n"
+        problems = run_tests.find_problems(log, 1, [])
+        result = run_tests.Result("fake", 1.0, 1, problems, log)
+        with mock.patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}), mock.patch("builtins.print") as output:
+            run_tests.annotate(result)
+        annotation = output.call_args.args[0]
+        detail = annotation.split("::", 2)[-1]
+        self.assertTrue(detail.startswith("FAIL: jump boards shuttle"))
+        self.assertEqual(len(detail), 4000)
+
     def test_clean_log_has_no_problems(self):
         self.assertEqual(run_tests.find_problems("PASS: thing\nAll good\n", 0, []), [])
 

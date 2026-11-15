@@ -104,10 +104,13 @@ func platform(pos: Vector2, size: Vector2, one_way := false, clip := "ground_sla
 	shape.one_way_collision=one_way
 	body.add_child(shape)
 	add_child(body)
-	var fill := Polygon2D.new()
-	fill.polygon=PackedVector2Array([Vector2.ZERO,Vector2(size.x,0),size,Vector2(0,size.y)])
-	fill.color=Color("252f35")
-	body.add_child(fill)
+	# Raised roots keep their painted silhouette and transparent hanging roots.
+	# Ground and boundary walls still need a solid backing between their tiles.
+	if not one_way:
+		var fill := Polygon2D.new()
+		fill.polygon=PackedVector2Array([Vector2.ZERO,Vector2(size.x,0),size,Vector2(0,size.y)])
+		fill.color=Color("252f35")
+		body.add_child(fill)
 	for x in range(0,int(size.x),128):
 		body.add_child(ForestArt.prop(clip,Vector2(x,0),Vector2(minf(128,size.x-x),minf(size.y,68))))
 	if size.y>70 and size.x>60:
@@ -167,15 +170,8 @@ func _background() -> void:
 	mid.scroll_scale=Vector2(.3,0)
 	mid.z_index=-5
 	add_child(mid)
-	# Overlap finite plates at their dense tree edges; no seamless-repeat claim.
-	for x in [-180,1050,2280]:
-		var trees := Sprite2D.new()
-		trees.texture=load(ForestArt.ROOT+"treeline.png")
-		trees.centered=false
-		trees.position=Vector2(x,-55)
-		trees.scale=Vector2(1.5,1.3)
-		trees.modulate=Color(.55,.65,.65,.62)
-		mid.add_child(trees)
+	# Crossfade the painted edges once, without stacking semi-transparent plates.
+	mid.add_child(ForestArt.treeline())
 	var near := Parallax2D.new()
 	near.scroll_scale=Vector2(.65,0)
 	near.z_index=-2

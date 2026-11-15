@@ -568,10 +568,10 @@ func check_carry_grips(actor) -> void:
 
 ## Face boxes measured on the unarmed 128px cel (eyes + muzzle). Pivot is the rig's unarmed foot.
 const FACE_BOX := {
-	"jump": Rect2(74,48,24,24),
-	"walk_down": Rect2(58,44,28,24),
-	"victory": Rect2(62,40,24,24),
-	"defeat": Rect2(78,84,22,20),
+	"jump": Rect2(62,58,24,18),
+	"walk_down": Rect2(52,54,28,20),
+	"victory": Rect2(60,49,24,21),
+	"defeat": Rect2(78,101,22,14),
 }
 const FACE_PIVOT := Vector2(64,115)
 

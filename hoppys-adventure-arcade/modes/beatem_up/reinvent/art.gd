@@ -7,7 +7,8 @@ static var resources: Dictionary = {}
 static var manifest: Dictionary = {}
 
 static func frames(key: String) -> SpriteFrames:
-	if not resources.has(key): resources[key] = load(BASE+key+".tres")
+	if not resources.has(key):
+		resources[key] = load(HERO_ROOT+"coderabbit_hero.tres" if key=="hoppy" else BASE+key+".tres")
 	return resources[key]
 
 static func sprite(key: String, pose: String, magnify := 1.0, foot := true) -> AnimatedSprite2D:
@@ -29,10 +30,9 @@ const BODY_SCALE := 1.65
 const ARMED_CELL := Vector2(256, 160)
 const ARMED_PIVOT := Vector2(96, 147)
 
-const ARMED_ROOT := "res://Assets/hoppy-armed/heroes/"
-## The CodeRabbit hero's armed sheets (tools/build_coderabbit_hero_2d.py): the armed-Hoppy sheets
-## recoloured, same cells and clips. The manifest and the weapon-only carry icons stay in ARMED_ROOT.
-const HERO_ARMED_ROOT := "res://Assets/Character/CodeRabbit/2D/heroes_villains/armed/"
+const HERO_ROOT := "res://Assets/Character/CodeRabbit/2D/heroes_villains/"
+## Reference-matched art and calibration packed from retained generated masters.
+const HERO_ARMED_ROOT := HERO_ROOT + "armed/"
 static var armed_manifest: Dictionary = {}
 static var armed_manifest_loaded := false
 static var armed_sheets: Dictionary = {}
@@ -41,7 +41,7 @@ static var carry_textures: Dictionary = {}
 static func load_armed_manifest() -> Dictionary:
 	if not armed_manifest_loaded:
 		armed_manifest_loaded = true
-		var path := ARMED_ROOT + "manifest.json"
+		var path := HERO_ROOT + "manifest.json"
 		if FileAccess.file_exists(path):
 			var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
 			if parsed is Dictionary:
@@ -75,12 +75,19 @@ static func carry_texture(weapon_id: String) -> Texture2D:
 		return null
 	if carry_textures.has(weapon_id):
 		return carry_textures[weapon_id]
-	var path := ARMED_ROOT + "carry/" + weapon_id + ".png"
+	var path := HERO_ARMED_ROOT + "carry/" + weapon_id + ".png"
 	var texture: Texture2D = null
 	if ResourceLoader.exists(path):
 		texture = load(path) as Texture2D
 	carry_textures[weapon_id] = texture
 	return texture
+
+static func carry_hand(pose: String, frame: int) -> Variant:
+	var points: Array = load_armed_manifest().get("carry_hands", {}).get(pose, [])
+	if points.is_empty():
+		return null
+	var point: Array = points[frame % points.size()]
+	return Vector2(float(point[0]), float(point[1]))
 
 static func armed_cell(weapon_id: String) -> Vector2:
 	var spec := armed_spec(weapon_id)
