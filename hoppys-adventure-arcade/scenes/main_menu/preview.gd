@@ -1,5 +1,8 @@
-extends CanvasGroup
-## Scene-local artwork only, flattened so crossfades do not ghost through individual layers.
+extends Node2D
+## Scene-local artwork only. A preview with two plates is a CanvasGroup (see make()), flattened so
+## the crossfade does not ghost through its layers; a single opaque plate cannot ghost, so the
+## other previews are plain Node2Ds and skip the group's full-screen offscreen pass every frame.
+const SCRIPT_PATH := "res://scenes/main_menu/preview.gd"
 const TITLES = ["BAY AREA BLITZ", "ORBITAL OPS", "ENCHANTED REPO",
 	"THE CODEBASE CORRIDOR", "GRAB THE POWER-UPS", "JUMP, ROLL, DODGE", "BOSS FIGHTS",
 	"CLI / IDE DISTRICT", "SECURITY SECTOR", "GIT REPOSITORY HQ",
@@ -65,6 +68,14 @@ static func collection(id: int) -> String:
 		return "ENDLESS RUNNER"
 	return "CODE CITY BRAWL" if id < 10 else "HEROES VS. VILLAINS"
 
+## The preview for `id`: a CanvasGroup only where two plates would ghost through a fade.
+static func make(id: int) -> Node2D:
+	var plates_for: Array = LAYERS.get(id, [])
+	var node: Node2D = CanvasGroup.new() if plates_for.size() > 1 else Node2D.new()
+	node.set_script(load(SCRIPT_PATH))
+	node.setup(id)
+	return node
+
 func setup(id: int) -> void:
 	index = id
 
@@ -93,6 +104,9 @@ func _fit() -> void:
 func _process(delta: float) -> void:
 	elapsed += delta
 	_place_plates()
+	# The drift ends after 9 s; from then on the plates only move with the window (_fit).
+	if elapsed >= 9.0:
+		set_process(false)
 
 func _place_plates() -> void:
 	var visible := get_viewport_rect().size

@@ -6,6 +6,7 @@ const BoothSoak := preload("res://app/booth_soak.gd")
 const BoothQrOverlay := preload("res://app/booth_qr_overlay.gd")
 const HowToPlay := preload("res://app/how_to_play.gd")
 const HowToPlayData := preload("res://app/how_to_play_data.gd")
+const BackgroundWarm := preload("res://scenes/runner/warmup/background_warm.gd")
 const ROUTES := {
 	"heroes_vs_villains": "res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn",
 	"code_city_brawl": "res://scenes/beatem_up/code_city_brawl.tscn",
@@ -52,6 +53,8 @@ const ATTRACT_PREFIX := "--attract="
 ## silent after a beat 'em up stops the shared music.
 const ATTRACT_ROUTES: Array[String] = ["hub", "beatem_up", "runner"]
 const RETRIES_PREFIX := "--retries="
+## Frame cap for rendered runs (see _ready).
+const MAX_FPS := 60
 const NEXT_PLAYER_SECONDS := 6.0
 var busy := false
 var veil: ColorRect
@@ -83,6 +86,11 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	get_tree().auto_accept_quit = false
 	layer = 100
+	# Players get 60 fps (physics already ticks at 60): on a 120-145 Hz display an uncapped game
+	# draws and spins for vsync twice as often for the same picture. Headless runs don't draw, and
+	# the rendered probes (tests/*_probe.gd, --script) measure uncapped frame spans.
+	if DisplayServer.get_name() != "headless" and not ("--script" in OS.get_cmdline_args()):
+		Engine.max_fps = MAX_FPS
 	veil = ColorRect.new()
 	veil.color = Color.BLACK
 	veil.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -106,6 +114,10 @@ func _ready() -> void:
 		heartbeat = BoothHeartbeat.new(beat_path)
 		add_child(heartbeat)
 		print("AppRouter: heartbeat at %s" % ProjectSettings.globalize_path(beat_path))
+	# The Endless Runner's shader warm-up runs on the idle hub (scenes/runner/warmup/
+	# background_warm.gd), so the runner opens fast. Test suites run with --script and get none.
+	if not ("--script" in OS.get_cmdline_args()):
+		add_child(BackgroundWarm.new(ROUTES["hub"]))
 	var soak_minutes := BoothSoak.minutes_from(args)
 	if soak_minutes > 0.0:
 		# The soak changes routes itself: no idle return, no launch route, no next-player card,
@@ -323,6 +335,10 @@ func _process(delta: float) -> void:
 	var scene := get_tree().current_scene
 	if scene == null or scene.scene_file_path != ROUTES[attract]:
 		go(attract, "idle")
+	elif scene.has_method("reset_attract"):
+		# Already on the attract screen: drop whatever the last visitor left selected (a focused
+		# Endless Runner button keeps the hub's 3D portrait rendering), as a fresh hub would be.
+		scene.reset_attract()
 
 func smoke_routes() -> void:
 	# Let the launch scene finish its opening frames, as a player would, before switching.

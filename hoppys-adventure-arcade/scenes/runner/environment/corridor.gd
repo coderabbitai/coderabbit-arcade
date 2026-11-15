@@ -34,6 +34,10 @@ var _pillars: MultiMesh
 var _rain: GPUParticles3D
 var _speed_lines: GPUParticles3D
 var _far_material: ShaderMaterial
+## False once the legacy corridor geometry is hidden (starship_corridor.gd): its scroll and clock
+## uniforms and the 36 rack and pillar instance transforms are then never drawn, so _process skips
+## writing them. Fixtures that call _update_pillars() directly still get fresh poses.
+var legacy_visible := true
 ## The spawner of the bound run, if any. While one is bound the scroll is read off the same physics
 ## ticks that move the chunks, so floor markers and hazards can never swim against each other.
 var _spawner: Node = null
@@ -297,6 +301,8 @@ func _process(delta: float) -> void:
 	var travel := _bound_travel()
 	_offset = fposmod(travel if not is_nan(travel) else _offset + _speed * delta, 96.0)
 	_clock += delta
+	if not legacy_visible:
+		return
 	for material in _scroll_materials:
 		material.set_shader_parameter("scroll", _offset)
 	for material in _clock_materials:

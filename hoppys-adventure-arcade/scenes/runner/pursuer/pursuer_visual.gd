@@ -219,6 +219,9 @@ func play_retreat() -> void:
 	_wall.transform = _start_pose
 	_set_light(0.0)
 func _process(delta: float) -> void:
+	# Hidden between pursuits (pursuer.gd hides the node at threat 0; set_threat() shows it again
+	# through _apply()), so there is nothing to animate.
+	if is_inside_tree() and not is_visible_in_tree(): return
 	_t += delta
 	if _wall == null: return
 	if _reaction == &"idle": _apply()

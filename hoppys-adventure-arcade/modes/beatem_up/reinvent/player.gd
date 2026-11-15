@@ -1,6 +1,7 @@
 extends CharacterBody2D
 const Art = preload("res://modes/beatem_up/reinvent/art.gd")
 const Catalog = preload("res://modes/beatem_up/reinvent/catalog.gd")
+const Palette = preload("res://modes/beatem_up/reinvent/palette.gd")
 const BASE_FRAMES = preload("res://Assets/heroes-vs-villains-assets-only/heroes_villains/hoppy.tres")
 const COMBAT_FRAMES = BASE_FRAMES
 const MOTION_FRAMES = preload("res://Assets/heroes-vs-villains-assets-only/heroes_villains/hoppy_locomotion.tres")
@@ -14,9 +15,9 @@ var held: Node2D
 var visual_weapon := ""
 var block_time := 0.0
 ## REVIEW's colour: the burst (reinvent/game.gd review_burst) and the card's REVIEW scene use it.
-const REVIEW_TINT := Color("79e0c4")
+const REVIEW_TINT := Palette.REVIEW_TINT
 ## Hoppy while REVIEW protects him.
-const REVIEW_GLOW := Color(0.8, 1.25, 1.1)
+const REVIEW_GLOW := Palette.REVIEW_GLOW
 var hp := 3
 var facing := 1.0
 ## The way the stick last pointed past the deadzone. A swing keeps its facing, so a turn asked

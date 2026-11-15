@@ -69,6 +69,8 @@ static var done: bool:
 static var build_ms := 0.0
 static var draw_ms := 0.0
 static var census: Dictionary = {}
+## Last run, per batch: [build ms, draw ms], for the RUNNER WARMUP log line.
+static var batch_ms: Dictionary = {}
 ## Process-lifetime references to boss PackedScenes and every material the warm-up drew. BaseMaterial3D,
 ## ParticleProcessMaterial and code-built shaders free their compiled program with their last
 ## user, so a warmed program would otherwise be recompiled by the next pickup, pit or burst
@@ -89,17 +91,54 @@ var _slots := {}
 ## Once per process per context (runner menu, runner game). `host` owns the transient stage;
 ## `camera` defaults to the viewport camera. Returns false when skipped (already warmed, or the
 ## headless dummy renderer compiles nothing).
+## Draws every batch in one go: the menu and the game call this from _ready while the route veil
+## is opaque. Returns false when there was nothing to do (headless, no camera, already run).
 static func run(host: Node, camera: Camera3D = null) -> bool:
-	if host == null or not host.is_inside_tree(): return false
-	var context := &"game" if host.has_method(&"start_run") else &"menu"
-	if _state().ran.has(context): return false
+	var stage = begin(host, camera)
+	if stage == null: return false
+	stage._synchronous = true
+	var started := Time.get_ticks_usec()
+	while not stage.step(): pass
+	stage.free()
+	print("RUNNER WARMUP %s: %s" % [stage_context(host), summary((Time.get_ticks_usec() - started) / 1000.0)])
+	return true
+
+## The guard a scene's own warm-up runs under: "game" for RunnerGame, "menu" otherwise.
+static func stage_context(host: Node) -> StringName:
+	return &"game" if host.has_method(&"start_run") else &"menu"
+
+## One line for the log: totals and the three slowest batches, so a slow machine's game.log says
+## where the shader compiles went.
+static func summary(wall_ms: float) -> String:
+	var slow := batch_ms.keys()
+	slow.sort_custom(func(a, b): return batch_ms[a][1] + batch_ms[a][0] > batch_ms[b][1] + batch_ms[b][0])
+	var parts := PackedStringArray()
+	for key in slow.slice(0, 3):
+		parts.append("%s %.0f+%.0f" % [key, batch_ms[key][0], batch_ms[key][1]])
+	return "%.0f ms wall, build %.0f ms, draw %.0f ms, %d batches; slowest (build+draw ms): %s" % [wall_ms, build_ms, draw_ms, batch_ms.size(), ", ".join(parts)]
+
+## Units of work per batch after its build: every light state is drawn FRAMES times.
+const DRAW_UNITS := 2 * FRAMES
+
+## Sets a warm-up up without drawing anything, as a stage node under `host` that step() then
+## advances one unit at a time: a batch build, a forced draw, or the final label pass. The
+## background pass (scenes/runner/warmup/background_warm.gd) spends one unit per rendered frame
+## on the hub, so the main loop (and the booth heartbeat) keeps running between shader compiles;
+## run() spends them all at once. `context` names the guard: the host's own ("menu" or "game")
+## unless given, so a background pass never marks the scenes as warmed. Returns null when there
+## is nothing to do.
+static func begin(host: Node, camera: Camera3D = null, context: StringName = &"") -> Node3D:
+	if host == null or not host.is_inside_tree(): return null
+	if context == &"": context = &"game" if host.has_method(&"start_run") else &"menu"
+	if _state().ran.has(context): return null
 	_state().ran[context] = true
-	if DisplayServer.get_name() == "headless": return false
+	if DisplayServer.get_name() == "headless": return null
 	if camera == null: camera = host.get_viewport().get_camera_3d()
-	if camera == null: return false
+	if camera == null: return null
 	build_ms = 0.0
 	draw_ms = 0.0
 	census.clear()
+	batch_ms.clear()
 	# Retained programs must go before the RenderingServer does at exit.
 	var root := host.get_tree().root
 	if not root.tree_exiting.is_connected(release): root.tree_exiting.connect(release)
@@ -118,28 +157,74 @@ static func run(host: Node, camera: Camera3D = null) -> bool:
 	var labels = stage_for(host, camera, stage._focus)
 	labels.name = "GpuWarmupLabels"
 	labels._copy_labels(host, [stage, labels])
+	stage._host = host
+	stage._live_hoppy = hoppy
+	stage._labels = labels
 	# Batches keep the shared instance-uniform buffer (4096 slots) well inside its limit.
-	for batch in batches():
-		var started := Time.get_ticks_usec()
-		stage.build(batch)
-		build_ms += (Time.get_ticks_usec() - started) / 1000.0
-		started = Time.get_ticks_usec()
-		# The live Hoppy's auras and shield, under its own lights (restored below; a run opens bare).
-		if hoppy != null and batch == &"characters": _dress(hoppy, true)
-		_sync_transforms(host)
-		for lit in [false, true]:
-			stage._light.visible = lit
-			for i in FRAMES: RenderingServer.force_draw(false, 1.0 / 60.0)
-		if hoppy != null and batch == &"characters": _dress(hoppy, false)
-		draw_ms += (Time.get_ticks_usec() - started) / 1000.0
-		retain(stage)
-		labels._copy_labels(stage._group, [])
-		stage.clear()
-	stage.free()
-	# Queued after every copy's own mesh update, so it runs once they are built, in the same
-	# message-queue flush and so before the next frame is drawn.
-	_draw_labels.call_deferred(labels)
+	stage._queue = batches()
+	return stage
+
+## The scene this stage warms, its live Hoppy (if any) and the label stage, set by begin().
+var _host: Node
+var _live_hoppy: Node3D
+var _labels: Node3D
+## Batches still to draw; the first is the one in progress once _unit > 0.
+var _queue: Array[StringName] = []
+## Units into the first queued batch: one per track-depth copy to build, then DRAW_UNITS forced
+## draws, unlit first, then under the warm omni.
+var _unit := 0
+## run() draws the labels in a deferred call this frame; a stepped pass waits for the next step.
+var _synchronous := false
+var _labels_waited := false
+var _finished := false
+
+## One unit of work. Returns true once everything is drawn; the caller frees the stage then.
+func step() -> bool:
+	if _finished: return true
+	if not _queue.is_empty():
+		_step_batch(_queue[0])
+		return false
+	# Every batch is drawn: the label copies, queued after their deferred mesh builds.
+	if _synchronous:
+		_draw_labels.call_deferred(_labels)
+	elif not _labels_waited:
+		_labels_waited = true
+		return false
+	else:
+		_draw_labels(_labels)
+	_labels = null
+	_finished = true
 	return true
+
+func _step_batch(batch: StringName) -> void:
+	var copies := TRACK_DEPTHS.size()
+	if _unit < copies:
+		var started := Time.get_ticks_usec()
+		build_depth(batch, _unit)
+		var spent := (Time.get_ticks_usec() - started) / 1000.0
+		build_ms += spent
+		if _unit == 0: batch_ms[batch] = [0.0, 0.0]
+		batch_ms[batch][0] += spent
+		_unit += 1
+		if _unit < copies: return
+		# The live Hoppy's auras and shield, under its own lights (restored below; a run opens bare).
+		if _live_hoppy != null and batch == &"characters": _dress(_live_hoppy, true)
+		_sync_transforms(_host)
+		return
+	var started := Time.get_ticks_usec()
+	_light.visible = _unit - copies >= FRAMES
+	RenderingServer.force_draw(false, 1.0 / 60.0)
+	var spent := (Time.get_ticks_usec() - started) / 1000.0
+	draw_ms += spent
+	batch_ms[batch][1] += spent
+	_unit += 1
+	if _unit < copies + DRAW_UNITS: return
+	if _live_hoppy != null and batch == &"characters": _dress(_live_hoppy, false)
+	retain(self)
+	_labels._copy_labels(_group, [])
+	clear()
+	_queue.pop_front()
+	_unit = 0
 
 ## The shared CPU-side art (hazard and pickup GLB layouts, per-kind pickup meshes, every boss
 ## projectile mesh and material) is built by script load or arena mount already; calling the
@@ -192,7 +277,9 @@ static func _draw_labels(labels: Node3D) -> void:
 		for lit in [false, true]:
 			labels._light.visible = lit
 			for i in FRAMES: RenderingServer.force_draw(false, 1.0 / 60.0)
-		draw_ms += (Time.get_ticks_usec() - started) / 1000.0
+		var spent := (Time.get_ticks_usec() - started) / 1000.0
+		draw_ms += spent
+		batch_ms[&"labels"] = [0.0, spent]
 		census["label"] = labels.get_child_count() - 1
 	labels.free()
 
@@ -293,17 +380,23 @@ static func batches() -> Array[StringName]:
 
 ## Mounts one copy of the batch at each track depth, in world space along the corridor (-Z).
 func build(batch: StringName) -> void:
-	_group = Node3D.new()
-	_group.name = "Batch"
-	add_child(_group)
-	_slots.clear()
-	for depth in TRACK_DEPTHS:
-		var copy := Node3D.new()
-		copy.name = "Depth%d" % depth
-		_group.add_child(copy)
-		copy.global_position = _focus + Vector3(0, 0, -depth)
-		if depth == 0.0: _near = copy
-		_build_into(copy, batch)
+	for index in TRACK_DEPTHS.size(): build_depth(batch, index)
+
+## Mounts the batch's copy at TRACK_DEPTHS[index]; the first index starts the batch's group.
+## A stepped pass spends one unit per copy, so no single frame builds a whole batch.
+func build_depth(batch: StringName, index: int) -> void:
+	if index == 0:
+		_group = Node3D.new()
+		_group.name = "Batch"
+		add_child(_group)
+		_slots.clear()
+	var depth: float = TRACK_DEPTHS[index]
+	var copy := Node3D.new()
+	copy.name = "Depth%d" % depth
+	_group.add_child(copy)
+	copy.global_position = _focus + Vector3(0, 0, -depth)
+	if depth == 0.0: _near = copy
+	_build_into(copy, batch)
 
 func _build_into(copy: Node3D, batch: StringName) -> void:
 	_target = copy

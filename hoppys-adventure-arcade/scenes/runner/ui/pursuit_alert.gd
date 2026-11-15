@@ -23,6 +23,8 @@ var beat_time := 0.0
 var blocked_time := 0.0
 var _connections := {}
 var _audio: Node
+## Seconds until the next search for RunnerAudio while it is not bound (0 searches at once).
+var _audio_retry := 0.0
 var _border := Color(0, 0, 0, 0)
 
 class PortraitArt extends Control:
@@ -282,9 +284,13 @@ func _process(delta: float) -> void:
 	portrait_material.set_shader_parameter("threat", 1 - fraction)
 	radar_phase = fposmod(radar_phase + delta * radar_rate, 1.0)
 	if not is_instance_valid(_audio) and is_instance_valid(game):
-		var candidate := game.find_child("RunnerAudio", true, false)
-		if candidate != null and candidate.has_method("pursuit_radar_phase"):
-			_audio = candidate
+		# A HUD preview without audio would otherwise search the whole game tree every frame.
+		_audio_retry -= delta
+		if _audio_retry <= 0.0:
+			_audio_retry = 0.5
+			var candidate := game.find_child("RunnerAudio", true, false)
+			if candidate != null and candidate.has_method("pursuit_radar_phase"):
+				_audio = candidate
 	if is_instance_valid(_audio) and state in [&"incoming", &"pursuit"]:
 		radar_phase = _audio.pursuit_radar_phase()
 	radar.phase = radar_phase

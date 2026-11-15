@@ -63,8 +63,7 @@ func transition_to(index: int, duration: float) -> void:
 	if active_index == index:
 		return
 	outgoing = active
-	active = Preview.new()
-	active.setup(index)
+	active = Preview.make(index)
 	add_child(active)
 	active_index = index
 	preview_changed.emit(index)

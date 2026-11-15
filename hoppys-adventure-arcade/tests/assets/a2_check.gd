@@ -225,8 +225,17 @@ func check_round_three(corridor: Node3D) -> void:
 	check(fresh.get_shader_parameter("panel_period") == null or is_zero_approx(fresh.get_shader_parameter("panel_period")), "R3 B2 untouched shared material has no override")
 	check(fresh.shader.code.contains("uniform float panel_period = 0.0;") and fresh.shader.code.contains("float panel_mask = 1.0;") and fresh.shader.code.contains("if (panel_period > 0.0)"), "R3 B2 default shader disables panel gaps")
 	check(float(corridor.get_node("WallR").material_override.get_shader_parameter("panel_period")) == 8.0, "R3 B2 corridor opts into eight-meter panels")
+	# The starship hides the legacy geometry and the corridor stops writing its uniforms; a legacy
+	# fixture (legacy_visible) still receives the pause-safe clock every process tick.
+	var lane_glow: ShaderMaterial = corridor.get_node("LaneGlow").material_override
+	check(not corridor.legacy_visible, "starship corridor marks the legacy geometry hidden")
+	var stale: Variant = lane_glow.get_shader_parameter("clock")
 	corridor._process(0.1)
-	check(corridor.get_node("LaneGlow").material_override.get_shader_parameter("clock") == corridor._clock, "lane glow receives pause-safe clock")
+	check(lane_glow.get_shader_parameter("clock") == stale, "hidden lane glow is not rewritten each frame")
+	corridor.legacy_visible = true
+	corridor._process(0.1)
+	check(lane_glow.get_shader_parameter("clock") == corridor._clock, "lane glow receives pause-safe clock when shown")
+	corridor.legacy_visible = false
 	check(not corridor._scroll_materials.has(material) and not corridor._frame_materials.has(material) and corridor._rack_materials.has(material), "metal receives only supported uniforms")
 	# Scroll surfaces, the far glow, the pillars, the lane, and every rack. The corner material is gone.
 	var clock_targets: int = corridor._scroll_materials.size() + corridor._rack_materials.size() + 3
