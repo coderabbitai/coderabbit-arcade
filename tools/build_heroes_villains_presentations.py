@@ -30,7 +30,8 @@ class Scene:
 
     def sprite(self, name, resource, animation, x, y, scale=1, parent='.'):
         a = MANIFEST['atlases'][resource]
-        ref = self.resource('SpriteFrames', f'heroes_villains/{resource}.tres')
+        ref = (self.resource('SpriteFrames', 'res://Assets/Character/CodeRabbit/2D/heroes_villains/coderabbit_hero.tres', root='')
+               if resource == 'hoppy' else self.resource('SpriteFrames', f'heroes_villains/{resource}.tres'))
         self.node(name, 'AnimatedSprite2D', [f'position = Vector2({x}, {y})', f'scale = Vector2({scale}, {scale})', f'sprite_frames = {ref}', f'animation = &"{animation}"', 'centered = false', f'offset = Vector2({-a["pivot"][0]}, {-a["pivot"][1]})'], parent)
 
     def save(self, name):

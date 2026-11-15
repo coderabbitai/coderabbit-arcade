@@ -1,9 +1,10 @@
 extends CharacterBody2D
 const Art = preload("res://modes/beatem_up/reinvent/art.gd")
 const Catalog = preload("res://modes/beatem_up/reinvent/catalog.gd")
-const BASE_FRAMES = preload("res://Assets/heroes-vs-villains-assets-only/heroes_villains/hoppy.tres")
+## Reference-matched 2D hero, retaining the original animation and combat clocks.
+const BASE_FRAMES = preload("res://Assets/Character/CodeRabbit/2D/heroes_villains/coderabbit_hero.tres")
 const COMBAT_FRAMES = BASE_FRAMES
-const MOTION_FRAMES = preload("res://Assets/heroes-vs-villains-assets-only/heroes_villains/hoppy_locomotion.tres")
+const MOTION_FRAMES = preload("res://Assets/Character/CodeRabbit/2D/heroes_villains/coderabbit_hero_locomotion.tres")
 const MOVE_SPEED := 264.0
 const UNARMED_OFFSET := Vector2(0, -51)
 const SHEET_POSES := ["idle", "run", "jab", "swing", "kick", "pickup", "hurt"]
@@ -212,7 +213,7 @@ func _sync_weapon(pose: String, progress: float, attacking: bool) -> void:
 		move_child(held,body.get_index())
 	elif not behind and held.get_index()<body.get_index():
 		move_child(held,get_child_count()-1)
-	held.animate(shown,combo,progress,attacking,pose_move,pose_dt,pose)
+	held.animate(shown,combo,progress,attacking,pose_move,pose_dt,pose,body.frame)
 
 func hop(offset_y: float) -> void:
 	body.position.y=offset_y

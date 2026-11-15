@@ -243,7 +243,7 @@ Regenerations: 0. The first generated master was retained. Orange AI Slop, the w
 
 ## heroes: send_in_the_rabbit
 
-Selected master: `heroes/sources/send_in_the_rabbit-generation0.png`. Retained masters: `heroes/sources/send_in_the_rabbit-generation0.png`.
+Selected master: `heroes/sources/send_in_the_rabbit-hero-reference.png`. Retained masters: `heroes/sources/send_in_the_rabbit-generation0.png`, `heroes/sources/send_in_the_rabbit-hero-reference.png`.
 
 ### Exact generation prompt history
 
@@ -263,9 +263,13 @@ Text (verbatim): ""
 Constraints: no readable text, no words, no logos, no watermark, no UI, no typography, no letterforms, exactly one Hoppy, no unarmored shirt, no extra limbs, no malformed paws; keep key subject inside central 80 percent because the game pans and zooms; illustration only, not a sprite sheet or comic panel.
 Avoid: photorealism, smooth vector art, blurry pixels, collage, text signs, branded symbols.
 
+#### Generation 1
+
+Edit image1 only the foreground rabbit hero. Preserve scene composition, camera, landing crouch pose, orange light ring, all blue cubes, buildings, robots, monsters, hacker, floor reflections. No new text. Image2 is the canonical 2D arcade rabbit design. Replace foreground rabbit costume/anatomy to match this design in painterly arcade cutscene rendering appropriate to image1: white head face torso and thighs, exactly TWO upright long ears with white rims and orange inner surfaces in BOTH ears, small orange nose, friendly determined dark eyes, dark charcoal gloves, dark joint and shoulder undersuit, distinct orange shoulder plates and forearm guards, BLACK belt round ORANGE buckle, orange/white paneled boots, orange cape darker orange underside, orange chest medallion with dark rabbit silhouette. Keep the crouched landing silhouette and hero footprint in image1, left fist pulled back and right gloved hand planted on floor. Avoid speckled recolor texture or white cape underside. Keep all background characters and architectural composition unchanged. 16:9 illustration same framing.
+
 ### Refinements
 
-Regenerations: 0. The first generated master was retained. Armored, caped Hoppy lands under an orange alert beacon with the slop, agent army and hacker held behind as secondary threats.
+Regenerations: 1. Reference-matched white hero, orange armor panels and cape, dark gloves and joints; retained composition.
 
 ## heroes: hacker_falls
 
@@ -321,7 +325,7 @@ Regenerations: 0. The first generated master was retained. The calm Agentic Core
 
 ## heroes: rabbit_stands
 
-Selected master: `heroes/sources/rabbit_stands-generation0.png`. Retained masters: `heroes/sources/rabbit_stands-generation0.png`.
+Selected master: `heroes/sources/rabbit_stands-hero-reference.png`. Retained masters: `heroes/sources/rabbit_stands-generation0.png`, `heroes/sources/rabbit_stands-hero-reference.png`.
 
 ### Exact generation prompt history
 
@@ -341,6 +345,10 @@ Text (verbatim): ""
 Constraints: no readable text, no words, no logos, no watermark, no UI, no typography, no letterforms, no glyphs, no code, no signage, exactly one CodeRabbit, no unarmored shirt, no extra limbs, no malformed paws, no visible villain, no enemy robots, no monster; keep every key subject in the central 80 percent because the game pans and zooms; illustration only, not a sprite sheet or comic panel.
 Avoid: photorealism, smooth vector art, blurry pixels, collage, text signs, branded symbols.
 
+#### Generation 1
+
+Edit image1 ONLY the foreground rabbit hero's anatomy and costume, retaining his standing victorious pose and footprint. Image2 is canonical costume identity. Preserve the entire celebratory futuristic atrium composition, orange banners and light rings, blue cubes, spectators, trees, confetti, floor and reflections and camera; no text changes/additions. Rabbit must match image2's white head face torso thighs, TWO tall upright ears BOTH orange inside white rims, small orange nose dark amber eyes, dark charcoal gloves and joint undersuit, distinct orange shoulder and forearm armor, black belt with round ORANGE buckle, orange-white paneled boots and dark ankles, orange cape with dark ORANGE underside (NOT white), orange chest medallion with dark rabbit silhouette. Render as polished 2D painted arcade story illustration matching the background, not 3D. Clean consistent costume, no speckled palette-swap artifacts. Keep exact stance and celebratory warm lighting. Aspect16:9 full scene.
+
 ### Refinements
 
-Regenerations: 0. The first generated master was retained. The armored, caped CodeRabbit holds an upright final-victory stance above the lit conference floor, with teal holographic light, orange trusses, confetti and distant cheering silhouettes.
+Regenerations: 1. Reference-matched white hero, orange armor panels and cape, dark gloves and joints; retained composition.

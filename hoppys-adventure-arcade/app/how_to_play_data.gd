@@ -26,6 +26,9 @@ const ORBIT := "res://Assets/orbital-ops-assets-only/orbital_ops/"
 const FOREST := "res://Assets/enchanted-repo-assets-only/enchanted_repo/"
 const CITY := "res://Assets/code-city-brawl-assets-only/code_city/"
 const HEROES := "res://Assets/heroes-vs-villains-assets-only/heroes_villains/"
+## Heroes vs. Villains' player sheets (modes/beatem_up/reinvent/player.gd).
+const HERO := "res://Assets/Character/CodeRabbit/2D/heroes_villains/coderabbit_hero.tres"
+const HERO_MOTION := "res://Assets/Character/CodeRabbit/2D/heroes_villains/coderabbit_hero_locomotion.tres"
 const RUNNER := "res://Assets/runner/menu_previews/"
 const PLATFORMER_HOPPY := BAY + "hoppy/platformer.tres"
 const BRAWL_HOPPY := "res://Assets/code-city-brawl-player/combat.tres"
@@ -164,10 +167,10 @@ const GAMES := {
 			_PAUSE,
 		],
 		"poses": {
-			"move": [HEROES + "hoppy_locomotion.tres", "walk_down"],
-			"jump": [HEROES + "hoppy.tres", "jump"],
-			"attack": [HEROES + "hoppy.tres", "jab_action"],
-			"pickup": [HEROES + "hoppy.tres", "pickup"],
+			"move": [HERO_MOTION, "walk_down"],
+			"jump": [HERO, "jump"],
+			"attack": [HERO, "jab_action"],
+			"pickup": [HERO, "pickup"],
 			"review": [HEROES + "capabilities_fx.tres", "review_burst", "pulse"],
 		},
 	},

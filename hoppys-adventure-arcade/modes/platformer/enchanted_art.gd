@@ -1,7 +1,23 @@
 extends RefCounted
 const ROOT := "res://Assets/enchanted-repo-assets-only/enchanted_repo/"
+const TREELINE_SHADER = preload("res://modes/platformer/enchanted_treeline.gdshader")
 static var crops := {}
 static var manifest: Dictionary = {}
+
+static func treeline() -> Sprite2D:
+	var result := Sprite2D.new()
+	result.name = "ContinuousTreeline"
+	result.texture = load(ROOT + "treeline.png")
+	result.centered = false
+	result.position = Vector2(-180, -55)
+	# Retain the original 1.5x artwork scale over a strip covering the full route.
+	result.scale = Vector2(6000.0 / result.texture.get_width(), 1.3)
+	result.modulate = Color(.55, .65, .65, .62)
+	var material := ShaderMaterial.new()
+	material.shader = TREELINE_SHADER
+	material.set_shader_parameter("span_texels", 4000.0)
+	result.material = material
+	return result
 
 static func sprite(sheet: String, clip: String, pos := Vector2.ZERO) -> AnimatedSprite2D:
 	var result := AnimatedSprite2D.new()

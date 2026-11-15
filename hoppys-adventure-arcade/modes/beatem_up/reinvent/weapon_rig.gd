@@ -26,12 +26,12 @@ const SCALES := {
 }
 ## Paw position in the unarmed 128px cel. Side poses match the baked hold_idle paw.
 const HANDS := {
-	"idle": Vector2(78, 87),
-	"walk_up": Vector2(72, 86),
-	"walk_down": Vector2(80, 84),
-	"jump": Vector2(86, 78),
-	"defeat": Vector2(90, 102),
-	"victory": Vector2(90, 96),
+	"idle": Vector2(84, 91),
+	"walk_up": Vector2(82, 89),
+	"walk_down": Vector2(82, 90),
+	"jump": Vector2(84, 85),
+	"defeat": Vector2(104, 110),
+	"victory": Vector2(84, 84),
 }
 const CARRY_POSES := ["walk_up", "walk_down", "jump", "defeat", "victory"]
 ## Quarter turn (clockwise, around the paw) for carries whose head would otherwise cover Hoppy's
@@ -83,7 +83,7 @@ func carry_behind(kind: String, pose: String) -> bool:
 func tip_global() -> Vector2:
 	return to_global(tip_local)
 
-func animate(kind: String, step: int, progress: float, active: bool, movement: Vector2, dt: float, pose: String) -> void:
+func animate(kind: String, step: int, progress: float, active: bool, movement: Vector2, dt: float, pose: String, frame := 0) -> void:
 	clock += dt * (10.0 if movement.length() > .1 else 3.0)
 	visible = kind != ""
 	trail.clear_points()
@@ -97,7 +97,7 @@ func animate(kind: String, step: int, progress: float, active: bool, movement: V
 	if armed != null and pose not in CARRY_POSES:
 		_armed(kind, step, progress, active)
 	elif pose in CARRY_POSES and Art.carry_texture(kind) != null:
-		_carry(kind, pose, movement)
+		_carry(kind, pose, frame)
 	else:
 		_fallback(kind, step, progress, active)
 
@@ -172,16 +172,17 @@ func _armed_trail(style: String, paw: Vector2, windup: Vector2, torso: Rect2) ->
 	for point in kept:
 		trail.add_point(point)
 
-func _carry(kind: String, pose: String, movement: Vector2) -> void:
+func _carry(kind: String, pose: String, frame: int) -> void:
 	sprite.hide()
 	carry.show()
 	var texture := Art.carry_texture(kind)
 	if carry.texture != texture:
 		carry.texture = texture
 	var hand_cell: Vector2 = HANDS.get(pose, HANDS.idle)
+	var calibrated: Variant = Art.carry_hand(pose, frame)
+	if calibrated is Vector2:
+		hand_cell = calibrated
 	var hand := (hand_cell - UNARMED_PIVOT) * Art.BODY_SCALE
-	if movement.length() > .1:
-		hand.y -= sin(clock) * 2.0
 	# Each carry is its 192 px cel scaled to the baked weapon length, so the grip scales with it.
 	var grip: Vector2 = GRIPS.get(kind, CELL * .5) * float(texture.get_width()) / CELL.x
 	var size := Vector2(texture.get_width(), texture.get_height())
