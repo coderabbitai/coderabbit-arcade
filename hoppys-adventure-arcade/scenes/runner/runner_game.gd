@@ -422,13 +422,14 @@ func retry_boss() -> void:
 	pending_boss_checkpoint = boss_checkpoint.duplicate(true)
 	_take_route("runner_game")
 
+## Main Menu: back to the hub, with nothing pending for the next run.
 func go_to_menu() -> void:
 	if _route_in_flight():
 		return
 	resume()
 	pending_boss_checkpoint = {}
 	pending_intro_mode = &"full"
-	_take_route("runner")
+	_take_route("hub")
 
 ## The first route asked for wins. AppRouter ignores a go() while its veil is fading, but Game Over
 ## keeps focus through that fade, so a second press (Esc after Retry Boss, say) must not rewrite

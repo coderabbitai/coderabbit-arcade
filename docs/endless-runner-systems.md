@@ -103,7 +103,7 @@ a chunk's back edge passes z = +12. Lateral follow `camera.x = lerp(camera.x, pl
 | `tests/runner_scaffold_check.gd`, `tests/runner_logic.gd`, `tests/runner_chunk_validator.gd`, `tests/runner_smoke.gd` | SceneTree scripts | §8 |
 | `app/app_router.gd`, `app/audio_service.gd` | autoloads | Contract §2 / §5.6 additions |
 | Graybox placeholders (frozen after PR 1): `scenes/runner/ui/runner_hud.tscn/.gd`, `scenes/runner/ui/pause_menu.tscn/.gd`, `scenes/runner/ui/game_over.tscn/.gd` | | Minimal `Style`-themed UI so the loop is playable |
-| `scenes/runner/runner_menu.tscn/.gd` | Node3D | Backend fallback graybox only; the frontend's F6 menu replaces it. Brought up to the contract §2 four-button set in PR 2 — `01 Play`, `02 Leaderboard` (top-10 panel from the static `runner_leaderboard.load_entries()`), `03 Return to Main Menu`, `04 Quit Game` — so `runner_scaffold_check.gd` can assert `RunnerMenu` + `buttons.size() == 4` against either scene. That is the backend's **last** edit here: once the frontend menu lands the path is exclusively frontend-owned (contract §1 rule 1) |
+| `scenes/runner/runner_menu.tscn/.gd` | (removed 2026-11-15) | The backend graybox menu and the frontend's F6 menu are history: the hub routes straight to `runner_game`, and the leaderboard lives in `scenes/runner/ui/leaderboard_panel.gd`, opened from the pause menu |
 
 ## 3. Player (`runner_player.gd`)
 
@@ -403,9 +403,9 @@ Every test that instantiates `RunnerGame` must override `leaderboard_path` to a 
 `user://` file **before** `add_child()` — `_ready()` honours `autostart`, so a later assignment races
 a live run — and must delete that file and its `.tmp`/`.bak` siblings on every exit path; otherwise a
 run that reaches `caught` writes the player's real `user://leaderboard.cfg`.
-`RunnerMenu.leaderboard_path` must be set **before** the leaderboard panel opens (before calling
-`_toggle_leaderboard()` or emitting `buttons[1].pressed`), because the panel reads the path at open
-time. Setting it after the panel is already open has no effect on the current open.
+`RunnerGame.leaderboard_path` must be set **before** the leaderboard panel opens (before emitting the
+pause menu's `leaderboard_button.pressed`), because the panel copies the path when it opens. Setting it
+after the panel is already open has no effect on the current open.
 
 **`tests/runner_logic.gd`** (systems instantiated as plain nodes under `root`, driven by direct
 `_physics_process(1.0/60)` calls, config `duplicate()`d):
@@ -427,8 +427,8 @@ auras and shield glow.
 
 **`tests/runner_scaffold_check.gd`** additionally drives the pause facade on a real `runner_game.tscn`:
 `toggle_pause()` both ways, then `pause()` → `start_run()` → the tree and the facade are both unpaused,
-the state is `running` and `paused_changed(false)` was emitted; and it asserts the runner menu exposes
-four buttons.
+the state is `running` and `paused_changed(false)` was emitted; and it asserts `go_to_menu()` lands on
+the hub.
 
 **`tests/runner_chunk_validator.gd`** loads every `chunks/chunk_*.tscn` and checks: V0 no hazard has
 mounted a visual before `chunk.setup()` handed out the RunConfig, and every hazard afterwards has the
@@ -455,7 +455,7 @@ off → hit → hit → `caught`, `run_finished` exactly once ≈ 3.0 s later; l
 `submit_name("  Test  ")` → name `Test`, count unchanged. `auto_fix` mid-run → cleared > 0 and no
 hit for 2 s. `pause()` for 1 s → score unchanged, `paused_changed` seen; `resume()`. Real input:
 `InputEventKey` with `physical_keycode = KEY_SPACE` → `player_action("jump")`. Routing:
-`AppRouter.go("runner_game")` twice, then `runner`, then `hub`: `not busy`, tree unpaused, AudioService
+`AppRouter.go("runner_game")` twice, then `hub`: `not busy`, tree unpaused, AudioService
 still has 2 children. Reset `time_scale` before quitting.
 
 **Boot check** (`--scene res://scenes/runner/runner_game.tscn --quit-after <frames>`): this plays a real

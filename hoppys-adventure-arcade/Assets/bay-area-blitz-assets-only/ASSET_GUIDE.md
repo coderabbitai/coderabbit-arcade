@@ -9,7 +9,6 @@
 - To use the art in coderabbit-arcade, copy only `bay_area/` into your project's asset directory. PNG and SpriteFrames resources use relative references; keep them together.
 - `animations/` contains animated GIF previews. They repeat one-shot actions deliberately for inspection.
 - `individual/` contains each named animation's first frame as a PNG; `frames/` contains every individual cell.
-- `bay-area-preview.png` shows a staged composition. It is an illustration of scale and palette, not a playable level layout.
 - `sources/` preserves generated masters. Use normalized atlases for import; their frame dimensions differ from the generated masters.
 
 ## GDD coverage
@@ -37,7 +36,6 @@ The source requirements below come from the Platformer Game section of the GDD (
 | Fog-rolling streets | Four-frame stylized fog curl, separate alpha layer | Use low opacity and slow translation. Decorative, no collision. |
 | Golden Gate backdrop | 960 × 540 distant scenery plate | Single flattened plate; not internally separated bridge/sky/hill layers and not seamless. |
 | Enemy death / pickup feedback | Four-frame gold pixel burst, plus enemy-specific defeat frames | Can supplement GPUParticles2D; no particle system or gameplay event is installed. |
-| Bay Area level-card thumbnail | Reuse `bay-area-preview.png` | Add level name/Play UI as native controls. |
 | Score, retry, game over, menus | Existing project's native UI work | No new raster text panels supplied; use labels/buttons. |
 
 Orbital Ops / Enchanted Repo enemies, bosses, CI lasers, vacuum vents and crumbling branches are deferred. Bug Bots appear in the general platformer catalog, but are not named as a separate Bay Area enemy in the level-specific requirements; no separate projectile Bug Bot set is claimed here. Audio is outside this sprite/animation pack.

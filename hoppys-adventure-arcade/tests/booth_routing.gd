@@ -1,7 +1,7 @@
 extends SceneTree
-## Booth routing: --attract picks the menu where idle and finished players go; a game over in booth
-## mode sends the player on once their --retries are used, with a next-player card, and ends their
-## session as game_over; outside booth mode every game's own retry screen is unchanged. Each game
+## Booth routing: idle and finished players go back to the hub (the legacy --attract flag only
+## warns); a game over in booth mode sends the player on once their --retries are used, with a
+## next-player card, and ends their session as game_over; outside booth mode every game's own retry screen is unchanged. Each game
 ## (Heroes vs. Villains, Code City Brawl, a platformer level, the runner) is driven through its
 ## real game-over path. Run headless with --script res://tests/booth_routing.gd.
 const ChildGame := preload("res://tests/support/child_game.gd")
@@ -93,23 +93,19 @@ func run() -> void:
 	router = root.get_node("AppRouter")
 	clean()
 	await wait(0.3)
-	check(router.attract_route(PackedStringArray()) == "hub", "The hub is the default attract route")
-	check(router.attract_route(PackedStringArray(["--attract=beatem_up"])) == "beatem_up"
-		and router.attract_route(PackedStringArray(["--attract=runner"])) == "runner",
-		"--attract picks one of the attract menus")
-	check(router.attract_route(PackedStringArray(["--attract=heroes_vs_villains"])) == "hub"
-		and router.attract_route(PackedStringArray(["--attract=platformer"])) == "hub"
-		and router.attract_route(PackedStringArray(["--attract=nowhere"])) == "hub",
-		"A game, a menu without its own music, or an unknown name falls back to the hub")
+	check(router.ATTRACT_ROUTE == "hub" and router.ROUTES.has("hub"), "The hub is the only attract route")
+	for name in ["platformer", "runner", "beatem_up"]:
+		check(not router.ROUTES.has(name), "The %s genre menu route is gone" % name)
 	check(router.retry_count(PackedStringArray()) == 0, "Booth players get no retries by default")
 	check(router.retry_count(PackedStringArray(["--retries=2"])) == 2, "--retries sets the retries")
 	check(router.retry_count(PackedStringArray(["--retries=-1"])) == 0
 		and router.retry_count(PackedStringArray(["--retries=lots"])) == 0,
 		"A bad --retries means none")
 	var kiosk: Dictionary = await launch(["--booth", "--attract=beatem_up", "--retries=1"])
-	check(kiosk.code == 0
-		and kiosk.log.contains("AppRouter: booth attract route beatem_up, 1 retries per player"),
+	check(kiosk.code == 0 and kiosk.log.contains("AppRouter: booth mode, 1 retries per player"),
 		"The launch flags reach the router (exit %d)" % kiosk.code)
+	check(kiosk.log.contains("--attract=beatem_up does nothing any more"),
+		"A legacy --attract flag warns and is otherwise ignored")
 
 	# Outside booth mode nothing changes: the game shows its own retry screen.
 	await visit("heroes_vs_villains")
@@ -122,7 +118,6 @@ func run() -> void:
 	router.start_session_log(LOG_DIR)
 	router.set_booth(true)
 	router.retry_limit = 1
-	router.attract = "beatem_up"
 	await visit("heroes_vs_villains")
 	current_scene.game_over()
 	await process_frame
@@ -138,8 +133,8 @@ func run() -> void:
 	check(router.next_player_left > router.NEXT_PLAYER_SECONDS - 1.0,
 		"The card starts its countdown from six seconds")
 	await finish_card()
-	check(on("beatem_up") and not card_up() and router.game_overs == 0,
-		"After the countdown the attract route opens for the next player")
+	check(on("hub") and not card_up() and router.game_overs == 0,
+		"After the countdown the hub opens for the next player")
 
 	router.retry_limit = 0
 	await visit("code_city_brawl")
@@ -148,7 +143,7 @@ func run() -> void:
 	check(not current_scene.overlay.visible and card_up(),
 		"Code City Brawl hands its game over to the booth")
 	await finish_card()
-	check(on("beatem_up"), "Code City Brawl's next player starts at the attract route")
+	check(on("hub"), "Code City Brawl's next player starts at the hub")
 
 	await visit("bay_area_blitz")
 	var level := current_scene
@@ -156,7 +151,7 @@ func run() -> void:
 	check(await card_within(10.0) and not level.overlay.visible,
 		"A platformer level hands its game over to the booth after the knockout")
 	await finish_card()
-	check(on("beatem_up") and not paused, "The platformer's next player starts unpaused")
+	check(on("hub") and not paused, "The platformer's next player starts unpaused")
 
 	# The real runner: its game-over screen hears run_finished and hands off.
 	await visit("runner_game")
@@ -171,11 +166,11 @@ func run() -> void:
 		and router.next_player.summary.text.begins_with("SCORE "),
 		"The runner's game-over screen hands off to the booth with its score")
 	await finish_card()
-	check(on("beatem_up"), "The runner's next player starts at the attract route")
+	check(on("hub"), "The runner's next player starts at the hub")
 
 	# A game over while a route change is already under way leaves it to that change.
 	await visit("code_city_brawl")
-	router.go("beatem_up")
+	router.go("hub")
 	check(not router.booth_game_over(), "No takeover while a route change is under way")
 	await settle_route()
 
@@ -185,17 +180,16 @@ func run() -> void:
 	check(await card_within(10.0), "The card is up before booth mode is turned off")
 	router.set_booth(false)
 	await settle_route()
-	check(not card_up() and on("beatem_up") and not paused,
-		"Leaving booth mode mid-countdown clears the card and opens the attract route")
+	check(not card_up() and on("hub") and not paused,
+		"Leaving booth mode mid-countdown clears the card and opens the hub")
 	router.set_booth(true)
 	router.retry_limit = 0
 
-	router.attract = "runner"
 	await visit("orbital_ops")
 	router.idle_limit = 0.4
 	await wait(0.8)
 	await settle_route()
-	check(on("runner"), "An idle game returns to the attract route")
+	check(on("hub"), "An idle game returns to the hub")
 	router.idle_limit = router.IDLE_SECONDS
 
 	var records := ends()
@@ -206,7 +200,6 @@ func run() -> void:
 		"The session counts both of the player's losses, the retried one included")
 
 	router.set_booth(false)
-	router.attract = "hub"
 	router.retry_limit = 0
 	clean()
 	await root.get_node("AudioService").settle()

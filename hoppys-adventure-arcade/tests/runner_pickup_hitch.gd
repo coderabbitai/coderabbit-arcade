@@ -1,25 +1,20 @@
 extends SceneTree
 ## Gate: grabbing an item must never stall a frame. Rendered runs only (headless does not draw, so
 ## shader compiles and uploads would not show):
-## Godot --always-on-top --path hoppys-adventure-arcade --script res://tests/runner_pickup_hitch.gd [-- via_menu=1]
+## Godot --always-on-top --path hoppys-adventure-arcade --script res://tests/runner_pickup_hitch.gd
 ## Fresh process, nothing warmed by hand: every power-up kind is placed in Hoppy's lane during a live
 ## autopilot run and grabbed for the FIRST time. For each kind it records the worst frame from the
 ## pickup appearing to COLLECT_FRAMES after the grab. Fails if any frame exceeds LIMIT_MS.
-## via_menu=1 first shows the runner menu for MENU_SECONDS (the normal route into a run).
 const PowerUpDefs = preload("res://scenes/runner/powerups/power_up_defs.gd")
 const LIMIT_MS := 25.0
 const COLLECT_FRAMES := 20
-const MENU_SECONDS := 4.0
 const PLACE_Z := -9.0
 const ATTEMPT_SECONDS := 4.0
 var game: Node
 var failures := 0
 var last := 0
-var via_menu := false
 
 func _initialize() -> void:
-	for arg in OS.get_cmdline_user_args():
-		if arg == "via_menu=1": via_menu = true
 	# A window close or app quit request reaches AppRouter, which quits with code 0 a second later:
 	# the run would end silently and look like a pass to anything reading only the exit code.
 	root.close_requested.connect(func():
@@ -56,14 +51,6 @@ func run() -> void:
 		return
 	root.size = Vector2i(1280, 720)
 	last = Time.get_ticks_usec()
-	if via_menu:
-		var menu := (load("res://scenes/runner/runner_menu.tscn") as PackedScene).instantiate()
-		root.add_child(menu)
-		var until := Time.get_ticks_msec() + int(MENU_SECONDS * 1000)
-		while Time.get_ticks_msec() < until:
-			await frame()
-		menu.queue_free()
-		await frame()
 	game = (load("res://scenes/runner/runner_game.tscn") as PackedScene).instantiate()
 	game.autostart = false
 	game.leaderboard_path = OS.get_temp_dir().path_join("runner_pickup_hitch_leaderboard.cfg")
@@ -90,7 +77,7 @@ func run() -> void:
 		if not ok:
 			failures += 1
 		print("PICKUP HITCH %-16s worst frame %6.1f ms  %s" % [kind, result, "ok" if ok else "OVER %.0f ms" % LIMIT_MS])
-	print("PICKUP HITCH: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures, worst %.1f ms, limit %.0f ms, via_menu=%s)" % [worst_overall, LIMIT_MS, via_menu])
+	print("PICKUP HITCH: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures, worst %.1f ms, limit %.0f ms)" % [worst_overall, LIMIT_MS])
 	game.queue_free()
 	await create_timer(0.3).timeout
 	quit(failures)

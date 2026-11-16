@@ -2203,13 +2203,13 @@ func _test_boss_checkpoint() -> void:
 	_free_rig(rig)
 	runner_game_script.set(&"pending_boss_checkpoint", {})
 
-	# --- the first route wins: Esc then Retry Boss never leaks a checkpoint into the menu's Play ---
+	# --- the first route wins: Esc then Retry Boss never leaks a checkpoint into the next run ---
 	rig = _checkpoint_rig(false)
 	game = rig["game"]
 	game.boss_checkpoint = {"stage_index": 2, "seed": seed}
 	game.go_to_menu()
 	game.retry_boss()
-	check(game.routes == ["runner"], "24b route: only the menu route is taken, got %s" % [game.routes])
+	check(game.routes == ["hub"], "24b route: only the hub route is taken, got %s" % [game.routes])
 	check(_pending_checkpoint().is_empty(), "24b route: Retry Boss after Esc leaves no pending checkpoint")
 	_free_rig(rig)
 

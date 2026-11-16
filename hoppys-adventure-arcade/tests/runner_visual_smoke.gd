@@ -720,7 +720,7 @@ func check_runner_ui() -> void:
 	var pause_menu: CanvasLayer = mock.pause_menu
 	var over: CanvasLayer = mock.game_over
 	check(hud.get_ready.visible and not pause_menu.visible and not over.visible, "UI initial state")
-	check(hud.layer == 10 and pause_menu.layer == 21 and over.layer == 22, "overlay layers")
+	check(hud.layer == 10 and pause_menu.layer == pause_menu.LAYER and over.layer == 22, "overlay layers")
 	var seen_actions: Array[StringName] = []
 	var seen_chunks: Array = []
 	var cleared: Array = []
@@ -1267,36 +1267,37 @@ func check_runner_full_loop() -> void:
 	var router := root.get_node("AppRouter")
 	var audio := root.get_node("AudioService")
 	node_added.connect(_isolate_routed_game)
-	router.go("runner")
+	router.go("runner_game")
 	await _wait_for(func() -> bool: return not router.busy, 5, "runner route completes")
-	check(current_scene != null and current_scene.name == &"RunnerMenu", "runner route is RunnerMenu")
-	var menu := current_scene
-	check(menu is Node3D and menu.buttons[0].has_focus(), "menu root and initial Play focus")
-	check(menu.get_node("Backdrop/Camera").fov == 55, "menu camera FOV")
-	check(menu.get_node("Backdrop/Hoppy").anim_state == &"run", "menu Hoppy jogs")
-	check(audio.music.stream == menu.Music and audio.music.volume_db == -12.0, "menu music")
-	menu.buttons[1].pressed.emit()
-	await frames()
-	check(menu.modal != null and menu.board.get_child_count() == 10, "leaderboard has ten rows")
-	check(root.gui_get_focus_owner().text == "Close", "leaderboard focuses Close")
-	for i in [0, 2, 3]:
-		check(menu.buttons[i].disabled and menu.buttons[i].focus_mode == Control.FOCUS_NONE, "modal blocks other menu action %d" % i)
-	check(not menu.buttons[1].disabled and menu.buttons[1].focus_mode == Control.FOCUS_ALL, "leaderboard toggle remains enabled and focusable")
-	var cancel := InputEventAction.new()
-	cancel.action = &"ui_cancel"
-	cancel.pressed = true
-	menu._unhandled_input(cancel)
-	check(menu.modal == null and menu.buttons[1].has_focus() and not router.busy, "cancel closes board and restores focus before routing")
-	menu.buttons[1].pressed.emit()
-	menu.buttons[1].pressed.emit()
-	check(menu.modal == null and menu.buttons[1].has_focus(), "leaderboard button toggles closed and restores focus")
-	var track: AudioStream = audio.music.stream
-	menu.buttons[0].pressed.emit()
-	await _wait_for(func() -> bool: return not router.busy, 5, "Play routes to game")
 	var game := current_scene
 	check(game != null and game.name == &"RunnerGame" and game.state == &"running", "runner_game is running")
 	check(game.leaderboard_path == loop_board_path and game.autopilot.enabled, "first routed run isolated with autopilot")
-	check(audio.music.stream == track, "menu to game keeps runner track")
+	# The pause menu carries the leaderboard: open it over the paused run, then close it both ways.
+	var menu: CanvasLayer = game.get_node("Overlays/PauseMenu")
+	game.pause()
+	await frames()
+	check(game.paused and menu.is_open() and menu.resume_button.has_focus(), "pause opens the menu with Resume focused")
+	check(menu.buttons.map(func(b: Button) -> String: return b.text) == ["Resume", "Restart", "How to Play", "Leaderboard", "Main Menu"], "pause menu buttons")
+	menu.leaderboard_button.pressed.emit()
+	await frames()
+	check(menu.leaderboard != null and menu.leaderboard.board.get_child_count() == 10, "leaderboard has ten rows")
+	check(root.gui_get_focus_owner() != null and root.gui_get_focus_owner().text == "Close", "leaderboard focuses Close")
+	for button in menu.buttons:
+		check(button.disabled and button.focus_mode == Control.FOCUS_NONE, "board blocks menu action %s" % button.text)
+	var cancel := InputEventAction.new()
+	cancel.action = &"ui_cancel"
+	cancel.pressed = true
+	menu.leaderboard._input(cancel)
+	await frames()
+	check(menu.leaderboard == null and menu.leaderboard_button.has_focus() and not router.busy and game.paused, "cancel closes the board, restores focus and keeps the run paused")
+	menu.leaderboard_button.pressed.emit()
+	await frames()
+	check(menu.leaderboard != null, "Leaderboard reopens")
+	menu.leaderboard.close_btn.pressed.emit()
+	await frames()
+	check(menu.leaderboard == null and menu.leaderboard_button.has_focus(), "Close shuts the board and restores focus")
+	game.resume()
+	check(not game.paused and not menu.is_open(), "resume closes the pause menu")
 	var events := {"pursuit": 0, "recovery": [], "caught": 0, "finished": 0}
 	game.pursuit_started.connect(func(_seconds: float) -> void: events.pursuit += 1)
 	game.pursuit_recovered.connect(func(reason: StringName) -> void: events.recovery.append(reason))
@@ -1318,6 +1319,7 @@ func check_runner_full_loop() -> void:
 	check(not over.visible and events.finished == 0, "game over waits for run_finished")
 	await _wait_for(func() -> bool: return events.finished > 0, 5, "catch emits run_finished")
 	check(game.state == &"finished" and events.finished == 1 and over.visible, "finished shows game over exactly once")
+	check(over.menu_button.text == "Main Menu", "game over offers Main Menu")
 	check(game.submit_name("Codex"), "Codex name persists")
 	var entries: Array = game.get_leaderboard()
 	check(entries.size() == 1 and entries[0].name == "Codex", "temporary board contains saved run")
@@ -1328,15 +1330,11 @@ func check_runner_full_loop() -> void:
 	check(game.leaderboard_path == loop_board_path and game.autopilot.enabled, "retry is isolated before start_run")
 	game.go_to_menu()
 	await _wait_for(func() -> bool: return not router.busy, 5, "go_to_menu completes")
-	check(current_scene.name == &"RunnerMenu" and not paused, "facade returns to RunnerMenu unpaused")
-	# Exercise the menu's actual cancel route, which calls AppRouter.go("hub").
-	current_scene._unhandled_input(cancel)
-	await _wait_for(func() -> bool: return not router.busy, 5, "hub route completes")
-	check(current_scene.name == &"MainMenu", "hub is MainMenu")
+	check(current_scene.name == &"MainMenu" and not paused, "facade returns to the hub unpaused")
 	check(audio.music.stream == audio.default_track and audio.music.playing, "hub restores default music")
 	node_added.disconnect(_isolate_routed_game)
 	_remove_temporary_leaderboard(loop_board_path)
-	print("RUNNER FULL LOOP: ", "PASS" if before == failures else "FAIL", " (menu, play, hit, pursuit, %ss timer recovery, hit, hit, caught, finished, game over, Codex, retry, menu, hub, default music; isolated board removed)" % recovery_seconds)
+	print("RUNNER FULL LOOP: ", "PASS" if before == failures else "FAIL", " (play, pause, leaderboard, hit, pursuit, %ss timer recovery, hit, hit, caught, finished, game over, Codex, retry, hub, default music; isolated board removed)" % recovery_seconds)
 	current_scene.free()
 	await frames()
 
@@ -1353,72 +1351,82 @@ func check_runner_menu_reset() -> void:
 		}, reset_board_path)
 
 	var router := root.get_node("AppRouter")
-	router.go("runner")
+	if not node_added.is_connected(_isolate_routed_game):
+		node_added.connect(_isolate_routed_game)
+	router.go("runner_game")
 	await _wait_for(func() -> bool: return not router.busy, 5, "reset test: runner route completes")
-	var menu := current_scene
-	check(menu != null and menu.name == &"RunnerMenu", "reset test: at RunnerMenu")
-	menu.leaderboard_path = reset_board_path
+	node_added.disconnect(_isolate_routed_game)
+	var game := current_scene
+	check(game != null and game.name == &"RunnerGame" and game.state == &"running", "reset test: at a running RunnerGame")
+	game.leaderboard_path = reset_board_path
+	var menu: CanvasLayer = game.get_node("Overlays/PauseMenu")
+	game.pause()
+	await frames()
 
 	# Open leaderboard. Check initial state: Reset enabled, Close focused.
-	menu.buttons[1].pressed.emit()
+	menu.leaderboard_button.pressed.emit()
 	await frames()
-	check(menu.modal != null and menu.board != null, "reset test: leaderboard panel open")
-	check(is_instance_valid(menu.reset_btn) and not menu.reset_btn.disabled, "reset test: Reset scores enabled for non-empty board")
-	check(is_instance_valid(menu.close_btn) and root.gui_get_focus_owner() == menu.close_btn, "reset test: Close has initial focus")
+	var board: Control = menu.leaderboard
+	check(board != null and board.board != null, "reset test: leaderboard panel open")
+	check(board != null and board.leaderboard_path_at_open == reset_board_path, "reset test: the panel reads the game's board")
+	if board == null:
+		return
+	check(is_instance_valid(board.reset_btn) and not board.reset_btn.disabled, "reset test: Reset scores enabled for non-empty board")
+	check(is_instance_valid(board.close_btn) and root.gui_get_focus_owner() == board.close_btn, "reset test: Close has initial focus")
 
 	# Cancel via button: bytes unchanged, no routing, focus restored to Reset.
 	var bytes_before := FileAccess.get_file_as_bytes(reset_board_path)
-	menu.reset_btn.pressed.emit()
+	board.reset_btn.pressed.emit()
 	await frames()
-	check(menu.reset_confirm != null, "reset test: confirmation modal opens")
-	var keep_btn := menu.reset_confirm.find_child("KeepScoresButton", true, false) as Button if menu.reset_confirm != null else null
+	check(board.reset_confirm != null, "reset test: confirmation modal opens")
+	var keep_btn := board.reset_confirm.find_child("KeepScoresButton", true, false) as Button if board.reset_confirm != null else null
 	check(keep_btn != null and root.gui_get_focus_owner() == keep_btn, "reset test: safe action focused on confirm open")
 	if keep_btn != null:
 		keep_btn.pressed.emit()
 	await frames()
-	check(menu.reset_confirm == null, "reset test: button cancel closes confirmation")
+	check(board.reset_confirm == null, "reset test: button cancel closes confirmation")
 	check(FileAccess.get_file_as_bytes(reset_board_path) == bytes_before, "reset test: cancel leaves board bytes unchanged")
 	check(not router.busy, "reset test: cancel does not route")
-	check(is_instance_valid(menu.reset_btn) and root.gui_get_focus_owner() == menu.reset_btn, "reset test: cancel restores focus to Reset scores")
+	check(is_instance_valid(board.reset_btn) and root.gui_get_focus_owner() == board.reset_btn, "reset test: cancel restores focus to Reset scores")
 
-	# Cancel via ui_cancel: same guarantees.
-	menu.reset_btn.pressed.emit()
+	# Cancel via ui_cancel: same guarantees, and the press never reaches the run's pause toggle.
+	board.reset_btn.pressed.emit()
 	await frames()
 	var cancel_event := InputEventAction.new()
 	cancel_event.action = &"ui_cancel"
 	cancel_event.pressed = true
-	menu._unhandled_input(cancel_event)
+	board._input(cancel_event)
 	await frames()
-	check(menu.reset_confirm == null, "reset test: ui_cancel closes confirmation")
-	check(menu.modal != null, "reset test: ui_cancel does not close leaderboard")
+	check(board.reset_confirm == null, "reset test: ui_cancel closes confirmation")
+	check(menu.leaderboard == board and game.paused, "reset test: ui_cancel does not close leaderboard or resume the run")
 	check(FileAccess.get_file_as_bytes(reset_board_path) == bytes_before, "reset test: ui_cancel cancel leaves bytes unchanged")
-	check(is_instance_valid(menu.reset_btn) and root.gui_get_focus_owner() == menu.reset_btn, "reset test: ui_cancel restores focus to Reset scores")
+	check(is_instance_valid(board.reset_btn) and root.gui_get_focus_owner() == board.reset_btn, "reset test: ui_cancel restores focus to Reset scores")
 
 	# Confirm reset: placeholder rows, zero entries, companions purged, Reset disabled, Close focused.
-	menu.reset_btn.pressed.emit()
+	board.reset_btn.pressed.emit()
 	await frames()
-	var confirm_btn := menu.reset_confirm.find_child("ResetConfirmButton", true, false) as Button if menu.reset_confirm != null else null
+	var confirm_btn := board.reset_confirm.find_child("ResetConfirmButton", true, false) as Button if board.reset_confirm != null else null
 	check(confirm_btn != null, "reset test: ResetConfirmButton found")
 	if confirm_btn != null:
 		confirm_btn.pressed.emit()
 	await frames()
-	check(menu.reset_confirm == null, "reset test: confirm closes modal")
+	check(board.reset_confirm == null, "reset test: confirm closes modal")
 	var reloaded: Array = RunnerLeaderboard.load_entries(reset_board_path)
 	check(reloaded.is_empty(), "reset test: board has zero entries after reset")
 	check(not FileAccess.file_exists(reset_board_path + ".bak"), "reset test: .bak removed after reset")
 	check(not FileAccess.file_exists(reset_board_path + ".tmp"), "reset test: .tmp absent after reset")
-	check(is_instance_valid(menu.reset_btn) and menu.reset_btn.disabled, "reset test: Reset scores disabled after successful reset")
-	check(is_instance_valid(menu.close_btn) and root.gui_get_focus_owner() == menu.close_btn, "reset test: Close focused after successful reset")
-	if menu.board != null:
-		for row in menu.board.get_children():
+	check(is_instance_valid(board.reset_btn) and board.reset_btn.disabled, "reset test: Reset scores disabled after successful reset")
+	check(is_instance_valid(board.close_btn) and root.gui_get_focus_owner() == board.close_btn, "reset test: Close focused after successful reset")
+	if board.board != null:
+		for row in board.board.get_children():
 			check(row.get_child_count() >= 2, "reset test: row has children")
 			var lbl := row.get_child(1) as Label if row.get_child_count() >= 2 else null
 			check(lbl != null and "---" in lbl.text, "reset test: row shows placeholder after reset")
 
 	# Close the leaderboard before the failure-path test.
-	menu.close_btn.pressed.emit()
+	board.close_btn.pressed.emit()
 	await frames()
-	check(menu.modal == null, "reset test: leaderboard closed")
+	check(menu.leaderboard == null and menu.leaderboard_button.has_focus(), "reset test: leaderboard closed")
 
 	# Failure path: blocker file stands where the board directory would be.
 	var blocker := "user://test_runner_menu_reset_blocker_%d" % OS.get_process_id()
@@ -1428,40 +1436,47 @@ func check_runner_menu_reset() -> void:
 		blocker_file.close()
 	var blocked_path := blocker + "/leaderboard.cfg"
 	# The blocked path can't be seeded (it can't be written), so open the seeded scratch board, then
-	# point the board the menu captured at open time at the blocked path before confirming.
+	# point the board the panel captured at open time at the blocked path before confirming.
 	RunnerLeaderboard.submit({
 		"run_id": "fail-seed", "name": "Fail", "score": 50,
 		"duration": 30.0, "seed": 1, "submitted_at": 1700000000
 	}, reset_board_path)
-	menu.leaderboard_path = reset_board_path
-	menu.buttons[1].pressed.emit()
+	menu.leaderboard_button.pressed.emit()
 	await frames()
-	check(menu.modal != null, "reset test: failure-path leaderboard open")
+	board = menu.leaderboard
+	check(board != null, "reset test: failure-path leaderboard open")
+	if board == null:
+		return
 	# _confirm_reset() clears leaderboard_path_at_open (snapshotted when the board opened), so
 	# changing leaderboard_path here would not reach it. Redirect the snapshot instead.
-	menu.leaderboard_path_at_open = blocked_path
-	menu.reset_btn.pressed.emit()
+	board.leaderboard_path_at_open = blocked_path
+	board.reset_btn.pressed.emit()
 	await frames()
-	var fail_confirm_btn := menu.reset_confirm.find_child("ResetConfirmButton", true, false) as Button if menu.reset_confirm != null else null
+	var fail_confirm_btn := board.reset_confirm.find_child("ResetConfirmButton", true, false) as Button if board.reset_confirm != null else null
 	if fail_confirm_btn != null:
 		fail_confirm_btn.pressed.emit()
 		await frames()
-		check(menu.reset_confirm != null, "reset test: failure keeps confirmation open")
-		var status: Label = menu.confirm_status
+		check(board.reset_confirm != null, "reset test: failure keeps confirmation open")
+		var status: Label = board.confirm_status
 		check(status != null and status.visible, "reset test: error status visible on failure")
-		var safe_btn := menu.reset_confirm.find_child("KeepScoresButton", true, false) as Button
+		var safe_btn := board.reset_confirm.find_child("KeepScoresButton", true, false) as Button
 		check(safe_btn != null and root.gui_get_focus_owner() == safe_btn, "reset test: safe action focused on failure")
 	else:
 		check(false, "reset test: failure-path ResetConfirmButton not found")
 
-	# Cleanup.
-	menu._close_leaderboard()
+	# Cleanup: Start closes the confirmation, then the board, then resumes; Main Menu lands on the hub.
+	var pause_event := InputEventAction.new()
+	pause_event.action = &"pause"
+	pause_event.pressed = true
+	board._input(pause_event)
 	await frames()
-	var cancel_ev := InputEventAction.new()
-	cancel_ev.action = &"ui_cancel"
-	cancel_ev.pressed = true
-	menu._unhandled_input(cancel_ev)
+	check(board.reset_confirm == null and menu.leaderboard == board and game.paused, "reset test: Start closes the confirmation first")
+	board._input(pause_event)
+	await frames()
+	check(menu.leaderboard == null and game.paused and menu.is_open(), "reset test: Start then closes the board and leaves the run paused")
+	menu.menu_button.pressed.emit()
 	await _wait_for(func() -> bool: return not router.busy, 5, "reset test: hub route completes")
+	check(current_scene.name == &"MainMenu" and not paused, "reset test: Main Menu lands on the hub")
 	if FileAccess.file_exists(blocker):
 		DirAccess.remove_absolute(blocker)
 	for suffix in ["", ".tmp", ".bak"]:
@@ -1469,7 +1484,7 @@ func check_runner_menu_reset() -> void:
 		if FileAccess.file_exists(p):
 			check(DirAccess.remove_absolute(p) == OK, "reset test: scratch board cleanup %s" % suffix)
 	check(not FileAccess.file_exists(reset_board_path), "reset test: scratch board removed")
-	print("RUNNER MENU RESET: ", "PASS" if before == failures else "FAIL")
+	print("RUNNER LEADERBOARD RESET: ", "PASS" if before == failures else "FAIL")
 
 func check_hud_legibility() -> void:
 	var before := failures

@@ -451,8 +451,8 @@ func run_city_hands_free(hold: float) -> void:
 
 func check_return_to_menu() -> void:
 	reopen_city()
-	var back := action_button("Return to Beat'em Up menu")
-	check(back != null and back.get_parent() == game.story.actions, "Return to the Beat'em Up menu lives in the story actions")
+	var back := action_button("Main Menu")
+	check(back != null and back.get_parent() == game.story.actions, "Main Menu lives in the story actions")
 	if back == null: return
 	var guard := 0
 	while game.story.bars_shown() < 1.0 and guard < 90:
@@ -469,10 +469,10 @@ func check_return_to_menu() -> void:
 	while Time.get_ticks_msec() < deadline:
 		await process_frame
 		var router := root.get_node("AppRouter")
-		if is_instance_valid(current_scene) and current_scene.scene_file_path.ends_with("beatem_menu.tscn") and not router.busy:
+		if is_instance_valid(current_scene) and current_scene.scene_file_path.ends_with("main_menu.tscn") and not router.busy:
 			arrived = true
 			break
-	check(arrived, "Return changes scene to the Beat'em Up menu")
+	check(arrived, "Main Menu changes scene to the hub")
 
 func check_hvv(hold: float) -> void:
 	await load_mode("res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn")

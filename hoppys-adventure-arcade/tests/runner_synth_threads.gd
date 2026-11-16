@@ -1,5 +1,5 @@
 extends SceneTree
-## The runner menu's prewarm renders every cue at once on WorkerThreadPool, one task per recipe
+## The runner's prewarm renders every cue at once on WorkerThreadPool, one task per recipe
 ## (environment/hifi/prewarm.gd). Godot 4.7's VM caches an untyped operator's evaluator in the
 ## shared bytecode the first time that instruction runs (gdscript_vm.cpp OPCODE_OPERATOR). It
 ## stores the signature, then the function pointer, with no synchronisation, so a thread arriving

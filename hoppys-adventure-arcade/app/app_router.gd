@@ -13,10 +13,7 @@ const ROUTES := {
 	"orbital_ops": "res://scenes/platformer/orbital_ops.tscn",
 	"bay_area_blitz": "res://scenes/platformer/bay_area_blitz.tscn",
 	"hub": "res://scenes/main_menu/main_menu.tscn",
-	"platformer": "res://scenes/platformer/platformer_menu.tscn",
-	"runner": "res://scenes/runner/runner_menu.tscn",
 	"runner_game": "res://scenes/runner/runner_game.tscn",
-	"beatem_up": "res://scenes/beatem_up/beatem_menu.tscn",
 	"credits": "res://scenes/credits/credits.tscn"
 }
 ## Packaged-build check (`<game> --headless -- --smoke-routes`): load every route, then quit
@@ -24,9 +21,9 @@ const ROUTES := {
 const SMOKE_FLAG := "--smoke-routes"
 const SMOKE_FRAMES := 30
 ## Booth mode (`<game> -- --booth`) is for unattended kiosks: the game runs fullscreen, the menu's
-## Quit does nothing, and after IDLE_SECONDS without input any route returns to the attract route
-## (the hub, whose rotating previews are the attract screen, unless --attract names another).
-## `--route=<name>` opens a route at launch, with or without --booth. Both are off unless passed.
+## Quit does nothing, and after IDLE_SECONDS without input any route returns to the hub, whose
+## rotating previews are the attract screen. `--route=<name>` opens a route at launch, with or
+## without --booth. Both are off unless passed.
 const BOOTH_FLAG := "--booth"
 const ROUTE_PREFIX := "--route="
 const IDLE_SECONDS := 90.0
@@ -43,14 +40,12 @@ const SESSION_LOG_DEFAULT := "user://booth"
 const HEARTBEAT_PREFIX := "--heartbeat="
 ## Booth game over: games call booth_game_over() when the player loses. A booth player gets
 ## `--retries=<n>` retries (default 0); after that the router lays NextPlayerCard over the game
-## and, NEXT_PLAYER_SECONDS later, opens the attract route for the next player. `--attract=<name>`
-## picks the attract route for this and the idle return, from ATTRACT_ROUTES. Outside booth mode
-## games are unchanged.
+## and, NEXT_PLAYER_SECONDS later, opens the hub for the next player. Outside booth mode games are
+## unchanged.
+## The hub is the only attract screen since the genre menus went. Older booth configs may still pass
+## `--attract=<name>`; it is accepted with a warning and changes nothing.
 const ATTRACT_PREFIX := "--attract="
-## Menus that can wait for the next player: each starts its own music (the hub through
-## AudioService). Game routes would start playing by themselves, and the platformer menu would be
-## silent after a beat 'em up stops the shared music.
-const ATTRACT_ROUTES: Array[String] = ["hub", "beatem_up", "runner"]
+const ATTRACT_ROUTE := "hub"
 const RETRIES_PREFIX := "--retries="
 const NEXT_PLAYER_SECONDS := 6.0
 var busy := false
@@ -60,9 +55,8 @@ var idle_limit := IDLE_SECONDS
 var idle_seconds := 0.0
 var session_log: BoothLog
 var heartbeat: BoothHeartbeat
-var attract := "hub"
 var retry_limit := 0
-## Game overs since the attract route last opened: one player's, as far as a booth can tell.
+## Game overs since the hub last opened: one player's, as far as a booth can tell.
 var game_overs := 0
 var next_player: NextPlayerCard
 var next_player_left := 0.0
@@ -70,9 +64,8 @@ var next_player_left := 0.0
 var soak: BoothSoak
 var booth_qr: Control
 ## How-to-play cards (app/how_to_play.gd): the first time a visitor enters a game, its card opens
-## over it. A visitor starts when the hub or the booth's attract route opens, so retries and
-## returns from a game's own menu skip the card. Test suites run with --script and get no cards
-## unless they set this; soaks get none either.
+## over it. A visitor starts when the hub opens, so retries and restarts skip the card. Test suites
+## run with --script and get no cards unless they set this; soaks get none either.
 var how_to_play_enabled := not ("--script" in OS.get_cmdline_args())
 ## Game routes whose card this visitor has seen.
 var how_to_play_seen := {}
@@ -96,11 +89,11 @@ func _ready() -> void:
 	if SMOKE_FLAG in args:
 		smoke_routes.call_deferred()
 		return
-	attract = attract_route(args)
+	warn_legacy_attract(args)
 	retry_limit = retry_count(args)
 	set_booth(BOOTH_FLAG in args)
 	if booth:
-		print("AppRouter: booth attract route %s, %d retries per player" % [attract, retry_limit])
+		print("AppRouter: booth mode, %d retries per player" % retry_limit)
 	var beat_path := heartbeat_path(args)
 	if beat_path != "":
 		heartbeat = BoothHeartbeat.new(beat_path)
@@ -142,9 +135,8 @@ func go(route: String, reason := "menu") -> bool:
 		get_tree().paused = false
 		if session_log:
 			session_log.route_changed(route, reason)
-		if route == attract:
+		if route == ATTRACT_ROUTE:
 			game_overs = 0
-		if route == attract or route == "hub":
 			how_to_play_seen.clear()
 		if wants_how_to_play(route):
 			how_to_play_seen[route] = true
@@ -209,17 +201,12 @@ static func heartbeat_path(args: PackedStringArray) -> String:
 			return arg.trim_prefix(HEARTBEAT_PREFIX)
 	return ""
 
-## The booth's attract route from `--attract=<name>`: "hub" when absent or not one of
-## ATTRACT_ROUTES (with a warning).
-static func attract_route(args: PackedStringArray) -> String:
+## `--attract=<name>` picked another attract screen when the genre menus existed. The hub is the
+## only one now: the flag is accepted so old booth configs keep launching, with a warning.
+static func warn_legacy_attract(args: PackedStringArray) -> void:
 	for arg in args:
 		if arg.begins_with(ATTRACT_PREFIX):
-			var route := arg.trim_prefix(ATTRACT_PREFIX)
-			if route in ATTRACT_ROUTES:
-				return route
-			push_warning("--attract %s is not one of %s; the booth returns to the hub"
-				% [route, ", ".join(ATTRACT_ROUTES)])
-	return "hub"
+			push_warning("%s does nothing any more; the booth always returns to the hub" % arg)
 
 ## Retries a booth player gets, from `--retries=<n>`: 0 when absent or not a whole number.
 static func retry_count(args: PackedStringArray) -> int:
@@ -233,7 +220,7 @@ static func retry_count(args: PackedStringArray) -> int:
 
 ## Games call this when the player loses, before showing their own retry screen. Returns true when
 ## the booth takes over: the player has used their retries, so the game shows nothing and the
-## router thanks them and sends the booth to the attract route. Always false outside booth mode,
+## router thanks them and sends the booth to the hub. Always false outside booth mode,
 ## while a route change is already under way (it takes the player elsewhere anyway), and during a
 ## soak, which changes routes itself. The session log counts every game over, booth or not.
 ## `score_line` is shown on the card, in the game's own style ("SCORE 01234").
@@ -269,7 +256,7 @@ func set_booth(enabled: bool) -> void:
 	AudioService.set_attract(enabled)
 	game_overs = 0
 	if finishing:
-		go(attract, "game_over") # The route change hides the card.
+		go(ATTRACT_ROUTE, "game_over") # The route change hides the card.
 	elif next_player:
 		next_player.hide()
 	set_process(enabled)
@@ -306,23 +293,23 @@ func note_input(event: InputEvent) -> void:
 		idle_seconds = 0.0
 
 func _process(delta: float) -> void:
-	# The game-over card owns the screen until its countdown sends the booth to the attract route.
+	# The game-over card owns the screen until its countdown sends the booth to the hub.
 	if next_player and next_player.visible:
 		next_player_left -= delta
 		next_player.set_seconds(next_player_left)
 		if next_player_left <= 0.0 and not busy:
-			# The route change hides the card; if the attract scene fails to load, try again after
-			# another countdown rather than every frame.
+			# The route change hides the card; if the hub fails to load, try again after another
+			# countdown rather than every frame.
 			next_player_left = NEXT_PLAYER_SECONDS
-			go(attract, "game_over")
+			go(ATTRACT_ROUTE, "game_over")
 		return
 	idle_seconds += delta
 	if idle_seconds < idle_limit or busy:
 		return
 	idle_seconds = 0.0
 	var scene := get_tree().current_scene
-	if scene == null or scene.scene_file_path != ROUTES[attract]:
-		go(attract, "idle")
+	if scene == null or scene.scene_file_path != ROUTES[ATTRACT_ROUTE]:
+		go(ATTRACT_ROUTE, "idle")
 
 func smoke_routes() -> void:
 	# Let the launch scene finish its opening frames, as a player would, before switching.

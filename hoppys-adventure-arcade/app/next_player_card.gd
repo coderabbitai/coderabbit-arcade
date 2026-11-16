@@ -1,7 +1,7 @@
 extends Control
 ## The booth's game-over card. AppRouter lays it over a finished game when the booth player has
 ## used their retries: GAME OVER, the game's score line, a thank-you, and a countdown to the next
-## player. It takes no input; the router opens the attract route when the countdown ends.
+## player. It takes no input; the router opens the hub when the countdown ends.
 const Style = preload("res://scenes/main_menu/menu_style.gd")
 var summary: Label
 var countdown: Label

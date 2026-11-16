@@ -12,11 +12,11 @@ func run() -> void:
 		quit(1)
 		return
 	root.size = Vector2i(1280, 720)
-	for fixture in ["renderer_spike", "corridor_preview", "hoppy_preview", "hazard_gallery", "runner_menu"]:
+	for fixture in ["renderer_spike", "corridor_preview", "hoppy_preview", "hazard_gallery"]:
 		var directory := "player" if fixture == "hoppy_preview" else "environment"
 		if fixture == "hazard_gallery":
 			directory = "hazards/visuals"
-		var path := "res://scenes/runner/runner_menu.tscn" if fixture == "runner_menu" else "res://scenes/runner/%s/dev/%s.tscn" % [directory, fixture]
+		var path := "res://scenes/runner/%s/dev/%s.tscn" % [directory, fixture]
 		var scene := load(path) as PackedScene
 		if scene == null:
 			push_error("PREVIEW CAPTURE: fixture failed to load: " + fixture)
@@ -26,7 +26,7 @@ func run() -> void:
 		root.add_child(instance)
 		await create_timer(1.5 if fixture == "hoppy_preview" else 1.0).timeout
 		await RenderingServer.frame_post_draw
-		var suffix: String = {"renderer_spike": "spike", "corridor_preview": "corridor", "hoppy_preview": "hoppy", "hazard_gallery": "gallery", "runner_menu": "menu"}[fixture]
+		var suffix: String = {"renderer_spike": "spike", "corridor_preview": "corridor", "hoppy_preview": "hoppy", "hazard_gallery": "gallery"}[fixture]
 		var output := ProjectSettings.globalize_path("res://../docs/previews/endless-runner-%s.png" % suffix)
 		var error := root.get_texture().get_image().save_png(output)
 		if error != OK:

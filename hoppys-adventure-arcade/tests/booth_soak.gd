@@ -1,8 +1,8 @@
 extends SceneTree
 ## Soak test (app/booth_soak.gd): --soak parsing, the frame-time math and the leak check on fixed
 ## numbers, then short real soaks in child processes: one over every route must write CSV samples
-## and a summary with a frame-rate row per route and exit 0; one over the hub and the platformer
-## menu must judge its hub visits steady; the same next to a script that leaks nodes must judge them
+## and a summary with a frame-rate row per route and exit 0; one over the hub and Bay Area Blitz
+## must judge its hub visits steady; the same next to a script that leaks nodes must judge them
 ## growing and exit 1.
 ## Run headless with --script res://tests/booth_soak.gd.
 const BoothSoak := preload("res://app/booth_soak.gd")
@@ -14,7 +14,7 @@ const LEAK_FOLDER := "user://test_soak_leak"
 ## runs: the in-game deadline is far beyond CHILD_SECONDS, which is the hard bound.
 const FULL := ["--soak=60", "--soak-cycles=1", "--soak-dwell=0.6"]
 ## Three passes over two light routes: exactly three settled hub visits.
-const SHORT := ["--soak=60", "--soak-cycles=3", "--soak-dwell=0.6", "--soak-routes=hub,platformer"]
+const SHORT := ["--soak=60", "--soak-cycles=3", "--soak-dwell=0.6", "--soak-routes=hub,bay_area_blitz"]
 const CHILD_SECONDS := 300.0
 var failures := 0
 

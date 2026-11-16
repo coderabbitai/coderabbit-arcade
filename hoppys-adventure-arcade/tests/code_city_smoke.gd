@@ -28,9 +28,8 @@ func run() -> void:
 	# A rendered start is still adding the autoloads' nodes to root for its first frames, and a
 	# scene change then fails ("Parent node is busy setting up children"). Let it settle.
 	await create_timer(.5).timeout
-	change_scene_to_file("res://scenes/beatem_up/beatem_menu.tscn")
+	change_scene_to_file("res://scenes/main_menu/main_menu.tscn")
 	await process_frame;await process_frame
-	await capture("menu")
 	change_scene_to_file("res://scenes/beatem_up/code_city_brawl.tscn")
 	await process_frame;await process_frame
 	# A rendered start can take longer than two frames to build the stage; wait on the scene itself.
@@ -176,9 +175,9 @@ func run() -> void:
 	Engine.physics_ticks_per_second = 60
 	print("Simulation steps: ",elapsed_steps,"; rooms: ",rooms.size(),"; state: ",game.state,"; enemies: ",game.living_enemies())
 	if is_instance_valid(game.boss): print("Boss HP ",game.boss.hp," phase ",game.boss.phase)
-	change_scene_to_file("res://scenes/beatem_up/beatem_menu.tscn")
+	change_scene_to_file("res://scenes/main_menu/main_menu.tscn")
 	await process_frame;await process_frame
-	check(not paused and current_scene.name=="BeatemMenu","Completion returns cleanly to the mode menu")
+	check(not paused and current_scene.name=="MainMenu","Completion returns cleanly to the hub")
 	current_scene.queue_free()
 	await root.get_node("AudioService").settle()
 	quit(1 if failures else 0)

@@ -1,6 +1,6 @@
 extends SceneTree
-## Contract scaffold check: runner_game.tscn and runner_menu.tscn load, the contract §3 tree is
-## complete and the contract §4 facade exists.
+## Contract scaffold check: runner_game.tscn loads, the contract §3 tree is complete, the contract
+## §4 facade exists and the pause menu carries the leaderboard.
 ## Run with --path <project> --script res://tests/runner_scaffold_check.gd.
 
 const HazardDefs = preload("res://scenes/runner/hazards/hazard_defs.gd")
@@ -244,22 +244,12 @@ func run() -> void:
 	await process_frame
 	check(not paused, "freeing RunnerGame must leave the tree unpaused")
 
-	var menu := _instantiate("res://scenes/runner/runner_menu.tscn")
-	if menu != null:
-		root.add_child(menu)
-		for i in 3:
-			await process_frame
-		check(menu.name == "RunnerMenu", "runner_menu.tscn root is not named RunnerMenu")
-		check(menu.buttons.size() == 4,
-			"runner menu should offer Play / Leaderboard / Return to Main Menu / Quit Game (contract §2)")
-		menu.free()
-	await process_frame
 
 	_check_hazards()
 	_check_power_ups()
 
 	# Routing: runner_game resolves, the tree is never handed over paused, and the facade's
-	# go_to_menu() lands back on the runner menu.
+	# go_to_menu() lands back on the hub.
 	router.go("runner_game")
 	var routed := await _wait_router_idle(router)
 	check(routed, "AppRouter.go(\"runner_game\") never went idle")
@@ -275,8 +265,8 @@ func run() -> void:
 		current_scene.go_to_menu()
 		var returned := await _wait_router_idle(router)
 		check(returned, "go_to_menu() left AppRouter busy")
-		check(current_scene.scene_file_path == router.ROUTES["runner"],
-			"go_to_menu() did not return to the runner menu")
+		check(current_scene.scene_file_path == router.ROUTES["hub"],
+			"go_to_menu() did not return to the hub")
 	check(not router.busy, "AppRouter stayed busy after routing")
 	await _report()
 

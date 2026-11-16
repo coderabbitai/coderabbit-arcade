@@ -13,7 +13,7 @@
 #       lists what to restore by hand.
 #
 # Anything after "--" goes to the game after --booth, for example
-#   ... --route heroes_vs_villains -- --retries=1 --attract=beatem_up
+#   ... --route heroes_vs_villains -- --retries=1 --session-log=user://playtest
 #
 # --apply does this:
 #   - copies tools/booth/watchdog.sh to ~/Library/Application Support/HoppyBooth/, and records the

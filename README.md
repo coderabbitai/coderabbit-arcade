@@ -15,7 +15,7 @@ A Godot 4 arcade collection starring Hoppy, the CodeRabbit mascot. It has a reac
    ```sh
    godot --path hoppys-adventure-arcade
    ```
-3. Choose **Platformer Game** (it opens on Level Select), **Endless Runner**, or **Beat’em Up → Play Code City Brawl / Play Heroes vs. Villains**.
+3. Pick a game tile: **Bay Area Blitz**, **Orbital Ops**, **The Enchanted Repo**, **Endless Runner**, **Code City Brawl** or **Heroes vs. Villains**. Esc, P or Start pauses any game; **Main Menu** on the pause menu or a results screen returns to the hub.
 
 | Action | Keyboard | Controller |
 |---|---|---|

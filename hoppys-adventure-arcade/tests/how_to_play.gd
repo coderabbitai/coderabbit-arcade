@@ -6,7 +6,7 @@ extends SceneTree
 ## once per visitor, paused; confirm/jump/attack/click turn the pages and the last one starts the
 ## game, left/right flip pages, pause skips, a stray early press does nothing, and each page turns
 ## by itself; the press that closes it never reaches the game; booth idle still counts and still returns to the
-## attract route; focus loss under the card leaves the game's own pause menu working; and each
+## hub; focus loss under the card leaves the game's own pause menu working; and each
 ## game's pause menu reopens the card without unpausing. Run headless with
 ## --script res://tests/how_to_play.gd.
 const HowToPlay := preload("res://app/how_to_play.gd")
@@ -264,9 +264,10 @@ func opens_once_per_visitor() -> void:
 	check(card() == null and not paused, "Esc skips the card and the game plays")
 	await visit("bay_area_blitz")
 	check(card() == null, "A retry skips the card")
-	await visit("platformer")
+	await visit("orbital_ops")
+	await close_with(KEY_ESCAPE)
 	await visit("bay_area_blitz")
-	check(card() == null, "Coming back from the platformer menu skips the card")
+	check(card() == null, "Coming back from another game skips the card")
 	await visit("hub")
 	await visit("bay_area_blitz")
 	check(card() != null, "A new visitor (the hub opened) sees the card again")
@@ -426,7 +427,7 @@ func booth_idle_still_counts() -> void:
 	router.idle_limit = 0.4
 	await wait(0.8)
 	await settle_route()
-	check(on("hub") and card() == null and not paused, "Booth idle returns to the attract route from under the card")
+	check(on("hub") and card() == null and not paused, "Booth idle returns to the hub from under the card")
 	router.idle_limit = router.IDLE_SECONDS
 	router.set_booth(false)
 
@@ -508,18 +509,18 @@ func pause_menus_reopen_it() -> void:
 	await visit("bay_area_blitz")
 	var level := current_scene
 	level._pause()
-	await reopen(level.how_to_play_button, "bay_area_blitz")
+	await reopen(level.pause_menu.how_to_play_button, "bay_area_blitz")
 	level._resume()
 	await visit("code_city_brawl")
 	current_scene.pause("test")
 	await process_frame
-	await reopen(find_button(current_scene.panel, "How to Play"), "code_city_brawl")
+	await reopen(current_scene.pause_menu.how_to_play_button, "code_city_brawl")
 	check(current_scene.is_player_paused(), "code_city_brawl: still in its pause menu")
 	await visit("heroes_vs_villains")
 	current_scene.state = "combat"
 	tap(KEY_ESCAPE)
 	await process_frame
-	await reopen(find_button(current_scene.panel, "How to Play"), "heroes_vs_villains")
+	await reopen(current_scene.pause_menu.how_to_play_button, "heroes_vs_villains")
 	check(current_scene.is_player_paused(), "heroes_vs_villains: still in its pause menu")
 	current_scene.resume()
 	await visit("runner_game")
@@ -533,7 +534,7 @@ func pause_menus_reopen_it() -> void:
 	await wait(0.2)
 	runner.pause()
 	await process_frame
-	await reopen(find_button(root, "How to Play"), "runner_game")
+	await reopen(runner.get_node("Overlays/PauseMenu").how_to_play_button, "runner_game")
 	check(runner.is_player_paused(), "runner_game: still paused")
 	runner.resume()
 	router.how_to_play_enabled = true

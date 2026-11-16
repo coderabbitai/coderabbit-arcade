@@ -766,10 +766,6 @@ func _routing_phase() -> void:
 		check(current_scene != null and current_scene.scene_file_path == router.ROUTES["runner_game"],
 			"pass %d did not land on runner_game.tscn" % (i + 1))
 		check(not paused, "pass %d left the tree paused" % (i + 1))
-	router.go("runner")
-	await _wait_until(func() -> bool: return not router.busy, 10.0)
-	check(current_scene != null and current_scene.scene_file_path == router.ROUTES["runner"],
-		"the runner menu did not load")
 	router.go("hub")
 	await _wait_until(func() -> bool: return not router.busy, 10.0)
 	check(current_scene != null and current_scene.name == "MainMenu", "the hub did not load")

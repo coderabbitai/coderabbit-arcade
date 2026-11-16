@@ -640,7 +640,7 @@ func reload_scene() -> void:
 			check(false, tag("AppRouter finishes routing within 5 s"))
 			return
 		await process_frame
-	check(current_scene!=null and current_scene.name=="BeatemMenu", tag("leave still routes to the Beat'em Up menu"))
+	check(current_scene!=null and current_scene.name=="MainMenu", tag("leave routes to the hub"))
 	change_scene_to_file(scene_path)
 	await process_frame
 	await process_frame
@@ -1416,7 +1416,7 @@ func check_hud_real() -> void:
 		return
 	check(not leaked, tag("no HUD or minimap node is visible from the throw to the card"))
 	do_pause()
-	check(game.state=="paused" and game.overlay.visible, tag("pausing during the card still shows the pause overlay"))
+	check(game.state=="paused" and game.pause_menu.is_open(), tag("pausing during the card still shows the pause menu"))
 	game.resume()
 	check(game.state=="knockout", tag("resume returns to the knockout"))
 	for n in nodes:

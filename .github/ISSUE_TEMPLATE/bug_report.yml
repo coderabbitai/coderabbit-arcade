@@ -28,7 +28,7 @@ body:
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. Open Platformer → Level Select → Orbital Ops
+        1. Pick the Orbital Ops tile on the hub
         2. Hold Jump in the zero-gravity bay
         3. ...
     validations:

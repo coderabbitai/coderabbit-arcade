@@ -104,9 +104,9 @@ class MacSetupTest(unittest.TestCase):
 
     def test_arguments_after_the_separator_go_to_the_game(self) -> None:
         result = self.setup("--app", str(self.app), "--route", "heroes_vs_villains", "--", "--retries=1",
-                            "--attract=beatem_up")
+                            "--session-log=user://playtest")
         self.assertEqual(self.agent(result.stdout)["ProgramArguments"][-5:],
-                         ["--", "--booth", "--route=heroes_vs_villains", "--retries=1", "--attract=beatem_up"])
+                         ["--", "--booth", "--route=heroes_vs_villains", "--retries=1", "--session-log=user://playtest"])
 
     def test_route_is_optional(self) -> None:
         agent = self.agent(self.setup("--app", str(self.app)).stdout)

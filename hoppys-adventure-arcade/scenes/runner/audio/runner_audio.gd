@@ -77,7 +77,7 @@ func bind(game: Node) -> void:
 	# Shared warmup also covers the cinematic cues and every panned whoosh variant. bind() runs inside the
 	# game's _ready (veil opaque, before the first frame), so whatever the menu did not absorb is
 	# completed here rather than one package per frame during play; then every runtime shader is
-	# drawn once. Both are no-ops after the runner menu or an earlier run.
+	# drawn once. Both are no-ops after an earlier run.
 	Prewarm.warm()
 	Prewarm.finish()
 	GpuWarmup.run(game)

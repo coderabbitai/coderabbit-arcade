@@ -415,10 +415,8 @@ func run() -> void:
 	game.exit_stage()
 	steps(240,func(): return game.flow.phase=="fade_out" and game.flow.clock>.1)
 	press_pause()
-	var back: Button = null
-	for child in game.panel.get_children():
-		if child is Button and child.text=="Return to Beat'em Up menu": back=child
-	check(back!=null and paused and game.state=="paused","Pause overlay offers Return during stage_exit")
+	var back: Button = game.pause_menu.menu_button if game.pause_menu.is_open() else null
+	check(back!=null and paused and game.state=="paused","Pause menu offers Main Menu during stage_exit")
 	if back==null:
 		quit(1)
 		return
@@ -433,9 +431,9 @@ func run() -> void:
 	check(not paused and game.leaving and game.state=="leaving" and held,"Leave through the pause overlay cancels the flow and changes no stage")
 	check(game.shake==8,"A leaving owner returns early from _physics_process (shake, which decays unconditionally otherwise, stays frozen)")
 	var disabled := true
-	for child in game.panel.get_children():
-		if child is BaseButton and not child.disabled: disabled=false
-	check(disabled and back.disabled,"Overlay buttons are disabled while leaving")
+	for child in game.pause_menu.buttons:
+		if not child.disabled: disabled=false
+	check(disabled and back.disabled,"Pause menu buttons are disabled while leaving")
 	await reload_game()
 	auto_win()
 	game._physics_process(1.0/60.0)
