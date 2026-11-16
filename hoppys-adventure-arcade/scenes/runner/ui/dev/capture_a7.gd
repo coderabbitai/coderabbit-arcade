@@ -103,15 +103,11 @@ func run() -> void:
 	fixture.state = &"running"
 	fixture.pause()
 	if not await shot("pause"): return
-	fixture.free()
-	fixture = null
-	await process_frame
-	menu = load("res://scenes/runner/runner_menu.tscn").instantiate() as Node
-	root.add_child(menu)
-	await create_timer(0.3).timeout
-	if not await shot("menu"): return
-	menu._toggle_leaderboard()
-	if not await shot("leaderboard"): return
+	var pause_menu := fixture.get_node_or_null("Overlays/PauseMenu")
+	if pause_menu != null and pause_menu.has_method("_open_leaderboard"):
+		pause_menu._open_leaderboard()
+		await create_timer(0.3).timeout
+		if not await shot("leaderboard"): return
 	await shutdown(0)
 
 func shutdown(code: int) -> void:

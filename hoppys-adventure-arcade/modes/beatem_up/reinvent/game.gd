@@ -7,7 +7,9 @@ const Boss = preload("res://modes/beatem_up/reinvent/boss.gd")
 const StageFlow = preload("res://modes/beatem_up/stage_flow.gd")
 const Knockout = preload("res://modes/beatem_up/knockout.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
-const HowToPlay = preload("res://app/how_to_play.gd")
+const PauseMenu = preload("res://app/pause_menu.gd")
+## This game's AppRouter route: Restart reloads it.
+const ROUTE := "heroes_vs_villains"
 const VictoryScreen = preload("res://modes/beatem_up/victory_screen.gd")
 const Minimap = preload("res://modes/beatem_up/minimap.gd")
 ## The minimap is up while the CodeRabbit is in a room, and hidden under cards and end screens.
@@ -64,6 +66,8 @@ var prompt: Label
 var overlay: ColorRect
 var panel: VBoxContainer
 var primary: Button
+## The shared pause menu (app/pause_menu.gd); `overlay` serves game over and victory only.
+var pause_menu: CanvasLayer
 var terminal_overlay_clock := TERMINAL_OVERLAY_ARM
 var screen_fx: ColorRect
 var completion_count := 0
@@ -622,7 +626,7 @@ func win() -> void:
 	_update_hud()
 	overlay.hide();card_host.hide()
 	toast_left=0;held_toast="";toast_label.hide();prompt.text=""
-	victory.show_result(Catalog.VICTORY.title,Catalog.VICTORY.line,score,elapsed,Catalog.STORY_ACCENT,"Return to Beat'em Up menu",leave)
+	victory.show_result(Catalog.VICTORY.title,Catalog.VICTORY.line,score,elapsed,Catalog.STORY_ACCENT,"Main Menu",leave)
 
 func toast(message: String, seconds := 2.0) -> void:
 	# Combat opens under the fading stage title; anything said then waits for it (latest wins).
@@ -758,6 +762,7 @@ func _build_ui() -> void:
 	panel.custom_minimum_size = Vector2(720,0)
 	panel.add_theme_constant_override("separation",18)
 	center.add_child(panel)
+	pause_menu = PauseMenu.create(self, ROUTE, resume, restart, leave)
 
 func _update_hud() -> void:
 	var health := ""
@@ -823,13 +828,8 @@ func show_overlay(title: String, detail: String, action: String, callback: Calla
 	primary = Style.button(action,58)
 	panel.add_child(primary)
 	primary.pressed.connect(callback)
-	if state == "paused":
-		var how_to := Style.button("How to Play",54)
-		panel.add_child(how_to)
-		how_to.pressed.connect(func() -> void:
-			if state == "paused": HowToPlay.open(get_tree(), "heroes_vs_villains", HowToPlay.Mode.PAUSE, how_to))
 	if state != "won":
-		var back := Style.button("Return to Beat'em Up menu",54)
+		var back := Style.button("Main Menu",54)
 		panel.add_child(back)
 		back.pressed.connect(leave)
 	overlay.show()
@@ -853,10 +853,7 @@ func _input(event: InputEvent) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause") and not event.is_echo():
 		if state=="paused": resume()
-		elif state in PAUSABLE:
-			pause_return_state=state
-			playing=false;state="paused";get_tree().paused=true
-			show_overlay("REVIEW PAUSED","Chain attacks, sidestep warnings, and hold %s to charge REVIEW." % Prompts.either("Q", &"review_burst"),"Resume",resume)
+		elif state in PAUSABLE: pause("Chain attacks, sidestep warnings, and hold %s to charge REVIEW." % Prompts.either("Q", &"review_burst"))
 		get_viewport().set_input_as_handled()
 	elif state=="cards" and event.is_action_pressed("heroes_popup_advance") and not event.is_echo():
 		if card_clock>.25: next_card()
@@ -867,8 +864,15 @@ func _unhandled_input(event: InputEvent) -> void:
 func is_player_paused() -> bool:
 	return state == "paused"
 
+func pause(detail: String) -> void:
+	pause_return_state=state
+	playing=false;state="paused";get_tree().paused=true
+	overlay.hide()
+	pause_menu.open(detail)
+
 func resume() -> void:
 	if state!="paused": return
+	pause_menu.close()
 	get_tree().paused=false
 	# The return state only means something while paused; consume it so a stale one can't steer
 	# a later resume (every pause sets it first).
@@ -877,20 +881,27 @@ func resume() -> void:
 	if back in ["cards","boss_victory","stage_enter","stage_exit","knockout"]: state=back;overlay.hide()
 	else: begin_play()
 
+## Main Menu, from the pause menu, the results and the knockout.
 func leave() -> void:
+	_depart("hub")
+
+## Restart on the pause menu: a fresh scene, whatever state the pause interrupted.
+func restart() -> void:
+	_depart(ROUTE)
+
+func _depart(route: String) -> void:
 	if leaving: return
 	leaving=true;ko.cancel();flow.cancel();playing=false;state="leaving";get_tree().paused=false
 	for child in panel.get_children():
 		if child is BaseButton: child.disabled=true
 	victory.action.disabled=true
+	pause_menu.lock()
 	music.stop()
-	AppRouter.go("beatem_up")
+	AppRouter.go(route)
 
 func _notification(what: int) -> void:
 	if what==NOTIFICATION_APPLICATION_FOCUS_OUT and state in PAUSABLE and not test_mode:
-		pause_return_state=state
-		playing=false;state="paused";get_tree().paused=true
-		show_overlay("REVIEW PAUSED","The window lost focus.","Resume",resume)
+		pause("The window lost focus.")
 
 func _exit_tree() -> void:
 	get_tree().paused = false

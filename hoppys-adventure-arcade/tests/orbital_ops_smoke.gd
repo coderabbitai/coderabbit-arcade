@@ -273,18 +273,18 @@ func run() -> void:
 	place(Vector2(2700,870))
 	await frames(3)
 	check(level.finished and player.hp==0,"Falling out of station produces retry result")
-	root.get_node("AppRouter").go("platformer")
+	root.get_node("AppRouter").go("hub")
 	await create_timer(.75).timeout
-	check(not paused and not root.get_node("AudioService").music.stream_paused,"Return to platformer menu restores app audio and pause state")
-	current_scene._select()
+	check(not paused and not root.get_node("AudioService").music.stream_paused,"Returning to the hub restores audio and pause state")
+	check(current_scene.name=="MainMenu","Main Menu lands on the hub")
 	await frames(3)
-	await capture("/tmp/orbital-level-select.png")
+	await capture("/tmp/orbital-return-hub.png")
 	print("ORBITAL OPS: ","PASS" if failures==0 else "FAIL"," (",failures," failures)")
 	await shutdown()
 
 func shutdown() -> void:
 	paused=false
-	change_scene_to_file("res://scenes/platformer/platformer_menu.tscn")
+	change_scene_to_file("res://scenes/main_menu/main_menu.tscn")
 	await frames(2)
 	await root.get_node("AudioService").settle()
 	quit(failures)

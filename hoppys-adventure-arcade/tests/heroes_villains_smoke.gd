@@ -26,11 +26,8 @@ func capture(name: String) -> void:
 func card_settled() -> bool:
 	return game.state=="cards" and game.card_clock>(3.0 if game.card.has_method("advance") else .35)
 func run() -> void:
-	change_scene_to_file("res://scenes/beatem_up/beatem_menu.tscn")
+	change_scene_to_file("res://scenes/main_menu/main_menu.tscn")
 	await process_frame;await process_frame
-	current_scene.find_child("HeroesButton",true,false).grab_focus()
-	await capture("mode_select")
-	check(current_scene.selected_mode==1 and current_scene.description.text.contains("FOUR VILLAINS"),"Mode select previews Heroes vs. Villains")
 	root.get_node("AppRouter").go("heroes_vs_villains")
 	# The router fades on a clock; rendered frames can be far shorter than 1/60 s.
 	var deadline: int=Time.get_ticks_msec()+5000
@@ -165,8 +162,8 @@ func run() -> void:
 	deadline=Time.get_ticks_msec()+5000
 	while Time.get_ticks_msec()<deadline:
 		await process_frame
-		if is_instance_valid(current_scene) and current_scene.scene_file_path.ends_with("beatem_menu.tscn") and not root.get_node("AppRouter").busy: break
-	check(current_scene.scene_file_path.ends_with("beatem_menu.tscn") and not paused,"Victory returns to an unpaused mode menu")
+		if is_instance_valid(current_scene) and current_scene.scene_file_path.ends_with("main_menu.tscn") and not root.get_node("AppRouter").busy: break
+	check(current_scene.scene_file_path.ends_with("main_menu.tscn") and not paused,"Victory returns to an unpaused hub")
 	current_scene.queue_free();await process_frame
 	await root.get_node("AudioService").settle()
 	print("Heroes vs. Villains smoke failures: ",failures)

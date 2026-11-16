@@ -25,12 +25,9 @@ func open_level() -> Node:
 	level._resume()
 	await wait(0.2)
 	return level
-## The pause/results column's children by their old positions (title, detail, Resume, Retry,
-## Platformer Menu, Arcade), skipping the pause-only How to Play button.
+## The results column's children by position (title, detail, Retry, Main Menu).
 func overlay_button(level: Node, index: int) -> Button:
-	var children: Array = level.resume_button.get_parent().get_children().filter(
-		func(child: Node) -> bool: return child != level.how_to_play_button)
-	return children[index]
+	return level.retry_button.get_parent().get_child(index)
 func check_menu(label: String) -> void:
 	var menu = current_scene
 	check(menu.name == "MainMenu", label + ": back on the main menu")
@@ -60,17 +57,17 @@ func run() -> void:
 	router = root.get_node("AppRouter")
 	change_scene_to_file("res://scenes/main_menu/main_menu.tscn")
 	await wait(0.5)
-	# 1. Pause -> Return to Arcade.
+	# 1. Pause -> Main Menu.
 	var level := await open_level()
 	level._pause()
 	park_mouse_on(1)
-	overlay_button(level, 5).pressed.emit()
+	level.pause_menu.menu_button.pressed.emit()
 	await settle()
 	await check_menu("pause-return")
 	# 2. Escape pressed during the fade-out re-pauses the dying level.
 	level = await open_level()
 	level._pause()
-	overlay_button(level, 5).pressed.emit()
+	level.pause_menu.menu_button.pressed.emit()
 	await wait(0.1)
 	var escape := InputEventAction.new()
 	escape.action = "pause"
@@ -81,32 +78,31 @@ func run() -> void:
 	# 3. Focus loss during the fade-out.
 	level = await open_level()
 	level._pause()
-	overlay_button(level, 5).pressed.emit()
+	level.pause_menu.menu_button.pressed.emit()
 	await wait(0.1)
 	level.notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
 	await wait(1.5)
 	await check_menu("focus-loss-during-fade")
-	# 4. Death -> results -> Return to Arcade, with the mouse over a menu button.
+	# 4. Death -> results -> Main Menu, with the mouse over a menu button.
 	level = await open_level()
 	level.player.position.y = 900
 	await wait(0.3)
 	check(level.finished, "Falling ends the run")
 	park_mouse_on(2)
-	overlay_button(level, 5).pressed.emit()
-	await settle()
-	await check_menu("death-return")
-	# 5. Retry -> Platformer menu -> hub.
-	level = await open_level()
-	level._pause()
+	check(overlay_button(level, 3).text == "Main Menu", "The results' last button is Main Menu")
 	overlay_button(level, 3).pressed.emit()
 	await settle()
-	check(current_scene.name == "BayAreaBlitz", "Retry reloads the level")
+	await check_menu("death-return")
+	# 5. Restart -> Main Menu.
+	level = await open_level()
+	level._pause()
+	level.pause_menu.restart_button.pressed.emit()
+	await settle()
+	check(current_scene.name == "BayAreaBlitz", "Restart reloads the level")
 	current_scene._pause()
-	overlay_button(current_scene, 4).pressed.emit()
+	current_scene.pause_menu.menu_button.pressed.emit()
 	await settle()
-	router.go("hub")
-	await settle()
-	await check_menu("retry-platformer-hub")
+	await check_menu("restart-main-menu")
 	print("MENU RETURN: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
 	await root.get_node("AudioService").settle()
 	quit(failures)

@@ -237,42 +237,33 @@ func run() -> void:
 	check(closeup.size == Vector2(840,392) and Rect2(0,0,1280,720).encloses(closeup), "B4 closeup fits frame")
 	mock.free()
 	await frames()
-	var menu := load("res://scenes/runner/runner_menu.tscn").instantiate() as Node
-	root.add_child(menu)
+	# The leaderboard panel the runner's pause menu opens: shared font, ten rows, podium medals.
+	var board := load("res://scenes/runner/ui/leaderboard_panel.gd").new() as Control
+	board.leaderboard_path = OS.get_temp_dir().path_join("a7_check_leaderboard_%d.cfg" % OS.get_process_id())
+	root.add_child(board)
 	await frames()
-	check(menu.ui.get_theme_default_font() == Style.theme().default_font, "R4 runner menu shared font")
-	check(menu.buttons.size() == 4, "menu buttons preserved")
-	var menu_legend: Node = menu.ui.find_child("TeachingLegend", true, false)
-	check(menu_legend != null, "menu teaching legend exists")
-	check_legend(menu_legend, true)
-	menu._toggle_leaderboard()
-	await frames()
-	check(menu.modal != null and menu.board.get_child_count() == 10, "leaderboard rows and medals")
-	for label: Label in menu.ui.find_children("*", "Label", true, false):
-		check(label.get_theme_font_size("font_size") >= 18, "menu font >=18")
-		check(label.get_theme_constant("outline_size") >= 6, "menu outline >=6")
+	check(board.get_theme_default_font() == Style.theme().default_font, "R4 leaderboard shared font")
+	check(board.board.get_child_count() == 10, "leaderboard rows and medals")
+	check(board.close_btn.has_focus(), "leaderboard focuses Close")
+	for label: Label in board.find_children("*", "Label", true, false):
+		check(label.get_theme_font_size("font_size") >= 18, "leaderboard font >=18")
+		check(label.get_theme_constant("outline_size") >= 6, "leaderboard outline >=6")
 		var rect := label.get_global_rect()
-		check(rect.position.x >= 0 and rect.position.y >= 0 and rect.end.x <= 1280 and rect.end.y <= 720, "menu label fits viewport: " + label.text)
+		check(rect.position.x >= 0 and rect.position.y >= 0 and rect.end.x <= 1280 and rect.end.y <= 720, "leaderboard label fits viewport: " + label.text)
 		var backing := label.get_parent()
 		while backing != null and not backing is PanelContainer: backing = backing.get_parent()
-		check(backing != null, "menu panel backing")
+		check(backing != null, "leaderboard panel backing")
 	for i in 10:
-		var marker: Control = menu.board.get_child(i).get_child(0)
-		var row_text: String = menu.board.get_child(i).get_child(1).text
+		var marker: Control = board.board.get_child(i).get_child(0)
+		var row_text: String = board.board.get_child(i).get_child(1).text
 		if i >= 3 or row_text.contains("---"):
 			check(not "kind" in marker, "R5 no medal for empty/nonpodium row")
 	for i in 3:
-		var marker: Control = menu.rank_marker(i,true)
+		var marker: Control = board.rank_marker(i,true)
 		check(marker.tint == [Palette.CREAM.lerp(Palette.ORANGE,0.35),Palette.SLATE.lerp(Palette.CREAM,0.65),Palette.ORANGE.lerp(Palette.NAVY_2,0.3)][i], "R5 populated podium tint")
 		marker.free()
-	for label: Label in menu.ui.find_children("*", "Label", true, false):
-		if label.text == "KEEP THE BUILD MOVING": check(label.get_theme_font_size("font_size") == 26, "R5 menu heading scale")
-		if label.text.begins_with("A / D"): check(label.get_theme_font_size("font_size") == 22, "R5 menu controls scale")
-		if label.text.begins_with("Two hits"): check(label.get_theme_font_size("font_size") == 18, "R5 menu caption scale")
-	check_panel_decorations(menu.ui)
-	menu._close_leaderboard()
-	check(menu.buttons[1].has_focus(), "leaderboard returns focus")
-	menu.free()
+	check_panel_decorations(board)
+	board.free()
 	await frames()
 	for player in root.find_children("*", "AudioStreamPlayer", true, false):
 		player.stop()

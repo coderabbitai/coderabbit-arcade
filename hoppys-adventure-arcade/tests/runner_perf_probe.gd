@@ -4,7 +4,7 @@ extends SceneTree
 ## Add -- boss_cinematic=true for the opt-in full intro and defeat capture across stages 1-3.
 ## Add -- run_intro=true to open the run on the full run intro (contract 2.7 §11.15) instead of
 ## opting out, and report its frames apart from gameplay, with each beat and the GO hand-over named.
-## Plays an autopilot run from the runner menu's Play route and attributes every slow frame to what
+## Plays an autopilot run from the hub's runner tile and attributes every slow frame to what
 ## happened on it (pickup, chunk spawn, boss, stage). Writes a throwaway leaderboard only.
 const HITCH_MS := 25.0
 const BOSS_DRAW_BUDGET := 40

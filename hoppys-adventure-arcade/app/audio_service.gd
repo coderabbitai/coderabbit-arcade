@@ -23,6 +23,8 @@ func _ready() -> void:
 	music.bus = "Music"
 	sfx.bus = "SFX"
 	add_child(music)
+	# UI blips must sound inside a paused game (the pause menu); music stays pausable.
+	sfx.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(sfx)
 	default_track = TITLE_THEME
 	music.stream = default_track

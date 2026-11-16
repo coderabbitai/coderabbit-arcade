@@ -58,7 +58,7 @@ func run() -> void:
 		% router.ROUTES["heroes_vs_villains"]
 	check(kiosk.log.contains(opened), "Launching with --route opens that route's scene")
 
-	router.go("platformer")
+	router.go("bay_area_blitz")
 	await settle_route()
 	await wait(0.5)
 	check(not on_hub(), "Without booth mode an idle game stays put")

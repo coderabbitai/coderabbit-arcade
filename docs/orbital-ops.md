@@ -10,8 +10,8 @@ Launch the project, choose **Platformer Game → Play Orbital Ops**. Direct scen
 - Jump: Space/W/up, gamepad A/Cross. Release early for a shorter normal-gravity jump.
 - Swipe: J/X, gamepad X/Square. Descending onto an enemy also damages it and bounces Hoppy.
 - Zero-gravity bay: hold Jump/Up to rise, Down/S or stick/D-pad down to descend, release vertical input to brake. Normal gravity resumes outside the cyan boundaries.
-- Pause: Escape/P/Start or the Pause button. Focus loss also pauses. Entering the level from the menus opens its [how-to-play card](main-menu.md#how-to-play-cards); the pause menu's **How to Play** shows it again. Its card adds the zero-G rise and sink rows and a Zero gravity page showing Hoppy rise, brake and sink.
-- Defeat the Deprecated API, then land on or swipe the green MERGE button. Retry always starts a fresh Orbital Ops run; return buttons lead to the platformer menu or arcade.
+- Pause: Escape/P/Start or the Pause button. Focus loss also pauses. Entering the level from the hub opens its [how-to-play card](main-menu.md#how-to-play-cards); the pause menu's **How to Play** shows it again. Its card adds the zero-G rise and sink rows and a Zero gravity page showing Hoppy rise, brake and sink.
+- Defeat the Deprecated API, then land on or swipe the green MERGE button. Retry always starts a fresh Orbital Ops run; **Main Menu**, on the pause menu or the results, returns to the hub.
 
 ## Level and combat
 
@@ -58,7 +58,7 @@ Orbital-specific files: `orbital_ops.gd` owns the level and gravity region; `orb
 
 Run `Godot --headless --path hoppys-adventure-arcade --script res://tests/orbital_ops_smoke.gd --log-file /tmp/orbital-smoke.log`. Omit `--headless` for screenshots under `/tmp/orbital-*.png`.
 
-The suite covers spawn collision, deck and shuttle boarding through inputs, shuttle transport/pause, zero-g rise/braking/descent/exit, laser warning/active/i-frames, vent forces, projectile shield/damage, melee deduplication, drone warnings/committed targeting, whole-route traversal, safe intro/pause, both music switches, arena bounds/camera, cannon/slam/dash, boss melee and one-time scoring, MERGE activation/lock, fresh retry, fall death, and menu/audio restoration. Route reachability is tested with combat invulnerability; it does not establish a no-hit difficulty rating. Most boss attack checks isolate states rather than simulate an expert player's complete fight.
+The suite covers spawn collision, deck and shuttle boarding through inputs, shuttle transport/pause, zero-g rise/braking/descent/exit, laser warning/active/i-frames, vent forces, projectile shield/damage, melee deduplication, drone warnings/committed targeting, whole-route traversal, safe intro/pause, both music switches, arena bounds/camera, cannon/slam/dash, boss melee and one-time scoring, MERGE activation/lock, fresh retry, fall death, and hub/audio restoration. Route reachability is tested with combat invulnerability; it does not establish a no-hit difficulty rating. Most boss attack checks isolate states rather than simulate an expert player's complete fight.
 
 The first vacuum vent was moved back from x=960 to x=840 after expanded traversal checks exposed suction interfering with the first gap's takeoff. The final route check includes the resulting vent force and crosses both gaps without teleporting.
 

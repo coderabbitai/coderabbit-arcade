@@ -429,7 +429,7 @@ func steady(label: String, want: String) -> void:
 		if game.flow.phase!="" or game.flow.veil.color.a>0.0 or game.state!=want or game.playing: held = false
 		if want=="leaving" and game.music.playing: held = false
 	check(held and is_equal_approx(game.flow.music_db, 0.0), label)
-## Leave routes away; wait for the router, confirm the menu, then load a fresh Code City.
+## Leave routes away; wait for the router, confirm the hub, then load a fresh Code City.
 func reload() -> void:
 	# The router fades on a clock; a stuck route must fail the suite, not hang it.
 	var deadline: int = Time.get_ticks_msec()+5000
@@ -439,7 +439,7 @@ func reload() -> void:
 			quit(1)
 			return
 		await process_frame
-	check(current_scene.name=="BeatemMenu", "Leave still routes to the Beat'em Up menu")
+	check(current_scene.name=="MainMenu", "Leave routes to the hub")
 	change_scene_to_file("res://scenes/beatem_up/code_city_brawl.tscn")
 	await process_frame
 	await process_frame
@@ -471,15 +471,13 @@ func check_terminal_paths() -> void:
 			at = "%s (stage %d)" % [phase, game.stage_index+1]
 			if via_menu:
 				game.pause("x")
-				var back: Button = null
-				for child in game.panel.get_children():
-					if child is Button and child.text=="Return to Beat'em Up menu": back = child
-				if back == null:
-					check(false, "The pause menu offers Return during %s" % at)
+				var back: Button = game.pause_menu.menu_button
+				if back == null or not game.pause_menu.is_open():
+					check(false, "The pause menu offers Main Menu during %s" % at)
 					quit(1)
 					return
 				back.pressed.emit()
-				check(back.disabled, "The pause menu's Return disables the menu during the router fade")
+				check(back.disabled, "The pause menu's Main Menu disables the menu during the router fade")
 			else: game.leave()
 			check(not paused and not game.flow.active() and not game.music.playing, "%s during %s cancels the flow and stops music" % ["Pause-menu Return" if via_menu else "Leave", at])
 			steady("%s during %s: no rebuild, music restart, veil or combat for 3 s" % ["Pause-menu Return" if via_menu else "Leave", at], "leaving")

@@ -5,7 +5,7 @@ const Knockout = preload("res://modes/platformer/knockout.gd")
 const Player = preload("res://modes/platformer/player.gd")
 const Enemy = preload("res://modes/platformer/enemy.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
-const HowToPlay = preload("res://app/how_to_play.gd")
+const PauseMenu = preload("res://app/pause_menu.gd")
 # Preloaded so nothing is read from disk mid-run (a freed one-shot player used to drop its stream,
 # so every jump reloaded the WAV).
 const SFX := {
@@ -51,9 +51,8 @@ var boss_label: Label
 var overlay: ColorRect
 var overlay_title: Label
 var overlay_detail: Label
-var resume_button: Button
-## Pause-only: reopens the level's how-to-play card over the pause menu.
-var how_to_play_button: Button
+## The shared pause menu (app/pause_menu.gd); the overlay below serves the results only.
+var pause_menu: CanvasLayer
 var retry_button: Button
 var overlay_card: Control
 var results_reveal: Tween
@@ -224,22 +223,21 @@ func _hud() -> void:
 	col.add_child(overlay_title)
 	overlay_detail = Style.label("", 18, Style.MINT)
 	col.add_child(overlay_detail)
-	resume_button = Style.button("Resume")
-	col.add_child(resume_button)
-	resume_button.pressed.connect(_resume)
-	how_to_play_button = Style.button("How to Play")
-	col.add_child(how_to_play_button)
-	how_to_play_button.pressed.connect(_show_how_to_play)
-	for entry in [["Retry " + level_title, level_route], ["Return to Platformer Menu", "platformer"], ["Return to Arcade", "hub"]]:
+	for entry in [["Retry " + level_title, level_route], ["Main Menu", "hub"]]:
 		var button := Style.button(entry[0])
 		col.add_child(button)
 		if entry[1] == level_route: retry_button = button
-		button.pressed.connect(func():
-			# Leaving the results unpauses the level music; end the stinger before they overlap.
-			stage_clear.stop()
-			get_tree().paused = false
-			AppRouter.go(entry[1]))
+		button.pressed.connect(_go.bind(entry[1]))
 	overlay.hide()
+	pause_menu = PauseMenu.create(self, level_route, _resume, _go.bind(level_route), _go.bind("hub"))
+## Every way out of the level: Restart and Main Menu on the pause menu, Retry and Main Menu on the
+## results. The level stays frozen under the router's fade; go() unpauses the tree once the next
+## scene is in (unpausing here first let the engine's pause bookkeeping trip during the fade).
+## The stinger is stopped before the level music could resume over it.
+func _go(route: String) -> void:
+	if AppRouter.busy: return
+	stage_clear.stop()
+	AppRouter.go(route)
 func _update_hud() -> void:
 	for i in hearts.size():
 		hearts[i].texture = HEART_FULL if i < player.hp else HEART_EMPTY
@@ -248,30 +246,19 @@ func _update_hud() -> void:
 	if encounter == "fight": objective.text = fight_objective
 	if player.shield: objective.text += "   [SHIELD]"
 func _pause() -> void:
-	if finished: return
+	if finished or AppRouter.busy: return
 	get_tree().paused = true
-	overlay_title.text = "TAKE A BREATHER"
-	overlay_detail.text = "Your commits can wait."
-	resume_button.show()
-	how_to_play_button.show()
-	overlay.color = PAUSE_SHADE
-	overlay.modulate.a = 1.0
-	overlay_card.position.y = 0
-	overlay.show()
-	resume_button.grab_focus()
-func _show_how_to_play() -> void:
-	if get_tree().paused and not finished:
-		HowToPlay.open(get_tree(), level_route, HowToPlay.Mode.PAUSE, how_to_play_button)
+	pause_menu.open("Your commits can wait.")
 ## True while the player has the level paused (its pause menu is up). The how-to-play card checks
 ## this before unpausing, so focus loss under the card leaves the pause menu working.
 func is_player_paused() -> bool:
-	return get_tree().paused and overlay.visible and resume_button.visible and not finished
+	return get_tree().paused and pause_menu.is_open() and not finished
 func _resume() -> void:
 	player.input_lock = 0.15
 	player.buffer = 0
 	player.attack_time = 0
 	get_tree().paused = false
-	overlay.hide()
+	pause_menu.close()
 func _finish(won: bool) -> void:
 	if finished: return
 	finished = true
@@ -285,10 +272,9 @@ func _finish(won: bool) -> void:
 	player.set_physics_process(false)
 	set_physics_process(false)
 	get_tree().paused = true
+	pause_menu.close()
 	overlay_title.text = "MERGE SUCCESSFUL!" if won else "BUILD FAILED"
 	overlay_detail.text = "%06d POINTS   /   %02d:%02d\n%s" % [score, int(elapsed) / 60, int(elapsed) % 60, level_title + " complete." if won else "Fresh branch. Another try."]
-	resume_button.hide()
-	how_to_play_button.hide()
 	if won:
 		stage_clear.play()
 		_reveal_results(0.35)

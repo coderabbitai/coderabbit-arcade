@@ -822,7 +822,7 @@ func check_real_game() -> void:
 			if game.state!="celebration": break
 		if game.state=="celebration" and guard==120:
 			game.pause("x")
-			check(game.state=="paused" and game.overlay.visible, "pause during the real celebration shows the overlay")
+			check(game.state=="paused" and game.pause_menu.is_open(), "pause during the real celebration shows the pause menu")
 			var frozen: float = game.party.clock
 			for _i in 30: real_step()
 			check(is_equal_approx(game.party.clock, frozen), "the party clock is frozen while the real game is paused")

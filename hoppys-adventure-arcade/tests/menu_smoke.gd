@@ -119,7 +119,7 @@ func run() -> void:
 	for i in GameCatalog.GAMES.size():
 		var route: String = GameCatalog.GAMES[i].route
 		current_scene.buttons[i].pressed.emit()
-		router.go("runner")
+		router.go("hub")
 		for frame in 300:
 			if not router.busy: break
 			await process_frame

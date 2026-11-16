@@ -14,7 +14,6 @@ const MID_ROUTE := ["route_leaving", "route_arriving"]
 const HUB := "res://scenes/main_menu/main_menu.tscn"
 const CODE_CITY := "res://scenes/beatem_up/code_city_brawl.tscn"
 const HEROES := "res://scenes/beatem_up/reinvent/heroes_vs_villains.tscn"
-const RUNNER_MENU := "res://scenes/runner/runner_menu.tscn"
 const RUNNER := "res://scenes/runner/runner_game.tscn"
 ## Wall-clock seconds the screen plays before the quit, with its music and effects running.
 const HOLD := 1.5
@@ -49,7 +48,7 @@ func wait_until(test: Callable, seconds: float) -> bool:
 		await process_frame
 	return true
 
-## Takes `route` through the router as the menus do, and adopts the scene it lands on.
+## Takes `route` through the router as the hub does, and adopts the scene it lands on.
 func route(name: String, path: String) -> bool:
 	if not await wait_until(func() -> bool: return not router().busy, 10.0): return false
 	router().go(name)
@@ -148,7 +147,6 @@ func reach() -> bool:
 				return await wait_until(func() -> bool: return game.overlay.visible and not game.results_reveal.is_running(), 6.0)
 			return game.knockout.active
 		"runner_intro":
-			if not await route("runner", RUNNER_MENU): return false
 			if not await route("runner_game", RUNNER): return false
 			if bool(game.paused): game.resume()
 			return await wait_until(func() -> bool: return game.run_intro_mode != &"", 5.0)

@@ -133,7 +133,7 @@ func run() -> void:
 	await frames(30)
 	check(not level.finished, "Landing on locked MERGE does not complete level")
 	print("BOSS TEST: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
-	change_scene_to_file("res://scenes/platformer/platformer_menu.tscn")
+	change_scene_to_file("res://scenes/main_menu/main_menu.tscn")
 	await frames(2)
 	await root.get_node("AudioService").settle()
 	quit(failures)

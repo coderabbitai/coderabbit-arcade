@@ -151,10 +151,10 @@ func platformer_pauses_and_resumes() -> void:
 	await plug(0, XBOX)
 	await frames(5)
 	await unplug(0)
-	check(paused and level.overlay.visible, "A disconnect pauses the platformer through its pause menu")
+	check(paused and level.pause_menu.is_open(), "A disconnect pauses the platformer through its pause menu")
 	check(service.is_paused_for_controller() and service.banner.visible, "The banner asks for the controller")
 	await plug(4, XBOX)  # The same pad returns under a new id.
-	check(not paused and not level.overlay.visible, "Reconnecting resumes the platformer")
+	check(not paused and not level.pause_menu.is_open(), "Reconnecting resumes the platformer")
 	check(not service.banner.visible and service.family == "xbox", "Banner hidden, prompts back")
 	await frames(5)
 	# A game the player paused stays paused through a disconnect and reconnect.
@@ -162,7 +162,7 @@ func platformer_pauses_and_resumes() -> void:
 	await unplug(4)
 	check(paused and not service.is_paused_for_controller(), "A player-paused game is left alone")
 	await plug(5, XBOX)
-	check(paused and level.overlay.visible, "Reconnecting does not resume a game the player paused")
+	check(paused and level.pause_menu.is_open(), "Reconnecting does not resume a game the player paused")
 	level._resume()
 	await frames(5)
 

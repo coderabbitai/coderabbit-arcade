@@ -19,7 +19,6 @@ Keep each `.tres` next to its PNG; the animation resources use relative paths. T
 - `animations/`: animated GIF previews.
 - `sources/`: original generated sheets.
 - `preview.html`: standalone offline animation preview.
-- `bay-area-preview.png`: staged art preview.
 - `ASSET_GUIDE.md`: coverage, frame sizes, pivots, animation names and integration notes.
 - `PROMPTS.md`: original artwork generation prompts.
 

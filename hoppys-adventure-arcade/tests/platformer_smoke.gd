@@ -205,32 +205,34 @@ func run() -> void:
 	check(level.overlay.visible and is_equal_approx(level.overlay.modulate.a, 1.0), "Results menu fades fully in")
 	check(level.overlay_card.position.y == 0 and retry.has_focus(), "Results menu settles with Retry focused")
 	await capture("/tmp/hoppy-death-results.png")
-	paused = false
-	root.get_node("AppRouter").go("platformer")
-	await create_timer(0.7).timeout
-	check(current_scene.column.get_child(1).text == "LEVEL SELECT", "Platformer opens straight on Level Select")
+	# The results offer Retry and Main Menu; Main Menu lands on the hub with its music back.
+	var leave: Button = level.retry_button.get_parent().get_child(level.retry_button.get_index() + 1)
+	check(leave.text == "Main Menu", "The results offer Main Menu after Retry")
+	leave.pressed.emit()
+	check(await settles_on("res://scenes/main_menu/main_menu.tscn"), "Main Menu on the results returns to the hub")
 	await frames(3)
-	await capture("/tmp/hoppy-level-select.png")
+	check(not paused, "The hub is unpaused after the results")
 	check(not root.get_node("AudioService").music.stream_paused, "Menu music restored")
 	check(root.get_node("AudioService").music.process_mode == Node.PROCESS_MODE_INHERIT, "The hub music pauses with the tree again outside the level")
-	# Both ways back from Level Select land on the hub.
-	var back: Button = current_scene.column.get_child(current_scene.column.get_child_count() - 1)
-	check(back.text == "← Main Menu", "Level Select offers the way back to the hub")
-	back.pressed.emit()
-	check(await settles_on("res://scenes/main_menu/main_menu.tscn"), "← Main Menu returns to the hub")
-	check(await root.get_node("AppRouter").go("platformer") and await settles_on("res://scenes/platformer/platformer_menu.tscn"), "Platformer reopens on Level Select")
-	if current_scene.scene_file_path != "res://scenes/platformer/platformer_menu.tscn":
+	# The pause menu's Main Menu lands on the hub too, through real input for the pause itself.
+	check(await root.get_node("AppRouter").go("bay_area_blitz") and await settles_on("res://scenes/platformer/bay_area_blitz.tscn"), "The level reopens from the hub")
+	if current_scene.scene_file_path != "res://scenes/platformer/bay_area_blitz.tscn":
 		quit(failures)
 		return
-	var cancel := InputEventAction.new()
-	cancel.action = "ui_cancel"
-	cancel.pressed = true
-	# Real input dispatch, so a focused control that swallowed ui_cancel would fail this check.
-	Input.parse_input_event(cancel)
-	var release := cancel.duplicate() as InputEventAction
+	current_scene._resume()
+	var pause_press := InputEventAction.new()
+	pause_press.action = "pause"
+	pause_press.pressed = true
+	# Real input dispatch, so a focused control that swallowed the press would fail this check.
+	Input.parse_input_event(pause_press)
+	var release := pause_press.duplicate() as InputEventAction
 	release.pressed = false
 	Input.parse_input_event(release)
-	check(await settles_on("res://scenes/main_menu/main_menu.tscn"), "ui_cancel on Level Select returns to the hub")
+	await frames(2)
+	check(paused and current_scene.pause_menu.is_open() and current_scene.is_player_paused(), "Esc opens the pause menu")
+	check(current_scene.pause_menu.menu_button.text == "Main Menu", "The pause menu offers Main Menu")
+	current_scene.pause_menu.menu_button.pressed.emit()
+	check(await settles_on("res://scenes/main_menu/main_menu.tscn"), "Main Menu on the pause menu returns to the hub")
 	print("PLATFORMER SMOKE: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
 	await frames(35)
 	await root.get_node("AudioService").settle()

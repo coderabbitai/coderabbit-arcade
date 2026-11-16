@@ -17,7 +17,7 @@ This runbook is for the staff who run Hoppy’s Adventure Arcade unattended at a
    ```sh
    tools/booth/macos/setup.sh --app "/Applications/Hoppy’s Adventure Arcade.app" --route heroes_vs_villains
    ```
-   Nothing changes yet. To apply it, run the same command with `--apply` and enter the administrator password when asked. The game starts. To give each player a retry or change the attract screen, add game flags after `--`, for example `-- --retries=1 --attract=beatem_up` ([booth flags](builds.md#run-it-at-a-booth)).
+   Nothing changes yet. To apply it, run the same command with `--apply` and enter the administrator password when asked. The game starts. To give each player a retry, add game flags after `--`, for example `-- --retries=1` ([booth flags](builds.md#run-it-at-a-booth)).
 4. Do the manual steps the script lists at the end: automatic login, Do Not Disturb, the display, the volume and the controllers.
 5. Restart the Mac. The game should start on its own within a minute.
 
@@ -40,12 +40,12 @@ Booth mode itself runs fullscreen and ignores the menu's **Quit Game**. A game n
 | What happens | What you'll see |
 |---|---|
 | A player walks away mid-game | After 90 seconds the game returns to the hub. |
-| A player loses | Once they have used any retries you set (none by default), a **GAME OVER** card thanks them and shows their score. After six seconds the attract screen (the hub unless you set another) opens for the next player. |
+| A player loses | Once they have used any retries you set (none by default), a **GAME OVER** card thanks them and shows their score. After six seconds the hub opens for the next player. |
 | The game crashes or closes | The watchdog opens it again within a few seconds. |
 | The game freezes | The watchdog restarts it within about a minute. |
 | Someone presses Cmd+Q | The game closes, and the watchdog opens it again. |
 | The player's controller disconnects | The game pauses and asks for the controller. Plug it back in, or press Start on another controller. |
-| You want to clear the Endless Runner scores | Start the Endless Runner tile, pause and choose **Runner Menu**, then **Leaderboard → Reset scores**. (Or start the game once with `--route=runner`.) |
+| You want to clear the Endless Runner scores | Start the Endless Runner tile, pause (Esc or Start) and choose **Leaderboard → Reset scores**, then **Reset** to confirm. |
 
 ## Stop the game for maintenance
 

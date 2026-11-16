@@ -7,7 +7,7 @@ extends Node3D
 ## light), and draws each batch with RenderingServer.force_draw(false) under the live lights, then
 ## again with a corridor-wide omni light: same viewport, environment, scaling and scene as play,
 ## but the frames are never presented. It runs from _ready() while the route veil is opaque, once
-## in the runner menu and once in the first game (the menu's lights and Hoppy are not the game's),
+## in the hub's background pass and once in the first game (the hub's lights are not the game's),
 ## so nothing flashes even on a directly launched scene. Only public scene paths and visual hooks
 ## (contract §5, §11.5-§11.8) are used, the way the backend mounts them.
 const PowerUpDefs = preload("res://scenes/runner/powerups/power_up_defs.gd")
@@ -54,7 +54,7 @@ const TRACK_DEPTHS: Array[float] = [0.0, 9.0, 55.0]
 const LIT_RANGE := 150.0
 
 ## Process-lifetime state lives on the Engine singleton: nothing else references this script once
-## the runner menu is freed, and an unloaded script would drop its statics (the guard and the
+## the warm-up host is freed, and an unloaded script would drop its statics (the guard and the
 ## retained materials) before the game's first frame.
 const STATE_KEY := &"runner_gpu_warmup"
 ## True once the game context has been warmed (the one that matters for play).
@@ -86,7 +86,7 @@ var _light: OmniLight3D
 var _focus := Vector3.ZERO
 var _slots := {}
 
-## Once per process per context (runner menu, runner game). `host` owns the transient stage;
+## Once per process per context (hub warm-up, runner game). `host` owns the transient stage;
 ## `camera` defaults to the viewport camera. Returns false when skipped (already warmed, or the
 ## headless dummy renderer compiles nothing).
 static func run(host: Node, camera: Camera3D = null) -> bool:

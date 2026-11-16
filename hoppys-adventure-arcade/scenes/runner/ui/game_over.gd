@@ -87,7 +87,7 @@ func _ready() -> void:
 	retry_boss_button = Style.button("Retry Boss")
 	retry_boss_button.name = "RetryBoss"
 	retry_button = Style.button("Retry")
-	menu_button = Style.button("Runner Menu")
+	menu_button = Style.button("Main Menu")
 	for button in [retry_boss_button, retry_button, menu_button]:
 		button.custom_minimum_size.x = 280
 		actions.add_child(button)

@@ -8,6 +8,12 @@ result recorded in the runner docs was produced on 4.7.0 unless it says otherwis
 for development; any behavioural difference found between 4.7.0 and 4.7.1 must be recorded in §10, and
 final acceptance of the runner re-runs the §9 commands on 4.7.1.
 
+**Amendment 2026-11-15 (menu cleanup).** The runner menu (`runner_menu.tscn`, route `runner`) no longer
+exists: the hub's tile grid routes straight to `runner_game`, `go_to_menu()` routes to `hub`, and the
+leaderboard viewer with Reset scores lives in `scenes/runner/ui/leaderboard_panel.gd`, opened from the
+shared pause menu's **Leaderboard** button (`scenes/runner/ui/pause_menu.gd` extends `app/pause_menu.gd`).
+§2 and the `runner_menu.tscn` rows below describe the earlier flow and are kept as history.
+
 This document is the single source of truth shared by the two agents building the Endless Runner
 ("The Codebase Corridor"):
 
@@ -155,7 +161,7 @@ frontend may use it for deterministic cosmetics).
 | `pause()` / `resume()` / `toggle_pause()` | Only while `running`. `resume()` re-syncs held input so nothing fires on unpause |
 | `retry()` | Unpauses and routes to `runner_game` (fresh session) |
 | `retry_boss()` | v2.5 (§11.13): unpauses and routes to `runner_game`, which opens in front of the boss the run died at. Falls back to `retry()` when `boss_checkpoint` is empty |
-| `go_to_menu()` | Unpauses and routes to `runner` |
+| `go_to_menu()` | Unpauses and routes to `hub` (the runner menu route `runner` was removed 2026-11-15) |
 | `hit_stop(seconds: float)` | Brief `Engine.time_scale` dip owned by the backend (max 0.12 s) |
 | `submit_name(name: String) -> bool` | Sanitises (trim, strip control chars, ≤ 16, blank → `Hoppy`) and renames this run's leaderboard entry. Returns `true` if persisted. Never adds a second entry |
 | `get_leaderboard() -> Array[Dictionary]` | Current top 10 |
@@ -179,7 +185,7 @@ means the write failed, and then `rank` is 0, `qualifies` is `false` and `leader
 emitted for that run.
 
 Leaderboard entry fields: `run_id, name, score:int, duration:float, seed:int, submitted_at:int`.
-The runner menu reads the board without a game instance via the static
+The leaderboard panel reads the board without a game instance via the static
 `preload("res://scenes/runner/systems/runner_leaderboard.gd").load_entries()`.
 
 ### 4.4 Input
@@ -255,7 +261,7 @@ The physical floor is backend-owned and invisible once a corridor mounts. The co
 | `ui/pause_menu.tscn` | CanvasLayer, `process_mode ALWAYS` | Shows on `paused_changed(true)`; buttons → `game.resume()`, `game.retry()`, `game.go_to_menu()` |
 | `ui/game_over.tscn` | CanvasLayer, `process_mode ALWAYS`, hidden | `show_result(result: Dictionary, leaderboard: Array)` is called by the frontend itself from `run_finished`; name entry → `game.submit_name()`; Retry / Menu as above; v2.5: a **Retry Boss** button → `game.retry_boss()`, shown (and given the default focus) only while `game.boss_checkpoint` is non-empty (§11.13) |
 | `audio/runner_audio.tscn` | Node, `process_mode ALWAYS` | SFX on bus `SFX`; BGM via `AudioService.play_music` |
-| `runner_menu.tscn` | root named **`RunnerMenu`** | See §2. Exposes `buttons: Array[Button]` with the four §2 entries (`01 Play`, `02 Leaderboard`, `03 Return to Main Menu`, `04 Quit Game`); `tests/runner_scaffold_check.gd` asserts `buttons.size() == 4` |
+| `ui/leaderboard_panel.gd` | Control, built in code | Replaces the removed `runner_menu.tscn` (2026-11-15): top ten with medals, **Reset scores** with confirmation, **Close**; `leaderboard_path` is read when it opens; `ui_cancel` / `pause` close the confirmation first, then the panel |
 
 `AudioService` API available to the frontend: `play_music(stream: AudioStream, volume_db := -10.0)`,
 `play_default_music()`, `set_music_pitch(scale: float)`, `duck_music(db: float, seconds: float)`,

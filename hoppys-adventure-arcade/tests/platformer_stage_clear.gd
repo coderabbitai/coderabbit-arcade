@@ -43,7 +43,7 @@ func run() -> void:
 		var rest := await watch(game.stage_clear, stream.get_length())
 		check(early.starts + rest.starts == 1 and not game.stage_clear.playing,
 			route + ": the stage-clear stinger starts once and stops after one playback (%d starts)" % (early.starts + rest.starts))
-		var leave := game.find_children("*", "Button", true, false).filter(func(b: Button) -> bool: return b.text == "Return to Platformer Menu")
+		var leave := game.find_children("*", "Button", true, false).filter(func(b: Button) -> bool: return b.text == "Main Menu")
 		check(not leave.is_empty(), route + ": the results offer a way out")
 		if not leave.is_empty():
 			game.stage_clear.play()

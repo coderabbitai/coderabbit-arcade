@@ -1,81 +1,60 @@
-extends CanvasLayer
-## Pause display only. The facade owns pause state and input.
-## It deliberately does NOT bind ui_cancel: RunnerGame owns the `pause` action.
+extends "res://app/pause_menu.gd"
+## The runner's pause menu: the shared menu (app/pause_menu.gd) plus a Leaderboard button that
+## opens the local top ten with its Reset scores flow over the paused run. Display only: the facade
+## owns pause state and input, and this menu binds neither `pause` nor `ui_cancel`.
 
-const Style = preload("res://scenes/runner/ui/hud_style.gd")
-const Prompts := preload("res://app/controller_prompts.gd")
-const HowToPlay := preload("res://app/how_to_play.gd")
+const LeaderboardPanel := preload("res://scenes/runner/ui/leaderboard_panel.gd")
 
 var game: Node
-var resume_button: Button
-var how_to_play_button: Button
-
-func _ready() -> void:
-	var ui := Control.new()
-	ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	ui.theme = Style.theme()
-	add_child(ui)
-	var dim := ColorRect.new()
-	dim.color = Color(0.01, 0.02, 0.04, 0.88)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	ui.add_child(dim)
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	ui.add_child(center)
-	var panel := PanelContainer.new()
-	var box := Style.panel(Style.MINT)
-	box.content_margin_left = 28
-	box.content_margin_right = 28
-	box.content_margin_top = 24
-	box.content_margin_bottom = 24
-	panel.add_theme_stylebox_override("panel", box)
-	Style.polish(panel, false)
-	center.add_child(panel)
-	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 18)
-	panel.add_child(column)
-	column.add_child(Style.label("PAUSED", 46))
-	var buttons: Array[Button] = []
-	resume_button = Style.button("Resume")
-	column.add_child(resume_button)
-	buttons.append(resume_button)
-	resume_button.pressed.connect(func() -> void: _call_game(&"resume"))
-	how_to_play_button = Style.button("How to Play", 52)
-	column.add_child(how_to_play_button)
-	buttons.append(how_to_play_button)
-	how_to_play_button.pressed.connect(_show_how_to_play)
-	var restart := Style.button("Restart", 52)
-	column.add_child(restart)
-	buttons.append(restart)
-	restart.pressed.connect(func() -> void: _call_game(&"retry"))
-	var menu := Style.button("Runner Menu", 52)
-	column.add_child(menu)
-	buttons.append(menu)
-	menu.pressed.connect(func() -> void: _call_game(&"go_to_menu"))
-	var resume_hint := Style.label("", 20, Style.MINT)
-	Prompts.track(resume_hint, func() -> String:
-		return "%s  resume" % Prompts.either("ESC", &"pause", true))
-	column.add_child(resume_hint)
-	for i in buttons.size():
-		buttons[i].focus_neighbor_top = buttons[i].get_path_to(buttons[(i - 1 + buttons.size()) % buttons.size()])
-		buttons[i].focus_neighbor_bottom = buttons[i].get_path_to(buttons[(i + 1) % buttons.size()])
-		buttons[i].focus_next = buttons[i].focus_neighbor_bottom
-		buttons[i].focus_previous = buttons[i].focus_neighbor_top
+var leaderboard_button: Button
+## The open leaderboard panel, or null.
+var leaderboard: Control
 
 func bind(runner: Node) -> void:
 	game = runner
+	setup("runner_game",
+		func() -> void: _call_game(&"resume"),
+		func() -> void: _call_game(&"retry"),
+		func() -> void: _call_game(&"go_to_menu"))
+	leaderboard_button = add_button("Leaderboard", _open_leaderboard)
 	runner.paused_changed.connect(_on_paused_changed)
 	_on_paused_changed(runner.paused)
 
 func _on_paused_changed(is_paused: bool) -> void:
-	visible = is_paused
 	if is_paused:
-		resume_button.grab_focus()
+		open()
+	else:
+		close()
 
-## Opens the runner's how-to-play card over this menu; the run stays paused under it.
-func _show_how_to_play() -> void:
+## Closing the menu (resume, pad reconnect, a route change) takes the leaderboard with it.
+func close() -> void:
+	if is_instance_valid(leaderboard):
+		leaderboard.closed.disconnect(_on_leaderboard_closed)
+		leaderboard.queue_free()
+		leaderboard = null
+		_set_menu_enabled(true)
+	super.close()
+
+func _open_leaderboard() -> void:
+	if leaderboard != null or game == null:
+		return
+	_set_menu_enabled(false)
+	leaderboard = LeaderboardPanel.new()
+	leaderboard.leaderboard_path = game.leaderboard_path
+	leaderboard.closed.connect(_on_leaderboard_closed)
+	ui.add_child(leaderboard)
+
+func _on_leaderboard_closed() -> void:
+	leaderboard = null
+	_set_menu_enabled(true)
 	if visible:
-		HowToPlay.open(get_tree(), "runner_game", HowToPlay.Mode.PAUSE, how_to_play_button)
+		leaderboard_button.grab_focus()
+
+## The board owns the screen while it is up: the menu's own buttons can't be reached.
+func _set_menu_enabled(enabled: bool) -> void:
+	for button in buttons:
+		button.disabled = not enabled or locked
+		button.focus_mode = Control.FOCUS_ALL if enabled else Control.FOCUS_NONE
 
 func _call_game(method: StringName) -> void:
 	if game != null and game.has_method(method):

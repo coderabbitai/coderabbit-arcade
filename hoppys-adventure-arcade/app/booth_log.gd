@@ -15,11 +15,11 @@ extends RefCounted
 ## level's Retry) counts as a retry within it. `game_overs` counts the session's losses, stage
 ## retries that stay in the game included. `ended_by` is "menu" (the player left through the
 ## game's own menu), "idle" (booth mode's idle return), "game_over" (booth mode sent a player who
-## had used their retries back to the attract route) or "quit". A start with no end means the game
+## had used their retries back to the hub) or "quit". A start with no end means the game
 ## stopped without quitting: a crash, a power cut or a forced kill.
 ## tools/booth/sessions_report.py summarizes a folder of these files.
 
-## Routes that are games. The hub and mode menus end a session but never start one.
+## Routes that are games. The hub ends a session but never starts one.
 const GAMES: Array[String] = ["heroes_vs_villains", "code_city_brawl", "bay_area_blitz",
 	"orbital_ops", "enchanted_repo", "runner_game"]
 ## This run's file.

@@ -201,7 +201,7 @@ func run() -> void:
 	router.start_session_log(LOG_DIR)
 	await visit("bay_area_blitz")
 	await visit("bay_area_blitz")
-	await visit("platformer")
+	await visit("hub")
 	await visit("heroes_vs_villains")
 	router.set_booth(true)
 	router.idle_limit = 0.5
@@ -224,11 +224,11 @@ func run() -> void:
 	check(entries.size() > 0 and entries[0].event == "launch", "The log opens with a launch line")
 	check(starts.map(func(record: Dictionary) -> String: return record.game)
 		== ["bay_area_blitz", "heroes_vs_villains", "code_city_brawl"],
-		"Each game visit starts one session; menus and the hub start none")
+		"Each game visit starts one session; the hub starts none")
 	check(ends.size() == 3, "Every session ends")
 	if ends.size() == 3 and starts.size() == 3:
 		check(ends[0].ended_by == "menu" and int(ends[0].retries) == 1,
-			"Re-entering a game is a retry; leaving for a menu ends the session")
+			"Re-entering a game is a retry; leaving for the hub ends the session")
 		check(ends[1].ended_by == "idle", "Booth mode's idle return ends a session as idle")
 		check(ends[2].ended_by == "quit", "Quitting ends a session as quit")
 		var numbered := true

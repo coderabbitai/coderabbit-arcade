@@ -1,5 +1,5 @@
 extends RefCounted
-## Local top-10 persistence for the Endless Runner (systems spec §7). Static only: the runner menu
+## Local top-10 persistence for the Endless Runner (systems spec §7). Static only: the leaderboard panel
 ## reads the board without a game instance.
 
 const DEFAULT_PATH := "user://leaderboard.cfg"

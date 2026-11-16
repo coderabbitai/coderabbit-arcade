@@ -18,7 +18,7 @@ This mode uses the armored Hoppy and the [Mode 2 asset pack](heroes-vs-villains-
 | Pause | Escape or P | Start |
 | Skip presentation card | Enter / keypad Enter | View / Select |
 
-The first entry from the menus opens the game's [how-to-play card](main-menu.md#how-to-play-cards) before the opening cards; the pause menu's **How to Play** shows it again.
+The first entry from the hub opens the game's [how-to-play card](main-menu.md#how-to-play-cards) before the opening cards; the pause menu's **How to Play** shows it again.
 
 The armored hero uses eight-frame side, away and toward-camera locomotion cycles at 14 fps, with cadence scaled to analog movement and speed effects. Base travel speed is 264 pixels/second (10% above Code City Brawl). Its reference-matched white-and-orange costume is drawn consistently across all 120 gameplay cels; the away view shows the white backs of the ears. The [hero asset guide](../hoppys-adventure-arcade/Assets/Character/CodeRabbit/2D/heroes_villains/README.md) documents sources, packing, calibration and visual comparisons.
 
@@ -26,7 +26,7 @@ Hoppy has three health points, jump avoidance, hit recovery and one shield on st
 - Play freezes under a white flash.
 - He is thrown back away from the hit, and a carried weapon is stowed while he flies.
 - He lands flat on his front with a burst and a bounce, and lies there with dizzy stars and a "K.O." callout while the music ducks.
-- About 2.2 seconds after the hit, the game-over menu offers a retry of the current stage with its entry score and capabilities, fresh health and cleared temporary effects. Pause and focus loss stop the run, including during cards and stage transitions; return-to-menu is available through pause and results.
+- About 2.2 seconds after the hit, the game-over menu offers a retry of the current stage with its entry score and capabilities, fresh health and cleared temporary effects. Pause and focus loss stop the run, including during cards and stage transitions; **Main Menu** (the hub) is available through the shared pause menu and the results.
 
 REVIEW never hurts Hoppy. Holding Q / LB for under half a second fires a mint burst on the floor around him that stuns nearby threats; stunned enemies turn blue. For 0.85 seconds after it fires, hits can't land and Hoppy glows mint, without the blink that means he was hit. It recharges in 8 seconds.
 
@@ -44,7 +44,7 @@ Beating the AI-Augmented Hacker plays a victory epilogue of three more painted s
 - **Trust restored:** the core runs clean, with the four capability emblems in orbit.
 - **The CodeRabbit:** a hero shot over the cheering expo floor.
 
-The victory screen follows. It counts the final score up from zero over 1.8 seconds and shows the time taken, then **Return to Beat'em Up menu** takes focus. It replaces the older static victory card, which the run no longer shows.
+The victory screen follows. It counts the final score up from zero over 1.8 seconds and shows the time taken, then **Main Menu** takes focus. It replaces the older static victory card, which the run no longer shows.
 
 A minimap sits in the top-right corner, under the HUD bar and clear of both boss bars.
 - Its top row shows the whole run: all nine rooms as tiles, grouped by stage. Cleared rooms are filled, the current one pulses, and each stage's boss room is marked.
@@ -137,6 +137,6 @@ godot --path hoppys-adventure-arcade --always-on-top --script res://tests/heroes
 godot --path hoppys-adventure-arcade --always-on-top --script res://tests/beatemup_knockout.gd
 ```
 
-The logic suite covers combat depth/deduplication, combo buffering, enemy defenses and special behaviors, all weapons, capability effects, hazards, pause, all boss transitions, independent PR defeat, shield edge cases, retry cleanup, the automatic stage exit after the unlock cards and all six music mappings. The smoke suite injects keyboard/controller events, traverses all nine encounters with no card or stage confirmation, checks bounded entity pools and capability retention, reaches one victory and returns to an unpaused menu. `hoppy_armed_assets.gd` requires all eleven armed sheets across both modes. `beatemup_story.gd` and `beatemup_knockout.gd` cover the story scenes and the knockout in both modes; [Code City Brawl](code-city-brawl.md#implementation-and-verification) describes them. Rendered runs save previews in `docs/previews/heroes-villains/`; `--always-on-top` keeps macOS from stalling the captures while the window is covered.
+The logic suite covers combat depth/deduplication, combo buffering, enemy defenses and special behaviors, all weapons, capability effects, hazards, pause, all boss transitions, independent PR defeat, shield edge cases, retry cleanup, the automatic stage exit after the unlock cards and all six music mappings. The smoke suite injects keyboard/controller events, traverses all nine encounters with no card or stage confirmation, checks bounded entity pools and capability retention, reaches one victory and returns to the unpaused hub. `hoppy_armed_assets.gd` requires all eleven armed sheets across both modes. `beatemup_story.gd` and `beatemup_knockout.gd` cover the story scenes and the knockout in both modes; [Code City Brawl](code-city-brawl.md#implementation-and-verification) describes them. Rendered runs save previews in `docs/previews/heroes-villains/`; `--always-on-top` keeps macOS from stalling the captures while the window is covered.
 
 Godot 4.7.1 asset, logic and full-traversal checks passed, including a rendered traversal at 1280×720. On October 8, 2026, after the stage-flow and armed-sheet changes, all 26 headless CI suites passed; the rendered traversal finished with no card or stage confirmation, and the rendered `weapons_25/44/85` captures were compared against the sheet cells for all five weapons. Code City logic, motion and full-traversal regressions and menu-return layout checks also passed. The traversal bot uses invulnerability and accelerated navigation: it verifies reachability, not human difficulty balance. Physical controller feel, listening/mix QA, packaged exports and performance on target booth hardware remain playtest work. Locomotion uses the generated movement supplement; unarmed combat retains the original key poses, and armed poses come from the armed sheets. The motion suite verifies directional cycles, speed/cadence, each card's hold and auto-advance, single-press skip, pause freeze, the game-over overlay's input filter, and armed idle, attack frames, mirroring and the carry icon for every weapon, including that no carry covers Hoppy's face.

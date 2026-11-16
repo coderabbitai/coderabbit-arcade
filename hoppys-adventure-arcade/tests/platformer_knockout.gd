@@ -103,9 +103,9 @@ func run() -> void:
 		game.knockout.tick(seconds)
 		var old_cutaway: WeakRef = weakref(game.knockout)
 		var old_music: WeakRef = weakref(game.music)
-		root.get_node("AppRouter").go("platformer")
+		root.get_node("AppRouter").go("hub")
 		await create_timer(1.3).timeout
 		check(old_cutaway.get_ref() == null and old_music.get_ref() == null, "Exit frees cutaway and music at %.1f seconds" % seconds)
-		check(not paused and not root.get_node("AudioService").music.stream_paused, "Exit restores menu audio and tree")
+		check(not paused and not root.get_node("AudioService").music.stream_paused, "Exit restores hub audio and tree")
 	print("PLATFORMER KNOCKOUT: ", "PASS" if failures == 0 else "FAIL", " (", failures, " failures)")
 	quit(0 if failures == 0 else 1)
