@@ -47,7 +47,9 @@ func run() -> void:
 		if texture == null:
 			continue
 		check(texture.get_size() == Vector2(960, 540), bg.file)
-	check(frames == 104 and clips == 78, "Complete frame/state inventory")
+	# 104 generated frames and 78 clips, plus the 12 walk frames and 3 walk clips that
+	# tools/build_monolith_walk.py adds to the Legacy Monolith and its armor sheet.
+	check(frames == 116 and clips == 81, "Complete frame/state inventory")
 	check(manifest.atlases.size() == 6 and manifest.backgrounds.size() == 2, "Complete resource inventory")
 	if failures > 0:
 		printerr(failures, " Enchanted Repo asset checks failed")

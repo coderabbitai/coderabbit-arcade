@@ -59,10 +59,13 @@ func _physics_process(dt: float) -> void:
 	var current := state()
 	var layer_text := "OUTER ARMOR %d/3" % (hp-9) if armor_stage == 0 else ("INNER ARMOR %d/3" % (hp-6) if armor_stage == 1 else "CORE %d/6" % hp)
 	attack_name = layer_text + " · " + ("RECOVERY — ATTACK!" if vulnerable() else {"tracking":"KEEP YOUR DISTANCE", "slam_warning":"DEBT SLAM — JUMP!", "sweep_warning":"LOW SWEEP — JUMP!", "stomp_warning":"STOMP — WATCH THE WAVE"}.get(current,current.replace("_"," ").to_upper()))
-	_pose("idle" if current == "tracking" else current)
+	if current != "tracking": _pose(current)
 	if current == "tracking":
+		# Lumber toward Hoppy on the walk cycle (tools/build_monolith_walk.py); stand once close.
 		var dx := player.position.x-position.x
+		var before := position.x
 		if absf(dx)>160: position.x=clampf(position.x+signf(dx)*65*dt,4350,4810)
+		_pose("walk" if not is_equal_approx(position.x,before) else "idle")
 		sprite.flip_h=dx>0
 	elif current in ["slam","stomp"]:
 		var reach := 175.0 if current == "slam" else 95.0
@@ -124,13 +127,7 @@ func _draw() -> void:
 	if break_time>0:
 		draw_arc(Vector2(0,-95),75,0,TAU,32,Color(.4,1,.85,break_time),4)
 		return
-	var current := state()
-	if current in ["slam_warning","slam","stomp_warning","stomp","sweep_warning","sweep"]:
-		var warning := current.ends_with("warning")
-		var reach := 175.0 if current.begins_with("slam") else 95.0
-		var rect := Rect2(-reach,-8,reach*2,8)
-		if current.begins_with("sweep"): rect=Rect2(-30 if direction>0 else -215,-58,245,58)
-		if warning: draw_rect(rect,Color(1,.75,.25,.55),false,3)
-		else: draw_rect(rect,Color(.85,.25,1,.7))
-		if current=="stomp_warning":
-			draw_line(Vector2(direction*105,-18),Vector2(direction*310,-18),Color("ffc769"),3)
+	# The warning poses are the telegraph; no box is drawn over the art. The stomp keeps its amber
+	# line, which shows where the ground wave will travel.
+	if state()=="stomp_warning":
+		draw_line(Vector2(direction*105,-18),Vector2(direction*310,-18),Color("ffc769"),3)

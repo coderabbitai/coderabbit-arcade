@@ -7,12 +7,16 @@ extends CanvasLayer
 ## pause on the `pause` action (ControllerService synthesizes that action on a pad disconnect).
 ## Restart and Main Menu run the game's callables, which end in AppRouter.go(); the menu locks its
 ## buttons on that press so a second press during the router's fade does nothing.
-## A game may add a button of its own before Main Menu (the runner's Leaderboard).
+## Every game also gets a Leaderboard button that opens its local top ten (app/leaderboards.gd
+## maps the route to the board) over the menu; the runner points it at its own board. A game may
+## add further buttons of its own before Main Menu with add_button().
 
 const Style := preload("res://scenes/main_menu/menu_style.gd")
 const Data := preload("res://app/how_to_play_data.gd")
 const Prompts := preload("res://app/controller_prompts.gd")
 const HowToPlay := preload("res://app/how_to_play.gd")
+const Leaderboards := preload("res://app/leaderboards.gd")
+const LeaderboardPanel := preload("res://app/leaderboard_panel.gd")
 
 ## Above every game's HUD, results and story layers (at most 22), below the how-to-play card (89),
 ## ControllerService's disconnect banner (90) and the router's fade (100).
@@ -31,6 +35,12 @@ var resume_button: Button
 var restart_button: Button
 var how_to_play_button: Button
 var menu_button: Button
+var leaderboard_button: Button
+## The board file the Leaderboard button opens; set after setup() to point at another board
+## (the runner's game owns its path, tests use scratch files).
+var leaderboard_path := ""
+## The open leaderboard panel, or null.
+var leaderboard: Control
 ## Every button in focus order, Main Menu last.
 var buttons: Array[Button] = []
 var locked := false
@@ -66,6 +76,9 @@ func setup(game_route: String, on_resume: Callable, on_restart: Callable, on_lea
 	var title: String = Data.game(route).get("title", "") if Data.has_game(route) else ""
 	eyebrow.text = title.to_upper()
 	eyebrow.visible = not title.is_empty()
+	leaderboard_path = Leaderboards.path_for(route)
+	if leaderboard_button == null:
+		leaderboard_button = add_button("Leaderboard", _open_leaderboard)
 
 func _build() -> void:
 	ui = Control.new()
@@ -174,9 +187,39 @@ func open(detail := "") -> void:
 	resume_button.grab_focus()
 	_opening = false
 
-## Hides the menu. The game unpauses itself; this never touches the tree.
+## Hides the menu. The game unpauses itself; this never touches the tree. Closing the menu
+## (resume, pad reconnect, a route change) takes an open leaderboard with it.
 func close() -> void:
+	if is_instance_valid(leaderboard):
+		leaderboard.closed.disconnect(_on_leaderboard_closed)
+		leaderboard.queue_free()
+		leaderboard = null
+		_set_menu_enabled(true)
 	visible = false
+
+## Opens the game's top ten over the menu. The board owns the screen while it is up: the menu's
+## own buttons can't be reached until it closes.
+func _open_leaderboard() -> void:
+	if leaderboard != null:
+		return
+	_set_menu_enabled(false)
+	leaderboard = LeaderboardPanel.new()
+	leaderboard.leaderboard_path = leaderboard_path
+	var title: String = Data.game(route).get("title", "") if Data.has_game(route) else ""
+	leaderboard.title = (title.to_upper() + "  ·  " if not title.is_empty() else "") + "LOCAL TOP 10"
+	leaderboard.closed.connect(_on_leaderboard_closed)
+	ui.add_child(leaderboard)
+
+func _on_leaderboard_closed() -> void:
+	leaderboard = null
+	_set_menu_enabled(true)
+	if visible:
+		leaderboard_button.grab_focus()
+
+func _set_menu_enabled(enabled: bool) -> void:
+	for button in buttons:
+		button.disabled = not enabled or locked
+		button.focus_mode = Control.FOCUS_ALL if enabled else Control.FOCUS_NONE
 
 func is_open() -> bool:
 	return visible

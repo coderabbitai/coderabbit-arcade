@@ -38,12 +38,5 @@ func tick(dt: float, player: CharacterBody2D) -> void:
 	else:
 		clip = {"idle":"vine_idle","warning":"vine_warning","active":"vine_whip","recover":"vine_idle"}[state]
 	_show(clip)
+	# The warning and burst/whip clips are the whole telegraph: no box is drawn over the art.
 	if state == "active" and area.overlaps_body(player): player.damage(position.x)
-	queue_redraw()
-
-func _draw() -> void:
-	if state not in ["warning","active"]: return
-	var color := Color(1,.75,.25,.75) if state == "warning" else Color(.8,.3,1,.6)
-	var rect := Rect2(-32,-130,64,130) if kind == "comment" else Rect2(direction*55-77.5,-48,155,48)
-	draw_rect(rect,color,false,2)
-	if state == "active": draw_rect(rect,Color(color,.13))

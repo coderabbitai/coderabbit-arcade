@@ -5,6 +5,11 @@ const LEVEL_MUSIC = preload("res://Assets/Audio/Platformer/Bay Area Blitz/bay_ar
 const MUSIC = preload("res://Assets/Audio/Platformer/Bay Area Blitz/bay_area_blitz_boss.ogg")
 ## Copies drawn on each side of a repeating background strip.
 const REPEATS := 4
+## End caps of the street-kit terrain art, in texels (left, right); see Art.run. The steel
+## platform's caps are its rounded, riveted ends, so a long one reads as a single plate.
+const TRIMS := {
+	"sidewalk": Vector2i(3, 4), "brick_block": Vector2i(3, 3), "steel_platform": Vector2i(15, 16),
+}
 var terrain_crops := {}
 
 func _init() -> void:
@@ -28,8 +33,10 @@ func _ready() -> void:
 	platform(Vector2(5300, 0), Vector2(50, 900), "brick_block")
 	for p in [Vector2(470, 485), Vector2(730, 385), Vector2(1450, 475), Vector2(1770, 370), Vector2(2070, 450), Vector2(2800, 480), Vector2(3070, 380), Vector2(3430, 465)]:
 		platform(p, Vector2(170, 24), "steel_platform")
+	# The lamp's base is 50 texels below its cell centre: at 1.6x that is 80 px, so a lamp
+	# centred at y 520 stands on the sidewalk's y 600 surface.
 	for x in [180, 900, 1390, 2620, 3520, 4100, 5020]:
-		var lamp := Art.sprite("street_kit", "street_lamp", Vector2(x, 513))
+		var lamp := Art.sprite("street_kit", "street_lamp", Vector2(x, 520))
 		lamp.scale = Vector2(1.6, 1.6)
 		add_child(lamp)
 	_car(Vector2(1680, 531), Vector2(420, -55))
@@ -112,19 +119,15 @@ func platform(pos: Vector2, size: Vector2, art: String) -> void:
 	solid.one_way_collision = art == "steel_platform"
 	body.add_child(solid)
 	add_child(body)
-	var fill := Polygon2D.new()
-	fill.polygon = PackedVector2Array([Vector2.ZERO, Vector2(size.x, 0), size, Vector2(0, size.y)])
-	fill.color = Color("223c48")
-	body.add_child(fill)
-	var cropped := _terrain_crop(art)
-	var bounds := cropped.region
-	for x in range(0, int(size.x), 96):
-		var piece := Sprite2D.new()
-		piece.texture = cropped
-		piece.centered = false
-		piece.position.x = x
-		piece.scale = Vector2(minf(96, size.x - x) / bounds.size.x, minf(size.y, 32) / bounds.size.y)
-		body.add_child(piece)
+	# Every platform is one seamless run of its art (Art.run), never butted tiles. Only the
+	# sidewalks and walls get a backing; a steel platform floats with nothing behind it.
+	if not solid.one_way_collision:
+		var fill := Polygon2D.new()
+		fill.polygon = PackedVector2Array([Vector2.ZERO, Vector2(size.x, 0), size, Vector2(0, size.y)])
+		fill.color = Color("223c48")
+		body.add_child(fill)
+	var band := Vector2(size.x, minf(size.y, 32))
+	body.add_child(Art.run(_terrain_crop(art), Vector2.ZERO, band, Vector2(96, band.y), TRIMS[art]))
 # get_image() is a GPU readback on this renderer: crop each street-kit texture once.
 func _terrain_crop(art: String) -> AtlasTexture:
 	if not terrain_crops.has(art):

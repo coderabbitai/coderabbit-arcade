@@ -1,4 +1,4 @@
-[gd_resource type="SpriteFrames" load_steps=18 format=3]
+[gd_resource type="SpriteFrames" load_steps=26 format=3]
 
 [ext_resource type="Texture2D" path="monolith_armor.png" id="1"]
 
@@ -82,6 +82,46 @@ atlas = ExtResource("1")
 region = Rect2(768, 768, 256, 256)
 filter_clip = true
 
+[sub_resource type="AtlasTexture" id="F16"]
+atlas = ExtResource("1")
+region = Rect2(0, 1024, 256, 256)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F17"]
+atlas = ExtResource("1")
+region = Rect2(256, 1024, 256, 256)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F18"]
+atlas = ExtResource("1")
+region = Rect2(512, 1024, 256, 256)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F19"]
+atlas = ExtResource("1")
+region = Rect2(768, 1024, 256, 256)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F20"]
+atlas = ExtResource("1")
+region = Rect2(0, 1280, 256, 256)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F21"]
+atlas = ExtResource("1")
+region = Rect2(256, 1280, 256, 256)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F22"]
+atlas = ExtResource("1")
+region = Rect2(512, 1280, 256, 256)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F23"]
+atlas = ExtResource("1")
+region = Rect2(768, 1280, 256, 256)
+filter_clip = true
+
 [resource]
 animations = [
 {"frames": [{"duration": 1.0, "texture": SubResource("F0")}], "loop": true, "name": &"cracked_idle", "speed": 4.0},
@@ -99,5 +139,7 @@ animations = [
 {"frames": [{"duration": 1.0, "texture": SubResource("F12")}], "loop": false, "name": &"bare_sweep", "speed": 4.0},
 {"frames": [{"duration": 1.0, "texture": SubResource("F13")}], "loop": false, "name": &"bare_stomp_warning", "speed": 4.0},
 {"frames": [{"duration": 1.0, "texture": SubResource("F14")}], "loop": false, "name": &"bare_stomp", "speed": 4.0},
-{"frames": [{"duration": 1.0, "texture": SubResource("F15")}], "loop": true, "name": &"bare_exposed", "speed": 4.0}
+{"frames": [{"duration": 1.0, "texture": SubResource("F15")}], "loop": true, "name": &"bare_exposed", "speed": 4.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F16")}, {"duration": 1.0, "texture": SubResource("F17")}, {"duration": 1.0, "texture": SubResource("F18")}, {"duration": 1.0, "texture": SubResource("F19")}], "loop": true, "name": &"cracked_walk", "speed": 6.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F20")}, {"duration": 1.0, "texture": SubResource("F21")}, {"duration": 1.0, "texture": SubResource("F22")}, {"duration": 1.0, "texture": SubResource("F23")}], "loop": true, "name": &"bare_walk", "speed": 6.0}
 ]

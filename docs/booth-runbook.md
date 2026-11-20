@@ -45,7 +45,7 @@ Booth mode itself runs fullscreen and ignores the menu's **Quit Game**. A game n
 | The game freezes | The watchdog restarts it within about a minute. |
 | Someone presses Cmd+Q | The game closes, and the watchdog opens it again. |
 | The player's controller disconnects | The game pauses and asks for the controller. Plug it back in, or press Start on another controller. |
-| You want to clear the Endless Runner scores | Start the Endless Runner tile, pause (Esc or Start) and choose **Leaderboard → Reset scores**, then **Reset** to confirm. |
+| You want to clear a game's scores | Start that game's tile, pause (Esc or Start) and choose **Leaderboard → Reset scores**, then **Reset** to confirm. Each game has its own board. |
 
 ## Stop the game for maintenance
 
