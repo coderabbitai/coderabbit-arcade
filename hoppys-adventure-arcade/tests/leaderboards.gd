@@ -19,10 +19,26 @@ func check(ok: bool, message: String) -> void:
 
 func run() -> void:
 	await process_frame
+	# A suite runs with --script, so with no override the boards go to this process's scratch
+	# folder, never the player's; an earlier run's leftover folder goes when it is first used.
+	var stale := Leaderboards.SCRATCH_PREFIX + "1/"
+	DirAccess.make_dir_recursive_absolute(stale)
+	var auto := Leaderboards.dir()
+	check(auto.begins_with(Leaderboards.SCRATCH_PREFIX) and auto != stale
+			and Leaderboards.path_for("runner_game") == auto + "runner_game.cfg"
+			and not DirAccess.dir_exists_absolute(stale),
+		"A test run records to its own scratch folder, the runner included, and clears stale ones")
+	check(int(Leaderboards.record("bay_area_blitz", 5, 1.0).rank) == 1
+			and FileAccess.file_exists(auto + "bay_area_blitz.cfg"),
+		"A run recorded under test lands in the scratch folder")
+	Leaderboards.clear_scratch()
+	check(not DirAccess.dir_exists_absolute(auto), "clear_scratch removes the folder and its boards")
+	Leaderboards.redirect_tests = false
 	check(Leaderboards.path_for("runner_game") == Board.DEFAULT_PATH,
 		"The runner keeps its own board file")
 	check(Leaderboards.path_for("bay_area_blitz") == Leaderboards.DIR + "bay_area_blitz.cfg",
 		"A game's board lives under user://leaderboards/ by route")
+	Leaderboards.redirect_tests = true
 	Leaderboards.override_dir = scratch
 	check(Leaderboards.path_for("runner_game") == scratch + "runner_game.cfg",
 		"An override directory redirects every board, the runner's too")
@@ -80,6 +96,7 @@ func run() -> void:
 		DirAccess.remove_absolute(scratch + file)
 	DirAccess.remove_absolute(scratch)
 	Leaderboards.override_dir = ""
+	Leaderboards.clear_scratch()
 	print("LEADERBOARDS: %s (%d failures)" % ["PASS" if failures == 0 else "FAIL", failures])
 	var audio := root.get_node_or_null("AudioService")
 	if audio: await audio.settle()

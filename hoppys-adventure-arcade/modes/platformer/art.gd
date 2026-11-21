@@ -38,16 +38,17 @@ static func strip(cropped: AtlasTexture, trim: Vector2i) -> ImageTexture:
 		strips[key] = ImageTexture.create_from_image(page.get_region(region))
 	return strips[key]
 
-## `cropped` laid across `size` from `pos`: a cap at each end and the interior repeated between,
-## all at the texel scale one crop has when stretched to `tile`, so a run matches the tiles it
-## replaces. A run too short for both caps is the whole crop stretched to fit.
+## `cropped` laid across `size` from `pos`: a cap at each end and the interior repeated between.
+## Texels are as wide as one crop's when stretched to `tile.x`, so a run matches the tiles it
+## replaces, and the run is exactly `size.y` tall, so a thin platform stays thin whatever the kit
+## tile's height. A run too short for both caps is the whole crop stretched to fit.
 static func run(cropped: AtlasTexture, pos: Vector2, size: Vector2, tile: Vector2,
 		trim := Vector2i.ZERO) -> Node2D:
 	var group := Node2D.new()
 	group.position = pos
-	var scale := tile / cropped.get_size()
-	var caps := Vector2(trim.x, trim.y) * scale.x
 	var texels := cropped.region.size
+	var scale := Vector2(tile.x / texels.x, size.y / texels.y)
+	var caps := Vector2(trim.x, trim.y) * scale.x
 	if caps.x + caps.y + scale.x > size.x:
 		var whole := Sprite2D.new()
 		whole.texture = cropped

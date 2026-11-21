@@ -11,14 +11,47 @@ extends RefCounted
 const Board := preload("res://scenes/runner/systems/runner_leaderboard.gd")
 const RUNNER_ROUTE := "runner_game"
 const DIR := "user://leaderboards/"
+const SCRATCH_PREFIX := "user://test_leaderboards_"
 ## Tests and dev captures point every board somewhere else with this; "" means the real files.
 static var override_dir := ""
+## A headless suite (run with --script, the convention AppRouter uses) that plays a game to its
+## results screen records runs like any player. With no override_dir, those land in a scratch
+## folder of this process instead of the player's boards, so a suite run outside
+## tools/tests/run_tests.py (which gives each suite a private user://) still leaves them alone.
+## Stale scratch folders from earlier runs are removed the first time one is used.
+static var redirect_tests := true
+static var scratch_dir := ""
+
+## The folder boards are written to: the override, a test's scratch folder, or the real one.
+static func dir() -> String:
+	if not override_dir.is_empty():
+		return override_dir
+	if redirect_tests and "--script" in OS.get_cmdline_args():
+		return _scratch()
+	return DIR
+
+static func _scratch() -> String:
+	if scratch_dir.is_empty():
+		scratch_dir = "%s%d/" % [SCRATCH_PREFIX, OS.get_process_id()]
+		for folder in DirAccess.get_directories_at("user://"):
+			var path := "user://" + folder + "/"
+			if path.begins_with(SCRATCH_PREFIX) and path != scratch_dir:
+				clear_scratch(path)
+	return scratch_dir
+
+## Removes a test's scratch folder (this process's by default) and the boards in it.
+static func clear_scratch(folder := scratch_dir) -> void:
+	if folder.is_empty() or not DirAccess.dir_exists_absolute(folder):
+		return
+	for file in DirAccess.get_files_at(folder):
+		DirAccess.remove_absolute(folder + file)
+	DirAccess.remove_absolute(folder)
 
 ## The board file for `route`.
 static func path_for(route: String) -> String:
-	if route == RUNNER_ROUTE and override_dir.is_empty():
+	if route == RUNNER_ROUTE and dir() == DIR:
 		return Board.DEFAULT_PATH
-	return (override_dir if not override_dir.is_empty() else DIR) + route + ".cfg"
+	return dir() + route + ".cfg"
 
 ## Records a finished run and returns the engine's {rank, entries, error}: rank is 1-10 when the
 ## run placed, 0 otherwise. `duration` is the run's length in seconds.
