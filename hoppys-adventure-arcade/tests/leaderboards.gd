@@ -23,7 +23,8 @@ func run() -> void:
 	# folder, never the player's. Rows left there by an earlier run with the same id are cleared
 	# the first time this run uses the folder; another run's folder is left alone.
 	var own := "%s%d/" % [Leaderboards.SCRATCH_PREFIX, OS.get_process_id()]
-	var neighbour := Leaderboards.SCRATCH_PREFIX + "1/"
+	# Another run's folder, named so two copies of this suite sharing user:// never share it.
+	var neighbour := "%s%d_neighbour/" % [Leaderboards.SCRATCH_PREFIX, OS.get_process_id()]
 	for folder in [own, neighbour]:
 		DirAccess.make_dir_recursive_absolute(folder)
 		FileAccess.open(folder + "leftover.cfg", FileAccess.WRITE).store_string("[board]\n")
