@@ -18,7 +18,9 @@ static var override_dir := ""
 ## results screen records runs like any player. With no override_dir, those land in a scratch
 ## folder of this process instead of the player's boards, so a suite run outside
 ## tools/tests/run_tests.py (which gives each suite a private user://) still leaves them alone.
-## Stale scratch folders from earlier runs are removed the first time one is used.
+## The folder is named after the process and emptied the first time this run uses it, so rows
+## a crashed run with the same id left behind never rank against this run's; other runs' folders
+## are never touched, since two suites may share user:// at once. clear_scratch() removes it.
 static var redirect_tests := true
 static var scratch_dir := ""
 
@@ -33,10 +35,7 @@ static func dir() -> String:
 static func _scratch() -> String:
 	if scratch_dir.is_empty():
 		scratch_dir = "%s%d/" % [SCRATCH_PREFIX, OS.get_process_id()]
-		for folder in DirAccess.get_directories_at("user://"):
-			var path := "user://" + folder + "/"
-			if path.begins_with(SCRATCH_PREFIX) and path != scratch_dir:
-				clear_scratch(path)
+		clear_scratch(scratch_dir)
 	return scratch_dir
 
 ## Removes a test's scratch folder (this process's by default) and the boards in it.

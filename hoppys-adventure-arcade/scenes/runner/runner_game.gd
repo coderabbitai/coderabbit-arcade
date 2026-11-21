@@ -4,6 +4,7 @@ extends Node3D
 ## sequence and the single leaderboard write.
 
 const RunnerLeaderboard = preload("res://scenes/runner/systems/runner_leaderboard.gd")
+const Leaderboards = preload("res://app/leaderboards.gd")
 const RunConfig = preload("res://scenes/runner/data/run_config.gd")
 ## Only for the phase count of the §11.4 boss block; boss_defs.gd preloads no scene script, so this
 ## is not the cycle boss_encounter.gd has to avoid.
@@ -130,9 +131,10 @@ signal pursuer_distance_changed(normalized: float)
 @export var config: RunConfig = preload(CONFIG_PATH)
 ## Tests instantiate the scene with autostart off and call start_run() themselves.
 @export var autostart := true
-## Where this session reads and writes the board. Tests point it at a throwaway file so a headless
-## run never touches the player's real leaderboard; the game leaves it at the default.
-var leaderboard_path := RunnerLeaderboard.DEFAULT_PATH
+## Where this session reads and writes the board: the runner's file for a player, and a test's
+## scratch folder under --script (app/leaderboards.gd), so a headless run never touches the
+## player's real leaderboard. Tests may still point it at a throwaway file of their own.
+var leaderboard_path: String = Leaderboards.path_for(Leaderboards.RUNNER_ROUTE)
 
 # Read-only properties (contract §4.2). Treat these as outputs; drive the run through the methods.
 var state: StringName = &"ready"

@@ -20,14 +20,20 @@ func check(ok: bool, message: String) -> void:
 func run() -> void:
 	await process_frame
 	# A suite runs with --script, so with no override the boards go to this process's scratch
-	# folder, never the player's; an earlier run's leftover folder goes when it is first used.
-	var stale := Leaderboards.SCRATCH_PREFIX + "1/"
-	DirAccess.make_dir_recursive_absolute(stale)
+	# folder, never the player's. Rows left there by an earlier run with the same id are cleared
+	# the first time this run uses the folder; another run's folder is left alone.
+	var own := "%s%d/" % [Leaderboards.SCRATCH_PREFIX, OS.get_process_id()]
+	var neighbour := Leaderboards.SCRATCH_PREFIX + "1/"
+	for folder in [own, neighbour]:
+		DirAccess.make_dir_recursive_absolute(folder)
+		FileAccess.open(folder + "leftover.cfg", FileAccess.WRITE).store_string("[board]\n")
 	var auto := Leaderboards.dir()
-	check(auto.begins_with(Leaderboards.SCRATCH_PREFIX) and auto != stale
+	check(auto == own and not FileAccess.file_exists(own + "leftover.cfg")
 			and Leaderboards.path_for("runner_game") == auto + "runner_game.cfg"
-			and not DirAccess.dir_exists_absolute(stale),
-		"A test run records to its own scratch folder, the runner included, and clears stale ones")
+			and FileAccess.file_exists(neighbour + "leftover.cfg"),
+		"A test run empties and uses its own scratch folder, the runner included, and no neighbour")
+	DirAccess.remove_absolute(neighbour + "leftover.cfg")
+	DirAccess.remove_absolute(neighbour)
 	check(int(Leaderboards.record("bay_area_blitz", 5, 1.0).rank) == 1
 			and FileAccess.file_exists(auto + "bay_area_blitz.cfg"),
 		"A run recorded under test lands in the scratch folder")
