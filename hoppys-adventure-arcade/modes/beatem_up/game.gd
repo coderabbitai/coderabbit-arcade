@@ -13,6 +13,7 @@ const VictoryScreen = preload("res://modes/beatem_up/victory_screen.gd")
 const Minimap = preload("res://modes/beatem_up/minimap.gd")
 const Style = preload("res://scenes/main_menu/menu_style.gd")
 const PauseMenu = preload("res://app/pause_menu.gd")
+const Leaderboards = preload("res://app/leaderboards.gd")
 ## This game's AppRouter route: Restart reloads it.
 const ROUTE := "code_city_brawl"
 const PAUSABLE := ["combat","intro","ending","stage_enter","stage_exit","knockout","boss_victory","celebration"]
@@ -608,8 +609,12 @@ func game_over() -> void:
 	playing = false
 	state = "game_over"
 	_update_hud()
+	# The run goes on this game's local top ten (app/leaderboards.gd) before the booth may move on.
+	var placing := Leaderboards.rank_line(Leaderboards.record(ROUTE, score, elapsed))
 	if AppRouter.booth_game_over("SCORE %05d" % score): return # Booth: the next player's turn.
-	show_overlay("REVIEW FAILED", "Retry %s with 3 HP and fresh equipment." % Catalog.TITLES[stage_index],"Retry current stage",retry_stage)
+	var detail := "Retry %s with 3 HP and fresh equipment." % Catalog.TITLES[stage_index]
+	if not placing.is_empty(): detail += "\n" + placing
+	show_overlay("REVIEW FAILED", detail,"Retry current stage",retry_stage)
 
 func boss_defeated() -> void:
 	# A knocked-out Hoppy can't win: the knockout ends in game over.
@@ -733,7 +738,9 @@ func show_victory() -> void:
 	overlay.hide()
 	hide_toast()
 	prompt.text = ""
-	victory.show_result(Catalog.VICTORY.title,Catalog.VICTORY.line,score,elapsed,Catalog.STORY_ACCENT,"Main Menu",leave)
+	var placing := Leaderboards.rank_line(Leaderboards.record(ROUTE, score, elapsed))
+	var line: String = Catalog.VICTORY.line + ("" if placing.is_empty() else "   ·   " + placing)
+	victory.show_result(Catalog.VICTORY.title,line,score,elapsed,Catalog.STORY_ACCENT,"Main Menu",leave)
 
 func toast(message: String, seconds := 2.0) -> void:
 	# Combat opens under the fading stage title; anything said then waits for it (latest wins).

@@ -1,5 +1,13 @@
 extends RefCounted
 const ROOT := "res://Assets/orbital-ops-assets-only/orbital_ops/"
+const Art = preload("res://modes/platformer/art.gd")
+## End caps of the station-kit terrain clips, in texels (left, right); see Art.run. The one-way
+## platform's and the scaffold's interiors are cut to whole repeats of their painted pattern
+## (two thruster humps, three lattice bays) so the repeat joins on the pattern.
+const TRIMS := {
+	"floor_slab": Vector2i(4, 4), "hull_panel": Vector2i(2, 3), "wall_block": Vector2i(1, 1),
+	"one_way_platform": Vector2i(9, 31), "scaffold_horizontal": Vector2i(12, 5),
+}
 static var crops := {}
 static var manifest: Dictionary = {}
 
@@ -35,3 +43,7 @@ static func prop(clip: String, pos: Vector2, size: Vector2) -> Sprite2D:
 	result.position = pos
 	result.scale = size / result.texture.get_size()
 	return result
+
+## `clip` laid seamlessly across `size`, at the texel scale one crop has stretched to `tile`.
+static func run(clip: String, pos: Vector2, size: Vector2, tile: Vector2) -> Node2D:
+	return Art.run(crop("station_kit", clip), pos, size, tile, TRIMS.get(clip, Vector2i.ZERO))

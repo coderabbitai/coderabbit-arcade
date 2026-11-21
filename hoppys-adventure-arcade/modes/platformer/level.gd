@@ -1,6 +1,7 @@
 extends Node2D
 ## Shared platformer session. Concrete levels provide layout, actors and presentation.
 const Art = preload("res://modes/platformer/art.gd")
+const Leaderboards = preload("res://app/leaderboards.gd")
 const Knockout = preload("res://modes/platformer/knockout.gd")
 const Player = preload("res://modes/platformer/player.gd")
 const Enemy = preload("res://modes/platformer/enemy.gd")
@@ -275,6 +276,10 @@ func _finish(won: bool) -> void:
 	pause_menu.close()
 	overlay_title.text = "MERGE SUCCESSFUL!" if won else "BUILD FAILED"
 	overlay_detail.text = "%06d POINTS   /   %02d:%02d\n%s" % [score, int(elapsed) / 60, int(elapsed) % 60, level_title + " complete." if won else "Fresh branch. Another try."]
+	# Every finished run goes on this level's local top ten (app/leaderboards.gd); a placing shows.
+	var placing := Leaderboards.rank_line(Leaderboards.record(level_route, score, elapsed))
+	if not placing.is_empty():
+		overlay_detail.text += "\n" + placing
 	if won:
 		stage_clear.play()
 		_reveal_results(0.35)

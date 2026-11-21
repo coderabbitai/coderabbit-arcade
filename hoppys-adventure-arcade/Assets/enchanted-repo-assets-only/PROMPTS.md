@@ -41,3 +41,7 @@ Use case: precise-object-edit. Fix sprite sheet packing ONLY. Preserve every one
 ## monolith_armor correction
 
 Use case: precise-object-edit. Reformat this sheet into a SQUARE image, exact 4 by 4 grid. Keep these EXACT 16 poses and their order, same stone golem identity, pixel-art style, armor stages and colors. Each square cell must have HUGE empty transparent margins: character and effects occupy ONLY THE CENTRAL 60% of each cell's width AND height. Uniform small character size. Rows separated by large completely transparent horizontal bands. Columns separated by large completely transparent vertical bands. This is a game sprite atlas, NOT a full-bleed illustration. No character part or debris may enter another cell. Background truly transparent. Do not add text, gridlines or labels.
+
+## legacy_monolith and monolith_armor walk rows
+
+Not generated: `tools/build_monolith_walk.py` (November 2026) appends one `walk` row of four frames to `legacy_monolith.png` and `cracked_walk` / `bare_walk` rows to `monolith_armor.png`, each frame the matching idle pose leaned 3° about the pivot (left, up, right, up) with a 5 px lift on the off-steps, nearest-neighbour and re-thresholded so the pixels stay crisp. The manifest and both `.tres` files list them; the script is deterministic and leaves a sheet that already has its rows alone.

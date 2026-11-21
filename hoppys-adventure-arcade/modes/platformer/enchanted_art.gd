@@ -1,6 +1,13 @@
 extends RefCounted
 const ROOT := "res://Assets/enchanted-repo-assets-only/enchanted_repo/"
 const TREELINE_SHADER = preload("res://modes/platformer/enchanted_treeline.gdshader")
+const Art = preload("res://modes/platformer/art.gd")
+## End caps of the terrain clips, in texels (left, right): the slabs' rounded ends, the wall's
+## ragged right edge and the root's tapering tips. See Art.run.
+const TRIMS := {
+	"ground_slab": Vector2i(2, 2), "arena_slab": Vector2i(7, 7),
+	"castle_wall": Vector2i(3, 7), "root_platform": Vector2i(9, 8),
+}
 static var crops := {}
 static var manifest: Dictionary = {}
 
@@ -51,3 +58,7 @@ static func prop(clip: String, pos: Vector2, size: Vector2) -> Sprite2D:
 	result.position = pos
 	result.scale = size / result.texture.get_size()
 	return result
+
+## `clip` laid seamlessly across `size`, at the texel scale one crop has stretched to `tile`.
+static func run(clip: String, pos: Vector2, size: Vector2, tile: Vector2) -> Node2D:
+	return Art.run(crop("forest_kit", clip), pos, size, tile, TRIMS.get(clip, Vector2i.ZERO))

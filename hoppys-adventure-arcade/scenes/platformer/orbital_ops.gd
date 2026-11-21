@@ -100,15 +100,17 @@ func platform(pos: Vector2, size: Vector2, one_way := false, clip := "floor_slab
 	shape.one_way_collision=one_way
 	body.add_child(shape)
 	add_child(body)
-	var fill := Polygon2D.new()
-	fill.polygon=PackedVector2Array([Vector2.ZERO,Vector2(size.x,0),size,Vector2(0,size.y)])
-	fill.color=Color("101d35")
-	body.add_child(fill)
-	for x in range(0,int(size.x),128):
-		body.add_child(OrbitalArt.prop(clip,Vector2(x,0),Vector2(minf(128,size.x-x),minf(size.y,40))))
+	# Every platform is one seamless run of its clip (Art.run), never butted tiles. Only solid
+	# decks and walls get a hull-dark backing; a one-way platform floats with nothing behind it.
+	if not one_way:
+		var fill := Polygon2D.new()
+		fill.polygon=PackedVector2Array([Vector2.ZERO,Vector2(size.x,0),size,Vector2(0,size.y)])
+		fill.color=Color("101d35")
+		body.add_child(fill)
+	body.add_child(OrbitalArt.run(clip,Vector2.ZERO,Vector2(size.x,minf(size.y,40)),Vector2(128,40)))
 	if size.y>60 and size.x>60:
-		for x in range(0,int(size.x),128):
-			body.add_child(OrbitalArt.prop("hull_panel",Vector2(x,40),Vector2(minf(128,size.x-x),size.y-40)))
+		var hull := Vector2(size.x,size.y-40)
+		body.add_child(OrbitalArt.run("hull_panel",Vector2(0,40),hull,Vector2(128,hull.y)))
 
 func _shuttle(pos: Vector2, travel: Vector2) -> void:
 	var body := AnimatableBody2D.new()

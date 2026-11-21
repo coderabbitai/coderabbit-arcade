@@ -1,4 +1,4 @@
-[gd_resource type="SpriteFrames" load_steps=26 format=3]
+[gd_resource type="SpriteFrames" load_steps=30 format=3]
 
 [ext_resource type="Texture2D" path="legacy_monolith.png" id="1"]
 
@@ -122,6 +122,26 @@ atlas = ExtResource("1")
 region = Rect2(576, 960, 192, 192)
 filter_clip = true
 
+[sub_resource type="AtlasTexture" id="F24"]
+atlas = ExtResource("1")
+region = Rect2(0, 1152, 192, 192)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F25"]
+atlas = ExtResource("1")
+region = Rect2(192, 1152, 192, 192)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F26"]
+atlas = ExtResource("1")
+region = Rect2(384, 1152, 192, 192)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="F27"]
+atlas = ExtResource("1")
+region = Rect2(576, 1152, 192, 192)
+filter_clip = true
+
 [resource]
 animations = [
 {"frames": [{"duration": 1.0, "texture": SubResource("F0")}, {"duration": 1.0, "texture": SubResource("F1")}, {"duration": 1.0, "texture": SubResource("F2")}, {"duration": 1.0, "texture": SubResource("F3")}], "loop": true, "name": &"idle", "speed": 4.0},
@@ -139,5 +159,6 @@ animations = [
 {"frames": [{"duration": 1.0, "texture": SubResource("F18")}], "loop": false, "name": &"armor_break", "speed": 5.0},
 {"frames": [{"duration": 1.0, "texture": SubResource("F19")}], "loop": true, "name": &"exposed", "speed": 4.0},
 {"frames": [{"duration": 1.0, "texture": SubResource("F20")}], "loop": false, "name": &"core_hurt", "speed": 8.0},
-{"frames": [{"duration": 1.0, "texture": SubResource("F21")}, {"duration": 1.0, "texture": SubResource("F22")}, {"duration": 1.0, "texture": SubResource("F23")}], "loop": false, "name": &"defeat", "speed": 4.0}
+{"frames": [{"duration": 1.0, "texture": SubResource("F21")}, {"duration": 1.0, "texture": SubResource("F22")}, {"duration": 1.0, "texture": SubResource("F23")}], "loop": false, "name": &"defeat", "speed": 4.0},
+{"frames": [{"duration": 1.0, "texture": SubResource("F24")}, {"duration": 1.0, "texture": SubResource("F25")}, {"duration": 1.0, "texture": SubResource("F26")}, {"duration": 1.0, "texture": SubResource("F27")}], "loop": true, "name": &"walk", "speed": 6.0}
 ]
