@@ -73,6 +73,46 @@ static func beam(st: SurfaceTool, a: Vector3, b: Vector3, width: float, depth: f
 		for i in face: polygon.append(points[i]-center)
 		Forge.polygon(st,polygon,center,Color(shade,shade,shade,1))
 
+static func _observation_wall(parts: Array[SurfaceTool]) -> void:
+	# Three wide panes share a recessed frame.
+	box(parts[ALLOY], Vector3(-5.43, 3.32, 3.0), Vector3(0.34, 1.72, 4.66), 0.90, 0.10)
+	slab(parts[DARK], Vector3(-5.24, 3.32, 3.0), Vector3(0.12, 1.46, 4.38), 0.76)
+	for z in [1.57, 3.0, 4.43]:
+		slab(parts[WINDOW], Vector3(-5.17, 3.32, z), Vector3(0.04, 1.17, 1.27))
+	for z in [2.28, 3.72]:
+		slab(parts[HULL], Vector3(-5.11, 3.32, z), Vector3(0.12, 1.48, 0.13), 0.82)
+	slab(parts[CONDUIT], Vector3(-5.17, 2.48, 3.0), Vector3(0.04, 0.05, 3.9), 0.72)
+
+	# A sealed pressure door has tall split leaves and an amber header.
+	box(parts[ALLOY], Vector3(-5.41, 3.23, 9.0), Vector3(0.32, 2.9, 3.7), 0.90, 0.14)
+	slab(parts[DARK], Vector3(-5.22, 3.20, 9.0), Vector3(0.12, 2.66, 3.40), 0.80)
+	for z in [8.17, 9.83]:
+		box(parts[HULL], Vector3(-5.12, 3.12, z), Vector3(0.13, 2.37, 1.56), 0.94, 0.06)
+		slab(parts[ALLOY], Vector3(-5.03, 3.70, z), Vector3(0.07, 0.30, 1.35))
+	for z in [8.77, 9.23]:
+		slab(parts[DARK], Vector3(-5.00, 3.12, z), Vector3(0.09, 0.48, 0.09))
+	slab(parts[ENERGY], Vector3(-5.14, 4.48, 9.0), Vector3(0.05, 0.08, 1.8), 0.66)
+
+static func _service_wall(parts: Array[SurfaceTool]) -> void:
+	# Long horizontal louvres sit inside the coolant intake.
+	box(parts[ALLOY], Vector3(5.43, 3.24, 3.0), Vector3(0.34, 2.62, 4.55), 0.82, 0.12)
+	slab(parts[DARK], Vector3(5.22, 3.24, 3.0), Vector3(0.13, 2.34, 4.18), 0.63)
+	for row in 6:
+		var y := 2.31 + row * 0.37
+		box(parts[HULL], Vector3(5.11, y, 3.0), Vector3(0.29, 0.13, 3.9), 0.82, 0.05)
+	for z in [1.66, 4.34]:
+		slab(parts[ALLOY], Vector3(4.93, 3.24, z), Vector3(0.14, 2.30, 0.15))
+
+	# A power distribution rack has narrow cabinets and vertical status strips.
+	box(parts[ALLOY], Vector3(5.41, 3.23, 9.0), Vector3(0.32, 2.76, 3.7), 0.84, 0.10)
+	slab(parts[DARK], Vector3(5.19, 3.23, 9.0), Vector3(0.15, 2.54, 3.40), 0.86)
+	for z in [7.90, 9.0, 10.10]:
+		box(parts[HULL], Vector3(5.05, 3.23, z), Vector3(0.18, 2.2, 0.94), 0.86, 0.08)
+		slab(parts[DARK], Vector3(4.93, 3.39, z), Vector3(0.06, 1.57, 0.48))
+		slab(parts[ENERGY], Vector3(4.89, 3.45, z), Vector3(0.04, 1.22, 0.09), 0.58)
+		for y in [2.45, 2.60]:
+			slab(parts[ALLOY], Vector3(4.92, y, z), Vector3(0.07, 0.06, 0.58))
+
 static func module_meshes() -> Array[ArrayMesh]:
 	if not _meshes.is_empty(): return _meshes
 	var parts: Array[SurfaceTool] = []
@@ -91,18 +131,13 @@ static func module_meshes() -> Array[ArrayMesh]:
 		beam(parts[CONDUIT],Vector3(x-side*0.13,4.45,0.44),Vector3(side*2.55,6.44,0.44),0.07,0.025)
 		for h in [0.8,3.9]:
 			box(parts[ALLOY],Vector3(x,h,0),Vector3(0.75,0.26,1.05),1.0,0.055)
-		# Solid hull walls: continuous plating closes every 12 m module end to end (seams sit behind
-		# the next bulkhead), leaving one small inset porthole per side instead of a space vista.
+		# Continuous plating closes each module end to end behind the wall bays.
 		box(parts[DARK],Vector3(side*5.62,0.85,6.0),Vector3(0.45,1.7,12.0),0.8)
 		box(parts[DARK],Vector3(side*5.62,5.65,6.0),Vector3(0.45,1.55,12.0),1.0)
 		slab(parts[DARK],Vector3(side*5.9,3.28,6.0),Vector3(0.1,3.4,12.0),0.45)
 		# Hull panels with 5 cm inset seams showing the dark backing plate.
-		for panel: Array in [[0.0,2.18,1.72,4.85,0.92],[2.2,3.8,1.72,2.63,0.86],[2.2,3.8,3.81,4.85,0.86],[3.82,6.9,1.72,4.85,0.98],[6.95,12.0,1.72,3.24,0.9],[6.95,12.0,3.29,4.85,0.94]]:
-			slab(parts[HULL],Vector3(side*5.66,(panel[2]+panel[3])*0.5,(panel[0]+panel[1])*0.5),Vector3(0.28,panel[3]-panel[2],panel[1]-panel[0]),panel[4])
-		# One small porthole (1.6 x 1.1 m) recessed behind the plating inside an alloy rim.
-		slab(parts[WINDOW],Vector3(side*5.79,3.22,3.0),Vector3(0.02,1.1,1.6))
-		for rim: Array in [[3.0,2.62,1.84,0.12],[3.0,3.82,1.84,0.12],[2.14,3.22,0.12,1.32],[3.86,3.22,0.12,1.32]]:
-			slab(parts[ALLOY],Vector3(side*5.49,rim[1],rim[0]),Vector3(0.1,rim[3],rim[2]),0.9)
+		for z in [1.5, 4.5, 7.5, 10.5]:
+			slab(parts[HULL], Vector3(side * 5.66, 3.28, z), Vector3(0.28, 3.12, 2.95), 0.90)
 		for y in [1.66,4.78]:
 			box(parts[HULL],Vector3(side*5.44,y,5.8),Vector3(0.3,0.18,11.3))
 			box(parts[CONDUIT],Vector3(side*5.25,y,5.8),Vector3(0.025,0.035,10.4),0.55,0.005)
@@ -110,16 +145,6 @@ static func module_meshes() -> Array[ArrayMesh]:
 		# against the finely bent deck never opens a sliver during turns.
 		slab(parts[DARK],Vector3(side*5.2,0.22,6.0),Vector3(0.5,1.04,12.0),0.7)
 		slab(parts[DARK],Vector3(side*4.14,-0.175,6.0),Vector3(1.68,0.25,12.0),0.6)
-		# Armoured equipment bay breaks up the plating with layered access panels.
-		box(parts[HULL],Vector3(side*5.33,3.23,9.05),Vector3(0.28,2.72,2.55),0.8,0.13)
-		box(parts[DARK],Vector3(side*5.14,3.23,9.05),Vector3(0.15,2.28,2.14),0.95,0.12)
-		for panel in [-1.0,1.0]:
-			box(parts[ALLOY],Vector3(side*5.02,3.25,9.05+panel*0.65),Vector3(0.17,1.8,0.55),0.94,0.07)
-			for vent in 3:
-				box(parts[DARK],Vector3(side*4.91,2.65+vent*0.60,9.05+panel*0.65),Vector3(0.06,0.065,0.40),0.6,0.01)
-		box(parts[CONDUIT],Vector3(side*4.94,3.35,9.05),Vector3(0.04,1.05,0.085),0.65,0.02)
-		for diode in 3:
-			box(parts[ENERGY],Vector3(side*4.98,2.42,8.83+diode*0.22),Vector3(0.04,0.07,0.09),0.65,0.01)
 		# Deck-edge service trenches and orange power trunks.
 		box(parts[ALLOY],Vector3(side*4.13,-0.13,5.7),Vector3(0.50,0.22,12),0.6)
 		box(parts[ENERGY],Vector3(side*4.12,-0.005,5.7),Vector3(0.075,0.04,12),0.6,0.01)
@@ -145,6 +170,8 @@ static func module_meshes() -> Array[ArrayMesh]:
 		box(parts[ALLOY],Vector3(0,6.9,z),Vector3(5.1,0.15,0.14),0.85)
 		box(parts[HULL],Vector3(0,6.8,z),Vector3(1.8,0.10,1.35),0.8)
 		box(parts[CONDUIT],Vector3(0,6.73,z),Vector3(1.4,0.025,0.58),0.72,0.01)
+	_observation_wall(parts)
+	_service_wall(parts)
 	# Small amber bulkhead identifier strips establish rhythm at speed.
 	for i in 3:
 		box(parts[ENERGY],Vector3(-0.28+i*0.28,6.65,0.47),Vector3(0.13,0.15,0.02),0.6,0.01)

@@ -1,5 +1,10 @@
 extends Node3D
 const Assets = preload("res://scenes/runner/environment/starship/starship_assets.gd")
+const MODULE_LENGTH := 12.0
+# Each side has different bays. Swap sides in an eight-module sequence with both
+# single and paired layouts, using the same meshes and material batches.
+const MIRRORED_MODULES := [false, true, true, false, true, false, false, true]
+const MIRRORED_BASIS := Basis(Vector3.LEFT, Vector3.UP, Vector3.BACK)
 var batches: Array[MultiMesh] = []
 var materials: Array[ShaderMaterial] = []
 var reactor_dock: Node3D
@@ -21,7 +26,7 @@ func _ready() -> void:
 		var batch := MultiMesh.new()
 		batch.transform_format = MultiMesh.TRANSFORM_3D
 		batch.mesh = meshes[i]
-		batch.instance_count = 8
+		batch.instance_count = MIRRORED_MODULES.size()
 		batches.append(batch)
 		var instance := MultiMeshInstance3D.new()
 		instance.name = ["PressureBulkheads","RecessedHull","ServiceMachinery","LightConduits","ObservationWindows","PowerTrunks"][i]
@@ -165,12 +170,18 @@ func _plane(title: String, size: Vector2, location: Vector3, material: ShaderMat
 	add_child(node)
 	if not materials.has(material): materials.append(material)
 
+func _module_transform(index: int, offset: float) -> Transform3D:
+	var loop_length := MODULE_LENGTH * MIRRORED_MODULES.size()
+	var z := MODULE_LENGTH - fposmod(index * MODULE_LENGTH - offset, loop_length)
+	var basis := MIRRORED_BASIS if MIRRORED_MODULES[index] else Basis.IDENTITY
+	return Transform3D(basis, Vector3(0, 0, z))
+
 ## `frame` is the corridor's global transform: the floor-mode surfaces measure their plating in it.
 func sync(offset: float, clock: float, frame: Transform3D, arena: bool, delta: float) -> void:
-	for batch in batches:
-		for i in batch.instance_count:
-			var z := 12.0-fposmod(i*12.0-offset,96.0)
-			batch.set_instance_transform(i,Transform3D(Basis.IDENTITY,Vector3(0,0,z)))
+	for i in MIRRORED_MODULES.size():
+		var pose := _module_transform(i, offset)
+		for batch in batches:
+			batch.set_instance_transform(i, pose)
 	var frame_changed := not _frame_written or frame != _frame
 	_frame = frame
 	_frame_written = true
