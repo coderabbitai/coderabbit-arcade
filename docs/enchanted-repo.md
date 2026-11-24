@@ -12,7 +12,9 @@ Cross the forest and ruined castle, defeat the Legacy Monolith, then land on or 
 
 ## Route and hazards
 
-The 5,300-pixel route has three gaps (160–170 px), six solid raised root platforms, five crumbling branches, six ordinary enemies, five timed hazards, 25 Commit Tokens, and the existing shield, healing, boost and Auto-Fix pickups. Raised root platforms preserve the artwork's transparent underside; only ground and boundary walls receive a solid backing. Upper routes offer rewards; gaps are also jumpable without waiting for branch regrowth. A full-heal pickup precedes the boss arena.
+The 5,300-pixel route has three gaps (160–170 px), six solid raised root platforms, five crumbling branches, six ordinary enemies, five timed hazards, 25 Commit Tokens, and the existing shield, healing, boost and Auto-Fix pickups. A held shield shows as a translucent bubble around Hoppy that pops when it absorbs a hit.
+
+![Hoppy inside the translucent Approve Shield bubble](previews/enchanted-repo/shield-bubble.png) Raised root platforms preserve the artwork's transparent underside; only ground and boundary walls receive a solid backing. Upper routes offer rewards; gaps are also jumpable without waiting for branch regrowth. A full-heal pickup precedes the boss arena.
 
 Branches support Hoppy until 0.7 seconds after landing, then remove collision, show breaking/falling art, and regrow after a 0.25-second break plus 3.5-second absence. Regrowth waits if Hoppy occupies the future platform shape. Pause freezes all timers. Branches over gaps provide stepping stones; falling into a pit still kills Hoppy through the normal retry flow.
 

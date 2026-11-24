@@ -5,12 +5,20 @@ signal jumped
 signal hurt
 signal swiped
 const Art = preload("res://modes/platformer/art.gd")
+const ShieldBubble = preload("res://modes/platformer/shield_bubble.gd")
 const SPEED := 310.0
 const JUMP := -740.0
 var dead := false
 var input_lock := 0.0
 var hp := 3
-var shield := false
+## One absorbed hit. The bubble child mirrors it: raised when gained, popped when lost.
+var shield := false:
+	set(value):
+		var changed := value != shield
+		shield = value
+		if bubble == null or not changed: return
+		if value: bubble.raise()
+		else: bubble.pop()
 var boost := 0.0
 var invulnerable := 0.0
 var hurt_time := 0.0
@@ -24,6 +32,7 @@ var zero_gravity := false
 var environmental_acceleration := Vector2.ZERO
 var sprite: AnimatedSprite2D
 var swipe: Area2D
+var bubble: Node2D
 func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 1 | 8
@@ -33,6 +42,8 @@ func _ready() -> void:
 	sprite = Art.sprite("hoppy/platformer", "idle")
 	sprite.offset.y = -40
 	add_child(sprite)
+	bubble = ShieldBubble.new()
+	add_child(bubble)
 	swipe = Area2D.new()
 	swipe.collision_layer = 0
 	swipe.collision_mask = 4
@@ -86,7 +97,7 @@ func _physics_process(dt: float) -> void:
 				target.take_hit()
 	move_and_slide()
 	sprite.flip_h = facing < 0
-	sprite.modulate = Color(0.6, 1, 0.8) if boost > 0 or shield else Color.WHITE
+	sprite.modulate = Color(0.6, 1, 0.8) if boost > 0 else Color.WHITE
 	sprite.modulate.a = 0.4 if invulnerable > 0 and fmod(invulnerable, 0.16) < 0.08 else 1.0
 	var clip := "idle"
 	if hurt_time > 0: clip = "hurt"
@@ -126,6 +137,7 @@ func _die() -> void:
 	invulnerable = 0
 	health_changed.emit()
 	sprite.modulate = Color.WHITE
+	bubble.clear()
 	sprite.animation = &"death"
 	sprite.pause()
 	sprite.frame = sprite.sprite_frames.get_frame_count(&"death") - 1

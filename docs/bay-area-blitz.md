@@ -32,7 +32,7 @@ All art comes from `Assets/bay-area-blitz-assets-only`; Hoppy uses that pack's e
 | Critter / reviewer / boss HP | 1 / 2 / 8 |
 | Token / ordinary enemy / boss score | 25 / 100 / 1,000 |
 | Boss cycle | 1.6 s tracking, 0.8 s slam warning, 0.4 s slam, 0.8 s recovery, 0.7 s volley warning, volley and recovery; 6 s total |
-| Shield | Blocks one hit; does not stack |
+| Shield | Blocks one hit; does not stack. A translucent bubble around Hoppy shows it is held and pops when it absorbs a hit |
 | LGTM | 5 seconds, 1.35× speed and invulnerability; refresh on pickup |
 | Auto-Fix | Defeats ordinary enemies within 350 pixels; excludes boss |
 | Coffee / Full Review | Restore 1 / all HP, capped at 3 |
@@ -47,7 +47,7 @@ Terrain uses cropped existing street sprites with matching static solids. This f
 
 ## Validation
 
-Run `Godot --headless --path hoppys-adventure-arcade --script res://tests/platformer_smoke.gd` (or omit `--headless` for screenshots in `/tmp/hoppy-*.png`). The suite covers spawn collision, jumping, buffering/coyote time, damage protection, capped healing, shield/boost, pause input, moving cable-car support, melee deduplication, enemy scoring, boss unlock, completion, fresh retry, whole-ground-route traversal, death, and music restoration.
+Run `Godot --headless --path hoppys-adventure-arcade --script res://tests/platformer_smoke.gd` (or omit `--headless` for screenshots in `/tmp/hoppy-*.png`). The suite covers spawn collision, jumping, buffering/coyote time, damage protection, capped healing, shield/boost (including the shield bubble, in `platformer_shield.gd`), pause input, moving cable-car support, melee deduplication, enemy scoring, boss unlock, completion, fresh retry, whole-ground-route traversal, death, and music restoration.
 
 The existing `tests/menu_smoke.gd` should run with a rendered display for its mouse-hover assertions; headless mouse dispatch does not reproduce those assertions reliably. Keyboard/gamepad action definitions are present; physical-controller feel and packaged exports still need human/device testing.
 
