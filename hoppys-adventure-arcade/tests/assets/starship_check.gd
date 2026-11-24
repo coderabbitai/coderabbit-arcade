@@ -42,9 +42,17 @@ func run() -> void:
 	check(triangles + extra_triangles < 60000, "whole starship including boss dock stays within 60k triangles")
 	check(triangles < 60000, "starship module geometry stays within 60k triangles")
 	check(corridor.starship.batches.size() == 6, "bounded material batches")
-	for i in 8:
-		var z: float = corridor.starship.batches[0].get_instance_transform(i).origin.z
+	var module_count: int = corridor.starship.batches[0].instance_count
+	var mirrored_count := 0
+	for i in module_count:
+		# The headless renderer does not store MultiMesh instance transforms.
+		var pose: Transform3D = corridor.starship._module_transform(i, 7.5)
+		var wrapped_pose: Transform3D = corridor.starship._module_transform(i, 103.5)
+		var z := pose.origin.z
 		check(z <= 12 and z > -84, "recycle bounds")
+		check(wrapped_pose.is_equal_approx(pose), "wall layout repeats on the 96 m boundary")
+		mirrored_count += int(pose.basis.determinant() < 0.0)
+	check(mirrored_count > 0 and mirrored_count < module_count, "wall bays appear on both sides of the corridor")
 	corridor.set_scroll_speed(32)
 	corridor._process(3.0)
 	check(is_zero_approx(corridor._offset), "maximum-speed 96m wrap has no drift")
