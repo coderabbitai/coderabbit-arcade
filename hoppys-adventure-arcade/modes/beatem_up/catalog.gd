@@ -1,6 +1,13 @@
 extends RefCounted
 const TITLES := ["CLI / IDE DISTRICT", "SECURITY SECTOR", "GIT REPOSITORY HQ"]
 const THEMES := ["district", "security", "hq"]
+## The walkable depth band of each stage, in world px of its 1280x720 background: the paved
+## floor from just under the railing, fence or balustrade base (district 495, security 440,
+## HQ 455, plus room for the ground shadow) down to the lowest lane. game.gd's clamp_ground()
+## keeps Hoppy, enemies, bosses, props and spawns inside it, so nobody walks onto the railing
+## or in front of the skyline.
+const FLOOR_TOP := [505.0, 450.0, 465.0]
+const FLOOR_BOTTOM := 650.0
 const STORIES := ["The terminals have gone dark. Rogue commands are running wild.", "The firewall is down. Injection attacks are flooding the corridors.", "The source repo is under siege. Face the conflict and ship the fix."]
 const MUSIC := [
 	preload("res://Assets/Audio/Beat'em Up/code_city_cli_ide_district.ogg"),
