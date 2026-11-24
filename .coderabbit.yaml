@@ -6,6 +6,7 @@ language: "en-US"
 
 reviews:
   profile: "assertive"
+  in_progress_fortune: true
 
   auto_review:
     enabled: true
