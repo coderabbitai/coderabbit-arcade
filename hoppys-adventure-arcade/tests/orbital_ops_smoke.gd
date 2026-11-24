@@ -25,14 +25,20 @@ func place(pos: Vector2) -> void:
 	player.reset_physics_interpolation()
 	level.camera.reset_smoothing()
 
+func spawned_on_floor() -> bool:
+	var scene := current_scene
+	return scene!=null and scene.get("player")!=null and scene.player.is_on_floor()
+
 func run() -> void:
 	change_scene_to_file("res://scenes/platformer/orbital_ops.tscn")
-	await frames(12)
+	# Engine start-up leaves the physics clock behind, so the first process frame runs a burst of
+	# catch-up steps before the deferred scene swap lands; count on the floor, not on frames.
+	await wait_for(spawned_on_floor,2.0,"Spawn settles on visible station floor")
 	level=current_scene
 	player=level.player
+	check(player.hp==3,"Fresh run starts at full health")
 	await process_frame
 	level._resume()
-	check(player.hp==3 and player.is_on_floor(),"Spawn settles on visible station floor")
 	check(level.music.stream==level.ORBITAL_LEVEL_MUSIC,"Zero-G Deploy starts traversal")
 	check(level.projectiles.get_child_count()==0 and not level.boss.active,"Fresh run starts with inactive boss and no shots")
 	await capture("/tmp/orbital-spawn.png")
