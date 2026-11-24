@@ -17,7 +17,7 @@ Launch the project, choose **Platformer Game → Play Orbital Ops**. Direct scen
 
 A 5,300-pixel station route includes upper one-way decks, two gaps, a service shuttle, six ordinary enemies, three timed CI lasers, three vacuum vents, a marked zero-gravity bay, pickups, and a gated boss arena. The shuttle uses Bay Area's ten-second round-trip timetable with one-second endpoint stops, dedicated moving-platform collision layer, and upward/horizontal dismount velocity inheritance. The main route does not require riding it.
 
-Lasers cycle through 2.0s off, 0.9s amber warning, 1.6s red active, and 0.7s cooldown. Wait for a safe phase before crossing; only active beams damage. Vents use the same phase lengths with different offsets, pull nearby Hoppy down and toward the grille, and damage on contact with the active grille. Their amber warnings are safe. Damage respects the same shields and invulnerability as Bay Area.
+Lasers cycle through 2.0s off, 0.9s amber warning, 1.6s red active, and 0.7s cooldown. Wait for a safe phase before crossing; only active beams damage. Vents use the same phase lengths with different offsets, pull nearby Hoppy down and toward the grille, and damage on contact with the active grille. Their amber warnings are safe. Damage respects the same shields and invulnerability as Bay Area; a held shield shows as the shared bubble around Hoppy.
 
 Rogue AI bots have 2 HP, patrol locally, warn for 0.75s, and fire one non-homing plasma shot. Security Vulnerability Drones have 1 HP and visibly mark a target before committing to a dive, then return to their patrol origin. Ordinary enemies award 100 points; Commit Tokens award 25. Existing shared pickups retain Bay Area behavior, including Auto-Fix excluding the boss.
 
