@@ -155,9 +155,12 @@ func _tick_active(dt: float) -> void:
 	var wall: float = arena.room_start()+(1160.0 if dash_direction > 0 else 120.0)
 	if timer <= 0 or absf(position.x-wall) < 1: _recover()
 
-## Leave room for the boss's silhouette and for attacks from either side.
+## Leave room for the boss's silhouette and for attacks from either side, inside the stage's
+## floor band so it never climbs onto the railing.
 func arena_point(point: Vector2) -> Vector2:
-	return Vector2(clampf(point.x,arena.room_start()+120,arena.room_start()+1160),clampf(point.y,470,630))
+	return Vector2(clampf(point.x,arena.room_start()+120,arena.room_start()+1160),clampf(point.y,depth_top(),depth_bottom()))
+func depth_top() -> float: return arena.floor_top()+10.0
+func depth_bottom() -> float: return arena.floor_bottom()-20.0
 
 ## The tells shorten once it is enraged.
 func tell_time(kind: String) -> float:
@@ -177,7 +180,7 @@ func telegraph() -> void:
 		# The warning fires on landing, after the tell and the flight.
 		arena.ground_warning(aim,SLAM_RADIUS,timer+float(data.leap),.25,"slam",self)
 	else:
-		aim = Vector2(position.x,clampf(player.position.y,470,630))
+		aim = Vector2(position.x,clampf(player.position.y,depth_top(),depth_bottom()))
 		dash_direction = 1.0 if player.position.x >= position.x else -1.0
 		pose("dash_warning")
 		for n in 3:

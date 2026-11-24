@@ -78,7 +78,7 @@ func _update_core_cue() -> void:
 
 func arena_point(point: Vector2) -> Vector2:
 	# Leave room for the boss silhouette and for attacks from either side.
-	return Vector2(clampf(point.x,arena.room_start()+220,arena.room_start()+1060),clampf(point.y,480,615))
+	return Vector2(clampf(point.x,arena.room_start()+220,arena.room_start()+1060),clampf(point.y,maxf(480,arena.floor_top()+15),minf(615,arena.floor_bottom()-35)))
 
 func begin_reposition() -> void:
 	core_cue.hide()

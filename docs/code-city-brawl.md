@@ -16,7 +16,7 @@ Launch Godot 4.7.1 and choose **Beat'em Up → Play Code City Brawl** from the a
 
 The first entry from the hub opens the game's [how-to-play card](main-menu.md#how-to-play-cards) before the opening story scenes; the pause menu's **How to Play** shows it again.
 
-W/Up changes the ground lane. Jump is a separate height above that lane. Attacks have a forward reach and depth tolerance, so standing in another lane avoids melee. Jump above ground attacks and projectiles, or sidestep their telegraphs. Late attack input buffers one next combo step; a gap of more than 0.48 seconds after recovery resets the chain. Hoppy keeps his facing through a swing, so its hit area never flips mid-attack. Pressing the other way during or right after a swing turns him for the next one, buffered combo steps included. A quick tap mid-swing is remembered until the swing ends.
+W/Up changes the ground lane. The lanes cover only the paved floor of each district's background: Hoppy, the enemies and the bosses stop just under the railing, fence or balustrade (world y 505 in the CLI / IDE District, 450 in the Security Sector and 465 in Git Repository HQ, down to 650), so nobody walks onto the railing or in front of the skyline. Jump is a separate height above that lane. Attacks have a forward reach and depth tolerance, so standing in another lane avoids melee. Jump above ground attacks and projectiles, or sidestep their telegraphs. Late attack input buffers one next combo step; a gap of more than 0.48 seconds after recovery resets the chain. Hoppy keeps his facing through a swing, so its hit area never flips mid-attack. Pressing the other way during or right after a swing turns him for the next one, buffered combo steps included. A quick tap mid-swing is remembered until the swing ends.
 
 Hoppy has three HP. Coffee restores one HP. Each stage begins with fresh health and equipment. Losing the last HP plays a knockout cinematic, the same in both brawler modes:
 - A slow-motion throw under a camera push and letterbox bars, with the HUD, minimap and control hints hidden.
@@ -145,7 +145,7 @@ Runtime scripts are in `modes/beatem_up/`: `catalog.gd` owns immutable tuning (i
 - `victory_screen.gd` counts up the final score on the results screen. Its copy is the catalog's `VICTORY`.
 - `minimap.gd` draws the top-right minimap from a per-tick snapshot of the room.
 
- `art.gd` loads shared read-only SpriteFrames, and each armed sheet on first use. Ground-plane geometry drives combat; jump height is separate from Y sorting. Encounters cap enemies at 12, projectiles at 32, warning areas at 12 and pickups at 24.
+ `art.gd` loads shared read-only SpriteFrames, and each armed sheet on first use. Ground-plane geometry drives combat; jump height is separate from Y sorting. `Catalog.FLOOR_TOP` / `FLOOR_BOTTOM` give each stage's walkable depth band, read off its background's floor line, and `game.gd`'s `clamp_ground()` keeps the player, enemies, spawns, props and both boss kinds inside it. Encounters cap enemies at 12, projectiles at 32, warning areas at 12 and pickups at 24.
 
 ```sh
 godot --headless --path hoppys-adventure-arcade --import
@@ -196,7 +196,7 @@ Godot 4.7.1: all 19 headless suites listed in CI passed, including the three Cod
 
 ### Weapon animation and boss mobility follow-up
 
-`code_city_motion.gd` checks all six equipped rigs, three-step chaining, mirrored grips, whip extension, hit interruption, shield recoil, boss pursuit/flanking, committed leap targets, landing recovery, bounds, and transition/death cleanup. Its rendered run captures weapon windup/contact/recovery and the boss leap in `docs/previews/code-city-motion/`. The full traversal bot now prioritizes the mobile boss instead of spending every opening on its renewable reinforcements. As before, bot completion is a reachability check with invulnerability, not a difficulty assessment.
+`code_city_floor.gd` checks, per district, that the floor band starts under the railing base of its background, that walking up or down and knockback stop at the band's edges, and that wave spawns, props, out-of-band spawns and both boss kinds stay on the floor. `code_city_motion.gd` checks all six equipped rigs, three-step chaining, mirrored grips, whip extension, hit interruption, shield recoil, boss pursuit/flanking, committed leap targets, landing recovery, bounds, and transition/death cleanup. Its rendered run captures weapon windup/contact/recovery and the boss leap in `docs/previews/code-city-motion/`. The full traversal bot now prioritizes the mobile boss instead of spending every opening on its renewable reinforcements. As before, bot completion is a reachability check with invulnerability, not a difficulty assessment.
 
 Follow-up validation: existing Code City logic and asset checks passed; the new motion suite passed headlessly and with rendered pose captures. Both headless and rendered full traversals reached Force Merge with the moving boss. `git diff --check` passed. Difficulty still needs player feedback.
 

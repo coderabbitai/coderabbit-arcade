@@ -135,8 +135,12 @@ func _ready() -> void:
 	start_stage(0,true)
 
 func room_start() -> float: return room*1280.0
+## This stage's walkable depth band (Catalog.FLOOR_TOP / FLOOR_BOTTOM): the paved floor of its
+## background, below the railing. Everything on the ground plane is clamped into it.
+func floor_top() -> float: return Catalog.FLOOR_TOP[stage_index]
+func floor_bottom() -> float: return Catalog.FLOOR_BOTTOM
 func clamp_ground(pos: Vector2) -> Vector2:
-	return Vector2(clampf(pos.x,room_start()+55,room_start()+(1270 if gate_open else 1150)),clampf(pos.y,455,650))
+	return Vector2(clampf(pos.x,room_start()+55,room_start()+(1270 if gate_open else 1150)),clampf(pos.y,floor_top(),floor_bottom()))
 
 func start_stage(index: int, cinematic := false) -> void:
 	ko.cancel()
@@ -223,8 +227,10 @@ func enter_room(index: int) -> void:
 	gate.modulate = [Color("76f9dd"),Color("ff8888"),Color("f2c573")][stage_index]
 	ground.add_child(gate)
 	var wave: Array = Catalog.WAVES[stage_index][room]
+	# Three spawn rows spread over the stage's floor band, inset from both edges.
+	var row_step := (floor_bottom()-floor_top()-50.0)/2.0
 	for i in wave.size():
-		spawn_enemy(wave[i],Vector2(room_start()+650+i*110,485+(i%3)*67))
+		spawn_enemy(wave[i],Vector2(room_start()+650+i*110,floor_top()+25.0+(i%3)*row_step))
 	spawn_prop(["kiosk","server","pillar"][stage_index],Vector2(room_start()+360,480),0)
 	spawn_prop(["ide","crate","scaffolding"][stage_index],Vector2(room_start()+920,625),1)
 	if stage_index==0 and room==0: drop("debug_stick",Vector2(290,590))
@@ -242,7 +248,7 @@ func spawn_enemy(kind: String, pos: Vector2, split := true) -> Node2D:
 	var enemy := Enemy.new()
 	enemy.arena = self
 	enemy.kind = kind
-	enemy.position = pos
+	enemy.position = clamp_ground(pos)
 	enemy.can_split = split
 	actors.add_child(enemy)
 	enemies.append(enemy)
@@ -320,7 +326,7 @@ static func melee_contains(offset: Vector2, facing: float, reach: float, depth: 
 
 func spawn_prop(kind: String, pos: Vector2, slot: int) -> void:
 	var node := Node2D.new()
-	node.position = pos
+	node.position = clamp_ground(pos)
 	var sprite := Art.sprite(Catalog.THEMES[stage_index]+"_kit",kind+"_intact",1.25,false)
 	sprite.position.y = -58
 	node.add_child(sprite)
