@@ -69,11 +69,15 @@ func run() -> void:
 		check(is_equal_approx(up.y, top) and p.height == 0, "%s: walking up stops at the floor line (y=%d)" % [label, int(up.y)])
 		var down := drive("move_down", 3.0)
 		check(is_equal_approx(down.y, bottom), "%s: walking down stops at the lowest lane" % label)
-		p.position = Vector2(game.room_start()+640, 580)
-		# Knockback cannot push Hoppy past the floor line either.
+		# Knockback cannot push Hoppy past either edge: start a pixel inside and knock outward.
+		p.position = Vector2(game.room_start()+640, top+1)
 		p.knock = Vector2(0, -2000)
 		p.tick(DT)
-		check(p.position.y >= top, "%s: knockback keeps Hoppy on the floor" % label)
+		check(is_equal_approx(p.position.y, top), "%s: upward knockback stops at the floor line" % label)
+		p.position = Vector2(game.room_start()+640, bottom-1)
+		p.knock = Vector2(0, 2000)
+		p.tick(DT)
+		check(is_equal_approx(p.position.y, bottom), "%s: downward knockback stops at the lowest lane" % label)
 		p.knock = Vector2.ZERO
 		if Catalog.MINI_BOSS_STAGES[stage] != "":
 			game.call_mini_boss()
