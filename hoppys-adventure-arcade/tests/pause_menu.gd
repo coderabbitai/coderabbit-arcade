@@ -162,9 +162,8 @@ func check_route(route: String) -> void:
 	await press_pause()
 	check(paused and menu.is_open() and scene.is_player_paused(), "%s: pause opens the menu and pauses the game" % route)
 	check(menu.resume_button.has_focus(), "%s: Resume takes focus" % route)
-	var expected: Array[String] = ["Resume", "Restart", "How to Play", "Main Menu"]
-	if route == "runner_game":
-		expected.insert(3, "Leaderboard")
+	# Every game has a local top ten (app/leaderboards.gd), so every menu has the Leaderboard button.
+	var expected: Array[String] = ["Resume", "Restart", "How to Play", "Leaderboard", "Main Menu"]
 	var texts: Array[String] = []
 	for button in menu.buttons:
 		texts.append(button.text)

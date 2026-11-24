@@ -7,6 +7,8 @@ const Branch = preload("res://modes/platformer/crumbling_branch.gd")
 const Wave = preload("res://modes/platformer/enchanted_shockwave.gd")
 const FOREST_MUSIC = preload("res://Assets/Audio/Platformer/The Enchanted Repo/enchanted_repo_level.ogg")
 const BOSS_MUSIC = preload("res://Assets/Audio/Platformer/The Enchanted Repo/enchanted_repo_boss.ogg")
+## Ground segments as (x, width); the grass line is y 600 and pits lie between them.
+const GROUND := [Vector2(0,1100),Vector2(1260,1120),Vector2(2550,950),Vector2(3670,1630)]
 var forest_hazards: Array[Node2D] = []
 var branches: Array[StaticBody2D] = []
 
@@ -26,7 +28,7 @@ func _ready() -> void:
 	process_physics_priority=-10
 	texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
 	_background()
-	for segment in [Vector2(0,1100),Vector2(1260,1120),Vector2(2550,950),Vector2(3670,1630)]:
+	for segment in GROUND:
 		platform(Vector2(segment.x,600),Vector2(segment.y,160),false,"arena_slab" if segment.x>=3670 else "ground_slab")
 	platform(Vector2(-50,0),Vector2(50,900),false,"castle_wall")
 	platform(Vector2(5300,0),Vector2(50,900),false,"castle_wall")
@@ -104,18 +106,28 @@ func platform(pos: Vector2, size: Vector2, one_way := false, clip := "ground_sla
 	shape.one_way_collision=one_way
 	body.add_child(shape)
 	add_child(body)
-	# Raised roots keep their painted silhouette and transparent hanging roots.
-	# Ground and boundary walls still need a solid backing between their tiles.
+	# Every platform is one seamless run of its clip (Art.run), never butted tiles. Raised roots
+	# keep their painted silhouette and transparent hanging roots, with nothing behind them.
+	# Ground and boundary walls get a backing (drawn first, so it sits behind the art) in the
+	# dirt's own tone, starting under the grass tufts so the sky shows through them instead of a
+	# dark band. The castle wall below keeps a shadow-dark backing behind its crenellation gaps.
+	var cap := minf(size.y,68)
+	var walled := not one_way and size.y>70 and size.x>60
 	if not one_way:
-		var fill := Polygon2D.new()
-		fill.polygon=PackedVector2Array([Vector2.ZERO,Vector2(size.x,0),size,Vector2(0,size.y)])
-		fill.color=Color("252f35")
-		body.add_child(fill)
-	for x in range(0,int(size.x),128):
-		body.add_child(ForestArt.prop(clip,Vector2(x,0),Vector2(minf(128,size.x-x),minf(size.y,68))))
-	if size.y>70 and size.x>60:
-		for x in range(0,int(size.x),128):
-			body.add_child(ForestArt.prop("castle_wall",Vector2(x,68),Vector2(minf(128,size.x-x),size.y-68)))
+		_backing(body,Rect2(0,10,size.x,cap-10),Color("473638"))
+	if walled:
+		_backing(body,Rect2(0,68,size.x,size.y-68),Color("252f35"))
+	body.add_child(ForestArt.run(clip,Vector2.ZERO,Vector2(size.x,cap),Vector2(128,68)))
+	if walled:
+		var wall := Vector2(size.x,size.y-68)
+		body.add_child(ForestArt.run("castle_wall",Vector2(0,68),wall,Vector2(128,wall.y)))
+
+func _backing(body: Node2D, rect: Rect2, color: Color) -> void:
+	var fill := Polygon2D.new()
+	fill.polygon=PackedVector2Array([rect.position,Vector2(rect.end.x,rect.position.y),
+		rect.end,Vector2(rect.position.x,rect.end.y)])
+	fill.color=color
+	body.add_child(fill)
 
 func _add_hazard(kind: String, pos: Vector2, offset: float, direction := -1.0) -> void:
 	var hazard := Hazard.new()
@@ -180,6 +192,12 @@ func _background() -> void:
 		var tree := ForestArt.prop("rune_tree",Vector2(x,190),Vector2(260,410))
 		tree.modulate=Color(.55,.65,.6,.6)
 		near.add_child(tree)
+	# Foreground flora stands on the ground, never over a pit: a clump is placed only where its
+	# whole 180 px footprint lies on one ground segment, with its base on the grass line (y 600).
 	for x in range(200,5200,460):
-		var flora := ForestArt.prop("foreground_flora",Vector2(x,645),Vector2(180,65))
-		add_child(flora)
+		var grounded := false
+		for segment in GROUND:
+			if x>=segment.x and x+180<=segment.x+segment.y:
+				grounded=true
+		if grounded:
+			add_child(ForestArt.prop("foreground_flora",Vector2(x,537),Vector2(180,65)))
